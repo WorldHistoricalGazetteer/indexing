@@ -51,7 +51,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 |---|---|---|---|
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
-| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **nearly done 31 Aug** — code (`4d763b8`), extract, geom merge (whg 0 → 9,849), prod re-index (0 errors, `whg:1052:8` live and the old id gone), ES restarted (heap 9%, write pool idle), registry pushed (48 datasets, prod + dev). **Only the overlay rebuild is outstanding** (Slurm 11074337). Two side fixes: `adc7345`, `42b6e4a` |
+| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ◐ started, holding pre-gate; 2.5 not yet begun |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -594,9 +594,68 @@ click-through from the map cannot dereference. The retile fixes it because it
 rebuilds all 27 buckets — but `whg` has moved from "would be nice to refresh" to
 **mandatory**, and it should not be dropped from the list to save time.
 
-**Remaining in this step:** overlay rebuild (Slurm 11074337, running — reads
-staged files and DO PG, touches no index), then verify every `whg:` endpoint
-resolves before publishing it.
+**The id-map join, run against the real DO Postgres tables** (Slurm 11074345,
+7 seconds — contributor replay alone, into a scratch database that is never
+published):
+
+```
+place_link_input  34,569 → converted  1,087
+close_match_input  3,206 → converted    956
+attestation_input      0 → converted      0     ← the live flow is still dormant
+dropped_unmapped : 25,997 refs across 51 datasets   (top: 1631=9,846, 1611=2,439)
+id_map_entries   : 228,918   run_ids: ['whg-idmap-20260831T071935Z']
+```
+
+**And the verification §2.3 asks for, against the live index:**
+
+```
+BEFORE (published overlay): 2,734 of 13,466 resolve, 10,732 DANGLING
+AFTER  (id-map join)      : 1,935 of  1,935 resolve,      0 DANGLING
+```
+
+**Zero.** Every `whg:` endpoint the join emits dereferences.
+
+Two results to read carefully rather than at a glance, because both look like
+losses:
+
+* **Contributor rows fall from 26,981 to 2,038 — a 92% drop, and that is the
+  correct answer.** It is *worse* than the 79.7% endpoint figure because the
+  dangling endpoints are the ones carrying the most edges: 24,058 `place_link`
+  rows in the published overlay become 1,087. So the published overlay's
+  contributor layer is roughly **92% edges pointing at places that do not
+  exist** — a sharper statement of §2.3's finding than the endpoint count gives.
+  Nobody should read the smaller number as a regression.
+* **`attestation_input` is 0**, confirming from the source side what the overlay
+  showed: the `api_contributorattestation` flow has no active rows yet. The
+  disposition tally is therefore empty — and populates itself the first time
+  Django writes one, which is the point of tallying rather than assuming.
+
+**The overlay publish is NOT done, and 2.5 is why.** §2.3 ends "then re-publish
+the overlay"; it cannot be done in this session. `hard_links_staged` iterates
+every namespace's staged snapshot, and the full rebuild (Slurm 11074337,
+cancelled) reported `osm: attempted=2,295,659`, `ohm: 98,569`, **`gn: 0`,
+`wd: 0`** — those being exactly the trees 2.5 restores. By endpoint namespace
+across the published overlay's 7,596,959 rows: `wd` 7,516,092 and `gn` 5,092,751
+against `osm` 2,318,576, `ohm` 98,569, `iv` 68,935, `whg` 29,904. **`gn` and `wd`
+are not a component of the overlay, they are very nearly all of it.** Publishing
+that rebuild would have replaced a 7.6 M-row overlay with a fraction of one —
+and the ship step would have reported success, because the marker records the new
+row count and nothing compares it to what it replaced. The same shape as the
+7 August retile.
+
+So the build was cancelled, **nothing was published**, and
+`/ix1/ishi/hardlinks/hard_links.sqlite` is untouched — still the 6 August build,
+which predates the staged-tree loss and therefore still holds the `gn`/`wd`
+links. That is the right state to leave it in.
+
+**For whoever rebuilds the overlay after 2.5:** the id-map change is on `main`
+and `submit_hardlinks_slurm` passes `--id-map` automatically, so an ordinary
+invocation does the right thing — it simply has to happen *after* the `gn`/`wd`
+trees are back. Expect the contributor layer at roughly 2,000 rows rather than
+26,981; that is the fix working, not a loss. The natural guard, not added here:
+**compare a rebuilt overlay's row count and per-namespace endpoint counts against
+the overlay it is about to replace, and refuse an unexplained shrink** — the
+sibling of the geom-store guard in `adc7345`.
 
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
