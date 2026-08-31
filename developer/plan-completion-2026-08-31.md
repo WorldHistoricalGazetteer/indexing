@@ -650,14 +650,57 @@ So the build was cancelled, **nothing was published**, and
 which predates the staged-tree loss and therefore still holds the `gn`/`wd`
 links. That is the right state to leave it in.
 
-**For whoever rebuilds the overlay after 2.5:** the id-map change is on `main`
-and `submit_hardlinks_slurm` passes `--id-map` automatically, so an ordinary
-invocation does the right thing — it simply has to happen *after* the `gn`/`wd`
-trees are back. Expect the contributor layer at roughly 2,000 rows rather than
-26,981; that is the fix working, not a loss. The natural guard, not added here:
-**compare a rebuilt overlay's row count and per-namespace endpoint counts against
-the overlay it is about to replace, and refuse an unexplained shrink** — the
-sibling of the geom-store guard in `adc7345`.
+#### Rebuilding the overlay — the runbook, and the number that gates it
+
+> ### 🛑 The publish gate
+>
+> **The rebuilt overlay must come out within a few percent of `7,596,959` rows.
+> Below that, STOP — do not publish, investigate.**
+>
+> `publish_hardlinks` computes `row_count` from the *new* database and **never
+> opens the incumbent**, so nothing downstream will object. This is the only
+> check standing between a degraded harvest and the store the gateway reads on
+> every `include_hard_links` request.
+>
+> Reason with it rather than just comparing: `wd` accounts for **7,516,092** of
+> those rows and `gn` for **5,092,751**. So if 2.5 has genuinely restored both,
+> an overlay materially below 7.6 M means something *else* is wrong — a third
+> namespace, a stage-chain resolution, a silent harvest failure — and the right
+> move is to stop rather than publish and investigate afterwards.
+
+Today's near-miss cost nothing for two reasons, and a successor will not know to
+keep either of them:
+
+1. **Build and publish were kept as two decisions.** `submit_hardlinks_slurm` was
+   invoked deliberately **without** `--pitt-user/--pitt-host/--pitt-dir` and
+   **without** `--publish-local`, so the job builds a database and stops.
+   `processing.publish_hardlinks --execute` is a separate, later command. Keep it
+   that way — a single fused invocation would have shipped the degraded overlay
+   before anyone could look at it.
+2. **The harvest printed `gn: attempted=0` as it went**, and a human read it.
+   That is not a guard, it is luck with good logging.
+
+The rest of the runbook:
+
+* `git pull` in `/vast/ishi/elastic` **first, and confirm it landed.** That clone
+  is what `submit_hardlinks_slurm` runs from, and as of 31 Aug it lagged `main`
+  by exactly the three commits that fix this job (`42b6e4a`, `1f5aa50`, and the
+  `--id-map` wiring). The pre-fix version hands a 6-12 h harvest to node roulette
+  and mislabels the drop counts.
+* The id-map change needs no flag — `submit_hardlinks_slurm` passes `--id-map`
+  automatically. The map is at `staged/whg/extract/id_map.jsonl`, 228,918 records
+  stamped `whg-idmap-20260831T071935Z`; check that stamp rather than assuming the
+  file is the one you mean.
+* **Expect the contributor layer at roughly 2,038 rows, not 26,981.** That drop
+  is the fix working, not a loss — see above. It is the one number that *should*
+  fall.
+* `wd` and `gn` now resolve to `extract/places.jsonl` with no parquet, so Phase 1A
+  streams a 10.3 GB file. A long Phase 1A is expected, not alarming.
+
+The guard this all argues for, not built here: **compare a rebuilt overlay's row
+count and per-namespace endpoint counts against the overlay it is about to
+replace, and refuse an unexplained shrink** — the sibling of the geom-store guard
+in `adc7345`.
 
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
