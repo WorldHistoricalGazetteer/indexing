@@ -295,11 +295,37 @@ floor from the first ingest. **Never written, not lost.** Fourteen other
 authorities configure the writer; `grep -L configure_module_writer` over the
 authorities that compute geometry is the check that finds this class (it also
 finds `og` — see §4.1). SG approved fixing it inside this step. The re-extract
-therefore writes **9,849** geometries, which is four times the 2,320 the
-`geom_class` aggregation suggests: `enrich_geometry` stores anything that is not
-a bare `Point`, while `geom_class` folds MultiPoint into `point`, so about 7,529
-MultiPoint places had been keeping one `repr_point` and discarding every other
-member point.
+therefore writes **9,849** geometries where the store held none.
+
+That count is four times the 2,320 the `geom_class` aggregation suggests, because
+`enrich_geometry` stores anything that is not a bare `Point` while `geom_class`
+folds MultiPoint into `point`. Reading the WKB type byte of all 9,849 staged
+entries settles what that difference is actually worth:
+
+| WKB type | entries | |
+|---|---:|---|
+| MultiPoint | 7,529 | invisible to the `geom_class` predicate |
+| LineString | 1,044 | } 1,072 — matches `geom_class:line` exactly |
+| MultiLineString | 28 | } |
+| Polygon | 770 | } 1,248 — matches `geom_class:area` exactly |
+| MultiPolygon | 478 | } |
+
+**The MultiPoint recovery is much smaller than the entry count implies, and
+smaller than I first reported.** Those 7,529 MultiPoints hold 8,219 member points
+between them, so all but ~690 are single-member: the coordinates actually being
+discarded across the whole namespace number **690**, not thousands of places
+reduced to one point. The substantive repair is the 2,320 areal and linear
+shapes; the MultiPoint half is a rounding error in data terms.
+
+⚠ **But the detector is blind here, and that part generalises.** A MultiPoint
+that lost every member but one reads `geom_class:point, has_geom:false` — exactly
+like an ordinary point that never had a geometry. So the standing
+`geom_class ∈ {area,line} AND NOT has_geom` predicate that CLAUDE.md offers as
+*the* incomplete-ingestion detector cannot see this class at all. It happens to
+cost 690 coordinates in `whg`; in a namespace of genuine multi-part point
+features it would hide an arbitrary amount, and silently. Raised by S2, measured
+by S3. Either the predicate needs a third arm, or `geom_class` should stop
+folding MultiPoint into `point`.
 
 *The attestation source needed handling and this section did not name it.*
 `contributor_replay` has a third query, `_ACTIVE_ATTESTATION_QUERY`, whose ids
@@ -335,7 +361,7 @@ endpoint-by-endpoint rather than by count.
 | `no_src_id` / `duplicate_src_id` | **0 / 0** across all 48 datasets |
 | the `yukon100` probe | map holds `1052 / 6954931 → whg:1052:8` ✅ |
 | `geom_class` | point 213,081 / area 1,248 / line 1,072 — identical to prod |
-| geometries staged for the store | **9,849** (was 0) |
+| geometries staged for the store | **9,849** (was 0) — 2,320 areal/linear + 7,529 MultiPoint |
 | places with ccodes | 224,118 (prod holds 224,232 — 114 fewer, upstream drift since 6 Aug, not a regression of this run) |
 
 Worth recording because it cuts against the argument for the map: **both id edge
