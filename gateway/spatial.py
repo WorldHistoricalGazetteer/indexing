@@ -1047,6 +1047,47 @@ def scope_message(region: ResolvedRegion) -> Optional[str]:
     return None
 
 
+#: Wording for a scope that was applied, but not at the precision asked for.
+_DEGRADED_MESSAGE = (
+    "`containment=exact` was requested but no polygon geometry was available "
+    "for the region, so the H3 (fuzzy) cell test was used instead — results are "
+    "cell-accurate, not boundary-accurate."
+)
+
+
+def exact_degraded(region: Optional[ResolvedRegion], containment: str) -> bool:
+    """True when an ``exact`` request was in fact answered by the fuzzy test.
+
+    ``hit_matches`` falls through to the H3 branch whenever no prepared geometry
+    is available — a geom-store miss, an unavailable reader, no Shapely, or a
+    region (``h3-disc``) that deliberately never builds a polygon. That
+    fallback is the right behaviour; being silent about it is not. Before the
+    ``un`` polygons were merged on 31 Aug 2026, ``contained_in: ["un:fra"]``
+    with ``containment=exact`` returned the *fuzzy* answer — and said
+    ``applied: true, mode: "polygon"``, which was true and still misleading,
+    because a polygon region had been built and only its geometry was missing.
+
+    Must be called AFTER the containment pass: geometry loads lazily, so before
+    it there is nothing to have failed.
+    """
+    return (containment == "exact"
+            and region is not None
+            and region.union is None)
+
+
+def mark_scope_degraded(scope: Optional[ScopeInfo]) -> None:
+    """Record on ``scope`` that the constraint applied was coarser than asked.
+
+    ``approximate`` already means exactly this, and it is the one thing a client
+    cannot detect for itself: the hit count looks plausible either way.
+    """
+    if scope is None or not scope.applied:
+        return
+    scope.approximate = True
+    scope.message = (f"{scope.message} {_DEGRADED_MESSAGE}".strip()
+                     if scope.message else _DEGRADED_MESSAGE)
+
+
 def build_scope_info(
     *,
     region: Optional[ResolvedRegion],

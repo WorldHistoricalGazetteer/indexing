@@ -216,5 +216,105 @@ class TestSharedScopeBuilder(unittest.TestCase):
         self.assertFalse(scope.applied)
 
 
+# ---------------------------------------------------------------------------
+# Applied, but not at the precision asked for (found by S2, 31 Aug 2026)
+# ---------------------------------------------------------------------------
+
+class TestExactDegradation(unittest.TestCase):
+    """A resolvable scope can still answer at the wrong precision.
+
+    `hit_matches` falls through to the H3 test whenever no prepared geometry is
+    available. Before the `un` polygons reached the geom store,
+    `contained_in:["un:fra"]` with `containment=exact` returned the *fuzzy*
+    answer (15 hits, identical to fuzzy; 4 once the polygons landed) while
+    reporting `applied: true, mode: "polygon", approximate: false` — every word
+    of which was true of the region, and none of which mentioned that its
+    geometry was missing. Same silent-wrong-answer class as the fail-closed bug
+    above, different path: there the scope was discarded, here it is coarsened.
+    """
+
+    def test_no_geometry_behind_an_exact_request_is_a_degradation(self):
+        region = _real_region(area_ids=("un:fra",))     # cover only, union=None
+        self.assertTrue(spatial.exact_degraded(region, "exact"))
+
+    def test_fuzzy_request_is_never_a_degradation(self):
+        """Asking for the H3 test and getting it is not a downgrade."""
+        region = _real_region(area_ids=("un:fra",))
+        self.assertFalse(spatial.exact_degraded(region, "fuzzy"))
+
+    def test_loaded_geometry_is_not_a_degradation(self):
+        region = _real_region(area_ids=("un:fra",))
+        region.union = object()                        # stands for a Shapely union
+        self.assertFalse(spatial.exact_degraded(region, "exact"))
+
+    def test_no_region_is_not_a_degradation(self):
+        """That case is the fail-closed one, and is reported as applied=False."""
+        self.assertFalse(spatial.exact_degraded(None, "exact"))
+
+    def test_marking_sets_approximate_and_explains(self):
+        scope = spatial.build_scope_info(
+            region=_real_region(area_ids=("un:fra",)), contained_in=["un:fra"])
+        self.assertFalse(scope.approximate)
+        spatial.mark_scope_degraded(scope)
+        self.assertTrue(scope.approximate)
+        self.assertTrue(scope.applied)                 # the scope DID apply
+        self.assertIn("cell-accurate", scope.message)
+
+    def test_marking_preserves_an_existing_message(self):
+        """A borrowed polygon that also degraded must report both facts."""
+        region = _real_region(source="linked-polygon", linked_ids=("wd:Q142",),
+                              point_ids=("gn:3017382",))
+        scope = spatial.build_scope_info(region=region, contained_in=["gn:3017382"])
+        spatial.mark_scope_degraded(scope)
+        self.assertIn("wd:Q142", scope.message)        # the borrow
+        self.assertIn("cell-accurate", scope.message)  # ...and the coarsening
+
+    def test_a_failed_closed_scope_is_not_relabelled(self):
+        """approximate describes a constraint that WAS applied; there is none."""
+        scope = spatial.build_scope_info(region=None, contained_in=["un:nope"])
+        spatial.mark_scope_degraded(scope)
+        self.assertFalse(scope.approximate)
+        self.assertFalse(scope.applied)
+
+
+class TestExactDegradationEndToEnd(unittest.IsolatedAsyncioTestCase):
+
+    async def test_endpoint_reports_the_coarser_test_it_actually_ran(self):
+        client = _FakeClient()
+        region = _real_region(area_ids=("un:fra",))    # resolvable, no polygon behind it
+        with mock.patch.object(spatial, "resolve_region",
+                               new=mock.AsyncMock(return_value=region)), \
+             mock.patch.object(spatial, "apply_containment_async",
+                               new=mock.AsyncMock(side_effect=lambda hits, *a, **k: hits)), \
+             mock.patch("gateway.search.httpx.AsyncClient",
+                        side_effect=lambda *a, **k: client):
+            resp = await search(SearchRequest(
+                query="Paris", mode="exact", contained_in=["un:fra"],
+                containment="exact", relation="intersects"))
+
+        # The hits are still returned — the scope applied, just coarsely.
+        self.assertEqual(["tgn:8723013"], [h.place_id for h in resp.hits])
+        self.assertTrue(resp.scope.applied)
+        self.assertTrue(resp.scope.approximate)
+        self.assertIn("cell-accurate", resp.scope.message)
+
+    async def test_exact_with_a_real_polygon_is_not_flagged(self):
+        client = _FakeClient()
+        region = _real_region(area_ids=("un:fra",))
+        region.union = object()
+        with mock.patch.object(spatial, "resolve_region",
+                               new=mock.AsyncMock(return_value=region)), \
+             mock.patch.object(spatial, "apply_containment_async",
+                               new=mock.AsyncMock(side_effect=lambda hits, *a, **k: hits)), \
+             mock.patch("gateway.search.httpx.AsyncClient",
+                        side_effect=lambda *a, **k: client):
+            resp = await search(SearchRequest(
+                query="Paris", mode="exact", contained_in=["un:fra"],
+                containment="exact", relation="intersects"))
+
+        self.assertTrue(resp.scope.applied)
+        self.assertFalse(resp.scope.approximate)
+
+
 if __name__ == "__main__":
     unittest.main()

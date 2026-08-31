@@ -810,6 +810,12 @@ async def reconcile_search(req: ReconcileRequest):
             raw_hits = await spatial.apply_containment_async(
                 raw_hits, region, req.containment, req.relation, reader=reader,
             )
+            # An `exact` request that found no polygon behind the region was
+            # answered by the fuzzy test. Say so — `applied: true, mode:
+            # "polygon"` is true of the region and silent about its precision,
+            # and the hit count looks plausible either way.
+            if spatial.exact_degraded(region, req.containment):
+                spatial.mark_scope_degraded(scope)
             raw_hits = raw_hits[: req.size * 4]
 
         surviving_pids = [
