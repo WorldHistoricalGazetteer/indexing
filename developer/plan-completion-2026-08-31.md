@@ -397,8 +397,8 @@ holds no alias before deleting it.
 
 | | |
 |---|---|
-| 4.1 | **`og` geometry is at its sources' ceiling, not broken** — 251 of 6,260, because ofs attests only 1,123 of og's admin units and **no og doc carries a wd link at all**. Raising it is a reconciliation task (establish og↔wd links), not a pipeline fix. Its 3.9% ccode coverage follows from this and needs no separate work. |
-| 4.2 | 1,497 areal + 1,072 linear docs with `has_geom=false`, and 1 areal doc with no `h3_cover` — 0.005% of the corpus, the standing incomplete-ingestion predicate. |
+| 4.1 | **`og` geometry is at its sources' ceiling, not broken** — 251 of 6,260, because ofs attests only 1,123 of og's admin units and **no og doc carries a wd link at all**. Raising it is a reconciliation task (establish og↔wd links), not a pipeline fix. Its 3.9% ccode coverage follows from this and needs no separate work. **But the 249 hulls it does compute are not retrievable either** (4.2), so fixing the writer is the cheaper half and comes first: it makes the geometry og already has usable, before any effort goes into acquiring more. |
+| 4.2 | **Diagnosed 31 Aug, no longer a mystery tail.** The 2,569 `has_geom=false` docs are two authority bugs: `whg` (1,248 area + 1,072 line) passed `geom_key` but never configured a module writer — **fixed inside 2.3**; `og` (249 area) calls `enrich_geometry` with no `geom_key` at all, so its hulls are never keyed. The geometry was never written, not lost. `og`'s half is a small fix but needs a re-extract, so it sits here rather than in Phase 2 — take it with 4.1. Plus 1 areal doc with no `h3_cover`, unrelated. |
 | 4.3 | `authorities/backfill_admin_levels.py` has a broken `BOUNDARIES_INDEX` import; not in `INGESTION_ORDER`, so not a rebuild blocker. |
 | 4.4 | `geom_store --merge` grows every rebuild and has no prune step for keys absent from the current corpus. 2.3 will add ~229 k more orphans. |
 | 4.5 | AAT coverage 4,436 / 15,448 = 28.7% (place#142). |
