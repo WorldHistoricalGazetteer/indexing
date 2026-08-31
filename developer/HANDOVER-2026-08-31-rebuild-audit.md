@@ -285,6 +285,35 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
 
 ---
 
+## 3b. One staged-tree oddity, recorded because it is invisible unless you list the directory
+
+**`ukhc` is the only namespace whose `final/` is JSONL-only** (S8, 31 Aug;
+confirmed unique across all 27):
+
+```
+staged/ukhc/final/   places.jsonl 502,597 (20 Aug)   places.jsonl.bak 392,614
+                     places.parquet.stale 141,445 (5 Aug)   ← renamed, not rebuilt
+staged/ukhc/extract/ places.jsonl 477,585 (20 Aug)   places.jsonl.pre204 179,100
+```
+
+That is the signature of the place#204 county-name-variants refresh: the JSONL was
+regenerated and the Parquet deliberately marked `.stale` rather than rebuilt — a
+defensible defensive act, since a stale Parquet that still *looked* current would
+be the more dangerous artefact.
+
+**Currently harmless, and I checked rather than assumed.** Every consumer that
+matters resolves Parquet-then-JSONL and falls back: `_staged_namespace_source` in
+all six chains, `ccode_merge._iter_source_docs`, and `submit_tiles_slurm.
+_eligible_buckets` (which accepts either at the tile gate). So `ukhc` resolves to a
+correct, current file everywhere.
+
+What it leaves is a divergence nobody would see: `ukhc` is the one bucket reading
+from JSONL at `final` depth while the other 26 read Parquet. Worth knowing before
+the retile, and worth knowing if a future consumer is ever written that assumes
+Parquet without a fallback.
+
+---
+
 ## 4. Ordered plan
 
 See **[`plan-completion-2026-08-31.md`](plan-completion-2026-08-31.md)** — the
