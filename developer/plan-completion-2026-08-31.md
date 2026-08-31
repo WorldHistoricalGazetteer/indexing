@@ -53,7 +53,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S9** | 2.8 | Make **all four** priority-chain writers — `update_merge`, `boundary_merge`, `h3_merge`, `ccode_merge` — write via temp-and-`os.replace`, ideally behind one helper, plus a test that fails on the pre-change code. **Runs before S8**, and `update_merge` is the one 2.7 hits first. | ⬜ not started |
+| **S9** | 2.8 | Make **all four** priority-chain writers — `update_merge`, `boundary_merge`, `h3_merge`, `ccode_merge` — atomic behind one helper, plus a test that fails on the pre-change code. **Runs before S8**; `update_merge` is the one 2.7 hits first. | ◐ **running** — failing-test gate met (`tests/test_staged_merge_atomicity.py`: 4 atomicity assertions fail on pre-change code, 4 happy-path pass, so not vacuously red) |
 | **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — reconcile `wd`'s status → `update_merge` → `h3_stage` → `h3_merge` → ccode → `ccode_merge`. **Gates S5 and the overlay publish.** | ◐ **holding — now behind 2.8 (S9) by SG's decision**, and behind the running harvest |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -1557,7 +1557,7 @@ reason):
 1. write `places.jsonl.tmp` (in **each** of the four writers);
 2. `write_parquet_from_jsonl(jsonl_tmp, parquet_tmp)` — it takes explicit paths,
    so no change needed there;
-3. `os.replace(jsonl_tmp, jsonl_path)` **then** `os.replace(parquet_tmp, parquet_path)`.
+3. `os.replace(parquet_tmp, parquet_path)` **then** `os.replace(jsonl_tmp, jsonl_path)` — see the ordering note below.
 
 ⚠️ **The rename ORDER matters, is not obvious, and was disputed — here is the
 reasoning, so a successor can re-open it if they disagree.** A stage has two files,
@@ -1566,19 +1566,35 @@ the pair cannot be made atomic, and resolvers prefer `places.parquet` **over**
 ever exposes a partial file — so this is a second-order choice about which
 *inconsistent-pair* state a crash between the two renames leaves behind.
 
-**Recommended: jsonl first, parquet second.** The resolver's authoritative read is
-the Parquet, so it should flip exactly once, at the end. And on a crash between
-renames the stage still serves the **old complete Parquet** — i.e. *a crashed
-merge looks like it never happened*, which is what you want and what makes it
-safely re-runnable.
+**REQUIRED: parquet first, jsonl second.** ⚠️ **This reverses what this step
+first specified, and the reversal is mine to own.** I argued jsonl-first on the
+principle that a crashed merge should look like it never happened. S8 and S9
+reached the opposite conclusion independently; looking for a decisive case, the
+campaign's own history settles it against me.
 
-**S8 argued the reverse** (parquet first), on the ground that jsonl-first leaves a
-window serving the *stale* Parquet. That window is real — but it is the desirable
-property, not a defect: a complete old snapshot beats a mixed one. The decisive
-objection to parquet-first is what it leaves on a crash: a **new** Parquet beside
-an **old** JSONL, so the resolver serves new data from a stage whose JSONL is
-older and whose manifest says the stage failed — a job that failed presenting as
-success, which is this campaign's signature shape. Clean up temps on failure.
+Both orders are safe from the primary hazard — the temps are fully written before
+either rename, so **neither order ever exposes partial data**. The choice is only
+about which complete-but-mismatched pair a crash *between the two renames* leaves
+behind, and that residue is durable:
+
+* **parquet-first crash** → new Parquet + old JSONL. The resolver prefers Parquet,
+  so **the authoritative read is the correct, current data.** Re-running is a
+  no-op. Benign if nobody re-runs.
+* **jsonl-first crash** → new JSONL + old Parquet. The resolver serves the **stale**
+  Parquet **indefinitely and silently**, while the JSONL beside it says otherwise.
+
+**That second state is Fault 12 exactly** — "`un`'s improved `h3_cover` sat in
+`h3_merged` for three days while the index kept a stale copy, and the freshness
+gate could not see it because `final/` was self-consistent." Serving stale data
+silently is the failure this campaign exists to eliminate, and my principle
+mistook an *early* publish of complete data for a *partial* one.
+
+⚠️ **A limitation no rename order fixes** (S9): `write_parquet_from_jsonl` strips
+hull, so the JSONL is canonical for hull-consumers. A crash between renames leaves
+those two disagreeing whichever order is used. Worth stating rather than implying
+the ordering makes the pair safe.
+
+Clean up temps on failure.
 
 **The test — it must fail today.** Do not attempt to test concurrency. Make the
 merge raise partway through its document loop, then assert the target is either
