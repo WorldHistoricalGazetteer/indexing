@@ -1438,6 +1438,31 @@ the older `h3ccode-20260805T120000Z` manifest still records `gn`/`wd`
 `update_merge: completed` — true of the pre-accident tree, false now. A session
 consulting that one concludes the barrier is satisfied.
 
+⚠️ **The two patches are NOT interchangeable, so a partial 2.7 fails in two
+different ways.** Measured directly from the patch files (31 Aug):
+
+```
+gn   200,000 sampled      toponyms_to_add 194,010 (97%)   relations_to_add 54,590 (27%)
+wd    58,657 = WHOLE FILE  geometries_to_replace 58,657 (100%)   h3_cover/h3_centroid 58,656
+```
+
+* **`gn` loses names and relations** — invisible to any document count, which is
+  why check 4 must count names.
+* **`wd` loses polygons.** `update_merge.py:36`: `geometries_to_replace`
+  **overwrites the entire `geometries` array**. So a `wd` `final/` built without
+  `update_merge` keeps the un-enriched extract geometry, and those **58,657
+  documents' polygons are simply absent** from anything built on it.
+
+**That is the campaign's original failure arriving through a different door**
+(S5). The nine boundary layers shipped as points because the tile job read a
+destroyed geom store; this would ship `wd` as points because the geometry never
+entered the staged document at all. Same visible outcome, different mechanism —
+and it passes every check that existed before this paragraph.
+
+`index_namespace.py:156` also guards on `has_geom and not h3_cover`, and the `wd`
+patch supplies `h3_cover`/`h3_centroid` alongside the geometries — so the patch is
+what makes those documents **indexable** under that guard, not merely richer.
+
 **Corrected chain:**
 
 ```
@@ -1631,6 +1656,14 @@ live tileserver right now, and **the retile is what overwrites them**. So:
    the destroying session remembering to do it, which is the same failure shape
    as 7 August. As a precondition it is now "are the files there", answerable in
    a second and failing safe.
+
+⚠️ **Two named polygon deltas to assert after 2.7, not one.** Beside `clio`'s
++2,986, assert that **`wd`'s tileset gains polygons for ~58,657 documents**
+against today's (S5, 31 Aug). That discriminates the way this campaign keeps
+asking for: in the broken world — `update_merge` skipped for `wd` — the count does
+**not** move, and the difference is visible *before* deploying. Doc counts, ccode
+figures and eligibility tests read identically either way, which is what makes
+this the first assertion on S5's row that can actually fail.
 
 **Then verify — the check that would have caught this in the first place:**
 assert a non-zero `poly=` count per polygon-bearing bucket in the job log *and* a
