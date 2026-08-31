@@ -53,7 +53,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. ⚠️ **Blocked on S4's 2.5** — wait for `gn`/`wd`/`nl`, do not start streaming from ES instead. Prove the verifier FAILS on the preserved fixtures before deploying. | ⬜ **deferred by SG, 31 Aug** — not spun up, rather than spun up and idling for `gn`'s several-hour extract |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying — the deploy destroys its own evidence. | ⬜ **BLOCKED — `gn`/`wd`/`nl` have no `final/`**, so the submitter would silently drop them (see 2.5 correction). Not a 2.5-completeness question: a stage-depth one |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
 
@@ -1047,7 +1047,39 @@ wrong by 1.9 M and, being a plausible-looking near-miss, is exactly the kind of
 expected value that gets a correct result written off as a mismatch. Take the
 target from `_count` at the time, not from here.
 
-### ✅ 2.5 COMPLETE — verified 31 Aug, after S4 closed
+### ⚠️ 2.5 — DATA RESTORED, STAGE DEPTH NOT. Sufficient for 2.6 and the overlay; **NOT for S5**
+
+**Correction, 31 Aug, from S5 — and the error was mine.** I recorded 2.5 as
+complete and told SG it unblocked both the overlay rebuild and the retile. Half
+of that was wrong. `gn`, `wd` and `nl` hold **only `extract/`** — no `final/`, no
+`h3_merged/` — verified on disk against `un`/`ukhc`/`clio` as controls, which all
+have `final` + `h3_merged` + `extract`, so the probe discriminates.
+
+| consumer | resolver behaviour | status |
+|---|---|---|
+| 2.6 toponyms stage 1 | falls back `final → h3_merged → boundary_merged → extract` | ✅ satisfied |
+| overlay harvest (`hard_links_staged`) | same chain, verified `:42-59` | ✅ satisfied |
+| **S5's retile submitter** | `_eligible_buckets` requires `final/places.parquet` **or** `final/places.jsonl` and otherwise does a bare `continue` | ❌ **would silently drop gn, wd, nl** |
+
+So a retile today tiles 24 buckets, reports success, and omits the largest
+gazetteer in the corpus — this campaign's signature failure, in the step whose
+deploy destroys its own evidence.
+
+**Why my verification missed it, which is the part worth keeping.** 2.5's check
+measured row counts and a delta against the live index. Those are satisfied at
+`extract` depth exactly as well as at `final` depth: *the measure cannot
+distinguish a completed stage chain from a bare extract*. The property S5 needs
+is **stage depth**, and nothing measured it. This is the discrimination rule
+again — ask what the broken world produces, and here it produces the identical
+number — committed by me, in the check I had just finished writing the rule into.
+Note also `166b74b` gave **`un`** a `final/` for precisely this reason and I did
+not generalise it to `gn`/`wd`/`nl`.
+
+**The remedy is a scope decision for SG**, not for S5: run `gn`, `wd` and `nl`
+through `h3_stage → h3_merge → ccode_merge` as `un` was, which is hours of Slurm
+on the two large ones. `ccode_merge` is the only writer of `final/`.
+
+### ✅ 2.5 — the data half, verified 31 Aug after S4 closed
 
 `gn`'s extract (Slurm 11074352) reached COMPLETED. S4's parked verifier
 (`s4_verify_staged.sbatch`, Slurm 11082769) then passed all three against the
@@ -1079,7 +1111,8 @@ the conda env's, exactly S3's `42b6e4a`; the parked `.sbatch` exports
 printed its target as "(4 Aug run scanned 51,188,772)" — the stale figure this
 plan warns about — so it was corrected in place to the live total before the run.
 
-**This unblocks S3's overlay rebuild and S5's retile.**
+**This unblocks the overlay rebuild. It does NOT unblock S5** — see the
+correction above.
 
 **And prefer one identity over three checks (S4, 31 Aug).** The per-namespace
 counts localise a failure; they should not be what *declares success*, because
@@ -1285,10 +1318,14 @@ Preconditions and traps:
    4,363 polygons are currently in the deployed tileset *only* because the
    7 August run read a staged tree that has since vanished.
 
-   `TILE_ES_DOC_NAMESPACES=gn,wd` (from `71bcc39`) remains available as a
-   deliberate override, but it is no longer the plan's answer: it scans ~24.5 M
-   documents out of production ES and leaves the staged trees wrong for the next
-   consumer, which is how the overlay harvest nearly published an empty file.
+   ⚠️ **`TILE_ES_DOC_NAMESPACES=gn,wd` DOES NOT WORK for this, and this plan was
+   wrong to offer it** (S5, 31 Aug, verified by grep): the setting is read only in
+   `settings.py:158` and `generate_tiles.py:949-951`, and
+   **`submit_tiles_slurm.py` never consults it**. It changes where a worker reads
+   documents *after* a bucket has been submitted; it cannot make an ineligible
+   bucket eligible. A session following the old advice would set the override,
+   watch the submitter skip `gn` and `wd` anyway, and get a successful-looking
+   run missing both. The only route is a real `final/`.
    Expect to wait several hours — `gn` runs two scripts (`geonames-places`, then
    `geonames-toponyms`) inside a 36 h wall.
 
