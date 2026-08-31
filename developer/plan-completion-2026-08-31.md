@@ -1400,13 +1400,38 @@ this defect survived a PASS. So check all three properties:
 
 1. **Stage depth** — `submit_tiles_slurm`-side: `final/places.{parquet,jsonl}`
    exists for each. And resolver-side, using the pipeline's own function, that
-   `_staged_namespace_source(ns)` now returns a path under `final/`.
+   `_staged_namespace_source(ns)` now returns a path under `final/`. **This runs
+   on pitt** — use `/home/gazetteer/miniconda/envs/whg/bin/python` (pyarrow 25.0.0,
+   imports the pipeline fine). The `whg` env named in `_common.sh` lives under
+   `/ihome`, which is CRC-only and absent on the VM, so looking for that one and
+   concluding no env exists is a wrong turn (S8 took it, 31 Aug). Verified
+   pre-state via that interpreter: `gn`/`wd`/`nl` → `extract/places.jsonl`,
+   `un` → `final/places.parquet` as the control.
 2. **Counts unchanged** — 13,454,817 / 11,459,393 / 4,363, delta 0 against the
    live index, so the chain moved the data rather than losing some of it.
-3. **ccode coverage in `final/` matches the live index per namespace** — `wd`
-   ~97.3%, `gn` ~99.9%, `nl` measured at the time. This is the property that
-   distinguishes the correct route from the fast one, so it is the one that must
-   be measured rather than assumed.
+3. **ccode coverage in `final/`, as a TWO-SIDED test** — S8 sharpened this on
+   31 Aug and the sharpening matters. Targets: `wd` ~97.3%, `gn` ~99.9%, `nl`
+   measured at the time. But **`gn` reaching 100% is a FAILURE signal, not a
+   success one.**
+
+   `gn`'s ~0.06% residual (~8,000 docs) is overwhelmingly GeoNames *undersea*
+   feature codes — the `U` family: `SMU` 1,371, `CNYU` 688, `BSNU` 523, `BNKU`
+   487, `RFU` 404, `RDGU` 373, `KNLU` 191, `VALU` 189, plus `GULF` and `RKS`.
+   Seamounts, canyons, basins, banks, reefs, ridges and knolls in international
+   waters — `gn:80303` Gulf of Aden, `gn:145945` Gulf of Oman. **They have no
+   country code because they correctly have none**, and spatial resolution will
+   not give them one. So 100% would mean the resolver had assigned countries to
+   open-ocean features, which is a real error class that a one-sided `≥ 99.9%`
+   threshold waves straight through. **Assert the shape of the residual, not
+   just its size.**
+
+   ⚠️ **Sample without bias.** S8 nearly filed a false alarm here: head-only
+   sampling gave `gn` 100.00% and tail-only 65.83%, which read as the plan's
+   figure being a head-sampling artefact and `gn` needing ~4.6 M extra spatial
+   resolutions. Random-offset sampling (seek, discard the partial line, take the
+   next) gives 99.94%, agreeing with the live index. The tail was the
+   unrepresentative end. `wd` agrees with itself at 0.12% across all three
+   methods. **Sizing is therefore unaffected — `wd` remains the entire cost.**
 
 ---
 
