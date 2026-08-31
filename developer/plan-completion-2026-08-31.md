@@ -53,7 +53,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S9** | 2.8 | Make **all four** priority-chain writers — `update_merge`, `boundary_merge`, `h3_merge`, `ccode_merge` — atomic behind one helper, plus a test that fails on the pre-change code. **Runs before S8**; `update_merge` is the one 2.7 hits first. | ◐ **running** — failing-test gate met (`tests/test_staged_merge_atomicity.py`: 4 atomicity assertions fail on pre-change code, 4 happy-path pass, so not vacuously red) |
+| **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus a test that fails on the pre-change code. | ✅ **DONE** (`554e43a`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first, then jsonl; `except BaseException` removes temps and re-raises. Verified independently here: 16/16 pass, all four call sites on the helper |
 | **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — reconcile `wd`'s status → `update_merge` → `h3_stage` → `h3_merge` → ccode → `ccode_merge`. **Gates S5 and the overlay publish.** | ◐ **holding — now behind 2.8 (S9) by SG's decision**, and behind the running harvest |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -1912,6 +1912,50 @@ guarded by `_stage_applies` (`:207-215`), which returns
 `namespace in UPDATE_PATCH_NAMESPACES` for `update_merge` — so it **structurally
 cannot** be used to skip the very step at issue. That guard is why it is safe to
 recommend where a manual manifest edit would not be.
+
+### 💾 CAPACITY — 2.7 needs ~95–110 GB of `/vast`'s 274 GB, on production's volume
+
+**Measured by S8, confirmed here: `/vast/ishi` is 1.0T, 751G used, 274G available
+(74%).** `staged/` is 120G of that. S8 projected 2.7's footprint from *real* growth
+ratios of namespaces that have completed the chain, not from an estimate — point-
+dominated namespaces grow ~1.0–1.06× per stage (`iv`, `tm`, `ofs`, `alc`, `dgsd`),
+only polygon-heavy `clio` grows 2.2×, and Parquet runs ~28% of its JSONL. `gn` and
+`wd` are point-dominated:
+
+```
+gn  extract 7.38 GB  → update_merged ~11 + h3_merged ~11.5 + final ~11.5 + parquets ~9.6  ≈ 44 GB
+wd  extract 10.26 GB → ~12 + ~13 + ~13 + parquets ~11                                      ≈ 49 GB
+nl  negligible; h3/ and ccode/ patch files across both                                     ≈  5 GB
+                                                                                   TOTAL ≈ 95–110 GB
+```
+
+**This volume is shared with production ES and has a recorded history of being
+driven flood-stage read-only, which took production down with it.** Rulings:
+
+1. ✅ **Run `gn` and `wd` SEQUENTIALLY, not together.** Halves peak concurrent
+   usage and allows a `df` between them. Slower, and the safer shape — the same
+   trade SG already made in choosing the correct route over the fast one.
+2. ✅ **2.7 and S5's `--output-dir` tile-intermediate proposal must NOT run
+   concurrently.** 74 buckets of intermediates (28 GB on `/ix1` today, more once
+   rebuilt) onto the same 274 GB. Each is defensible alone; together they are not.
+   S8's framing is the one to keep: *that is how headroom gets consumed by two
+   people each acting reasonably.*
+3. ✅ **KEEP `update_merged/` and `h3_merged/` after `final/` exists.** They are
+   dead weight for *resolution* — `final/` outranks both — and deleting them would
+   return ~45 GB. Do not. They are the evidence for what 2.7 did, and this campaign
+   has been burned repeatedly by discarding evidence before the dependent thing was
+   checked. Delete only after **both** S3's re-harvest and S5's retile have
+   consumed the result. At current headroom the cost is affordable.
+
+⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
+if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
+goes flood-stage read-only, leaving room to recover rather than discovering it at
+the boundary. And S8's checkpoint is the right shape: **measure `gn`'s real
+`update_merged/` after `update_merge` and before `h3_stage`, and stop if it is
+materially above projection** rather than finding out at `final/`. That number is
+the least certain in the table — 26.7 M alternate names is a content addition with
+no analogue among the measured namespaces, all of which had their patch already
+merged or none to merge.
 
 **Cost, revised:** `update_merge` on `gn` collapses a 1.4 GB patch into a 7.38 GB
 snapshot *before* h3 starts. 2.7 is materially larger than first estimated and
