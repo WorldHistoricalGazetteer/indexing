@@ -1,18 +1,36 @@
 # CLAUDE.md — Agent Briefing for WHG Indexing Repository
 
 > **Repository:** `WorldHistoricalGazetteer/indexing`
-> **Last updated:** 9 August 2026
+> **Last updated:** 31 August 2026
 
 ---
 
-## ⚠️ READ FIRST — work in progress (9 August 2026)
+## ⚠️ READ FIRST — work in progress (31 August 2026)
 
-**[`developer/HANDOVER-2026-08-09-geom-store.md`](developer/HANDOVER-2026-08-09-geom-store.md)**
+**[`developer/HANDOVER-2026-08-31-rebuild-audit.md`](developer/HANDOVER-2026-08-31-rebuild-audit.md)**
 
-The geom store was destroyed on 2026-08-07 and has been rebuilt; it is live and
-verified. Follow-ups are queued, one needs a decision from SG, and the Atlas
-retile is deliberately deferred. That document is the authoritative statement of
-what is done, what is pending, and which mistakes not to repeat.
+The July/August re-ingestion is **complete and correct in production** — 51.2 M
+places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
+not: a partial retile on 7 August ran against the geom store while it was
+destroyed, so **nine gazetteer boundary layers are on the live map today as
+points with no polygons** (`clio`, `kain_par`, `po`, `vob_lgd`, `vob_rd`,
+`hgis`, `vob_rc`, `vob_cty`, `ukhc`). That document is the authoritative
+statement of what landed, what is left, and in what order — every line of it
+measured against the live indices and the deployed tilesets rather than against
+a manifest or a plan's own claim.
+
+⚠️ **Before retiling anything, read its §3.1.** The geom store holds **0** `un`
+geometries, so retiling `un` today would replace the country boundaries with
+points — exactly the failure above, repeated.
+
+The ordered remediation is
+[`developer/plan-completion-2026-08-31.md`](developer/plan-completion-2026-08-31.md).
+It is meant to be worked **one session per row of its Session map** — find your
+session there first, and update its status before the session ends.
+
+Its predecessor, [`HANDOVER-2026-08-09-geom-store.md`](developer/HANDOVER-2026-08-09-geom-store.md),
+remains the record of the geom-store loss and rebuild; where the two disagree
+about the retile, the 31 August audit is the measured one.
 
 The shortest version, if you read nothing else:
 
@@ -24,6 +42,10 @@ The shortest version, if you read nothing else:
   dangerous case, but don't rely on it.
 * `crc0` is the **smp login node** — never run pipeline compute there. Submit to
   Slurm with `sbatch -M htc`; query with `squeue -M htc` / `sacct -M htc`.
+* **A tile job that reports success is not evidence it read any geometry.** Check
+  the `poly=` count in its log and the polygon count in the built tileset — the
+  7 August run printed `geom-store: opened … (2 entries)`, streamed `poly=0` for
+  every bucket, and deployed.
 
 ---
 
