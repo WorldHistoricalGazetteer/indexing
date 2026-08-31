@@ -52,7 +52,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
-| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | 🟡 **2.5 two-thirds done 31 Aug** — `wd` promoted (hard-linked, 0 bytes copied) and `nl` re-extracted; **both verified PASS against the live index, delta 0** (Slurm 11074356). `gn` extract running (11074352, 36 h wall; 500k staged at 26 min, ~12 h + an alt-names pass to go). 2.6 not started and **must not start until `gn` verifies** — the one-command verifier is parked at `/vast/ishi/staged/s4_verify_staged.sbatch` and needs no S4 session |
+| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. ⚠️ **Blocked on S4's 2.5** — wait for `gn`/`wd`/`nl`, do not start streaming from ES instead. Prove the verifier FAILS on the preserved fixtures before deploying. | ⬜ **deferred by SG, 31 Aug** — not spun up, rather than spun up and idling for `gn`'s several-hour extract |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -912,6 +912,40 @@ This document previously said `gn` "~11.6 M after alt names"; that figure is
 wrong by 1.9 M and, being a plausible-looking near-miss, is exactly the kind of
 expected value that gets a correct result written off as a mismatch. Take the
 target from `_count` at the time, not from here.
+
+### ✅ 2.5 COMPLETE — verified 31 Aug, after S4 closed
+
+`gn`'s extract (Slurm 11074352) reached COMPLETED. S4's parked verifier
+(`s4_verify_staged.sbatch`, Slurm 11082769) then passed all three against the
+live index using **both** pipeline resolvers — `rebuild_toponyms_index`'s and
+`h3_stage`'s, the two that carry different traps:
+
+```
+wd  11,459,393  delta 0   PASS      nl  4,363  delta 0   PASS
+gn  13,454,817  delta 0   PASS      OVERALL: PASS
+```
+
+And the identity holds exactly (Slurm 11082822, all 27 namespaces):
+
+```
+TOTAL   51,187,900   ==   live index total   51,187,900
+```
+
+**2.6's baseline is confirmed STATE 1** in the same run — `ipa` and
+`panphon_features` columns exist, `total 72,703,552 / with_ipa 0 / with_panphon 0`.
+So the named check discriminates and the re-run is a clean from-scratch write,
+not a resume.
+
+⚠️ **Two traps hit while doing this, both already documented and both still
+worth restating.** The census failed first with
+`ImportError: GLIBCXX_3.4.30 not found` — an htc node whose `libstdc++` predates
+the conda env's, exactly S3's `42b6e4a`; the parked `.sbatch` exports
+`LD_LIBRARY_PATH="$CONDA_PREFIX/lib:…"` and a hand-rolled `--wrap` does not, so
+**use the parked wrapper rather than reinventing it**. And `s4_baseline.py`
+printed its target as "(4 Aug run scanned 51,188,772)" — the stale figure this
+plan warns about — so it was corrected in place to the live total before the run.
+
+**This unblocks S3's overlay rebuild and S5's retile.**
 
 **And prefer one identity over three checks (S4, 31 Aug).** The per-namespace
 counts localise a failure; they should not be what *declares success*, because
