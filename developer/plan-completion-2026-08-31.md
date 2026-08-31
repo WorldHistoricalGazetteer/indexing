@@ -724,6 +724,45 @@ count and per-namespace endpoint counts against the overlay it is about to
 replace, and refuse an unexplained shrink** — the sibling of the geom-store guard
 in `adc7345`.
 
+##### What this runbook has NOT been exercised on
+
+Written by S3, who is the worst-placed person to notice what it assumes. Read
+this before trusting the procedure to be complete.
+
+* **`--no-enforce-barrier` is required, and it looks alarming.**
+  `submit_hardlinks_slurm` runs `check_global_barrier` and **exits 1** unless
+  every namespace in the manifest is complete. Any fresh run id fails that — 26
+  of 27 namespaces are incomplete — so the flag is correct here and was used on
+  31 Aug. Do **not** "fix" the barrier by marking stages complete to get past it;
+  that would falsify the state the rest of the campaign reads.
+* **The LOC phase and the entire publish path are unvalidated as of 31 Aug.** The
+  harvest was cancelled *during* Phase 1A, so `loc_links` (a 4.5 GB gzip),
+  `finalise_local`, `publish_hardlinks`, the ship marker and the live-delta prune
+  were never reached. Only `contributor_replay` was validated, in isolation. The
+  runbook above should not be read as an end-to-end rehearsal.
+* **Phase 1A's duration is unmeasured for the restored corpus.** The cancelled
+  run did `osm` + `ohm` in ~13 minutes with `gn`/`wd` contributing nothing. With
+  both real — and `wd` streaming a 10.3 GB JSONL because it has no parquet —
+  Phase 1A will be substantially longer. No estimate exists; size the wall
+  generously rather than from the 6 August history.
+* **The renamed drop-ledger fields have never actually run.** The 31 Aug
+  validation ran from the CRC clone at `177ba72`, i.e. *before* `1f5aa50`, so its
+  output used the old key `"total": 25997`. After the mandatory `git pull` the
+  same numbers appear as `rows_dropped` / `unresolved_endpoint_refs`. Unit tests
+  cover the rename; no CRC run has.
+* **DO Postgres access worked without configuration and is therefore
+  undiagnosed.** `contributor_replay` reached `whgv3beta` from an htc compute node
+  via `clustering/pg_client.py` (asyncpg + an SSH tunnel) with nothing set by
+  hand. If it fails for you, S3 has no diagnostic to offer — that path was never
+  troubleshot.
+* **Reusing run id `whg-idmap-20260831T071935Z` is probably right but not free.**
+  Its manifest already exists with all 27 namespaces selected, which is what
+  `hard_links_staged` iterates. But `submit_hardlinks_slurm` derives both
+  `--db-path` and the ship marker from the run id, so a rerun overwrites them.
+  Creating a *new* run id instead needs a manifest to exist first — and the
+  obvious way to make one, `submit_extract_slurm`, **also rotates staged trees**,
+  which is emphatically not wanted here.
+
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
