@@ -112,6 +112,38 @@ country-scoped search. They have not — `resolve_region` borrows a `sameAs`
 co-referent's polygon, so `un:fra` scopes correctly today. That is the only
 reason `un`'s absence from the store is invisible to search.)
 
+> ⚠️ **That parenthesis is wrong, and was corrected by measurement on 31 August
+> (S2, step 2.1).** It is true of `containment=fuzzy`, which works off the
+> `h3_cover` in ES and never opens the store. `containment=exact` is a different
+> path, and `apply_containment`'s own docstring says what it does: *"if the
+> region geometry could not be loaded, exact silently degrades to the fuzzy
+> test."* So for as long as the store lacked `un`, **every country-scoped exact
+> query was answering fuzzily** — live and wrong, not latent.
+>
+> The same request before the merge and after the gateway restart:
+>
+> ```
+> contained_in:["un:fra"], containment=fuzzy -> 15 hits   (both times)
+> contained_in:["un:fra"], containment=exact -> 15 hits   BEFORE  <- identical to fuzzy
+>                                            ->  4 hits   AFTER
+> ```
+>
+> The 11 that dropped are Swiss-only (`wd:Q71 Geneva ['CH']`, `gn:2660646`,
+> `tgn:7007279` …); the 4 that survive are exactly the `['CH','FR']` cross-border
+> features that really do intersect France — so the post-merge answer is the
+> correct one, not merely a different one. Both responses reported
+> `scope: {applied: true, mode: "polygon"}` throughout: nothing in the API ever
+> said the constraint had been weakened.
+>
+> This is the same shape of fault as §2's retile — a component reporting success
+> for work it had not done — and it generalises past `un`. **A namespace whose
+> geometries are missing from the store does not fail exact containment; it
+> quietly downgrades it.** The `whg` case S3 found on the same day is the same
+> class: 2,320 areal and linear shapes that never reached the store, so any
+> `contained_in` scoped to a contributed dataset degraded identically. So "which
+> namespaces claim `has_geom` but hold no store keys" is a **search-correctness**
+> question, not only a tile-generation one.
+
 ---
 
 ## 3. What remains — by area (see §4 for the sequenced plan)

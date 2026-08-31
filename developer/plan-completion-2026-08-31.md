@@ -38,7 +38,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | session | steps | shape of the work | status |
 |---|---|---|---|
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
-| **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ⬜ |
+| **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **in progress 31 Aug** — code done (`4d763b8`), extract done + verified (228,918 docs, id map 1:1, `yukon100` probe passes); geom merge held behind S2; nothing written to prod ES yet |
 | **S4** | 2.6, then 2.5 | Submit the ~9 h toponyms stage 1 **first**, then do the `gn` extract / `wd` promotion while it runs. If stage 1 has not finished, **verify it at the head of the next session** rather than holding one open. | ⬜ |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
@@ -104,6 +104,22 @@ step 3.5.
 
 ### 2.1 `un` — geometries into the geom store  — **S2**
 
+✅ **Done 31 Aug — Slurm `htc` job 11074309, COMPLETED in 25:03.** Store
+released to S3 afterwards; `/vast/ishi/geom/staging` left empty.
+
+```
+from_geoboundaries=229, from_bnda=18        the live index's exact split
+kept 11,758,768 + wrote 247 = 11,759,015    index.sqlite total
+index.sqlite 'un:' keys                247  <- S5's gate
+resolved from store                247/247
+worst bounds delta            0.000e+00 deg (tolerance 1e-05)
+repr_point outside its polygon           0
+```
+
+The 11,758,768 baseline was measured independently by S1, S2 and S3 before
+the merge, and moved by exactly 247.
+
+
 **The source question is already settled in code and needs no decision.**
 `authorities/un-countries.py` takes identifiers, names and timespans from BNDA
 and *overrides the polygon* with geoBoundaries HPSC wherever it has one
@@ -119,19 +135,66 @@ pure BNDA if that path is missing**, which would quietly downgrade every country
 outline. That is the failure mode to guard.
 
 1. Rotate `staged/un.bnda-baseline` and any `staged/un` aside — `write_staged_place_doc` **appends**.
-2. Delete any `un.bin` / `un.index.json` from the geom staging dir — `GeomStoreWriter` opens `"ab"` and would double every entry. **And check what else is in there**: `consolidate_geom_store` merges *every* `*.index.json` in `GEOM_STORE_STAGING_DIR`, not only the namespace you are working on. It currently holds `ukhc_counties.bin` + `.index.json` (92 entries, 55 MB) left by the 20 August names refresh; those keys are already in the store, so re-merging them rewrites them into a fresh shard for nothing and muddies "what did this merge add". Move them aside for the run and put them back after (found by S2, 31 Aug).
+2. Delete any `un.bin` / `un.index.json` from the geom staging dir — `GeomStoreWriter` opens `"ab"` and would double every entry. **And check what else is in there**: `consolidate_geom_store` merges *every* `*.index.json` in `GEOM_STORE_STAGING_DIR`, not only the namespace you are working on. It currently holds `ukhc_counties.bin` + `.index.json` (92 entries, 55 MB) left by the 20 August names refresh; those keys are already in the store, so re-merging them rewrites them into a fresh shard for nothing and muddies "what did this merge add". Move them aside for the run (found by S2, 31 Aug). **They were not put back**, and neither was `un`'s own staging pair afterwards: leaving either in `GEOM_STORE_STAGING_DIR` re-arms the `"ab"` double-append trap this very step exists to avoid. Both now sit in `/vast/ishi/geom/staging-parked/` with a README recording what they are and that they can simply be deleted — their keys are in `index.sqlite`, and the store cannot be rebuilt from staging anyway, so they are not insurance.
 3. Re-extract `un`, then `geom_store --merge --keep-staging`.
-4. `es gateway-restart` so the gateway re-reads the store index.
+4. `es gateway-restart` so the gateway re-reads the store index. On the VM this
+   is `scripts/gaz_request.sh gateway-restart` (the gazetteer account cannot be
+   SSH'd); it git-pulls before restarting, so whatever is on `main` goes live
+   with it — check with whoever else has a gateway change in flight first.
+
+**Two things in the run log that will mislead you if you compare against 5 Aug.**
+
+*"Geometries in VAST store: 741"* — that is what `un_rebuild.sbatch` reported on
+5 August for the same 247 countries. It was not 741 geometries. `GeomStoreWriter`
+opens `{ns}.bin` with `"ab"` **and reloads an existing `{ns}.index.json` on open**,
+so that run was silently resuming two earlier attempts and counting three
+generations of the same 247 keys. Nothing was ever wrong in the store — the final
+index is a dict, so the duplicates collapsed — but the number could not be read.
+Clearing the staging pair in preflight, which step 2 asks for and the 5 Aug
+sbatch did not do, is what makes this run's **247** mean 247.
+
+*`total vertices: 16,998,208` against 5 August's `16,505,112`* — a 3% difference
+in a diagnostic counter, with `geoBoundaries: loaded 231` identical on both runs
+and every one of the 247 bounding boxes matching the live index to **0.0**. Most
+likely GEOS noding differences in `unary_union` between environment versions,
+which change vertex counts without moving extents. Not chased, because the
+decisive measures all agree; noted so the next person does not read it as drift
+in the source data.
 
 **Verify (all three, not one):**
 * the run's own counters print `from_geoboundaries=229, from_bnda=18` — anything else means the checkout wasn't read. ⚠️ **This plan originally asserted those counters were printed; they were only tracked.** `stage_un_countries` accumulated both in `stats` and the COMPLETE block printed everything except them, so the check as first written could not be read off a run. S2 added the print, and a hard guard: staging now exits non-zero when `load_geoboundaries_geoms` returns `{}` unless `WHG_ALLOW_BNDA_ONLY=1` is set by name. The silent fallback is now impossible rather than merely warned about;
 * `select count(*) from geom where k >= 'un:' and k < 'un;'` returns **247**;
-* a sample of stored polygons matches the live index's `bounds` for the same `geom_ref` — a mis-keyed rebuild still "resolves" every key, which is why the 9 Aug verification counted bounds mismatches rather than lookups.
+* a sample of stored polygons matches the live index's `bounds` for the same `geom_ref` — a mis-keyed rebuild still "resolves" every key, which is why the 9 Aug verification counted bounds mismatches rather than lookups. Now a module rather than a sample: **`python -m processing.verify_un_geom_store`** (`dump` on the VM where ES is reachable, `check` on the compute node) compares **every** entry's bounds *and* `repr_point` against the live index and exits non-zero on any disagreement, so it can gate an sbatch step. `repr_point` is the sharper of the two: two neighbours can share a bbox to 1e-5 and cannot both contain each other's representative point.
 
-**Note this is not urgent for search.** `un`'s absence from the store is invisible
-today because `resolve_region` borrows a `sameAs` co-referent's polygon —
-`contained_in: ["un:fra"]` scopes correctly right now (audit §2b). It is urgent
-only as a Phase 3 precondition.
+~~**Note this is not urgent for search.**~~ ⚠️ **Wrong — corrected by S2,
+31 Aug, by measurement.** It was urgent for search, and had been for three
+weeks. The borrowed-`sameAs`-polygon reasoning holds only for
+`containment=fuzzy`, which works off the `h3_cover` in ES and never touches the
+store. For `containment=exact` `apply_containment` does something else, and its
+own docstring says so: *"if the region geometry could not be loaded, exact
+silently degrades to the fuzzy test."* With no `un` geometry in the store, every
+exact query scoped to a country silently answered fuzzily.
+
+Measured on prod, the same request before the merge and after the restart:
+
+```
+contained_in:["un:fra"], containment=fuzzy -> 15 hits   (both times)
+contained_in:["un:fra"], containment=exact -> 15 hits   BEFORE  <- identical to fuzzy
+                                           ->  4 hits   AFTER
+```
+
+The 11 records that dropped are Swiss-only (`wd:Q71 Geneva ['CH']`,
+`gn:2660646`, `tgn:7007279` …); the 4 that survive are exactly the `['CH','FR']`
+cross-border features that really do intersect France. Both responses carried
+`scope: {applied: true, mode: "polygon"}` throughout, so nothing in the API said
+the constraint had been weakened — this is the same shape of fault as the
+7 August retile, a component reporting success for work it had not done.
+
+**The general form is worth carrying forward:** a namespace whose geometries are
+missing from the store does not fail exact containment, it *quietly downgrades*
+it. Any future audit of the store should treat "which namespaces claim
+`has_geom` but hold no keys" as a search-correctness question, not only a
+tile-generation one.
 
 ### 2.2 Gateway — an unresolvable scope must fail closed (audit §2b)  — **S1**
 
