@@ -213,7 +213,7 @@ in the source data.
 * `select count(*) from geom where k >= 'un:' and k < 'un;'` returns **247**;
 * a sample of stored polygons matches the live index's `bounds` for the same `geom_ref` — a mis-keyed rebuild still "resolves" every key, which is why the 9 Aug verification counted bounds mismatches rather than lookups. Now a module rather than a sample: **`python -m processing.verify_un_geom_store`** (`dump` on the VM where ES is reachable, `check` on the compute node) compares **every** entry's bounds *and* `repr_point` against the live index and exits non-zero on any disagreement, so it can gate an sbatch step. `repr_point` is the sharper of the two: two neighbours can share a bbox to 1e-5 and cannot both contain each other's representative point.
 
-~~### ⬜ OPEN — `staged/un` holds `extract/` and no `final/` (S2's, recorded at its closing)
+~~### ✅ CLOSED 31 Aug — `staged/un` now has `final/` (S2 raised it; run after S2 closed)
 
 Before 2.1 `staged/un` did not exist; it now exists holding **extract only**. Both
 `index_from_stage` and `index_namespace` fall back through
@@ -234,7 +234,31 @@ Two closes, either a few minutes:
    `final/` exists and is consistent with the store, which also recomputes `un`'s
    h3 from the real geoBoundaries polygons rather than a hull.
 
-**Recommendation: (2), because a rebuild is coming.** `un` is the namespace that
+**SG took (2), run as Slurm 11075438 after S2 had closed** (`un-final-chain`,
+COMPLETED in ~75 s, run id `un-final-20260831T145706Z`). The chain went
+`h3_stage` (247 docs, 247 geometries with h3) → `h3_merge` (247 written, 0
+patches unmatched) → `ccode_merge` with `allow_missing_patch=True`, whose
+pass-through printed `no patch … — ccodes copied through unchanged` and wrote
+both `final/places.jsonl` and `final/places.parquet`.
+
+Verified independently of the job's own report, using the pipeline's **own**
+resolver rather than a reimplementation of it:
+
+```
+_staged_namespace_source("un")  →  /vast/ishi/staged/un/final/places.parquet
+final/ docs 247   with ccodes 247   geometries 247   with h3_cover 247
+```
+
+That is the whole point of the fix: before the chain the resolver returned
+`extract/places.jsonl`, so a rebuild would have reached for un-enriched
+geometries. It now returns `final/`. Two notes for whoever runs this chain next:
+the code is identical between `main` and the shared `/vast/ishi/elastic` clone,
+so no pull was needed under the running `gn` job (checked, not assumed); and
+pitt's *system* python has no `pyarrow` — use
+`/home/gazetteer/miniconda/envs/whg/bin/python` for anything that imports the
+staged-parquet path.
+
+**Original recommendation, kept for the record: (2), because a rebuild is coming.** `un` is the namespace that
 supplies `contained_in` regions, 2.5 is currently making the other three staged
 trees whole, and the reconciliation identity wants all 27 complete rather than 26
 plus one that merely counts. Take (1) only if no rebuild is in prospect. What
