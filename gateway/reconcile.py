@@ -71,7 +71,6 @@ from .config import (
 from .es_helpers import (
     es_auth as _es_auth,
     ES_HEADERS,
-    _has_geometries,
     build_toponym_query as _build_toponym_query,
     build_phonetic_knn as _build_phonetic_knn,
     collect_place_ids as _collect_place_ids,
@@ -301,28 +300,12 @@ class CandidateHit(BaseModel):
     query_match: Optional[dict] = None
 
 
-class ScopeInfo(BaseModel):
-    """How the requested geographic scope was actually applied.
-
-    Present whenever ``contained_in`` / ``bounds`` was sent, so the client can
-    warn the user instead of trusting a scope the gateway could not honour
-    verbatim (place#144). ``applied=False`` means **no** spatial constraint could
-    be built — the request is failed closed (no hits) rather than answered with
-    an unscoped result set.
-    """
-    requested: bool = False
-    applied: bool = False
-    mode: str = "none"                     # polygon | linked-polygon | geojson
-                                           # | bbox | none
-    approximate: bool = False              # True when the constraint is coarser
-                                           # than the geometry that was asked for
-    containers_polygon: list[str] = []     # containers that contributed a real polygon
-    containers_linked: list[str] = []      # co-referent (sameAs) places whose polygon was
-                                           # borrowed because the container had none
-    containers_approximated: list[str] = []  # point-only containers (buffered, or ignored
-                                             # when a polygon container was also given)
-    containers_unresolved: list[str] = []  # requested ids with no usable geometry at all
-    message: Optional[str] = None
+#: How the requested geographic scope was applied. Defined in ``spatial`` and
+#: shared verbatim with ``/api/search`` — the two endpoints answered the same
+#: question differently until 2026-08-31 (HANDOVER-2026-08-31 §2b), so the model
+#: and its builder now have one home. Re-exported here because it is part of
+#: this module's published response shape.
+ScopeInfo = spatial.ScopeInfo
 
 
 class ReconcileResponse(BaseModel):
@@ -389,67 +372,20 @@ def _normalise_variants(
     return variants, vectors
 
 
-def _scope_message(region) -> Optional[str]:
-    """Human-readable note on any way the region departs from what was asked."""
-    if region.source == "linked-polygon":
-        return (
-            "No container has its own polygon; scope taken from the boundary of "
-            f"{', '.join(region.linked_ids) or 'a co-referent place'} "
-            "(sameAs/exactMatch)."
-        )
-    if region.point_ids:
-        return (f"{len(region.point_ids)} point-only container(s) ignored — the "
-                f"scope is the union of the polygon containers.")
-    return None
-
-
 def _build_scope_info(req: "ReconcileRequest", region) -> Optional["ScopeInfo"]:
     """Describe how the requested geographic scope was applied.
 
-    Returns ``None`` when no scope was requested (response is then byte-identical
-    to the pre-place#144 shape). Otherwise the caller MUST honour
+    A thin adapter over ``spatial.build_scope_info`` — the reconcile request is
+    the only one of the two that can ask for a radial scope. Returns ``None``
+    when no scope was requested; otherwise the caller MUST honour
     ``applied=False`` by refusing to answer with unscoped results.
     """
     radial = req.lat is not None and req.lng is not None and bool(req.radius)
-    if not req.contained_in and not req.bounds and not radial:
-        return None
-
-    if region is not None:
-        return ScopeInfo(
-            requested=True,
-            applied=True,
-            mode=region.source,
-            containers_polygon=list(region.area_ids),
-            containers_linked=list(region.linked_ids),
-            containers_approximated=list(region.point_ids),
-            containers_unresolved=list(region.unresolved_ids),
-            message=_scope_message(region),
-        )
-
-    if req.bounds and _has_geometries(req.bounds):
-        # region_from_geojson failed (Shapely unavailable / unsupported shape) but
-        # build_places_filter still applies its degenerate `repr_point ∈ bounds`
-        # gate, so the query IS constrained — just coarsely and without a refine.
-        return ScopeInfo(
-            requested=True, applied=True, mode="bbox", approximate=True,
-            message="Bounds could not be resolved into a containment region; "
-                    "applied a coarse repr_point-in-bounds filter instead.",
-        )
-
-    return ScopeInfo(
-        requested=True,
-        applied=False,
-        mode="none",
-        containers_unresolved=[
-            spatial._strip_place_prefix(p) for p in (req.contained_in or []) if p],
-        message=(
-            "None of the containment place_ids resolved to a usable geometry "
-            "(not even a representative point), so the requested scope could not "
-            "be applied. No results are returned rather than unscoped ones."
-            if req.contained_in else
-            "The supplied bounds contained no usable geometry, so the requested "
-            "scope could not be applied."
-        ),
+    return spatial.build_scope_info(
+        region=region,
+        contained_in=req.contained_in,
+        bounds=req.bounds,
+        radial=radial,
     )
 
 

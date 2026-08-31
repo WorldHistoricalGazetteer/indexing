@@ -266,6 +266,11 @@ class SearchResponse(BaseModel):
     # bracketed qualifiers stripped both ways (place#199). Empty unless the query
     # contained brackets. The twin of /api/reconcile's field of the same name.
     derived_forms: list[str] = []
+    # How the requested geographic scope was actually applied — populated
+    # whenever `contained_in` / `bounds` was sent, `None` otherwise (so an
+    # unscoped response is byte-identical to the pre-2026-08-31 shape). The
+    # same model /api/reconcile returns; see gateway.spatial.ScopeInfo.
+    scope: Optional[spatial.ScopeInfo] = None
     facets: Facets = Facets()
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     # Offline calibration fuel — populated when include_clustering_fields=True
@@ -396,18 +401,34 @@ async def search(req: SearchRequest):
             try:
                 # A point-only container yields an APPROXIMATE buffered-point
                 # region (place#144) rather than being dropped. resolve_region
-                # still returns None when nothing resolves at all, in which case
-                # the query runs unconstrained — /api/reconcile fails closed on
-                # that case and reports it via `scope`; search keeps the lenient
-                # behaviour because its callers browse rather than reconcile.
+                # returns None only when nothing resolves at all — not even a
+                # seed point — which is a scope we genuinely cannot apply.
                 region = await spatial.resolve_region(req.contained_in, client, auth)
             except spatial.RegionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
         elif req.bounds:
             region = spatial.region_from_geojson(req.bounds)
 
+        scope = spatial.build_scope_info(
+            region=region, contained_in=req.contained_in, bounds=req.bounds)
+
+        if scope is not None and not scope.applied:
+            # FAIL CLOSED. Until 2026-08-31 search answered this case
+            # GLOBALLY: `contained_in: ["un:not_a_real_place"]` returned Paris
+            # in Turkey and Paris in Gabon, with nothing in the response to say
+            # the scope had been dropped (HANDOVER-2026-08-31 §2b). A stale or
+            # typo'd place id is indistinguishable from a deliberately wide
+            # query at the client, so an unapplicable scope returns nothing plus
+            # the reason — the same contract /api/reconcile already honoured.
+            logger.info("search: scope requested but not applied — %s", scope.message)
+            return SearchResponse(
+                namespaces_searched=ns_searched,
+                derived_forms=derived_forms,
+                scope=scope,
+            )
+
         if pure_spatial and region is None and not req.bounds and not browse:
-            return SearchResponse(namespaces_searched=ns_searched)
+            return SearchResponse(namespaces_searched=ns_searched, scope=scope)
 
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -500,7 +521,8 @@ async def search(req: SearchRequest):
                                   include_prefixes, match_names)
 
             if not place_scores:
-                return SearchResponse(namespaces_searched=ns_searched)
+                return SearchResponse(namespaces_searched=ns_searched,
+                                      derived_forms=derived_forms, scope=scope)
 
         # ------------------------------------------------------------------
         # Step 2: Filtering + Aggregations — fetch places by ID + filters
@@ -859,6 +881,7 @@ async def search(req: SearchRequest):
         namespaces=collect_namespaces(results),
         namespaces_searched=ns_searched,
         derived_forms=derived_forms,
+        scope=scope,
         facets=facets,
         edges=edges,
         clustering_params=load_clustering_params() if req.include_clustering_fields else None,
