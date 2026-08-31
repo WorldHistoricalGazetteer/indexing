@@ -24,6 +24,18 @@
 > **The standing rule this campaign earned:** verify every step against an
 > independent measure, never against the pipeline's own status. Each step below
 > names its check for that reason.
+>
+> **And its sharper form, from S4, 31 Aug: _a verification that has never been
+> run against a known-bad input isn't a verification._** Run each check first
+> where you know it should fail — against the pre-change state, the stale
+> artefact, the empty store — and confirm it says so. Two of this plan's own
+> checks were written without that and were wrong in opposite directions: §2.1
+> named counters the code tracked but never printed (so the check could not have
+> passed or failed, only appeared to), and the audit's first containment test
+> could not distinguish a working exact path from one silently degrading to
+> fuzzy, because both return a plausible hit for the same query (§2b). Neither
+> error survives a run against a known-bad input; neither was caught by
+> re-reading the code.
 
 ---
 
