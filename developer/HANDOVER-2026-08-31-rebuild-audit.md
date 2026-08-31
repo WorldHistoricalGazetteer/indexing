@@ -324,11 +324,33 @@ should be moved OUT of stage directories rather than renamed within them**,
 precisely because the preference order makes a same-directory rename dangerous.
 Housekeeping for after 2.7 — nobody should touch these while S8's chain runs.
 
-**Currently harmless, and I checked rather than assumed.** Every consumer that
-matters resolves Parquet-then-JSONL and falls back: `_staged_namespace_source` in
-all six chains, `ccode_merge._iter_source_docs`, and `submit_tiles_slurm.
-_eligible_buckets` (which accepts either at the tile gate). So `ukhc` resolves to a
-correct, current file everywhere.
+⚠️ **I first wrote "currently harmless — every consumer that matters falls back".
+That was WRONG, and the way it was wrong is the point.** I reached it from a
+`grep … | head -10` over `places.parquet`. Re-run uncapped, there are **71**
+references, and two consumers outside my truncated window do **not** fall back:
+
+* **`backfill_uncoded_ccodes`** — `_iter_final` requires `final/places.parquet`
+  and silently `return`s when it is absent, yielding nothing. Worse, its default
+  namespace discovery `_namespaces()` filters on
+  `(p / "final" / "places.parquet").exists()`. So **`ukhc` is silently excluded
+  from the un-BNDA ccode backfill entirely** — both undiscovered by default and,
+  if named explicitly, contributing zero rows. No error either way.
+* **`staging_orchestrator`** inventory (`:748`) sets `final_path` from
+  `final/places.parquet` alone, so it reports `ukhc` as having **no final stage**,
+  which is false.
+
+The consumers I *did* check do fall back and my statement about them holds —
+`_staged_namespace_source` in all five copies, `ccode_merge._iter_source_docs`,
+and `submit_tiles_slurm._eligible_buckets`, so **the retile is genuinely
+unaffected**. But "every consumer that matters" was a universal claim drawn from
+a listing I had truncated myself, which is precisely the error S8 made about
+`antimeridian` an hour earlier and which I then explained back to it. **A capped
+output can support "X exists"; it can never support "X does not exist".**
+
+**Recommended fix, after 2.7:** regenerate `ukhc`'s `final/places.parquet` from
+its current JSONL (`write_parquet_from_jsonl`), which removes the anomaly rather
+than documenting it. Not during — nobody touches staged files while S8's chain
+runs.
 
 What it leaves is a divergence nobody would see: `ukhc` is the one bucket reading
 from JSONL at `final` depth while the other 26 read Parquet. Worth knowing before
