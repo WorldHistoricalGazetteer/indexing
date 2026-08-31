@@ -1365,7 +1365,71 @@ over the complete 7.38 GB `extract/places.jsonl` and yields **no rows at all**,
 silently. For `gn` and `wd` that window is *hours* wide. Worse than truncation,
 because a partial JSONL is valid JSONL all the way to wherever it has reached.
 
-**The chain, which is the standard one — nothing bespoke:**
+### 🛑 2.7 CANNOT BE RUN AS FIRST WRITTEN — the chain omits `update_merge`
+
+**Found by S8, 31 Aug, verified here in full.** Calling this "the standard chain,
+nothing bespoke" was wrong for `gn` and `wd`, and wrong in the way that has
+already cost production once.
+
+`UPDATE_PATCH_NAMESPACES = frozenset({"gn", "wd"})` (`staging_contract:194`).
+Both `h3_stage._extract_stage_dir:108` and `h3_merge._source_dir:88` prefer
+`update_merged/` for those two — and **fall through to `extract/` with a bare
+`return` when it is absent**. No error, no warning. `submit_h3_slurm:140-144`
+states the consequence in its own comment: *"that is how ~26.7M GeoNames
+alternate names and 58,658 Wikidata geoshapes went missing from production and
+from this rebuild."*
+
+**The patches exist and are substantial, and no `update_merged/` does:**
+
+```
+gn/update_patch/places.update.jsonl   1,396,861,789 B   31 Aug 13:29  ← written today, by gn's own extract
+wd/update_patch/places.update.jsonl      92,909,685 B    7 Aug 21:03
+nl                                        (none — correct, nl emits no patch)
+gn/update_merged  wd/update_merged  nl/update_merged     ALL ABSENT
+```
+
+So both available routes are bad, and **they fail differently — one invisibly.**
+Manifest `staged-restore-20260831T0415Z`, read directly:
+
+```
+gn   extract=completed  update_merge=pending   → deferred by the barrier, WITH a printed reason
+wd   extract=PENDING    update_merge=pending   → bare `continue`, NO message at all
+nl   extract=completed  update_merge=skipped   → proceeds correctly
+```
+
+`wd`'s extract is marked **pending while its 10.26 GB file sits on disk**, so via
+the submitter `wd` vanishes from the run without a line of output. And bypassing
+the submitter to run `h3_stage` per namespace does not error either — it silently
+builds `final/` from `extract/`, **discarding the 1.4 GB `gn` patch and the 93 MB
+`wd` patch** and banking exactly the regression that comment describes.
+
+⚠️ **`_pending_namespaces` reads the manifest dict with no `events.jsonl`
+fallback**, so the standing "events beat manifest" rule does not rescue this. And
+the older `h3ccode-20260805T120000Z` manifest still records `gn`/`wd`
+`update_merge: completed` — true of the pre-accident tree, false now. A session
+consulting that one concludes the barrier is satisfied.
+
+**Corrected chain:**
+
+```
+gn, wd:  reconcile wd's extract status → update_merge → h3_stage → h3_merge → ccode → ccode_merge
+nl:      h3_stage → h3_merge → ccode → ccode_merge            (as first written — correct for nl)
+```
+
+`processing/reconcile_stage_status.py` looks like the intended tool for the `wd`
+status repair — it already imports `UPDATE_PATCH_NAMESPACES` — but that is
+unverified and should not be assumed.
+
+**Cost, revised:** `update_merge` on `gn` collapses a 1.4 GB patch into a 7.38 GB
+snapshot *before* h3 starts. 2.7 is materially larger than first estimated and
+S5's unblock is further away than anyone had assumed.
+
+⚠️ **A fourth verification is required**, because none of the three would catch
+the bypass route: **assert the `gn`/`wd` `final/` actually contains update-patch
+content** — an alternate-name count, or a spot-check of records the patch adds.
+Row count is *identical* either way, which is the whole trap.
+
+**The original chain, correct for `nl` only:**
 
 ```
 h3_stage → h3_merge → submit_ccode_slurm → ccode_merge → final/
