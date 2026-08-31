@@ -1022,15 +1022,45 @@ training run, which would train on a corpus with no GeoNames and no Wikidata in
 it. My original ordering — 2.6 first, to use its wall-clock for 2.5 — assumed the
 two were independent; 2.5 is 2.6's input.
 
-**Verify — and establish the baseline first (§ the standing rule).** The named
-check is `COUNT(*) == COUNT(ipa) == COUNT(panphon_features)`, but **confirm it
-still discriminates in the state you actually find**. Three states, and the
-middle one breaks the check: columns absent; columns present and empty; columns
-**partially** populated — in which case a resume that skips rows already carrying
-an `ipa` yields `COUNT(ipa) == COUNT(*)` and passes while leaving the killed
-run's output unexamined. Given the rerun died at 87.7% of an UPDATE pass, expect
-the partial state. Record `PRAGMA table_info` alongside the counts, and report
-which state and whether the check separates good from bad in it.
+**Baseline established 31 Aug (S4, Slurm 11074343) — STATE 2 of the three below:
+columns present, both empty.**
+
+```
+schema  toponym_id, name, lang, lang_variant, script, ipa VARCHAR, panphon_features BLOB
+total            72,703,552
+with_ipa                  0
+with_panphon              0
+```
+
+So the named check **does** discriminate here (72,703,552 vs 0 vs 0 reads "bad"),
+and it has now been watched failing against a known-bad input rather than assumed
+to work. The partial state was expected and did not occur: the 4 Aug rerun was
+killed mid-pass and an interrupted DuckDB transaction rolls back, so its 28 M
+updates went with it. Consequence: **the re-run is a clean from-scratch write,
+not a resume** — no idempotency question, and the named check is sufficient.
+
+⚠️⚠️ **TWO DEFAULTS WILL EACH REPRODUCE THE ORIGINAL FAILURE. Override both.**
+
+1. **`--for-retrain` is not optional here — it is the entire step.** Without it
+   `submit_batch9_slurm` appends `--training-namespaces _none_`, which is exactly
+   what made the columns empty in the first place. A 2.6 run that forgets it
+   completes cleanly in ~3 h and changes nothing.
+2. **The generated wall is `03:40:24`, and the work needs >12 h.** Measured, not
+   inferred (Slurm 11074461, running the real estimator against the real history
+   file): `_estimate_toponym_wall()` returns **13,224 s → `#SBATCH --time=03:40:24`**
+   — byte-identical to the 31 July sbatch. The cause is that
+   `estimate_wall_time_seconds` takes the median of the last 5 completed runs
+   +20%, and **all three recorded `rebuild-toponyms-index` runs (11,020 s, 9,080 s,
+   12,400 s) skipped IPA/PanPhon**. The history is poisoned by fast runs of a
+   cheaper job wearing the same name, and the estimator cannot tell: its one guard
+   skips records that "did real work but finished with zero output", and a
+   `_none_` run legitimately produced output. So the *first* correctly-configured
+   run of this step will be killed at roughly 30% unless the wall is overridden by
+   hand. That is the same shape as the 4 Aug rerun's death, arriving through the
+   sizing table instead of a hand-written sbatch.
+
+After a successful run, the history self-corrects — but only for the next run,
+which is no help to this one.
 
 ---
 
