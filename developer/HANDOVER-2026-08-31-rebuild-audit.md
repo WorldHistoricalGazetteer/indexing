@@ -218,9 +218,12 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
 * **`gn` / `wd` staged trees are stubs** (6.5 KB / 14 KB — in fact **one row
   each**), collateral from the `unittest discover` accident, **and `nl` is missing
   entirely** — no directory at all, against 4,363 `nl` places in prod (S4's
-  census, 31 Aug). `nl` is a separate, older gap, not this accident's:
-  `HANDOVER-2026-08-09-geom-store.md` §5 records it as "already missing before any
-  of this". Together they mean a staged-corpus read today sees **26,269,329 of
+  census, 31 Aug). `nl` **belongs with this accident after all** — I first
+  recorded it as older, on the 9 August handover's "already missing before any of
+  this", then found the tile log `tiles-ns-10756173_*.out` of **2026-08-07T01:21**
+  reading `nl → nl: 4,363 features` from a staged tree that has since vanished.
+  The builder reads staging, and `TILE_ES_DOC_NAMESPACES` did not exist until
+  8 August, so `staged/nl` was intact on 7 August. Together they mean a staged-corpus read today sees **26,269,329 of
   51,188,772 places, 51.3%**, and reports success. `wd`'s re-run extract exists at
   `/vast/ishi/staged_geomrebuild/wd` (9.7 GB) and can be promoted rather than
   re-run; `gn` needs a re-extract. Staging is the pipeline's canonical input, so

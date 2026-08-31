@@ -53,7 +53,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | 🟡 **2.5 two-thirds done 31 Aug** — `wd` promoted (hard-linked, 0 bytes copied) and `nl` re-extracted; **both verified PASS against the live index, delta 0** (Slurm 11074356). `gn` extract running (11074352, 36 h wall). 2.6 not started and **must not start until `gn` verifies** |
-| **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. ⚠️ **Blocked on S4's 2.5** — wait for `gn`/`wd`/`nl`, do not start streaming from ES instead. Prove the verifier FAILS on the preserved fixtures before deploying. | ⬜ blocked on 2.5 |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
 
@@ -96,7 +96,8 @@ fresh as the last session that remembered to tick one.
 | **S3** | none | — |
 | **S4** | **2.5 complete before 2.6 starts** — `gn`, `wd` and `nl` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` **13,454,817**, `wd` 11,459,393, `nl` 4,363 staged docs — measured, not the stale "~11.6 M" this table used to carry |
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
-| **S5** | `gn`/`wd` staged trees restored (S4) **or** `TILE_ES_DOC_NAMESPACES=gn,wd` exported | either |
+| **S5** | ⚠️ **2.5 COMPLETE — a hard gate, not an either/or (SG, 31 Aug).** Verify with the pipeline's **own** resolver, not `ls`: a stub is a valid file of the right name. `gn` **13,454,817**, `wd` **11,459,393**, `nl` **4,363** staged docs, each delta 0 against the live index | all three PASS |
+| **S5** | *(escape hatch, deliberate override only)* `TILE_ES_DOC_NAMESPACES=gn,wd` tiles those two from the index instead. **Costs a ~24.5 M-document scan of production ES** and leaves the staged trees still wrong for the next consumer. Use only if the Beta genuinely cannot wait for `gn`'s extract | not the default |
 | **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
 | **S7** | S6 done and the map looked at | — |
 
@@ -716,10 +717,17 @@ rebuild regresses both without this.
   `nl` places. Worse than a stub, because a stub is at least implausibly small on
   sight, whereas a missing directory makes `_staged_namespace_source` return None
   and `_count_staged_places` skip it inside `except Exception: continue`, silently.
-  ⚠️ **Attribution, since it changes where else to look:** this is *not* collateral
-  from the `unittest discover` accident. `HANDOVER-2026-08-09-geom-store.md` §5
-  records that "`nl` and `un` staged data was already missing before any of this" —
-  so it is an older, separate gap that the accident merely kept company.
+  ⚠️ **Attribution — I got this wrong once, in both directions; here is the
+  evidence.** I first told S4 that `nl` predated the `unittest discover` accident,
+  citing `HANDOVER-2026-08-09-geom-store.md` §5 ("`nl` and `un` staged data was
+  already missing before any of this"). That handover was written on 9 August and
+  its "before any of this" is looser than it reads. The tile job log
+  `tiles-ns-10756173_*.out`, timestamped **2026-08-07T01:21**, contains
+  `nl → nl: 4,363 features (poly=4,363 point=0)` — and the tile builder reads
+  staged trees (`TILE_ES_DOC_NAMESPACES` did not exist until `71bcc39` on
+  8 August). So `staged/nl` **existed with its full 4,363 places on 7 August** and
+  vanished afterwards, which puts it with the accident, not before it. Treat the
+  handover's phrasing as the unreliable witness and the log as the record.
 
 **How much is missing, measured:** a stage-1 run today would scan **26,269,329 of
 51,188,772 staged places — 51.3% of the corpus** — and report success. Not "two
@@ -841,9 +849,27 @@ Preconditions and traps:
 
 1. **2.1 must be done.** With `un` at 0 in the store, retiling it replaces the
    country boundaries with points — the §2 failure, repeated.
-2. **`TILE_ES_DOC_NAMESPACES=gn,wd`** — their staged trees are stubs until 2.5;
-   `71bcc39` lets the builder read those two from the places index instead.
-3. The tileserver is at **83% / 8.5 GB free**, and the last push briefly hit 99%
+2. ⚠️ **WAIT FOR 2.5 — this is now a hard gate (SG, 31 Aug), not the either/or
+   this step first described.** `gn`, `wd` and `nl` must be restored and counted
+   (13,454,817 / 11,459,393 / 4,363, delta 0 against the live index) before you
+   tile. Check with the pipeline's own resolver rather than by looking at the
+   directory: every one of the six stage-preference chains tests
+   `path.exists()` (4.11), so a 4,925-byte stub satisfies an `ls` perfectly.
+   `nl` matters as much as the other two here — it is a tiled bucket, and its
+   4,363 polygons are currently in the deployed tileset *only* because the
+   7 August run read a staged tree that has since vanished.
+
+   `TILE_ES_DOC_NAMESPACES=gn,wd` (from `71bcc39`) remains available as a
+   deliberate override, but it is no longer the plan's answer: it scans ~24.5 M
+   documents out of production ES and leaves the staged trees wrong for the next
+   consumer, which is how the overlay harvest nearly published an empty file.
+   Expect to wait several hours — `gn` runs two scripts (`geonames-places`, then
+   `geonames-toponyms`) inside a 36 h wall.
+
+3. **Retile the 47 `whg-*` per-dataset buckets too** (4.6). They are
+   `generate_tiles` buckets like any other, and after 2.3's id re-mint every
+   click-through from them is dead.
+4. The tileserver is at **83% / 8.5 GB free**, and the last push briefly hit 99%
    because `tiler.service` held descriptors on the old inodes. **Restart the
    tileserver promptly after the push**, and watch the disk during it.
 
