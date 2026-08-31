@@ -643,9 +643,35 @@ Collateral from the `unittest discover` accident: `staged/gn` is 6.5 KB and
 `staged/wd` 14 KB — stubs. Staging is the pipeline's canonical input, so the next
 rebuild regresses both without this.
 
+**Scope is three namespaces, not two** (S4's census, Slurm 11074343, 31 Aug):
+
 * `wd` — a re-run extract already exists at `/vast/ishi/staged_geomrebuild/wd`
-  (9.7 GB); **promote it** rather than re-run.
-* `gn` — needs a fresh extract.
+  (9.7 GB); **promote it** rather than re-run. ⚠️ **The promotion must DELETE the
+  stub `places.parquet`, not merely add the real `places.jsonl` beside it.**
+  `_staged_namespace_source` (`index_from_stage.py:88`) tests `places.parquet`
+  *before* `places.jsonl` within each stage directory, so leaving the 4,925-byte
+  stub in place makes the whole promotion a silent no-op.
+* `gn` — needs a fresh extract. It is not merely small: it is **one row**.
+* `nl` — **`/vast/ishi/staged/nl` does not exist at all**, while prod holds 4,363
+  `nl` places. Worse than a stub, because a stub is at least implausibly small on
+  sight, whereas a missing directory makes `_staged_namespace_source` return None
+  and `_count_staged_places` skip it inside `except Exception: continue`, silently.
+  ⚠️ **Attribution, since it changes where else to look:** this is *not* collateral
+  from the `unittest discover` accident. `HANDOVER-2026-08-09-geom-store.md` §5
+  records that "`nl` and `un` staged data was already missing before any of this" —
+  so it is an older, separate gap that the accident merely kept company.
+
+**How much is missing, measured:** a stage-1 run today would scan **26,269,329 of
+51,188,772 staged places — 51.3% of the corpus** — and report success. Not "two
+namespaces short": half the corpus, including *all* of GeoNames and *all* of
+Wikidata, which are exactly the namespaces Symphonym trains on
+(`--training-namespaces gn wd tgn`).
+
+**Also noticed, not yours to fix:** `un` now has `extract/` but no `final/` — the
+staged-tree residue of Fault 12, distinct from S1's code fix for it. Harmless for
+2.6 (toponyms are populated at extract time), but a future rebuild following the
+normal preference chain will not find a `final/` for the namespace that supplies
+`contained_in` regions. Tracked here rather than fixed.
 
 **Verify:** both trees' `extract/places.jsonl` doc counts match the live index's
 per-namespace counts (`gn` ~11.6 M after alt names, `wd` 11,459,393), not merely
