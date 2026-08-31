@@ -105,22 +105,79 @@ def _seconds_to_slurm_time(seconds: int) -> str:
     return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
 
-def _mark_un_skipped(manifest: dict, manifest_path: Path, *, dry_run: bool = False) -> None:
-    """Record UN's ccode stages as ``skipped`` so the global barrier can pass."""
+def _final_is_stale(namespace: str) -> bool:
+    """True when ``final/`` is missing or older than the ``h3_merged/`` it derives from."""
+    ns_dir = Path(STAGED_BASE_DIR) / namespace
+    src = next((p for p in (ns_dir / "h3_merged" / "places.parquet",
+                            ns_dir / "h3_merged" / "places.jsonl") if p.exists()), None)
+    if src is None:
+        return False  # nothing to derive from; the caller falls back to `skipped`
+    out = ns_dir / "final" / "places.parquet"
+    if not out.exists():
+        out = ns_dir / "final" / "places.jsonl"
+    return (not out.exists()) or out.stat().st_mtime < src.stat().st_mtime
+
+
+def _mark_un_skipped(manifest: dict, manifest_path: Path, *,
+                     run_id: str = "", dry_run: bool = False) -> None:
+    """Skip UN's ccode enrichment — but still regenerate its ``final/``.
+
+    UN supplies the ccodes, so enriching it against itself is meaningless and
+    the ``ccode`` stage is recorded ``skipped``. ``ccode_merge`` is a different
+    matter: **it is the only stage that writes ``final/``**, which is what the
+    indexer reads. Marking it skipped too — as this did until 31 Aug 2026 —
+    leaves UN's ``final/`` at whatever a previous run wrote, so a UN re-extract
+    lands in ``h3_merged/`` and stops there.
+
+    That is Fault 12, and it cost three days: UN's improved ``h3_cover`` sat in
+    ``h3_merged`` while the live index served the stale copy, invisible to the
+    freshness gate because the stale ``final/`` was internally self-consistent.
+    UN is the namespace that supplies ``contained_in`` regions, so on its own it
+    nullified the place#174 fix until someone checked by hand.
+
+    So the merge runs, as a pass-through (no patch to apply). It is inline
+    rather than a Slurm task because UN is ~250 documents; every other namespace
+    goes through the array as before.
+    """
     if UN_NAMESPACE not in manifest.get("namespaces", {}):
         return
     stages = manifest["namespaces"][UN_NAMESPACE].get("stages", {})
-    todo = [s for s in ("ccode", "ccode_merge")
-            if stages.get(s) not in ("completed", "skipped")]
-    if not todo:
+
+    if stages.get("ccode") not in ("completed", "skipped"):
+        if dry_run:
+            print(f"  would mark {UN_NAMESPACE} ccode as skipped (it is the ccode source)")
+        else:
+            update_namespace_stage_status(manifest_path, UN_NAMESPACE, "ccode", "skipped")
+            print(f"  marked {UN_NAMESPACE} ccode as skipped (it is the ccode source)")
+
+    if stages.get("ccode_merge") == "completed" and not _final_is_stale(UN_NAMESPACE):
         return
+
     if dry_run:
-        print(f"  would mark {UN_NAMESPACE} {'/'.join(todo)} as skipped "
-              f"(it is the ccode source)")
+        print(f"  would run {UN_NAMESPACE} ccode_merge as a pass-through so its "
+              f"final/ is regenerated from h3_merged/")
         return
-    for stage in todo:
-        update_namespace_stage_status(manifest_path, UN_NAMESPACE, stage, "skipped")
-    print(f"  marked {UN_NAMESPACE} {'/'.join(todo)} as skipped (it is the ccode source)")
+
+    try:
+        from processing.ccode_merge import run_ccode_merge
+        metrics = run_ccode_merge(
+            run_id=run_id,
+            namespace=UN_NAMESPACE,
+            manifest_path=manifest_path if manifest_path.exists() else None,
+            allow_missing_patch=True,
+        )
+        print(f"  regenerated {UN_NAMESPACE} final/ from h3_merged/ "
+              f"({metrics.get('docs_written', 0):,} docs, pass-through)")
+    except Exception as exc:
+        # No h3_merged/ to derive from (UN not re-extracted this run, or the H3
+        # stage has not run yet). Recording `skipped` keeps the global barrier
+        # passable, exactly as before — but say so, because a silent skip here
+        # is how the stale final/ went unnoticed.
+        print(f"  WARNING: could not regenerate {UN_NAMESPACE} final/ "
+              f"({exc}); marking ccode_merge as skipped — its final/ is "
+              f"whatever a previous run left")
+        update_namespace_stage_status(
+            manifest_path, UN_NAMESPACE, "ccode_merge", "skipped")
 
 
 def _pending_namespaces(manifest: dict, *,
@@ -263,7 +320,7 @@ def submit(
     # ccode stages. Left `pending`, `un` blocks the barrier for ever, and the
     # barrier report says only that `un` is missing ccode — which reads like a
     # failure rather than a namespace that was never meant to run.
-    _mark_un_skipped(manifest, manifest_path, dry_run=dry_run)
+    _mark_un_skipped(manifest, manifest_path, run_id=run_id, dry_run=dry_run)
 
     if not namespaces:
         print("No namespaces eligible for ccode enrichment in this manifest.")

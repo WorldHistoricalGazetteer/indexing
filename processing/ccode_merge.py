@@ -87,10 +87,22 @@ def _iter_source_docs(namespace: str) -> Iterable[dict[str, Any]]:
     )
 
 
-def _load_ccode_patches(namespace: str) -> dict[str, list[str]]:
-    """Return ``{place_id: [ccodes...]}`` — last-write-wins per place_id."""
+def _load_ccode_patches(namespace: str, *,
+                        allow_missing: bool = False) -> dict[str, list[str]]:
+    """Return ``{place_id: [ccodes...]}`` — last-write-wins per place_id.
+
+    ``allow_missing`` turns the merge into a **pass-through**: no patch, every
+    document copied from ``h3_merged`` to ``final`` with its ccodes untouched.
+    That is what a namespace whose ccode stage was *skipped* needs — see
+    ``run_ccode_merge``. A missing patch is otherwise a hard error, because for
+    every other namespace it means the enrichment silently produced nothing.
+    """
     patch_path = Path(STAGED_BASE_DIR) / namespace / "ccode" / "places.ccode.jsonl"
     if not patch_path.exists():
+        if allow_missing:
+            print(f"  ccode_merge: no patch at {patch_path} — pass-through "
+                  f"(ccodes copied through unchanged)", flush=True)
+            return {}
         raise FileNotFoundError(f"CCode patch file not found: {patch_path}")
 
     patches: dict[str, list[str]] = {}
@@ -122,7 +134,21 @@ def run_ccode_merge(
     run_id: str,
     namespace: str,
     manifest_path: Path | None = None,
+    allow_missing_patch: bool = False,
 ) -> dict[str, Any]:
+    """Merge the staged ccode patch into ``h3_merged`` and write ``final/``.
+
+    ``allow_missing_patch`` runs the stage as a pure pass-through when no patch
+    exists. **``final/`` is written by this stage and by nothing else**, so a
+    namespace whose ccode enrichment is deliberately skipped (``un``, which is
+    the ccode *source*) still has to come through here or it keeps whatever
+    ``final/`` a previous run left. That is Fault 12: on 5 Aug 2026 ``un``'s
+    improved ``h3_cover`` sat in ``h3_merged`` for three days while the index
+    served a stale copy, invisible to the freshness gate because the stale
+    ``final/`` was internally self-consistent — and ``un`` is the namespace that
+    supplies ``contained_in`` regions, so it nullified the place#174 fix on its
+    own.
+    """
     if manifest_path and manifest_path.exists():
         update_namespace_stage_status(manifest_path, namespace, "ccode_merge", "running")
 
@@ -141,7 +167,7 @@ def run_ccode_merge(
         stage="ccode_merge",
     )
 
-    patches = _load_ccode_patches(namespace)
+    patches = _load_ccode_patches(namespace, allow_missing=allow_missing_patch)
 
     out_dir = Path(STAGED_BASE_DIR) / namespace / "final"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +206,7 @@ def run_ccode_merge(
         "docs_updated": docs_updated,
         "docs_written": docs_written,
         "patches_unmatched": len(patches),
+        "passthrough": bool(allow_missing_patch and not docs_updated),
         "parquet_path": str(parquet_path),
         "jsonl_path": str(jsonl_path),
     }
@@ -214,6 +241,11 @@ def main() -> None:
     parser.add_argument("--run-id", required=True, help="Run ID")
     parser.add_argument("--namespace", required=True, help="Namespace")
     parser.add_argument("--manifest-path", help="Explicit run manifest path")
+    parser.add_argument(
+        "--allow-missing-patch", action="store_true",
+        help="Treat an absent ccode patch as empty and pass every document "
+             "through (for namespaces whose ccode stage is deliberately "
+             "skipped, e.g. un). final/ is still regenerated.")
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest_path) if args.manifest_path else Path(
@@ -226,6 +258,7 @@ def main() -> None:
         run_id=args.run_id,
         namespace=args.namespace,
         manifest_path=manifest_path if manifest_path.exists() else None,
+        allow_missing_patch=args.allow_missing_patch,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
