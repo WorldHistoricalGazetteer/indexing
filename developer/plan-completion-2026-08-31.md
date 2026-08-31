@@ -567,6 +567,30 @@ comma-joined lists of twenty-odd name variants crammed into a single LPF
 whose `_id` exceeds Elasticsearch's 512-byte limit and is skipped by design. Not
 caused by this re-ingest, and not fixed by it.
 
+**The geometry repair is live in the gateway, and it bought a capability rather
+than just tidiness.** A whg polygon now works as a `contained_in` region:
+
+```
+POST /api/search {"contained_in":["whg:1155:hc_11"],"containment":"exact","relation":"within"}
+→ scope: {"applied": true, "mode": "polygon", "approximate": false,
+          "containers_polygon": ["whg:1155:hc_11"]}
+```
+
+`approximate: false` is the whole point. With the store empty of `whg` this could
+only ever have degraded to the fuzzy H3 test — the same silent degradation S2
+measured for `un`, where `containment=exact` scoped to France returned the
+byte-identical *fuzzy* answer (15 hits) until the merge, and 4 afterwards. So
+contributed-dataset polygons have never been usable as search scopes until today.
+The gateway picked the new `index.sqlite` up from S1's restart, which happened to
+follow the merge; had it not, this would have needed one of its own.
+
+⚠️ **A consequence for S5 that is not in §3.1: the `whg` tileset now carries
+stale place ids.** Its features were baked on 23 July against
+`whg:<dataset>:<place key>`, and those ids no longer exist in the index, so a
+click-through from the map cannot dereference. The retile fixes it because it
+rebuilds all 27 buckets — but `whg` has moved from "would be nice to refresh" to
+**mandatory**, and it should not be dropped from the list to save time.
+
 **Remaining in this step:** overlay rebuild (Slurm 11074337, running — reads
 staged files and DO PG, touches no index), then verify every `whg:` endpoint
 resolves before publishing it.
