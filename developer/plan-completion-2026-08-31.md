@@ -749,6 +749,26 @@ wrong by 1.9 M and, being a plausible-looking near-miss, is exactly the kind of
 expected value that gets a correct result written off as a mismatch. Take the
 target from `_count` at the time, not from here.
 
+**And prefer one identity over three checks (S4, 31 Aug).** The per-namespace
+counts localise a failure; they should not be what *declares success*, because
+three named checks only find the three failures somebody already thought to name
+— which is precisely how `nl` went unnoticed. The completion test is that the
+staged corpus reconciles to the live index **to the document**:
+
+```
+staged total across all 27 namespaces  ==  places index total  (51,187,900)
+```
+
+It closes on paper already: the pre-restore census of 26,269,329, less the two
+stub rows, plus 13,454,817 + 11,459,393 + 4,363 = 51,187,900 exactly. One
+equality, and it catches a fourth namespace drifting that nobody asked about.
+
+⚠️ **Do not take the target from the 4 August run log** — it records 51,188,772,
+872 more than the index holds today. The same trap as "~11.6 M" from the other
+direction: a number that reads authoritative because it genuinely was measured,
+just not of the thing you are comparing. The 872 are unexplained and not implied
+to matter.
+
 **Done, 31 Aug (S4) — two of three:**
 
 | ns | action | result |

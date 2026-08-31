@@ -224,7 +224,14 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
   reading `nl → nl: 4,363 features` from a staged tree that has since vanished.
   The builder reads staging, and `TILE_ES_DOC_NAMESPACES` did not exist until
   8 August, so `staged/nl` was intact on 7 August. Together they mean a staged-corpus read today sees **26,269,329 of
-  51,188,772 places, 51.3%**, and reports success. `wd`'s re-run extract exists at
+  51,188,772 places, 51.3%**, and reports success.
+
+  **The blast radius is bounded, and now measured** (S4, 31 Aug): comparing the
+  pre-restore staged census against the live index per namespace, **24 of the 27
+  match exactly** — not approximately, equal — from `osm` at 20,622,228 down to
+  `vob_rc` at 55. Only `gn`, `wd` and `nl` are damaged, so nothing else went
+  quiet on 7 August. Worth establishing rather than assuming, once the accident
+  turned out to have taken `nl` too. `wd`'s re-run extract exists at
   `/vast/ishi/staged_geomrebuild/wd` (9.7 GB) and can be promoted rather than
   re-run; `gn` needs a re-extract. Staging is the pipeline's canonical input, so
   the next rebuild regresses both without this.
