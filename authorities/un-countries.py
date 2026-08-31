@@ -338,6 +338,20 @@ def stage_un_countries(**_ignored):
     )
     geom_override = load_geoboundaries_geoms(gb_dir)
 
+    # ...but "deliberate" has to mean *stated*, not "whatever is on disk".
+    # load_geoboundaries_geoms returns {} for a missing checkout, which would
+    # stage 247 BNDA outlines that every downstream stage then inherits as if
+    # they were HPSC. Refuse unless BNDA-only is asked for by name.
+    if not geom_override and os.getenv("WHG_ALLOW_BNDA_ONLY") != "1":
+        raise SystemExit(
+            f"REFUSING TO STAGE: no geoBoundaries ADM0 geometries from {gb_dir}.\n"
+            "  Every country outline would silently downgrade to BNDA's "
+            "low-resolution polygon (place#173).\n"
+            "  Fetch one with `python -m processing.fetch_geoboundaries`, point "
+            "WHG_GEOBOUNDARIES_DIR at a checkout,\n"
+            "  or set WHG_ALLOW_BNDA_ONLY=1 to stage BNDA-only on purpose."
+        )
+
     # Group features by country (iso3) and MERGE their geometries: several
     # countries span multiple BNDA features — mainland + offshore parts (Spain +
     # Canaries, Portugal + Madeira + Azores, Ecuador + Galápagos, USA's two
@@ -382,6 +396,8 @@ def stage_un_countries(**_ignored):
     print(f"Staged:        {stats['places_staged']}")
     print(f"Multi-part:    {stats['multipart']}")
     print(f"Without ISO2:  {stats['no_iso']}")
+    print(f"from_geoboundaries={stats['from_geoboundaries']}, "
+          f"from_bnda={stats['from_bnda']}")
     print(f"Errors:        {stats['errors']}")
     print(f"Geometries in VAST store: {gsw.count:,}")
 
