@@ -81,7 +81,7 @@ resources it does not model.
 |---|---|---|
 | **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment) and S5 (corpus-wide streaming for tiles). ⚠️ **S4's 2.6 is NOT one of them** — corrected 31 Aug: it runs `--skip-es-index` and never consults ES, so it neither contends here nor needs a restart. The hold placed on S4 behind S3 was unnecessary, though harmless and correct on the plan's word at the time | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
 | **Gateway restarts** | S1 (2.2 needs one to deploy the scope fix) and S2 (2.1 ends with one) | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
-| **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. Keep concurrent sessions on **different namespaces** — which S2/S3/S4 already are — and never let two touch the same one. |
+| **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest — **and so does S5's retile, which is not read-only** (S5, 31 Aug, verified). `generate_tiles_from_staged` calls `update_namespace_stage_status(manifest_path, ns, "tiles", …)` at `:1858` and `:2144` for **every contributing namespace** — all 27 on a full run — plus `write_stage_event` / `write_runtime_history_event`. Two sessions independently assumed "the retile is an output stage, therefore it only reads the corpus"; only reading the code settled it. **Scope of the write is the per-namespace `tiles` stage key and appended events only** — never `final/`, `h3_merged/`, `boundary_merged/`, `extract/` or any `places.parquet` — so a concurrent parquet *read* (the overlay harvest) is safe. Both writes are guarded on `manifest_path.exists()` and a non-empty `run_id`, so a retile invoked without them touches nothing | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. Keep concurrent sessions on **different namespaces** — which S2/S3/S4 already are — and never let two touch the same one. |
 | **Degraded staged trees** ⚠️ NEW 31 Aug | S3's overlay rebuild, S4's 2.6, and any future rebuild | `hard_links_staged.py` and toponyms stage 1 both read `staged/<ns>/final/places.parquet` through the stage chain, and `gn`/`wd` are **one row each** with `nl` absent. **98.9% of the overlay's 7,596,959 rows touch `wd` and 67.0% touch `gn`**, so a harvest today replaces the gateway's live co-reference store with a fraction of one. **Both now depend on 2.5.** The published overlay is intact only because it was built on 6 Aug, the day before the accident |
 | **The pitt VM** | any step running inline rather than via Slurm | Heavy work goes to Slurm. Several steps do small inline work on pitt; eight parallel inline resolvers once OOM-thrashed the VM into a ~1 h production outage. Two or three sessions doing "just a little" inline work is that same pattern. |
 
@@ -105,6 +105,12 @@ whether it is current, without fetching, gets a reassuring zero.
 ```bash
 ssh pitt 'cd /vast/ishi/elastic && git fetch origin && git status -sb && git pull'
 ```
+
+⚠️ **`crc0` is stalling, live as of 31 Aug.** Read-only `squeue` / `sacct` / `ls`
+calls to it hang past 120 s with zero output, while `crc1` answers the identical
+command in under a second — observed independently by `indexing-5e` and S5. Fall
+back through `crc1` → `crc2` → `crc3`; **a hang there is the login node, not a
+busy cluster**, and reading it as load will send you to the wrong conclusion.
 
 S3 hit this inside 2.3 — the clone lagged by exactly the three commits that fixed
 the job it was about to run — and recorded it in that runbook. It is not a 2.3
