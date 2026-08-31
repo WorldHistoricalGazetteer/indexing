@@ -829,6 +829,134 @@ this before trusting the procedure to be complete.
   obvious way to make one, `submit_extract_slurm`, **also rotates staged trees**,
   which is emphatically not wanted here.
 
+
+##### The overlay rebuild — S3 (second session), 31 August 2026  ◐ running
+
+Harvest **Slurm `htc` 11091158**, submitted 21:01 UTC, `htc-n56`, build only.
+Nothing published; the live `/ix1/ishi/hardlinks/hard_links.sqlite` is still the
+6 August build and has not been opened.
+
+**The mandatory `git pull` does not work as written, and the reason is worse than
+staleness.** The documented command fails:
+
+```
+$ ssh pitt 'cd /vast/ishi/elastic && git fetch origin'
+git@github.com: Permission denied (publickey)
+```
+
+`origin` is an **SSH** remote, and the only key on pitt for `stg135`
+(`~/.ssh/id_ed25519`) is the **DO tileserver key** — it is not registered with
+GitHub. So a `git fetch` as `stg135` has never been able to succeed and cannot;
+this is not a ref that went stale and would be cured by fetching again.
+
+That is the actual mechanism behind the trap this plan describes. Watched
+directly: the fetch errored, and the **very next command** still reported
+
+```
+$ git rev-list --count HEAD..origin/main
+0
+```
+
+So the reassuring zero is a *failed fetch* being read as currency. `c730d32`
+diagnosed the symptom correctly and the cause incorrectly — worth correcting
+because "stale ref" implies a fetch would fix it, and no fetch on that path ever
+will. It also means the clone was never verifiably current at any point in this
+campaign's history except immediately after a gateway restart.
+
+**The working route needs no key, no config change and no gateway restart** — the
+repo is public over HTTPS and reachable from pitt:
+
+```bash
+git fetch https://github.com/WorldHistoricalGazetteer/indexing.git \
+    "+refs/heads/main:refs/remotes/origin/main"
+git merge --ff-only origin/main
+```
+
+`origin` itself was left untouched: rewriting a remote on shared production
+infrastructure is SG's call, not an agent's. **Someone should decide the
+permanent fix** (register a key for `stg135`, or point `origin` at HTTPS); until
+then every session hits this, and any session that does not check the fetch's
+exit status will conclude the clone is current.
+
+The only other update path is the relay's `gateway-restart` —
+`scripts/gateway_ctl.sh:131` pulls as `gazetteer`, who *does* have working
+credentials. So the shared clone has only ever been refreshed as a side effect of
+restarting the gateway, which explains how it drifts so far.
+
+It was **29 commits behind, not 22** (that figure was measured earlier in the
+day). Now at `95fd1ae`, 0 behind, with `1f5aa50` and `42b6e4a` verified present
+in the working-tree *files*, not merely reachable in the log.
+
+**`42b6e4a` is not theoretical, and it affects a node the plan did not name.**
+`import sqlite3` failed with `GLIBCXX_3.4.30 not found` on **login node crc1**
+during preflight — not only the compute nodes. The `LD_LIBRARY_PATH=
+"$CONDA_PREFIX/lib"` export clears it, and the job's own probe now prints
+`sqlite3 ok 3.50.3` in its first second. Any session running repo code that
+imports `sqlite3` — including anything using `GeomStoreReader` — should take the
+same export on login nodes too.
+
+**⚠️ The wall floor is the same trap as 2.6's, and it fires here.** The generated
+sbatch came out at `--time=06:00:00`, which is `_MIN_WALL_SECONDS` — i.e. the
+estimator's median was *below* the floor. The reason is measured, not inferred:
+the last full build, `whg-hardlinks-h3ccode-20260805T120000Z` on 6 August,
+COMPLETED in **00:38:48** — but it read `gn`/`wd` as **parquet**. This run streams
+them as **JSONL**. The history is honest about the job that ran and misleading
+about the job being run, which is exactly 2.6's `_none_` poisoning wearing
+different clothes. **Wall raised by hand to `20:00:00`**, still inside the
+`htc-htc-s` ≤1-day tier; over-asking costs backfill priority only. The generated
+file is preserved as `hardlinks.sbatch.bak-6h` and the diff against it is the
+single `--time` line.
+
+**`gn` and `wd` resolve at *extract* depth, not `final/`.** Measured with the
+pipeline's own resolver rather than `ls`:
+
+| ns | resolves to | size |
+|---|---|---:|
+| `gn` | `extract/places.jsonl` | 7.38 GB |
+| `wd` | `extract/places.jsonl` | 10.26 GB |
+| `nl` | `extract/places.jsonl` | 0.01 GB |
+| everything else sampled | `final/places.parquet` | — |
+
+Harmless for this harvest — `hard_links_staged` walks the chain and reads what it
+finds, which is why the wall matters and the depth does not. **But it is not
+harmless for S5**, and passing it on turned out to matter more than the sizing
+note it was attached to: S5 measured that `submit_tiles_slurm._eligible_buckets`
+(218–226) **skips any per-namespace bucket lacking `final/places.*` with a bare
+`continue`**, so a 27-bucket retile would silently become 24 — `gn`, `wd` and
+`nl` dropped — and report success. Their finding, recorded here because this
+step is where the resolution depth was first measured.
+
+**Preflight, all measured before submitting:**
+
+| check | result |
+|---|---|
+| id map records / run stamp | 228,918 + 1 `_meta`; single run id `whg-idmap-20260831T071935Z` ✓ |
+| manifest namespaces | 27, `gn`/`wd`/`nl` all present ✓ |
+| target db `hard_links_whg-idmap-…sqlite` | absent ✓ |
+| ship marker `…hardlink_ship.json` | absent ✓ |
+| LOC source | `names.madsrdf.jsonld.gz`, 4.3 GB ✓ |
+| `/ix1` headroom | 1.9 TB free ✓ |
+
+**On the leftover-`-wal` trap: the two files now in `/ix1/ishi/hardlinks/` are NOT
+it, and must not be deleted.** `hard_links.sqlite-shm` (32 KB, owned by
+`gazetteer`) and `hard_links.sqlite-wal` (0 bytes) sit beside the **live**
+overlay and are the gateway's own open WAL connection — the predecessor's trap
+was a 16 MB `-wal` beside a *deleted* database under a run id. The distinguishing
+test is which database the pair sits beside and who owns it, not merely that a
+`-wal` exists. The run-id-derived paths were the ones that needed to be clean,
+and they were.
+
+**Build and publish remain two decisions.** Submitted without
+`--pitt-user/--pitt-host/--pitt-dir` and without `--publish-local`; the generated
+script contains no `ship_to_pitt`, no `publish_hardlinks`, no `prune_live_delta`
+— only `finalise_local`, which prints `row_count` and is how the 🛑 gate gets its
+number **without** anything being published. `--no-enforce-barrier` was used, as
+the runbook requires; no stage was marked complete to satisfy it.
+
+**Next, and not to be skipped:** when the job completes, compare `row_count` and
+the per-namespace endpoint counts against the incumbent **before** any publish
+decision. The gate is ~7,596,959 rows; below that, stop. Expect the contributor
+layer at ~2,038 rows rather than 26,981 — that fall is the id-map fix working.
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
