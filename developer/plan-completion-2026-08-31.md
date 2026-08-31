@@ -1739,6 +1739,21 @@ after — deterministic, no timing, and it encodes the property directly.
 are the natural homes; `tests/test_staged_pipeline_e2e.py` exercises both merges
 end to end.
 
+⚠️ **A trap that SURVIVES this fix, and would reintroduce it silently** (S9).
+`_unlink_quietly` is now deliberately **asymmetric**: narrow (raises on anything
+but `FileNotFoundError`) in the failed-conversion branch, which *relies* on the
+stale sidecar genuinely being removed; and wrapped at the exception handler, so a
+cleanup failure cannot mask the failure that caused it. **That asymmetry is the
+correctness property, and it reads like an inconsistency.** If a future tidy-up
+widens the helper to swallow everything, **every test still passes** — the
+stale-sidecar path has no crash in it to catch, so nothing goes red, and the
+stale-parquet bug that parquet-first exists to prevent comes back silently.
+
+A comment is currently the only thing holding it. **A comment cannot fail.** Pin
+the narrowness with a test — assert `_unlink_quietly` *propagates* a
+`PermissionError` — so widening it turns something red. Small, and it is the
+difference between a documented invariant and an enforced one.
+
 **Explicitly OUT of scope:** hoisting the five duplicate `_STAGED_SOURCE_PRIORITY`
 definitions into one shared module (`index_from_stage:71`, `generate_tiles:145`,
 `aat_enrich:67`, `gazetteer_temporal_extent:54`, `hard_links_staged:42`). That is
@@ -1952,6 +1967,26 @@ corrected by S8's measurement). `gn`/`wd`/`nl` are extract-only, so every stage 
 writes is a **first** write and peak is one copy. Anyone *re-running* 2.7 over an
 existing `final/` pays temps *plus* the incumbent, roughly double for the largest
 namespace. The projection above is for the first run; a re-run needs re-sizing.
+
+⚠️ **WITHIN-STAGE peak is higher than the finished-stage table shows, and the
+mechanism is a third file nobody counted** (S9 raised it; mechanism verified here).
+`write_parquet_from_jsonl` does not convert in place — it streams the JSONL through
+`strip_hull_for_parquet`/`drop_nulls_for_parquet` into a **sibling
+`*.parquet_input.jsonl`** (`staged_parquet.py:145`), feeds *that* to pyarrow, and
+unlinks it at `:178`. So at the moment of conversion a stage transiently holds:
+
+```
+places.jsonl.tmp            full stage output
+places.parquet_input.jsonl  hull-stripped near-copy of the SAME data   ← uncounted
+places.parquet.tmp          ~28% of the JSONL
+```
+
+For `gn`'s largest stage (~11.5 GB) that is roughly **25 GB transient against
+14.7 GB finished — about +70%** — sitting on top of every stage already written.
+It is *within*-stage, so it does not accumulate across the three, and
+"first-run-only" does not change it. Still comfortable at 274 GB, but it is
+precisely the number that would surprise someone reading only the finished-stage
+projection.
 
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
