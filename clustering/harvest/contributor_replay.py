@@ -252,28 +252,46 @@ def _looks_namespaced(s: str) -> bool:
 
 
 class DropLedger:
-    """Per-dataset tally of rows the id-map join could not place.
+    """What the id-map join could not place, counted two ways on purpose.
 
     A build that suddenly drops 80% of its whg edges should *say so*. Measured
-    31 August 2026 the honest number is about that: 10,732 of 13,466 endpoints
-    referenced datasets ingestion never accepted. So this is the number that
-    tells you the join worked — a much smaller one means it matched rows it
-    should not have.
+    31 August 2026 the honest number is about that: 10,732 of 13,466 distinct
+    endpoints named datasets ingestion never accepted. So a large drop is the
+    number that says the join worked — a much smaller one would mean it matched
+    rows it should not have.
+
+    The two counts are not interchangeable and conflating them would make the
+    headline evidence ambiguous:
+
+    ``rows``
+        edges actually discarded. A close-match row with *both* ends unresolved
+        is one lost edge, not two.
+    ``per_dataset``
+        unresolved endpoint *references*, attributed to the dataset each names.
+        This is the diagnostic — it says which datasets are missing — and it is
+        the one that sums to more than ``rows``.
     """
 
     def __init__(self) -> None:
         self.per_dataset: dict[str, int] = {}
-        self.total = 0
+        self.rows = 0
+        self.endpoint_refs = 0
 
-    def drop(self, dataset_key: Any) -> None:
+    def drop_row(self) -> None:
+        """One edge discarded."""
+        self.rows += 1
+
+    def unresolved(self, dataset_key: Any) -> None:
+        """One endpoint reference that the map could not place."""
         key = str(dataset_key)
         self.per_dataset[key] = self.per_dataset.get(key, 0) + 1
-        self.total += 1
+        self.endpoint_refs += 1
 
     def as_dict(self, *, top: int = 20) -> dict[str, Any]:
         ranked = sorted(self.per_dataset.items(), key=lambda kv: (-kv[1], kv[0]))
         return {
-            "total": self.total,
+            "rows_dropped": self.rows,
+            "unresolved_endpoint_refs": self.endpoint_refs,
             "datasets_with_drops": len(self.per_dataset),
             "top_datasets": dict(ranked[:top]),
         }
@@ -294,7 +312,8 @@ def _place_link_to_hard_link(
     if place_a is None:
         # The place was never indexed — almost always a dataset that is
         # late-curation but not authority=True AND public (plan §4.8).
-        ledger.drop(dataset_key)
+        ledger.unresolved(dataset_key)
+        ledger.drop_row()
         return None
     if place_a == place_b:
         return None
@@ -326,9 +345,10 @@ def _close_match_to_hard_link(
     place_b = id_map.resolve(record.get("dataset_key_b"), record.get("place_key_b"))
     if place_a is None or place_b is None:
         if place_a is None:
-            ledger.drop(record.get("dataset_key_a"))
+            ledger.unresolved(record.get("dataset_key_a"))
         if place_b is None:
-            ledger.drop(record.get("dataset_key_b"))
+            ledger.unresolved(record.get("dataset_key_b"))
+        ledger.drop_row()   # one lost edge, even when BOTH ends are unresolved
         return None
     if place_a == place_b:
         return None
@@ -383,7 +403,8 @@ def _attestation_to_hard_link(
         if dispositions is not None:
             dispositions[disposition] = dispositions.get(disposition, 0) + 1
         if new_id is None:
-            ledger.drop(WhgIdMap.dataset_of(endpoint))
+            ledger.unresolved(WhgIdMap.dataset_of(endpoint))
+            ledger.drop_row()
             return None
         resolved.append(new_id)
     place_a, place_b = resolved

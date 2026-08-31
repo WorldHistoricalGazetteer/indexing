@@ -87,7 +87,7 @@ class TestPlaceLinkMapping(unittest.TestCase):
         # 10,732 of 13,466 overlay endpoints were exactly this (plan §2.3).
         ledger = _ledger()
         self.assertIsNone(self._row(_pl(dataset_key="777", place_key="1"), ledger=ledger))
-        self.assertEqual(ledger.total, 1)
+        self.assertEqual(ledger.rows, 1)
         self.assertEqual(ledger.per_dataset, {"777": 1})
 
     def test_rejects_bare_identifier(self):
@@ -157,11 +157,17 @@ class TestCloseMatchMapping(unittest.TestCase):
         ledger = _ledger()
         self.assertIsNone(self._row(_cm(dataset_key_b="777"), ledger=ledger))
         self.assertEqual(ledger.per_dataset, {"777": 1})
+        self.assertEqual(ledger.rows, 1)
 
+    def test_both_ends_unresolved_is_one_lost_edge_not_two(self):
+        # The two counts must not be conflated: the diagnostic attributes an
+        # unresolved reference to each dataset, but only one edge was lost.
         ledger = _ledger()
         self.assertIsNone(
             self._row(_cm(dataset_key_a="888", dataset_key_b="777"), ledger=ledger))
         self.assertEqual(ledger.per_dataset, {"888": 1, "777": 1})
+        self.assertEqual(ledger.endpoint_refs, 2)
+        self.assertEqual(ledger.rows, 1)
 
 
 def _at(**overrides):
@@ -260,6 +266,7 @@ class TestAttestationMapping(unittest.TestCase):
             self._row(_at(place_a="whg:777:9", place_b="wd:Q90"),
                       ledger=ledger, dispositions=disp))
         self.assertEqual(ledger.per_dataset, {"777": 1})
+        self.assertEqual(ledger.rows, 1)
         self.assertEqual(disp.get("unmatched"), 1)
 
     def test_non_whg_endpoints_are_untouched(self):
@@ -307,7 +314,8 @@ class TestIterHardLinkRows(unittest.TestCase):
                    _pl(dataset_key="777", place_key="2")]
         rows, counts = cr.iter_hard_link_rows(pl_rows, [], id_map=_map())
         self.assertEqual(len(rows), 1)
-        self.assertEqual(counts["dropped_unmapped"]["total"], 2)
+        self.assertEqual(counts["dropped_unmapped"]["rows_dropped"], 2)
+        self.assertEqual(counts["dropped_unmapped"]["unresolved_endpoint_refs"], 2)
         self.assertEqual(counts["dropped_unmapped"]["datasets_with_drops"], 1)
         self.assertEqual(counts["dropped_unmapped"]["top_datasets"], {"777": 2})
         self.assertEqual(counts["id_map_entries"], 3)
