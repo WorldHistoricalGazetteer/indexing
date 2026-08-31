@@ -52,7 +52,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **nearly done 31 Aug** — code (`4d763b8`), extract, geom merge (whg 0 → 9,849), prod re-index (0 errors, `whg:1052:8` live and the old id gone), ES restarted (heap 9%, write pool idle), registry pushed (48 datasets, prod + dev). **Only the overlay rebuild is outstanding** (Slurm 11074337). Two side fixes: `adc7345`, `42b6e4a` |
-| **S4** | 2.6, then 2.5 | Submit the ~9 h toponyms stage 1 **first**, then do the `gn` extract / `wd` promotion while it runs. If stage 1 has not finished, **verify it at the head of the next session** rather than holding one open. | ⬜ |
+| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ◐ started, holding pre-gate; 2.5 not yet begun |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -61,8 +61,11 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 concurrency rules below before running them at the same time. Only S2 gates S5.
 S5 → S6 → S7 is strict.
 
-⚠️ **The condition that makes this work: every session updates its row's status
-and the step's own notes before it ends.** A session that finishes work without
+⚠️ **The condition that makes this work: every session sets its row's status when
+it STARTS, and updates it plus the step's own notes before it ends.** Marking
+only on completion leaves a started-and-waiting session indistinguishable from an
+unstarted one — which is what the ⬜ against S4 meant for its first hour. Use
+⬜ not started · ◐ running or holding · ✅ done. A session that finishes work without
 recording it leaves the next one inheriting stale state — which is exactly how
 the 9 August handover came to say "the retile is deferred" when a partial retile
 had already deployed broken tilesets.
@@ -76,7 +79,7 @@ resources it does not model.
 
 | hazard | who collides | rule |
 |---|---|---|
-| **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment), S4's 2.6 (full scan of the 72.7 M toponyms index), S5 (corpus-wide streaming for tiles) | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
+| **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment) and S5 (corpus-wide streaming for tiles). ⚠️ **S4's 2.6 is NOT one of them** — corrected 31 Aug: it runs `--skip-es-index` and never consults ES, so it neither contends here nor needs a restart. The hold placed on S4 behind S3 was unnecessary, though harmless and correct on the plan's word at the time | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
 | **Gateway restarts** | S1 (2.2 needs one to deploy the scope fix) and S2 (2.1 ends with one) | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
 | **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. Keep concurrent sessions on **different namespaces** — which S2/S3/S4 already are — and never let two touch the same one. |
 | **The pitt VM** | any step running inline rather than via Slurm | Heavy work goes to Slurm. Several steps do small inline work on pitt; eight parallel inline resolvers once OOM-thrashed the VM into a ~1 h production outage. Two or three sessions doing "just a little" inline work is that same pattern. |
@@ -90,7 +93,7 @@ fresh as the last session that remembered to tick one.
 | **S1** | none | — |
 | **S2** | none | — |
 | **S3** | none | — |
-| **S4** | no bulk indexing in flight: `GET _cat/thread_pool/write?v` on prod | `active` and `queue` at 0 |
+| **S4** | **2.5 complete before 2.6 starts** — `gn` and `wd` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` ~11.6 M, `wd` 11,459,393 staged docs |
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
 | **S5** | `gn`/`wd` staged trees restored (S4) **or** `TILE_ES_DOC_NAMESPACES=gn,wd` exported | either |
 | **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
@@ -634,7 +637,7 @@ from, and carrying its content (the fresh `h3_cover`, not the previous run's) �
 rather than the stage's own status, which reported success throughout the run
 that broke this.
 
-### 2.5 Restore the `gn` / `wd` staged trees  — **S4**
+### 2.5 Restore the `gn` / `wd` staged trees  — **S4**  ⚠️ RUNS BEFORE 2.6
 
 Collateral from the `unittest discover` accident: `staged/gn` is 6.5 KB and
 `staged/wd` 14 KB — stubs. Staging is the pipeline's canonical input, so the next
@@ -648,16 +651,57 @@ rebuild regresses both without this.
 per-namespace counts (`gn` ~11.6 M after alt names, `wd` 11,459,393), not merely
 that the files are large.
 
-### 2.6 Re-run toponyms stage 1 for `ipa` / `panphon_features`  — **S4**
+⚠️ **This is 2.6's input, which is why it now runs first — see 2.6.** The failure
+if you skip it is silent by construction: `_staged_namespace_source` walks
+final → h3_merged → boundary_merged → extract and takes the first hit, so `gn`
+resolves to a **2,539-byte `extract/places.parquet`** — a *valid* Parquet file
+with almost no rows, not an error — and `_count_staged_places` swallows the rest
+in `except Exception: continue`.
 
-`toponyms-temporal-20260731T160000Z.db` (39 GB) has neither: stage 1 timed out at
-its 12 h wall. Nothing in the search stack reads them — **the next Symphonym
-training run does**, and it is the only consumer, so this is scheduled here
-rather than treated as an outage. Allow ~9 h and raise the wall.
+### 2.6 Re-run toponyms stage 1 for `ipa` / `panphon_features`  — **S4**  ⚠️ AFTER 2.5
 
-**Verify:** `COUNT(*) == COUNT(ipa) == COUNT(panphon_features)` on the vocabulary
-table. (Sibling precedent: 93% of Symphonym embeddings once carried a null
-`doc_id` while every stage logged success.)
+⚠️ **Three corrections, all measured by S4 on 31 Aug. The original text of this
+step was wrong in its cause, its hazard and its position.**
+
+**It did not time out — the columns were skipped by design.** The preserved
+sbatch (`/vast/ishi/staged/runs/temporal-20260731T160000Z/toponyms.sbatch`) ends
+`--skip-es-index --confirm --training-namespaces _none_`, an unmatched sentinel
+that `submit_batch9_slurm` passes by default unless `--for-retrain` is given, and
+has since `ef31016` (2 May): *"IPA + PanPhon are training-only artefacts… default
+to skipping the Epitran/Phonikud/CharsiuG2P pipeline"*. So the columns are empty
+because the submitter meant them to be.
+
+**The 12 h timeout was a different job.** `sacct -M htc` shows both
+`whg-toponyms-temporal-20260731T160000Z` jobs COMPLETED inside a 3:41 wall
+(02:31:30 and 03:26:50); the TIMEOUT was `whg-toponyms-rerun` on 4 August, a
+later backfill attempt that reached `Updated 28,000,000 / 31,942,400` (87.7%)
+before being killed. The audit's "stage 1 timed out at its 12 h wall" merged two
+jobs with different names, walls and outcomes. "Allow ~9 h and raise the wall"
+remains right — for the rerun's reason, not stage 1's.
+
+**It never touches Elasticsearch.** The run opens `Skipping ES connection
+(--skip-es-index set; staged-only mode)` and then scans staged places;
+`extract_toponyms_to_db`'s docstring says "Per Batch 9, Elasticsearch is **not**
+consulted here". So this is not an ES-heavy job, it never contended with S3, and
+there is no ES restart to take afterwards. The hazard table is corrected.
+
+**What it does read is every namespace's staged tree — which is what 2.5
+repairs.** Run before 2.5 it builds the training vocabulary from a corpus missing
+its two largest namespaces (~23 M of 51 M places) and reports success: a nine-hour
+job, a plausible-looking DuckDB, and the only consumer is the next Symphonym
+training run, which would train on a corpus with no GeoNames and no Wikidata in
+it. My original ordering — 2.6 first, to use its wall-clock for 2.5 — assumed the
+two were independent; 2.5 is 2.6's input.
+
+**Verify — and establish the baseline first (§ the standing rule).** The named
+check is `COUNT(*) == COUNT(ipa) == COUNT(panphon_features)`, but **confirm it
+still discriminates in the state you actually find**. Three states, and the
+middle one breaks the check: columns absent; columns present and empty; columns
+**partially** populated — in which case a resume that skips rows already carrying
+an `ipa` yields `COUNT(ipa) == COUNT(*)` and passes while leaving the killed
+run's output unexamined. Given the rerun died at 87.7% of an UPDATE pass, expect
+the partial state. Record `PRAGMA table_info` alongside the counts, and report
+which state and whether the check separates good from bad in it.
 
 ---
 
@@ -749,7 +793,7 @@ holds no alias before deleting it.
 | 4.4 | `geom_store --merge` grows every rebuild and has no prune step for keys absent from the current corpus. 2.3 will add ~229 k more orphans. |
 | 4.9 | **Make the store cross-check permanent — S2's proposal, run once and answered.** Nobody had ever asked which namespaces claim retrievable geometry the store does not hold; `un` was found by a tile failure and `whg` by S3 reading an authority script, both by accident. I ran it 31 Aug, after S2's merge: **clean — all 15 namespaces claiming areal/line `has_geom=true` have keys**, `un` now 247/247. But note it takes **two** predicates, not one, and S2's framing catches only the first: a namespace whose index *claims* `has_geom=true` with zero keys (the `un` class, silent exact-containment degradation), **and** docs with `geom_class ∈ {area,line}` and `has_geom=false` (the `whg`/`og` class, 4.2 — geometry never written, so the index claims nothing and the first check sees nothing wrong). `processing/audit_rebuild.py` already computes the second and cannot do the first, because it never opens `index.sqlite`. Adding that is small and makes both run on every rebuild instead of waiting for the next accident. **⚠️ The pair is still not complete, and the gap cannot be closed from ES at all** (S2, 31 Aug). `geom_class_of` folds `MultiPoint` into `point`, so a multi-part point feature whose store entry is missing reads `geom_class:point, has_geom:false` — indistinguishable from an ordinary point, invisible to the second predicate. And it cannot be caught by the first either: I checked, and `whg` and `og` carry **0** docs with a `geometries.geom_ref`, because the ref is written only when the store write happens. A never-written geometry therefore leaves *nothing in the index that says it should have existed* — no claim, no ref, no class that differs from a point. S3 measured 690 such coordinates in `whg`: trivial there, arbitrary in a namespace of genuine multi-part point features. **So the third check has to sit upstream, not in the audit:** the static `grep -L configure_module_writer` over authorities that compute geometry, and per-extract reconciliation of geometries *computed* against the `Geometries in VAST store: N` the writer already prints. 4.9 is two of three; state it that way rather than as a closed question. |
 | 4.5 | AAT coverage 4,436 / 15,448 = 28.7% (place#142). |
-| 4.6 | Legacy per-dataset contributed tilesets (`whg-*.mbtiles`, 23 July) awaiting migration — `plan-outstanding-2026-07.md` §8. |
+| 4.6 | ⚠️ **PROMOTED 31 Aug from housekeeping to REQUIRED, and 3.1 does not fix it.** S3 flagged that the `whg` tiles now carry dead place ids after 2.3's re-mint, and expected §3.1's 27-bucket retile to cover it. It does not: **there is no `whg` bucket**. `whg` is served as **47 legacy per-dataset tilesets** (`whg-<dataset_id>.mbtiles`, 22–23 July), which sit outside the 27 and are untouched by 3.1. Verified by decoding `whg-1052.mbtiles`: it carries `whg:1052:6954924`, `whg:1052:6954927` … — the old place-key form, which after 2.3 returns `found:false`. So **every click-through from those 47 layers is now dead**, and regenerating them is no longer a tidy-up but the completion of 2.3. Size it as its own step before S5 assumes otherwise. |
 | 4.7 | Merge stages still hold whole patches in memory; the allocations are tiered, the profile is unchanged. |
 | 4.8 | **41 of the 89 datasets referenced by contributor links are not in the index** (48 are). `contributor_replay` accepts `ds_status ∈ {indexed, accessioning, wd-complete}`; ingestion requires `Dataset.authority=True AND public`. 2.3's id map makes the mismatch harmless and visible, but the underlying question — publish them, or narrow the replay filter to match? — is a Django-side call for SG. |
 

@@ -221,8 +221,16 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
   re-run; `gn` needs a re-extract. Staging is the pipeline's canonical input, so
   the next rebuild regresses both without this.
 * **`toponyms-temporal-20260731T160000Z.db` has no `ipa` / `panphon_features`** —
-  stage 1 timed out at its 12 h wall. Nothing in the search stack reads them;
-  the next **Symphonym training** run does. Allow ~9 h and raise the wall.
+  ⚠️ **not because stage 1 timed out.** This audit inherited that from
+  `plan-temporal-model.md` §10 without checking it, and S4 measured it on 31 Aug:
+  the columns are skipped **by design**. The preserved sbatch ends
+  `--training-namespaces _none_`, an unmatched sentinel `submit_batch9_slurm`
+  passes by default unless `--for-retrain` is given (`ef31016`, 2 May: *"IPA +
+  PanPhon are training-only artefacts"*). Both stage-1 jobs COMPLETED inside a
+  3:41 wall; the 12 h TIMEOUT was a *separate* job, `whg-toponyms-rerun` on
+  4 August, a backfill that reached 87.7% before being killed. Nothing in the
+  search stack reads these columns; the next **Symphonym training** run does.
+  Allow ~9 h and raise the wall — for the rerun's reason, not stage 1's.
 * `geom_store --merge` still has no prune step for keys absent from the current
   corpus, and `authorities/backfill_admin_levels.py` still has its broken
   `BOUNDARIES_INDEX` import.
