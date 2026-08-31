@@ -602,17 +602,29 @@ the hard case for "run the check against a known-bad input", since nobody keeps 
 poly-less tileset around to test with. But we have nine of them, they are on the
 live tileserver right now, and **the retile is what overwrites them**. So:
 
-1. Run your polygon verifier against the **currently deployed** `ukhc`,
-   `vob_cty`, `po`, `clio`, `kain_par` and confirm it reports **FAIL** on every
-   one. If it passes any of them the verifier is broken, and you would otherwise
-   have discovered that only by deploying a second poly-less generation.
-2. **Preserve two of them as permanent fixtures before they are overwritten** —
-   `ukhc.mbtiles` (135 KB) and `vob_cty.mbtiles` (115 KB), 250 KB the pair. They
-   are the only known-bad tilesets that will ever exist naturally, and after the
-   retile they are unreproducible without deliberately rebuilding against an
-   empty store. Park them under `/vast/ishi/tiles-fixtures/` with a README
-   saying what they are, so the check has something to be tested against on
-   every future retile rather than only this one.
+1. Run your polygon verifier against the **preserved fixtures** (and, while they
+   last, the deployed `po`, `clio`, `kain_par`) and confirm it reports **FAIL**
+   on every one. If it passes any of them the verifier is broken, and you would
+   otherwise have discovered that only by deploying a second poly-less
+   generation. Running it against the preserved copies rather than the originals
+   does double duty — it proves the verifier can fail *and* proves the copies are
+   readable, which matters because a silently truncated fixture would only be
+   discovered after the originals were gone.
+2. ✅ **The fixtures are already captured — this is no longer your step, only a
+   check.** `/vast/ishi/tiles-fixtures/` holds `ukhc.mbtiles` (135,168 B, md5
+   `87b79add5b1ea4f549809b105bfe56c5`) and `vob_cty.mbtiles` (114,688 B, md5
+   `efcd57a06d64a9bd84e2039370a4e057`), copied from the live tileserver on
+   31 Aug **before** the retile, with a README recording what makes them
+   known-bad. Checksums verified identical at source, in transit and at rest,
+   and both decode on `/vast` to POLYGON=0. Confirm the directory is there and
+   the checksums still match; if it is missing, **stop** — the originals are
+   irreplaceable once you deploy.
+
+   Captured now rather than left as your first step, on S4's argument: a fixture
+   whose preservation is a precondition of the run that destroys it depends on
+   the destroying session remembering to do it, which is the same failure shape
+   as 7 August. As a precondition it is now "are the files there", answerable in
+   a second and failing safe.
 
 **Then verify — the check that would have caught this in the first place:**
 assert a non-zero `poly=` count per polygon-bearing bucket in the job log *and* a
