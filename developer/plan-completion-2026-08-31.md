@@ -54,7 +54,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — `h3_stage` → `h3_merge` → ccode → `ccode_merge`. The correct route, not the fast one: `wd`/`nl` get genuine ccode enrichment. **Gates S5.** | ◐ **holding** — blocked behind Slurm 11091158 (verified on crc1, not relayed); **`h3_merge`, not just `ccode_merge`, is the colliding writer**; nothing started, clone deliberately not pulled |
-| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying — the deploy destroys its own evidence. | ⬜ **BLOCKED on 2.7 (S8)** — `gn`/`wd`/`nl` have no `final/`, so the submitter would silently drop them |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
 
@@ -70,6 +70,35 @@ unstarted one — which is what the ⬜ against S4 meant for its first hour. Use
 recording it leaves the next one inheriting stale state — which is exactly how
 the 9 August handover came to say "the retile is deferred" when a partial retile
 had already deployed broken tilesets.
+
+### 🔥 LIVE INFRASTRUCTURE HAZARD — `/ix1` is wedged on some CRC clients (31 Aug)
+
+**Measured, not inferred** (S3, confirmed independently here): `/ix1` `statfs` and
+`ls` time out from **`htc-n56`** and the **`crc1` login node**, and are **healthy
+from `crc2` and `pitt`**. `/vast`, `/ihome` and `/software` are fine everywhere
+checked. The filer is alive; specific NFS clients have hung. **Not waitable-out on
+a given node — move nodes.**
+
+⚠️ **`/ix1` is mounted `hard`, so a blocked process waits forever rather than
+erroring.** Job 11091158 sat in state `D` in `folio_wait_bit` with **CPU time
+frozen at `00:08:30`** while elapsed passed 26 minutes. `squeue` said RUNNING. Its
+log looked fine. It would have burned a 20 h wall producing nothing.
+
+**A `hard`-mounted NFS hang is invisible to every status signal this campaign
+trusts.** What *did* discriminate: **CPU time and syscall counters frozen across
+samples** (`rchar`/`wchar`/`syscr`/`syscw` byte-identical over 40 s). File size did
+not — it plateaus normally during SQLite batching. Nor did `squeue`, nor the job's
+own log. Put it beside "a tile job that reports success is not evidence it read any
+geometry": **a job in state RUNNING is not evidence it is running.**
+
+Mitigations in force: `--exclude=htc-n56`, and build on `/vast` not `/ix1` — the
+`/ix1` build took 13 min to reach 236 MB, the `/vast` build did 41.9 → 58.5 MB in
+**25 s**. `submit_hardlinks_slurm` defaults `db_path` to `IX1_BASE` for no reason:
+`publish_local` does a `shutil.copyfile`, so it publishes fine across filesystems.
+**Production is unaffected** — the gateway reads `/ix1/ishi/hardlinks` from `pitt`,
+which is healthy.
+
+---
 
 ### Running sessions concurrently — read before starting more than one
 
@@ -1416,9 +1445,25 @@ gn, wd:  reconcile wd's extract status → update_merge → h3_stage → h3_merg
 nl:      h3_stage → h3_merge → ccode → ccode_merge            (as first written — correct for nl)
 ```
 
-`processing/reconcile_stage_status.py` looks like the intended tool for the `wd`
-status repair — it already imports `UPDATE_PATCH_NAMESPACES` — but that is
-unverified and should not be assumed.
+⚠️ **Read this as a RECURRENCE, not a discovery — S5's framing, and it matters.**
+This is the `update_merge`-never-ran incident from earlier in the campaign, and
+the barrier `gn`/`wd` are hitting **was added specifically to prevent a second
+one**. It is working exactly as designed: deferring them because their patches
+genuinely have not merged. **So the plan's fault is a missing step, not an
+obstructive barrier.** A successor reading "2.7 was blocked by the h3 barrier"
+could conclude the barrier is the problem and route around it — precisely the
+failure it exists to stop. Do not disable it; satisfy it.
+
+**`processing/reconcile_stage_status.py` is the built-for-purpose repair for the
+`wd` half** (S5; verified here). Its docstring describes this failure in advance —
+a manifest saying `pending`/`failed` while the artefact is complete on disk. It is
+**evidence-based, not a blind setter**: it promotes a stage only when that stage's
+artefact exists and is non-empty, prints path and record count for every change,
+and will not demote or touch a stage whose artefact is missing. Its `--skip` is
+guarded by `_stage_applies` (`:207-215`), which returns
+`namespace in UPDATE_PATCH_NAMESPACES` for `update_merge` — so it **structurally
+cannot** be used to skip the very step at issue. That guard is why it is safe to
+recommend where a manual manifest edit would not be.
 
 **Cost, revised:** `update_merge` on `gn` collapses a 1.4 GB patch into a 7.38 GB
 snapshot *before* h3 starts. 2.7 is materially larger than first estimated and
@@ -1426,8 +1471,12 @@ S5's unblock is further away than anyone had assumed.
 
 ⚠️ **A fourth verification is required**, because none of the three would catch
 the bypass route: **assert the `gn`/`wd` `final/` actually contains update-patch
-content** — an alternate-name count, or a spot-check of records the patch adds.
-Row count is *identical* either way, which is the whole trap.
+content.** ⚠️ **It must be a NAME count, not a document count** (S5, sharpening
+S8's version): `gn`'s ~26.7 M alternate names are *names*, not documents — a `gn`
+doc with and without its alt names is **one document in both worlds**. So row
+count, ccode coverage and every document-level measure read identically whether
+the patch landed or not. Count names, or spot-check specific records the patch
+adds.
 
 **The original chain, correct for `nl` only:**
 
