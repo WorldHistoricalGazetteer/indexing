@@ -1006,6 +1006,101 @@ the runbook requires; no stage was marked complete to satisfy it.
 the per-namespace endpoint counts against the incumbent **before** any publish
 decision. The gate is ~7,596,959 rows; below that, stop. Expect the contributor
 layer at ~2,038 rows rather than 26,981 — that fall is the id-map fix working.
+
+##### ⛔ 2.5 did NOT unblock this step — `gn` needs `update_merge` first
+
+**Measured 31 Aug by S3, reproduced independently by S8. Three numbers that agree
+to the unit:**
+
+```
+gn/update_patch identity relations (full scan) : 1,111,147 sameAs
+published overlay rows ASSERTED by gn          : 1,111,147
+gn/extract relations of ANY kind               :         0   (over 13,454,817 lines)
+```
+
+A seven-figure exact match is not coincidence. **Every `gn` edge in the live
+overlay came from the update patch**, and `staged/gn/extract/` — which is what
+2.5 restored and what `hard_links_staged` resolves to — contains no `relations`
+key at all. `gn`'s full patch is 8,125,650 lines, 1,654,555 of them carrying
+`relations_to_add`, totalling 1,831,130 relation entries: **1,111,147 `sameAs`**
+(identity, consumed by the overlay) + 719,983 `describedBy` (not an identity
+type).
+
+So a harvest run today prints `gn: attempted=0`. **Same symptom as the 31 August
+near-miss, different cause** — then the tree was a one-row stub; now it is
+complete, correct, and never contained the data. The distinction matters because
+the first cause was fixed and the second was not even visible.
+
+⚠️ **The lesson, and it is the sharpest form this campaign has produced:
+`gn` reconciles EXACTLY on document count — 13,454,817, delta 0 against the live
+index — and contributes nothing.** 2.5's verification was sound, honest, and
+passed for the right reasons. It counted rows, and what the overlay needs is not
+rows. *A doc-count check passes perfectly in the world where the content its
+consumer needs is absent.* Any successor verifying a staged tree should assert
+the thing that would be missing, not the documents that would still be there.
+
+**Consequence for the 🛑 gate: it fails, correctly.** Expected
+≈ 7,596,959 − 1,111,147 (`gn`) − ~24,943 (the whg id-map drop, which is the fix
+working) ≈ **6.46 M against a 7.6 M threshold, ~15% short**. That is precisely
+the plan's "materially below 7.6 M means something *else* is wrong — stop rather
+than publish" case. The something else is now named.
+
+**Ordering, revised.** §2.3's publish is blocked on `update_merge` for `gn`,
+which lives in **2.7** (S8). 2.7 is therefore on this step's critical path, not
+beside it, and `update_merge` is a **required predecessor of `h3_stage`**, not an
+optional one — `submit_h3_slurm:140` falls back to `extract/` silently when
+`update_merged/` is absent, which is how the loss arose in the first place.
+
+1. harvest 11092269 finishes — kept as a **measurement**; publishes nothing, and
+   exercises the never-run LOC and publish-path prerequisites;
+2. S3 releases S8;
+3. `update_merge` → `h3_stage` → `h3_merge` → `ccode_merge` for `gn`/`wd`/`nl`;
+4. **re-harvest** from the real `final/` trees;
+5. gate, then a publish decision.
+
+**Acceptance criteria for 2.7's `gn` half** (they read **zero in the broken world
+while the job reports success**, which no document count can do):
+`gn/update_merged/` carries 1,831,130 relation entries, of which 1,111,147 are
+`sameAs`. `wd`'s half is the disjoint one: +58,658 geoshapes, **0 relations**.
+
+⚠️ **`gn` and `wd` are not interchangeable and there is no cheap half.** `gn` is
+relations + toponyms with **0 geometry**; `wd` is geometry + h3 with **0
+relations**. A `wd`-only 2.7 restores the map and leaves the co-reference graph
+14.6% short; a `gn`-only 2.7 does the reverse. Both or neither is the only
+defensible split.
+
+**A correction to this section's own gate arithmetic.** §2.3 quotes "`wd`
+accounts for 7,516,092 of those rows and `gn` for 5,092,751". Those are
+**endpoint-touching** counts — rows where the namespace appears at *either* end —
+and they legitimately sum past the total. What predicts a harvest's output is the
+**asserting-source** breakdown (`source_id`), which is different:
+
+| source | rows | share |
+|---|---:|---:|
+| `wd` | 3,968,404 | 52.2% |
+| `osm` | 2,295,659 | 30.2% |
+| `gn` | 1,111,147 | 14.6% |
+| `ohm` | 98,569 | 1.3% |
+| `iv` | 68,935 | 0.9% |
+| `tm` | 25,665 | 0.3% |
+| `loc` | 1,129 | — |
+| `clio` / `og` | 248 / 222 | — |
+| `contributor:*` (27 ids) | 26,981 | 0.4% |
+
+Both framings are true; they answer different questions. "`gn` is 67% of the
+overlay" and "`gn` asserted 14.6% of it" are both correct and predict different
+things. Reason about a rebuild with `source_id`.
+
+**Method notes, recorded because both errors were mine and neither was caught by
+re-reading code.** The first version of this test sampled a control that came
+back **empty** and printed a confident verdict anyway — `if len(control) and …`
+short-circuits to `False` on an empty list, skipping the inconclusive branch.
+That is *absence of input treated as nothing-to-do*, written into the very check
+meant to catch that pattern. The second version matched endpoint pairs in
+**either order**, so `wd` asserting the reverse edge would have produced an
+identical `400/400` — two different worlds, one output, decorative by this
+campaign's own standard. `source_id` answers the question directly and
+unambiguously. Both were found by asking *what would the broken world print?*
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
