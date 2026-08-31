@@ -53,7 +53,7 @@ from typing import Any, Iterator
 import pyarrow.json as paj
 import pyarrow.parquet as pq
 
-from processing.staged_parquet import write_parquet_from_jsonl
+from processing.staged_parquet import atomic_staged_snapshot
 from processing.settings import (
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -295,7 +295,14 @@ def run_update_merge(
     docs_changed = 0
     docs_written = 0
 
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
+    # Written to temps and renamed into place only once complete —
+    # update_merged/ outranks extract/ for every consumer, so a half-written
+    # snapshot here is preferred over the complete extract it derives from.
+    # This stage runs FIRST in the 2.7 chain and gn is the largest namespace
+    # in the corpus, so that window would be hours long.
+    # See staged_parquet.atomic_staged_snapshot (§2.8).
+    with atomic_staged_snapshot(jsonl_path, parquet_path,
+                                label="update_merge") as out_jsonl:
         for doc in _iter_extract_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -324,7 +331,7 @@ def run_update_merge(
     # This is very likely why update_merge was never wired into a rebuild: run
     # against wd it did not work, and the stage was quietly left out instead
     # — taking 26.7M GeoNames alternate names with it.
-    parquet_written = write_parquet_from_jsonl(jsonl_path, parquet_path)
+    parquet_written = out_jsonl.parquet_written
     if not parquet_written:
         print(f"  WARNING: parquet sidecar not written for {namespace}; "
               f"downstream stages will read {jsonl_path.name}")

@@ -33,9 +33,9 @@ from processing.settings import (
 )
 from processing.stage_writers import write_runtime_history_event, write_stage_event
 from processing.staged_parquet import (
+    atomic_staged_snapshot,
     normalize_for_parquet,
     strip_hull_for_parquet,
-    write_parquet_from_jsonl,
 )
 from processing.staging_contract import (
     H3_PATCH_REQUIRED_FIELDS,
@@ -232,7 +232,11 @@ def run_h3_merge(
     geometry_updates_applied = 0
     docs_written = 0
 
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
+    # Written to temps and renamed into place only once complete — a
+    # half-written snapshot here outranks the complete upstream stage for
+    # every consumer. See staged_parquet.atomic_staged_snapshot (§2.8).
+    with atomic_staged_snapshot(jsonl_path, parquet_path,
+                                label="h3_merge") as out_jsonl:
         for doc in _iter_source_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -246,11 +250,6 @@ def run_h3_merge(
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
             _progress("h3_merge", docs_written)
-
-    print(f"  h3_merge: merged {docs_written:,} docs; converting to Parquet ...",
-          flush=True)
-    write_parquet_from_jsonl(jsonl_path, parquet_path)
-    print(f"  h3_merge: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,

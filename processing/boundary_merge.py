@@ -32,8 +32,8 @@ from processing.stage_writers import (
     write_stage_event,
 )
 from processing.staged_parquet import (
+    atomic_staged_snapshot,
     normalize_for_parquet,
-    write_parquet_from_jsonl,
 )
 from processing.staging_orchestrator import update_namespace_stage_status
 
@@ -154,7 +154,12 @@ def run_boundary_merge(
     docs_updated = 0
     docs_written = 0
 
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
+    # Written to temps and renamed into place only once complete —
+    # boundary_merged/ outranks extract/ for every consumer, so a half-written
+    # snapshot here is preferred over the complete extract it derives from.
+    # See staged_parquet.atomic_staged_snapshot (§2.8).
+    with atomic_staged_snapshot(jsonl_path, parquet_path,
+                                label="boundary_merge") as out_jsonl:
         for doc in _iter_extract_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -184,14 +189,10 @@ def run_boundary_merge(
                 )
                 docs_written += 1
 
-    # Stream the canonical JSONL through hull-strip into a temp parquet-input
-    # JSONL, then convert to parquet. The canonical JSONL keeps hull intact
-    # for downstream consumers (ccode_enrichment, generate_tiles); only the
-    # parquet sidecar is hull-less (lossless — those consumers don't read it).
-    print(f"  boundary_merge: merged {docs_written:,} docs; converting to Parquet ...",
-          flush=True)
-    write_parquet_from_jsonl(jsonl_path, parquet_path)
-    print(f"  boundary_merge: Parquet written", flush=True)
+    # The parquet sidecar is derived by streaming the canonical JSONL through
+    # hull-strip. The canonical JSONL keeps hull intact for downstream
+    # consumers (ccode_enrichment, generate_tiles); only the parquet sidecar
+    # is hull-less (lossless — those consumers don't read it).
 
     metrics = {
         "docs_seen": docs_seen,

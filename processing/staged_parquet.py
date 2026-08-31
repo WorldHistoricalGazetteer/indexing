@@ -40,8 +40,10 @@ downstream JSONL readers, which generally want it too).
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pyarrow as pa
 import pyarrow.json as paj
@@ -177,3 +179,119 @@ def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> bool:
         except FileNotFoundError:
             pass
     return parquet_written
+
+
+# ---------------------------------------------------------------------------
+# Atomic publication of a staged snapshot pair (§2.8)
+# ---------------------------------------------------------------------------
+#
+# Every consumer resolves a namespace's snapshot by walking
+# ``_STAGED_SOURCE_PRIORITY`` — (final, h3_merged, boundary_merged,
+# update_merged, extract) — and testing ``.exists()`` ONLY, with no size or
+# completeness check, preferring ``places.parquet`` over ``places.jsonl``
+# within a stage. Writing the JSONL in place therefore publishes a ZERO-BYTE
+# file on the first instant, which immediately outranks the complete upstream
+# stage it supersedes: readers get no rows at all, silently, for as long as
+# the merge runs — hours, on ``gn`` and ``wd``. Worse than truncation, because
+# a partial JSONL is valid JSONL as far as it has reached.
+#
+# So a stage writes to temp files, which no resolver can see (different
+# names), and renames them into place only once both are complete.
+
+#: Rename order. The pair cannot be made atomic — two files, two syscalls —
+#: so the order chooses WHICH file is briefly stale, and the resolvers prefer
+#: ``places.parquet``. Parquet is renamed FIRST so that the preferred, and
+#: therefore authoritative, file is the correct one in the state that
+#: persists: if the process dies BETWEEN the two renames, parquet-first
+#: strands a new parquet beside an old JSONL and the stage still resolves to
+#: the new data, whereas jsonl-first would strand a stale parquet that every
+#: resolver prefers — serving old data indefinitely and silently, which is a
+#: quieter version of the very defect this exists to fix.
+#:
+#: ⚠️ Residual, not fixable by any rename order: ``write_parquet_from_jsonl``
+#: strips ``hull``, so the JSONL is canonical for hull-consumers
+#: (``ccode_enrichment``, ``generate_tiles``). A crash between the renames
+#: leaves the two files disagreeing whichever order is used. Making the PAIR
+#: atomic needs a directory-symlink swap, which changes an on-disk shape five
+#: resolver copies assume — deliberately out of scope here.
+_PARQUET_RENAMED_FIRST = True
+
+
+def _unlink_quietly(*paths: Path) -> None:
+    for path in paths:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+class _CountingJsonlWriter:
+    """Thin wrapper over the temp handle that counts published rows."""
+
+    __slots__ = ("_handle", "docs_written", "parquet_written")
+
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+        self.docs_written = 0
+        #: Set on clean exit. False means pyarrow schema inference failed and
+        #: only the JSONL was published — callers that warn about a missing
+        #: sidecar read this after the ``with`` block.
+        self.parquet_written = False
+
+    def write(self, line: str) -> None:
+        self._handle.write(line)
+        self.docs_written += 1
+
+
+@contextmanager
+def atomic_staged_snapshot(
+    jsonl_path: Path,
+    parquet_path: Path,
+    *,
+    label: str,
+) -> Iterator[_CountingJsonlWriter]:
+    """Publish a staged ``places.jsonl`` + ``places.parquet`` pair atomically.
+
+    Yields a writer whose ``.write()`` takes one already-serialised JSONL
+    line. On clean exit the parquet sidecar is derived from the temp JSONL
+    and both are renamed into place (parquet first — see
+    ``_PARQUET_RENAMED_FIRST``). If the body raises, **nothing is
+    published**: the temps are removed and any snapshot already in place is
+    left byte-for-byte untouched. The exception always propagates — a merge
+    that fails must fail loudly, never leave a silent partial.
+
+    If parquet conversion fails (pyarrow schema inference — see
+    ``write_parquet_from_jsonl``), any pre-existing sidecar is removed before
+    the JSONL is published, so resolvers fall through to the fresh JSONL
+    rather than preferring a stale parquet.
+    """
+    jsonl_tmp = jsonl_path.with_name(jsonl_path.name + ".tmp")
+    parquet_tmp = parquet_path.with_name(parquet_path.name + ".tmp")
+    _unlink_quietly(jsonl_tmp, parquet_tmp)
+
+    try:
+        with jsonl_tmp.open("w", encoding="utf-8") as handle:
+            writer = _CountingJsonlWriter(handle)
+            yield writer
+
+        print(f"  {label}: merged {writer.docs_written:,} docs; "
+              "converting to Parquet ...", flush=True)
+        parquet_written = write_parquet_from_jsonl(jsonl_tmp, parquet_tmp)
+        writer.parquet_written = parquet_written
+
+        if parquet_written:
+            print(f"  {label}: Parquet written", flush=True)
+            if _PARQUET_RENAMED_FIRST:
+                os.replace(parquet_tmp, parquet_path)
+        else:
+            # No sidecar this run: drop any previous one so the chain cannot
+            # resolve to a stale parquet beside the JSONL we publish next.
+            _unlink_quietly(parquet_path)
+
+        os.replace(jsonl_tmp, jsonl_path)
+
+        if parquet_written and not _PARQUET_RENAMED_FIRST:
+            os.replace(parquet_tmp, parquet_path)
+    except BaseException:
+        _unlink_quietly(jsonl_tmp, parquet_tmp)
+        raise

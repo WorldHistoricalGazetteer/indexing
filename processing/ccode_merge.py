@@ -33,8 +33,8 @@ from processing.settings import (
 )
 from processing.stage_writers import write_runtime_history_event, write_stage_event
 from processing.staged_parquet import (
+    atomic_staged_snapshot,
     normalize_for_parquet,
-    write_parquet_from_jsonl,
 )
 from processing.staging_contract import (
     CCODE_PATCH_REQUIRED_FIELDS,
@@ -178,7 +178,17 @@ def run_ccode_merge(
     docs_updated = 0
     docs_written = 0
 
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
+    # Written to temps and renamed into place only once complete. This stage
+    # is the ONLY writer of final/, which the indexer and the tile submitter
+    # both consume, so a half-written snapshot here is read in preference to
+    # the complete h3_merged/ it derives from. See
+    # staged_parquet.atomic_staged_snapshot (§2.8).
+    #
+    # The parquet sidecar is derived by streaming the canonical JSONL through
+    # hull-strip + null-strip; the canonical JSONL keeps hull and explicit
+    # nulls intact for downstream consumers.
+    with atomic_staged_snapshot(jsonl_path, parquet_path,
+                                label="ccode_merge") as out_jsonl:
         for doc in _iter_source_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -192,14 +202,6 @@ def run_ccode_merge(
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
             _progress("ccode_merge", docs_written)
-
-    # Stream the canonical JSONL through hull-strip + null-strip into a
-    # temp parquet-input JSONL, then convert to parquet. The canonical
-    # JSONL keeps hull and explicit nulls intact for downstream consumers.
-    print(f"  ccode_merge: merged {docs_written:,} docs; converting to Parquet ...",
-          flush=True)
-    write_parquet_from_jsonl(jsonl_path, parquet_path)
-    print(f"  ccode_merge: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,
