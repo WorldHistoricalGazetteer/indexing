@@ -45,15 +45,44 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
 
-**Order:** S1, S2, S3 and S4 are mutually independent — run them in whatever
-order suits, or concurrently in separate terminals; only S2 gates S5. S5 → S6 →
-S7 is strict.
+**Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
+concurrency rules below before running them at the same time. Only S2 gates S5.
+S5 → S6 → S7 is strict.
 
 ⚠️ **The condition that makes this work: every session updates its row's status
 and the step's own notes before it ends.** A session that finishes work without
 recording it leaves the next one inheriting stale state — which is exactly how
 the 9 August handover came to say "the retile is deferred" when a partial retile
 had already deployed broken tilesets.
+
+### Running sessions concurrently — read before starting more than one
+
+**Safe to start together right now: S1, S2, S3.** Hold **S4** until S3's indexing
+has finished, and do not start **S5** until S2 is verified. The dependency graph
+above is necessary but not sufficient — these sessions also share three
+resources it does not model.
+
+| hazard | who collides | rule |
+|---|---|---|
+| **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment), S4's 2.6 (full scan of the 72.7 M toponyms index), S5 (corpus-wide streaming for tiles) | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
+| **Gateway restarts** | S1 (2.2 needs one to deploy the scope fix) and S2 (2.1 ends with one) | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
+| **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. Keep concurrent sessions on **different namespaces** — which S2/S3/S4 already are — and never let two touch the same one. |
+| **The pitt VM** | any step running inline rather than via Slurm | Heavy work goes to Slurm. Several steps do small inline work on pitt; eight parallel inline resolvers once OOM-thrashed the VM into a ~1 h production outage. Two or three sessions doing "just a little" inline work is that same pattern. |
+
+**Preconditions, as checks rather than prose.** A session must run its own before
+starting, and must not trust this document's status boxes — they are only as
+fresh as the last session that remembered to tick one.
+
+| session | check before starting | expected |
+|---|---|---|
+| **S1** | none | — |
+| **S2** | none | — |
+| **S3** | none | — |
+| **S4** | no bulk indexing in flight: `GET _cat/thread_pool/write?v` on prod | `active` and `queue` at 0 |
+| **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
+| **S5** | `gn`/`wd` staged trees restored (S4) **or** `TILE_ES_DOC_NAMESPACES=gn,wd` exported | either |
+| **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
+| **S7** | S6 done and the map looked at | — |
 
 ---
 
