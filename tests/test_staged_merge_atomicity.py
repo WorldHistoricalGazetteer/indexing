@@ -348,6 +348,67 @@ class CleanupNeverMasksTheRealFailure(unittest.TestCase):
             self.assertEqual("the real failure", str(caught.exception))
 
 
+class UnlinkQuietlyStaysNarrow(unittest.TestCase):
+    """``_unlink_quietly`` must swallow ONLY FileNotFoundError.
+
+    The helper reads like an inconsistency — narrow at one call site, wrapped
+    at another — and that asymmetry IS a correctness property, so it needs
+    enforcing rather than documenting. A comment cannot fail.
+
+    Why the narrowness matters: the failed-conversion branch calls it to
+    remove a **pre-existing parquet sidecar** before publishing a fresh JSONL.
+    If that unlink quietly failed, the stage would resolve to a stale parquet
+    sitting beside new JSONL — old data served silently, which is exactly what
+    renaming parquet-first exists to prevent. Widening the helper to swallow
+    OSError would reintroduce it.
+
+    And it would reintroduce it invisibly: the stale-sidecar path has no crash
+    in it, so every existing test still passes if someone "tidies" the
+    asymmetry away. Hence this test, which turns a widening red.
+    """
+
+    class _Stub:
+        def __init__(self, exc=None):
+            self.exc = exc
+            self.calls = 0
+
+        def unlink(self):
+            self.calls += 1
+            if self.exc is not None:
+                raise self.exc
+
+    def test_swallows_a_missing_file(self):
+        from processing.staged_parquet import _unlink_quietly
+
+        stub = self._Stub(FileNotFoundError())
+        _unlink_quietly(stub)           # must not raise
+        self.assertEqual(1, stub.calls)
+
+    def test_propagates_a_permission_error(self):
+        """Widening this to `except OSError` must turn this red."""
+        from processing.staged_parquet import _unlink_quietly
+
+        with self.assertRaises(PermissionError):
+            _unlink_quietly(self._Stub(PermissionError("read-only mount")))
+
+    def test_propagates_an_io_error(self):
+        """The NFS case: /vast and /ix1 have both produced EIO this campaign."""
+        from processing.staged_parquet import _unlink_quietly
+
+        with self.assertRaises(OSError):
+            _unlink_quietly(self._Stub(OSError(5, "Input/output error")))
+
+    def test_continues_past_a_missing_file_to_later_paths(self):
+        """A missing first temp must not stop the second being removed."""
+        from processing.staged_parquet import _unlink_quietly
+
+        first = self._Stub(FileNotFoundError())
+        second = self._Stub()
+        _unlink_quietly(first, second)
+        self.assertEqual(1, second.calls,
+                         "cleanup must attempt every path it was given")
+
+
 # The base class is a fixture, not a test case.
 del _StagedMergeAtomicityBase
 
