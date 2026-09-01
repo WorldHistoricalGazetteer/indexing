@@ -2350,6 +2350,26 @@ sample. `un.bnda-baseline` is 45/45.
 **Recompute set unchanged in membership — `un`, `nl`, `clio`, `whg` — but `whg` is
 now known badly affected rather than marginally.**
 
+⚠️ **The unresolved namespaces do NOT gate the retile — and the consumer that
+actually matters is worse.** S8 flagged that "`osm` and `ohm` are the largest tile
+buckets and unresolved is not a state to retile from". Checked: **`generate_tiles.py`
+contains no reference to `h3_cover` or `h3_centroid` at all.** The tile builder
+takes geometry from the geom store via `geom_ref`; covers are not a tile input. **S5
+is not blocked by this.**
+
+But `h3_cover` *is* consumed by **`gateway/spatial.py`, `search.py`,
+`reconcile.py` and `es_helpers.py`** — the **live fuzzy-containment path** — plus
+`clustering_payload.py`. So the exposure is **search-side, not tile-side**: a bad
+cover in the live index degrades `containment=fuzzy` for those features, which is
+the `un`/`limuw` failure arriving as a user-facing wrong answer rather than a
+staging defect. And because the live index was built from these staged trees, a
+staged cover that is bad for `osm`/`ohm` implies a live one that is too.
+
+**That makes S9's targeted ≥100-cell pass more important than "before the retile",
+not less — it is a question about production search correctness, and it has a
+different owner and priority from 2.7.** It remains genuinely NOT a blocker for
+2.7 or for S5.
+
 **Open, and explicitly NOT clean:** `osm`, `ohm`, `kain_par`, `vob_lgd`, `vob_rd`
 are **unresolved**. Settling them needs sampling that *deliberately targets
 features with ≥100-cell covers* rather than sampling uniformly — most of their
