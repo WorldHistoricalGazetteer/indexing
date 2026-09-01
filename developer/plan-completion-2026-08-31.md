@@ -2093,8 +2093,43 @@ gn  largest staged artefact  6.88 GB  ->  array_memory_gb  =  64 G   (covers ~30
 wd  largest staged artefact  9.56 GB  ->  array_memory_gb  = 128 G
 ```
 
-**So the operative instruction is: use `submit_h3_slurm`, do not hand-write the
-sbatch.** No memory override is needed for either namespace.
+**So for `h3_stage` / `h3_merge` / `ccode`: use the submitters, no override.**
+
+⚠️ **BUT that instruction CANNOT be followed for `update_merge`, and correcting
+S8's 16 G to 64 G did not change what `update_merge` needs — I over-generalised.**
+Verified: there are **eight** submitters and **none of them is for
+`update_merge`**; `array_memory_gb` has four call sites (`submit_batch9_slurm` ×2,
+`submit_h3_slurm:206`, `submit_ccode_slurm:256`) and **`update_merge` is not among
+them**. There is no `submit_update_slurm`, no `.sbatch`, no `.slurm`. **So the
+accumulating stage — the only one whose memory profile is in doubt — receives no
+tiering at all, and hand-writing an sbatch is the only way to run it on Slurm.**
+
+**S8's measurement is therefore the operative number, not a redundant one:
+hand-written sbatch at 64 G for `gn`, 48 G for `wd`**, written with the
+`slurm_env` preamble constants rather than inlined, so it inherits the conda
+export instead of repeating my `un` chain's omission.
+
+⚠️ **And there is a trap in the same place — `submit_h3_slurm:153` tells the
+operator, verbatim:**
+
+```
+Run: python -m processing.update_merge --namespace gn
+```
+
+**No `sbatch`. No submitter. No memory. No mention of Slurm.** Followed literally —
+which is what a message in that form invites — that puts a **~30 GB peak** process
+on whatever host the operator happens to be on: `pitt`, the **production VM**,
+where heavy inline compute has already caused a ~1 h outage; or a login node,
+which this campaign's own rules forbid. **The message is correct about *what* to
+run and silent about *where*, and the where is load-bearing at 13.45 M
+documents.** It should name the sbatch route and the memory. Same class as the
+defects above: the accumulated knowledge lives in the submitters, and this is the
+one stage that has none.
+
+**Both of us generalised from the cases we had looked at** — S8 read `nl`'s
+correct 16 G tier as a fixed default; I read `h3`/`ccode`'s submitters as covering
+the chain. The arithmetic settles `h3` and `ccode`; the missing submitter settles
+`update_merge`.
 
 💡 **And note how both of this campaign's silent defects entered.** My `un` chain
 ran from a **hand-written** sbatch that omitted the `LD_LIBRARY_PATH` export, which
