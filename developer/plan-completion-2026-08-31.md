@@ -71,6 +71,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
+| **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ Resolve the mainland-control contradiction first. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — reconcile `wd`'s status → `update_merge` → `h3_stage` → `h3_merge` → ccode → `ccode_merge`. **Gates S5 and the overlay publish.** | ◐ **RELEASED by SG, 1 Sep — running.** `gn` then `wd` sequentially; `/vast` watched independently by `indexing-5e` against a 100 GB stop-line |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
@@ -1641,6 +1642,64 @@ not a resume** — no idempotency question, and the named check is sufficient.
 
 After a successful run, the history self-corrects — but only for the next run,
 which is no help to this one.
+
+---
+
+### 2.10 Diagnose the ccode H3 prefilter — **S9**  ⚠️ GATES 2.7's `gn`/`wd`
+
+**Assigned by SG, 1 Sep**, on S8's recommendation. A **code-reading** job, not a
+compute one: no staged writes, so it runs alongside S8's hold.
+
+**The question.** `nl`'s ccode came out 4,348/4,363 against the live index's
+4,363. The 15 losers are small offshore islands and coastal territories whose
+**country polygons demonstrably contain them** (S8, via `prep().contains` on the
+geom store). Tier 2 recovers **none** of them. So the exact answer exists and the
+H3 prefilter is dropping them before any polygon test runs. **Why?**
+
+**Established, and safe to build on:**
+
+* `build_un_prefilter` (`ccode_enrichment:215`) builds cell→ccodes from the **`un`
+  docs' own `h3_cover`**, collapsed to `PREFILTER_RESOLUTION = 4`. It does **not**
+  read `un.h3_coverage.json`.
+* `SOURCE_LABEL = "un-h3-overlap"` (`:79`) is a module-level constant stamped on
+  every output at `:999`. It is **not** evidence of which tier ran. S8 was misled
+  by it; do not repeat that.
+* The geom store is healthy: 247 `un` keys, 11,768,864 total.
+* Tier 2 is a separate program (`backfill_uncoded_ccodes`, own `SOURCE_LABEL`,
+  own `main()`), and on `nl` it resolved **0 of 15** with `no_geom=0`.
+
+**NOT established — and the reason this needs someone fresh.** I tried the obvious
+mechanism and my own control refuted it. Reading `staged/un/final/places.jsonl`:
+`un:usa` carries **278 compacted cells** (r0×1, r1×8, r2×70, r3×199), `un:nzl` 296
+(r3×21, r4×72, r5×203). Testing whether a point's cell at each resolution present
+is in the cover: all three islands **uncovered** — **but Denver, deep in the
+continental USA, also tested uncovered**, which cannot be true when **1,532 `US`
+resolutions** occurred in that same run. **Either my test is wrong or the cover is
+far more incomplete than a working prefilter allows. Resolve that contradiction
+FIRST** — until it is explained, the island result means nothing.
+
+**Questions, in the order they unlock each other:**
+
+1. Why does a mainland point test as uncovered while 1,532 `US` resolutions
+   happened? (Is my per-resolution containment test wrong, or is the cover
+   genuinely that sparse?)
+2. What is actually passed as `un_records`? I read
+   `staged/un/final/places.jsonl` — the ccode run may not use that.
+3. Is `un.h3_coverage.json` consumed anywhere at all? `submit_h3_slurm`'s comment
+   calls it "the ccode enrichment pre-filter, when namespace == un", but
+   `build_un_prefilter` does not read it. Stale comment, or a second path?
+4. Unproven hypothesis, offered only as a starting point: `compute_h3_fields`
+   simplifies large polygons before polyfill, which would drop small offshore
+   islands from a country's cover. That fits the islands and **not** the control.
+
+**Reproduction:** `nl` is a 4,363-record instance that re-tests in two minutes.
+S8 has offered to run any measurement on it — **ask it rather than writing to any
+staged tree yourself.**
+
+**Also worth fixing while in here** (S8): `backfill_uncoded_ccodes` prints
+`still uncoded 15 (genuinely outside every country: open ocean, Antarctica)` for
+records the country polygon contains. It knows only that *its own tier* placed
+nothing and asserts a fact about the world.
 
 ---
 
