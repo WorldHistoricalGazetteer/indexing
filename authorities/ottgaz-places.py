@@ -296,7 +296,13 @@ def process_row(row, ofs_idx, name_to_id):
     pts = _match_points(unit.lower(), _norm(title), parents_n, ofs_idx)
     geo, approx = _hull_geometry(pts) if pts else (None, None)
     if geo:
-        ge = enrich_geometry(geo, timespans=ts)
+        # geom_key is REQUIRED for the hull's WKB to reach the geom store —
+        # without it enrich_geometry computes repr_point/hull/bounds, returns
+        # has_geom=False, and the polygon itself is discarded. og shipped
+        # without it, so its computed hulls were unservable (no exact
+        # containment, no geometry retrieval) and untileable. Matches the
+        # `{place_id}_{geometry_index}` convention; og emits one geometry.
+        ge = enrich_geometry(geo, timespans=ts, geom_key=f"{place_id}_0")
         if ge:
             ge["source"] = "ofs"
             ge["approximation"] = approx
@@ -345,26 +351,56 @@ def stage_file(tsv_path):
     name_to_id = build_name_index(rows)
 
     staged = skipped = with_geom = 0
+    stored_geom = 0
     start = datetime.now()
-    for i, row in enumerate(rows):
-        if (i + 1) % 2000 == 0:
-            print(f"\r  {i + 1}/{len(rows)} staged={staged} geom={with_geom}", end="", flush=True)
-        try:
-            doc = process_row(row, ofs_idx, name_to_id)
-            if not doc:
+
+    def _run():
+        nonlocal staged, skipped, with_geom, stored_geom
+        for i, row in enumerate(rows):
+            if (i + 1) % 2000 == 0:
+                print(f"\r  {i + 1}/{len(rows)} staged={staged} geom={with_geom}", end="", flush=True)
+            try:
+                doc = process_row(row, ofs_idx, name_to_id)
+                if not doc:
+                    skipped += 1
+                    continue
+                if doc["geometries"]:
+                    with_geom += 1
+                    if doc["geometries"][0].get("has_geom"):
+                        stored_geom += 1
+                write_staged_place_doc(namespace=NAMESPACE, doc=doc)
+                staged += 1
+            except Exception as e:
+                print(f"\n  ERROR row {i}: {e}")
                 skipped += 1
-                continue
-            if doc["geometries"]:
-                with_geom += 1
-            write_staged_place_doc(namespace=NAMESPACE, doc=doc)
-            staged += 1
-        except Exception as e:
-            print(f"\n  ERROR row {i}: {e}")
-            skipped += 1
+
+    # og's hulls are polygons, so their WKB must reach the geom-store staging
+    # dir through a configured module writer — enrich_geometry ignores
+    # geom_key without one. NAMESPACE is the shard name. Same pattern as
+    # hgis-places.py:314.
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, NAMESPACE) as gsw:
+        configure_module_writer(gsw)
+        try:
+            _run()
+        finally:
+            configure_module_writer(None)
+
     print(f"\n{'=' * 70}\nOTTGAZ STAGING COMPLETE\n{'=' * 70}")
     print(f"Time: {(datetime.now() - start).seconds}s")
     print(f"Staged: {staged:,}  (with computed geometry: {with_geom:,})")
     print(f"Skipped (no id/name): {skipped:,}")
+    # Report the two counts separately. They were identical before the
+    # geom_key fix only in the sense that BOTH described documents whose
+    # polygon had been thrown away — `with_geom` counts geometry entries,
+    # `stored_geom` counts polygons that actually reached the store, and a
+    # divergence is the defect predicate.
+    print(f"Geometries written to store: {stored_geom:,}")
+    if with_geom != stored_geom:
+        print(f"  ** WARNING: {with_geom - stored_geom:,} geometry entries did "
+              f"NOT reach the geom store — has_geom will lie for those docs **")
 
 
 if __name__ == "__main__":
