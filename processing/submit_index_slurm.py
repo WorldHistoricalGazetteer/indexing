@@ -43,6 +43,7 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.settings import (  # noqa: E402
     IX1_BASE,
     STAGED_BASE_DIR,
@@ -137,6 +138,8 @@ def _build_places_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         "python -u -m processing.index_from_stage \\",
@@ -182,6 +185,8 @@ def _build_toponyms_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         "python -u -m phonetics.inference.update_es index \\",

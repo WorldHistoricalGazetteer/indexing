@@ -129,6 +129,32 @@ class HardlinksSubmitter(_PreloadContract, unittest.TestCase):
                 )
 
 
+class EverySubmitterCarriesThePreamble(unittest.TestCase):
+    """No submitter that activates conda may omit the preload.
+
+    Deliberately exhaustive rather than naming submitters. The per-submitter
+    tests above cover the two that HAD the fix; the defect was that seven
+    others did not — including submit_h3_slurm, whose silent hull fallback
+    killed the ccode tier-1 prefilter corpus-wide. A test naming only the
+    known-good ones stays green through exactly that.
+    """
+
+    def test_no_submitter_activates_conda_without_the_preload(self):
+        root = Path(__file__).resolve().parent.parent / "processing"
+        missing = []
+        for path in sorted(root.glob("submit_*.py")):
+            src = path.read_text()
+            if "conda activate" not in src:
+                continue
+            if "CONDA_LIB_PRELOAD" not in src and "LD_LIBRARY_PATH" not in src:
+                missing.append(path.name)
+        self.assertEqual(
+            [], missing,
+            "these submitters activate conda but never prefer its libstdc++, so "
+            "`import sqlite3` dies on affected htc nodes: " + ", ".join(missing),
+        )
+
+
 # The contract is a mixin, not a test case in its own right.
 del _PreloadContract
 

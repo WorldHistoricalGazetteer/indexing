@@ -51,6 +51,7 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.generate_tiles import (  # noqa: E402
     _FIXED_BUCKETS,
     _PER_NAMESPACE_BUCKETS,
@@ -307,6 +308,8 @@ def _build_sbatch_script(
         "ulimit -n 65536",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         f"BUCKET=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
@@ -377,6 +380,8 @@ def _build_restart_sbatch_script(
         "",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         "set -eo pipefail",
         f"cd {_REPO}",
         "",

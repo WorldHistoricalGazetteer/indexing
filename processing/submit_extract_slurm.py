@@ -59,6 +59,7 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.ingest_all_authorities import (  # noqa: E402
     INGESTION_ORDER,
     STATE_FILES as _STATE_FILES,
@@ -222,6 +223,8 @@ def _build_sbatch(namespace: str, run_id: str) -> str:
             "set -eo pipefail",
             f"source {_CONDA_SH}",
             f"conda activate {_CONDA_ENV}",
+            CONDA_LIB_PRELOAD,
+            SQLITE_PROBE,
             f"cd {_REPO}",
             "export WHG_STAGING_MODE=1",
             *_passthrough_exports(),

@@ -57,6 +57,7 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.settings import (  # noqa: E402
     IX1_BASE,
     IX3_BASE,
@@ -224,6 +225,8 @@ def _build_aat_enrich_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         f"NAMESPACE=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
@@ -273,6 +276,8 @@ def _build_temporal_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         f"NAMESPACE=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
@@ -321,6 +326,8 @@ def _build_toponym_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         # Per-job scratch on CRC compute nodes.

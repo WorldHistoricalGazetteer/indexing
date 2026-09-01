@@ -47,6 +47,7 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.boundary_shard_planner import (  # noqa: E402
     COST_PROXY_NODE_COUNT,
     _COST_PROXIES,
@@ -220,6 +221,8 @@ def _build_planner_sbatch(
 set -eo pipefail
 source {_CONDA_SH}
 conda activate {_CONDA_ENV}
+{CONDA_LIB_PRELOAD}
+{SQLITE_PROBE}
 cd {_REPO}
 
 python -u -m processing.boundary_shard_planner \\
@@ -274,6 +277,8 @@ def _build_worker_sbatch(
 set -eo pipefail
 source {_CONDA_SH}
 conda activate {_CONDA_ENV}
+{CONDA_LIB_PRELOAD}
+{SQLITE_PROBE}
 cd {_REPO}
 
 echo "Shard task $SLURM_ARRAY_TASK_ID ({label}) for namespace {namespace}"
@@ -316,6 +321,8 @@ def _build_finalize_sbatch(
 set -eo pipefail
 source {_CONDA_SH}
 conda activate {_CONDA_ENV}
+{CONDA_LIB_PRELOAD}
+{SQLITE_PROBE}
 cd {_REPO}
 
 python -u -m processing.boundary_stage_finalize \\

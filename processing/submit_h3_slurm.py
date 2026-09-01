@@ -55,6 +55,7 @@ _CONDA_SH = os.environ.get(
 # Import settings after we know the repo is in sys.path
 sys.path.insert(0, str(_REPO))
 
+from processing.slurm_env import CONDA_LIB_PRELOAD, SQLITE_PROBE
 from processing.settings import (  # noqa: E402
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -207,6 +208,8 @@ def _build_sbatch_script(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        CONDA_LIB_PRELOAD,
+        SQLITE_PROBE,
         f"cd {_REPO}",
         "",
         "# Resolve namespace from array-task index",

@@ -19,6 +19,7 @@ import pyarrow.parquet as pq
 
 from processing.helpers import (
     H3_SUBCELL_BBOX_DEG,
+    _crosses_antimeridian,
     bbox_maxdim_deg,
     compute_h3_fields,
     select_h3_cover_geometry,
@@ -75,19 +76,60 @@ def cover_geometry_for(geom: dict, place_id: str, geometry_index, reader) -> dic
     behaviour, still correct for namespaces whose h3 reads hull-bearing JSONL).
     Returns ``None`` for point features (→ centroid-only cover, as intended).
     """
-    if reader is not None and geom.get("has_geom"):
+    has_geom = bool(geom.get("has_geom"))
+    if reader is not None and has_geom:
         key = geom.get("geom_ref") or f"{place_id}_{geometry_index}"
         try:
             gj = reader.get(key)
-        except Exception:
-            gj = None
+        except Exception as exc:
+            raise RuntimeError(
+                f"geom store lookup failed for {key} (has_geom=True): {exc}"
+            ) from exc
         # Accept GeometryCollections (which carry "geometries", not
         # "coordinates") — antimeridian-spanning features are stored that way and
         # compute_h3_fields handles them. Rejecting them here would silently drop
         # back to the hull/centroid cover for those large features.
         if isinstance(gj, dict) and gj.get("type") and (gj.get("coordinates") or gj.get("geometries")):
             return gj
-    return select_h3_cover_geometry(geom, geom.get("hull"))
+
+    # ``has_geom=True`` is a PROMISE that the authoritative polygon is
+    # retrievable. When it cannot be honoured, failing loudly is the only safe
+    # answer: the hull is not a coarser approximation of a country, it can be a
+    # WRONG one. Measured 31 Aug 2026 — the un-final chain's sbatch lacked the
+    # conda LD_LIBRARY_PATH export, so `import sqlite3` raised inside
+    # geom_store, three stacked `except Exception`s turned that into
+    # reader=None, and un's cover was silently built from the hull instead.
+    # un:usa's hull spans Alaska to the Pacific territories and so crosses the
+    # antimeridian: the resulting cover held 278 cells covering 1.74x the
+    # country's area while containing almost none of it (Denver, NYC, Anchorage,
+    # Honolulu all absent). That killed the ccode tier-1 prefilter corpus-wide
+    # — silently, because every stage reported success.
+    #
+    # The same missing export hit submit_ccode_slurm, where it raised at import,
+    # was diagnosed in an hour and cost nothing. The entire difference was
+    # whether the error was swallowed.
+    if has_geom:
+        raise RuntimeError(
+            f"{place_id}[{geometry_index}] has_geom=True but the geom store is "
+            f"unavailable or holds no geometry for "
+            f"{geom.get('geom_ref') or f'{place_id}_{geometry_index}'} "
+            f"(reader={'open' if reader is not None else 'NOT OPEN'}). Refusing "
+            f"to fall back to the convex hull: for a multi-part feature the hull "
+            f"can cross the antimeridian when the polygon does not, producing a "
+            f"cover in the wrong hemisphere. Check the job's "
+            f"LD_LIBRARY_PATH/conda preamble and the geom-store index."
+        )
+
+    # No has_geom: the hull/inline geom is the only geometry there is, and is
+    # the intended source. Guard the one case where it is actively wrong.
+    cover_geom = select_h3_cover_geometry(geom, geom.get("hull"))
+    hull = geom.get("hull")
+    if (cover_geom is hull and isinstance(hull, dict)
+            and _crosses_antimeridian(hull)):
+        inline = geom.get("geom") or geom.get("geometry")
+        if isinstance(inline, dict) and not _crosses_antimeridian(inline):
+            return inline
+    return cover_geom
 
 
 def _extract_stage_dir(namespace: str) -> Path:
