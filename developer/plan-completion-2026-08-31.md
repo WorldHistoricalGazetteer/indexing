@@ -34,6 +34,13 @@
 > run exposed it, which is the third time in a day that rule caught something in
 > its author's own work rather than someone else's.
 >
+> **Compare SETS, not counts — a wrong answer can be the right size.** `limuw`'s
+> stored cover is 55 cells and a fresh recompute is also 55 — **a different 55**.
+> S8 read stored-vs-prod count agreement as "covers look sound" and it was wrong;
+> S9 notes its own `stored 278 vs fresh 376` reasoning would have failed silently
+> on a `limuw`-shaped case. Cardinality agreement is not set agreement, and
+> wherever this campaign compares artefacts it should compare membership.
+>
 > **`squeue` cannot tell you a job never started.** It lists pending and running
 > only, so an empty queue is equally consistent with *never submitted* and with
 > *already completed* — and a `df` that has not moved is equally consistent with
@@ -2315,8 +2322,19 @@ and must be RE-RUN, not re-verified.** That is a fourth stage of the chain to
 redo, and S8's `nl` ccode losers may change once the covers are correct, so the
 re-run becomes a genuine re-test rather than a confirmation.
 
-**The recompute list is `un` AND `nl`** — plus any namespace whose h3 ran through
-`submit_h3_slurm` before `6ad2640` on an affected node.
+**The recompute list is `un` AND `nl` — and the correct general statement is
+wider than either** (S9, and it asked for the wider one to be carried): **every h3
+run through `submit_h3_slurm` before `6ad2640` is suspect.** That submitter lacked
+the conda export until then, and S8's `nl` run (11097899, *today*) went through it.
+So this is not "confined to `staged/un` and what has read it" — that was my
+framing and it was too narrow. Any namespace h3'd through that submitter, on any
+node where `import sqlite3` failed, could carry a hull-derived cover.
+
+**Production remains unaffected as far as anyone has shown**, and the evidence for
+that got stronger: prod's `samish` is 103 and `ngati-rehua` 82, matching
+fresh-from-store, so **prod holds polygon-derived covers while the staged tree
+holds hull-derived ones**. That extends the validation gate — production is a
+known-good reference for more than `un:usa`.
 
 ⚠️ **S8's discriminator was invalid and it is worth knowing why.** It compared
 *counts* against production, saw "three match, three differ in both directions",
