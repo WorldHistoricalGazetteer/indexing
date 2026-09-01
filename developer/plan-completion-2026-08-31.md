@@ -2289,65 +2289,72 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
-#### 📊 BLAST RADIUS — FINAL (job 11103106). Supersedes two earlier tables
+#### 📊 BLAST RADIUS — CALIBRATED (job 11103195). Third and current version
 
-⚠️ **This REPLACES both the `selfEXCL` table and the first fresh-vs-stored table.
-Do not quote either.** The second was partly S9's own probe bug and its
-`osm`/`ohm`/`pl` rows were wrong **in the alarming direction**.
+⚠️ **Supersedes the `selfEXCL` table AND the 18-sample fresh-vs-stored table. Do
+not quote either.** Each revision has moved toward caution; this one retracts a
+"clean" verdict I recorded in bold.
 
-⚠️ **On the table's face, not in a footnote: neither instrument can CLEAR a
-namespace.** `selfEXCL` — every hit real, absence proves nothing (it scored `un`
-8/247 when all 247 are affected). Fresh-vs-stored — every DIFFER real, **MATCH
-proves nothing**, and proves less the smaller the cover.
+**The instrument summary — read before any row:** *every DIFFER is real; a MATCH
+is informative only above ~100 cells and meaningless below ~25; neither instrument
+can clear a namespace; and **a table of MATCHes without cover sizes cannot be read
+at all**.*
 
-**Method:** stored `h3_cover` vs a fresh recompute from the geom-store polygon via
-`compute_h3_fields` — what `h3_stage` actually calls — **set** comparison, not
-counts, reservoir-sampled 18 per namespace. Validated against `nl` ground truth
-including `limuw`: 55 stored, 55 fresh, **same cardinality, different set,
-correctly flagged** — which no count or cardinality test catches.
+**How the threshold was measured rather than guessed.** `un` and `nl` are
+independently proved **100% hull-derived**, so **every MATCH within them is a
+false negative by construction** — the match rate per cover-size bucket *is* the
+false-negative rate at that size:
 
 ```
-ns                 tested  MATCH  DIFFER  indet   verdict
-un                     18      0      18      0   ALL AFFECTED
-un.bnda-baseline       18      0      18      0   ALL AFFECTED
-nl                     17      4      13      1   AFFECTED (wholly — see note 1)
-whg                    12      3       9      6   AFFECTED
-clio                   18     14       4      0   AFFECTED (~22%)
---- no evidence of defect (NOT a clean bill) ---
-osm, ohm, pl, po, ukhc, hgis, kain_par, vob_cty, vob_lgd, vob_rc, vob_rd
+cover size   tested   MISSED(FN)   false-neg rate   verdict
+       1-4        5            5           100%     MATCH meaningless
+       5-9       14           14           100%     MATCH meaningless
+     10-24       20           14            70%     MATCH meaningless
+     25-99      132           27            20%     MATCH weak
+   100-399      365           16             4%     MATCH informative
+     400+       108            0             0%     MATCH informative
 ```
 
-**`un` at 18/18 is the headline and it validates the instrument** — 100% detection
-on a namespace independently proved 100% hull-derived, against `selfEXCL`'s 3%.
+Monotonic, and it explains S8's `namarin`: 7 cells, a 30-part MultiPolygon at 55%
+of its hull area, matching anyway. A coarse cover cannot disagree.
 
-⚠️ **`osm` and `ohm` are CLEAN, and S9's earlier "osm 14/18, ohm 13/18 defective"
-was its own probe bug** — it called `_polyfill_adaptive` directly, which dispatches
-non-crossing input straight to the polygon-only `_polyfill_one_polygon` and so
-returns **empty** for LineString / MultiLineString / GeometryCollection, and it
-scored those empties as differences. Confirmed here: the dispatcher's guard is
-`gtype in ("Polygon","MultiPolygon")` and everything else falls through. `osm` and
-`ohm` are exactly the LineString/GeometryCollection namespaces, which is why the
-bug hit them hardest. **Probe-only — no production path calls it directly.**
-Corrected: **18/18 MATCH.** S9's own words: *"78% of OSM is defective" would have
-been a bad thing to put in a plan.*
+**Every namespace re-read against that threshold:**
 
-**Two reading notes:**
+```
+ns                 tested  DIFFER  MATCH>=100  MATCH<100   reading
+whg                    45      35           1          9    DEFECTIVE (78%)
+un.bnda-baseline       45      45           0          0    DEFECTIVE (100%)
+clio                   45      10          33          2    DEFECTIVE (22%)
+kain_par               45       0           0         45    UNINFORMATIVE — no information at all
+vob_lgd                45       0           0         45    UNINFORMATIVE — no information at all
+osm                    45       0           1         44    barely evidenced
+vob_rd                 45       0           1         44    barely evidenced
+ohm                    45       0           3         42    barely evidenced
+pl                     45       0           8         37    weakly evidenced
+vob_cty, hgis, vob_rc, po, ukhc   37-43 informative matches   genuinely clean
+```
 
-1. **`nl`'s 4 matches are NOT partial damage.** All 4,363 covers are hull-derived;
-   the non-differing ones simply have covers too coarse to disagree. `namarin` is a
-   30-part MultiPolygon at **55% of its hull area** — nowhere near convex — and
-   still yields an identical 7-cell cover. Sensitivity tracks **cover granularity,
-   not shape divergence**: the two that DIFFER sit at 0.94/0.93 of hull area, the
-   one that MATCHES at 0.55. **Read `nl` as wholly affected.**
-2. **`po` rests on 4 testable features** with 14 indeterminate. That row carries
-   almost no information in either direction.
+⚠️ **RETRACTED: "`osm` and `ohm` are CLEAN".** I recorded that in bold on
+18/18 MATCH. At 45 samples `osm` has **1** informative match and `ohm` **3** — the
+rest sit below the threshold where a match means nothing. The correct statement is
+**"not shown to be defective, on very little evidence"**. `kain_par` and
+`vob_lgd` are worse: **zero** informative matches, so those rows carry **no
+information whatever** despite reading 45/45 MATCH. S9's own words: *that is the
+same over-reading of a zero I have been warning about all day, and I did it to my
+own table by not stratifying.*
 
-**Not done:** stratifying MATCH by cover size, which would turn "MATCH is weak"
-into a threshold. ~10 minutes if the radius is wanted to that precision.
+**What strengthened:** `whg` is far worse than the 12-sample figure suggested —
+**35 of 45 differ (78%)**, up from 9 of 12. `clio` holds at ~22% on the larger
+sample. `un.bnda-baseline` is 45/45.
 
-**Consequence — the scope is much smaller than the earlier tables implied. The
-recompute needed is `un` + `nl` + `clio` + `whg`, not the corpus**, and `un`
-remains the one that gates ccode.
+**Recompute set unchanged in membership — `un`, `nl`, `clio`, `whg` — but `whg` is
+now known badly affected rather than marginally.**
+
+**Open, and explicitly NOT clean:** `osm`, `ohm`, `kain_par`, `vob_lgd`, `vob_rd`
+are **unresolved**. Settling them needs sampling that *deliberately targets
+features with ≥100-cell covers* rather than sampling uniformly — most of their
+area features are small, which is precisely why uniform sampling learns nothing
+about them. That pass has not been run.
 
 #### 🔴 `nl` MUST BE RE-RUN — its covers are hull-derived too, and its clearance was false
 
