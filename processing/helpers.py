@@ -677,12 +677,23 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
     """
     Compute ``h3_centroid`` and ``h3_cover`` for a place.
 
-    These are **top-level** fields on the place document (not nested inside
-    ``geometries[]``).  Call this for the primary geometry after
-    ``enrich_geometry()`` has produced a ``repr_point``, then set::
+    These are **per-geometry** fields, stored on each entry inside
+    ``geometries[]`` — NOT on the place document root. ``schemas/places.json``
+    defines ``geometries.h3_centroid`` / ``geometries.h3_cover`` and has no
+    top-level equivalents. Call this for a geometry after ``enrich_geometry()``
+    has produced its ``repr_point``, then set them on that entry::
 
-        doc["h3_centroid"] = h3_centroid
-        doc["h3_cover"] = h3_cover
+        geom_entry["h3_centroid"] = h3_centroid
+        geom_entry["h3_cover"] = h3_cover
+
+    This docstring previously said "**top-level** fields on the place document
+    (not nested inside ``geometries[]``)" and showed ``doc[...] = ...``. That was
+    wrong, and it was load-bearing: on 2026-08-31 a session checked ``has_geom``
+    and ``geom_class`` at the document root on the strength of it, read 4,363
+    uniform ``None``s, and concluded a namespace was exempt from a defect it
+    actually had — clearing its own output on the false premise. Documentation
+    that agrees with a wrong reading is worse than none, so the correction is
+    recorded here rather than silently applied.
 
     Args:
         lon:          Longitude of the representative point (from repr_point).
