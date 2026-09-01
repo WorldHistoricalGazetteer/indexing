@@ -25,6 +25,14 @@
 > independent measure, never against the pipeline's own status. Each step below
 > names its check for that reason.
 >
+> **`squeue` cannot tell you a job never started.** It lists pending and running
+> only, so an empty queue is equally consistent with *never submitted* and with
+> *already completed* — and a `df` that has not moved is equally consistent with
+> both when the namespace is 5 MB. `sacct` discriminates; `squeue` cannot. I
+> reported "nothing has started" to SG as fact from those two measures on 1 Sep,
+> while `nl`'s h3 stage had already completed (job 11097899_0, exit 0:0, 2:29).
+> Caught by S8. The rule below, from the person who wrote it into this document.
+>
 > **And its sharper form, from S4, 31 Aug: _a verification that has never been
 > run against a known-bad input isn't a verification._** Run each check first
 > where you know it should fail — against the pre-change state, the stale
@@ -1988,6 +1996,29 @@ It is *within*-stage, so it does not accumulate across the three, and
 "first-run-only" does not change it. Still comfortable at 274 GB, but it is
 precisely the number that would surprise someone reading only the finished-stage
 projection.
+
+⚠️ **MEASURED AT `nl`, 1 Sep: the polygon growth ratio is WORSE than the table.**
+`nl` went 5,160,153 → 22,919,497 through h3 — **4.44×**, against the 2.21× (`clio`)
+the projection used as its polygon upper bound. `nl` is Native Land, territory
+polygons, and it beat the assumed ceiling substantially. This does **not** change
+`gn`/`wd`, which are point-dominated at ~1.05×, but `wd` gains 58,658 polygons
+from its patch, so **re-measure at `wd` rather than carrying the estimate**.
+Parquet ran 26.8% of its JSONL against the 28% assumed — the *method* is holding;
+only the polygon ratio was wrong.
+
+⚠️ **`submit_h3_slurm` HAS NO `--wall-hours` OVERRIDE — Fault 13's mitigation
+exists only on `submit_ccode_slurm`** (S8, 1 Sep; verified). The h3 submitter
+derives `--time` from `estimate_wall_time_seconds` at `:268` and formats it at
+`:199`, with no way to override. That is the exact function behind Fault 13, and
+for `gn` the history it medians is the 5 Aug run over the **pre-patch** extract —
+before 26.7 M names were merged. Its evident unreliability: **it gave `nl` 24 hours
+for 4,363 documents.**
+
+**Ruling: use a hand-written sbatch with an explicit `--time` for `gn`.** It sits
+inside S8's own step, changes no shared code mid-campaign, and needs no wider
+decision. Adding `--wall-hours` to `submit_h3_slurm` is the right permanent fix
+and belongs in the post-2.7 residual queue beside the resolver hoisting, **not**
+in the middle of the run that needs it.
 
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
