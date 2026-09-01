@@ -262,6 +262,21 @@ def _build_sbatch_script(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        # Some htc nodes carry a /lib64/libstdc++ older than the env's libicuuc
+        # needs, and `import sqlite3` then dies with "GLIBCXX_3.4.30 not found"
+        # before a single document is read. The env ships its own
+        # libstdc++.so.6.0.34 — prefer it. Same defect and same fix as
+        # submit_hardlinks_slurm:164 (S3, htc-n77, 31 Aug 2026); it is the node
+        # image, not the env, so it strikes only some array tasks.
+        #
+        # This job needs it as much as the harvest does: ccode_enrichment
+        # imports geom_store, which imports sqlite3, so an affected node fails
+        # the ENTIRE array task at import. The probe line is deliberate —
+        # failing in one second beats failing after the enrichment pass, and a
+        # bare ImportError three frames deep reads like a code fault rather
+        # than a node one.
+        'export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH}"',
+        "python -c 'import sqlite3; print(\"sqlite3 ok\", sqlite3.sqlite_version)'",
         f"cd {_REPO}",
         "",
         f"NAMESPACE=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
