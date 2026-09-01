@@ -2174,6 +2174,56 @@ it.** `write_parquet_from_jsonl` calls `paj.read_json(...)` then
 `pq.write_table(...)` — a **full Arrow table in memory**, built *after* the patch
 dict, so peak may be the **sum** rather than the max.
 
+### ✅ RESULTS, 1 Sep — `un` recompute VALIDATED; `wd` measured; **`gn` needs 96 G, not 64**
+
+**1. `un` recompute validated by SET comparison against production** (job
+11103315_0, 29:45):
+
+```
+h3_merged  376 cells  SETS_EQUAL_TO_PROD=True   only_here=0  prod_only=0   all six probes TRUE
+final      278 cells  SETS_EQUAL_TO_PROD=False  only_here=263 prod_only=361 Denver/NYC/… FALSE
+```
+
+⚠️ **`un`'s `final/` still holds the bad 278-cell cover**, because `ccode_merge`
+has not run for `un` — **the Fault-12 shape exactly: a chain stopping short of
+`final/`.** It does **not** block `nl`, and S8 checked why rather than assuming:
+`ccode_enrichment._load_un_records` calls `_iter_staged_docs(UN_NAMESPACE)`, which
+reads `_h3_merged_dir` — **`h3_merged`, not `final`** — so the prefilter is
+live-correct now. Still to be brought current, because `final/` is what a future
+rebuild indexes from and a known-bad artefact left there is how this campaign's
+faults propagate. **A correctness chore, not a gate.**
+
+**2. `wd` peak RSS — and it changes `gn`'s request.** Verified independently
+(`sacct -j 11103334`): **MaxRSS 42,953,084 K = 40.96 GiB against 48 G, 85% of the
+request.** `wd`'s patch is 93 MB so its dict was under a gigabyte — **essentially
+all 41 GB was the Arrow/parquet conversion** of 11.46 M merged documents. That is
+exactly the isolation the `wd`-first ordering was chosen to produce.
+
+```
+gn Arrow scaled  40.96 × (13,454,817 / 11,459,393) = 48.1 GiB
+     + patch dict                          14.4 GiB
+                                     total 62.5 GiB   →  98% of a 64 G request
+                                                          65% of a 96 G request
+```
+
+🛑 **Request 96 G for `gn`'s `update_merge`, NOT 64 G.** At 64 it would sit at 98%
+of its limit, before any allowance for `gn`'s merged documents being larger than
+`wd`'s.
+
+⚠️ **And the 200 k-sample extrapolation was ~3× optimistic** — it gave 1.07 KB/doc
+against a real ~3.6 KB/doc for merged documents. S8 had adjusted its own estimate
+upward for the sample being extract-shaped and *still* fell far short. **This is
+the entire justification for `wd`-first: a 64 G `gn` run would have OOM'd hours
+in, and no amount of extrapolation would have caught it.** My own "64 G covers a
+14.4 GB dict with headroom" was right about the dict and wrong about the total — I
+sized the component I had a number for.
+
+**3. `wd` artefacts: complete pair, no degradation.**
+`update_merged/places.jsonl` 10,338,890,657 + `places.parquet` 1,545,366,287, and
+**`patches_unmatched: 0`** — so every patch entry matched a document, the 58,657
+geoshapes landed rather than dangling, and `wd` is **not** in `ukhc`'s JSONL-only
+shape.
+
 ### ✅ SG's RULING, 1 Sep — S8 takes the `un` recompute; `update_merge` on `wd` first
 
 Both decisions to S8. The `un` recompute because it holds the validation gate, has
