@@ -2531,172 +2531,65 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
-#### ✅ PRODUCTION `osm`/`ohm` ARE CLEAN — and "affected" needs two numbers, not one
+#### ✅ FINAL — every namespace resolves; five defective, the rest bounded at ≤7%
 
-**Measured against the LIVE index** (job 11103617 + targeted `_mget`; alias
-`places → places_h3ccode-20260805t120000z`), at ≥400-cell covers:
+**This REPLACES the `selfEXCL`, 18-sample and calibrated tables. None of the three
+should be quoted.** The threshold that shaped all of them was measuring the wrong
+property.
 
-```
-osm   30 tested   30 MATCH   0 DIFFER
-ohm   30 tested   30 MATCH   0 DIFFER
-staged cover == live cover for the same 60 features:  60 agree, 0 differ
-```
+**The correction that settles it.** The instrument compares
+`set(stored) == set(fresh_from_geom_store_polygon)`. **Set equality is exact at any
+cardinality** — equal means the stored cover *is* what the authoritative polygon
+yields. Cover size only ever changed the probability that a hull-derived cover
+**coincided** with the right answer, and a coincident cover **is correct**. So:
 
-The store was asserted open (**11,768,864 entries**) with a control fetch of
-`un:usa_0` before any comparison ran, so a dead reader could not masquerade as a
-corpus-wide difference — the instrument's own exposure to the defect it measures,
-guarded.
-
-⚠️ **This corrects MY premise, not S9's.** I redirected the pass to the live index
-arguing staged was a poor proxy. For `osm`/`ohm` staged and live **agree on all
-60**. The real distinction is not staged-versus-live in general — it is that
-**`un` and `nl` were rewritten by the broken h3 runs and `osm`/`ohm` were not.**
-
-⚠️ **REFRAMING — the test detects whether a cover is WRONG, not whether it was
-HULL-DERIVED, and this plan has conflated them throughout** (S9). A hull-derived
-cover that happens to equal the polygon-derived one **is not defective** — it is
-the correct cover, arrived at cheaply. So the "false negatives" in the calibration
-were never missed defects; they are features where hull substitution **made no
-difference**. **Record affected-ness as two numbers:**
+* the test **detects wrongness, not provenance**, and has **no false negatives for
+  wrongness at any cover size**;
+* what was calibrated as a "false-negative rate" is a **coincidence rate** and is
+  relabelled as such;
+* the ≥400 threshold was gating a *provenance* question that does not size
+  remediation, and is **withdrawn**.
 
 ```
-              provenance (hull-derived)     materially WRONG
-un            100%                          ~96%   (244 tested, 9 coincidental)
-nl            100%                          ~83%   (400 tested, 67 coincidental)
+DEFECTIVE (measured, materially wrong)
+  un.bnda-baseline    45/45   100%
+  un                235/244    96%
+  nl                333/400    83%
+  whg                35/45     78%
+  clio               10/45     22%
+
+NO DEFECT FOUND — 0 of 45 sampled; prevalence ≤ ~7% at 95% confidence (rule of three, 3/45)
+  osm, ohm, pl, po, ukhc, hgis, kain_par, vob_cty, vob_lgd, vob_rc, vob_rd
+  osm and ohm additionally confirmed against the LIVE index, 30/30 each, 0 DIFFER
 ```
 
-**Only the second sizes the remediation; only the first explains the cause.**
-Supersedes "read `nl` as wholly affected" — its provenance is wholly, its effect
-is ~83%.
+⚠️ **`kain_par`, `vob_lgd` and `vob_rd` were recorded as "structurally
+untestable". That was wrong** — they were already **tested** (45 sampled each,
+0 DIFFER in job 11103195) and mislabelled UNINFORMATIVE only because their matches
+sat below a threshold answering the wrong question. They are clean rows.
 
-**`kain_par`, `vob_lgd`, `vob_rd`: zero features with a ≥400-cell cover** across
-23,177 / 9,765 / 4,418 geometries — so no ≥400-threshold sample exists for them.
-⚠️ **But see the threshold note below: under the wrongness framing they may be
-testable at any cover size.**
+**Affected-ness takes two numbers** — *provenance* (hull-derived) and *material
+wrongness*. `un` is 100% hull-derived and ~96% wrong; `nl` 100% and ~83%. **Only
+the second sizes remediation; only the first explains the cause.** This supersedes
+"read `nl` as wholly affected".
 
-#### 📊 BLAST RADIUS — CALIBRATED (job 11103195). Third and current version
+⚠️ **The claim's real scope, narrower than "correct"** (S9): "correct" here means
+**consistent with what today's `compute_h3_fields` produces from the polygon
+currently in the geom store**. Two ways that could mislead — if the current code
+were itself wrong, every stored cover would have to be wrong *identically* to
+score MATCH (implausible, not impossible); and if a polygon were **replaced** in
+the store after its cover was computed, a DIFFER would be flagging **staleness**
+rather than hull substitution. Neither changes a verdict above.
 
-⚠️ **Supersedes the `selfEXCL` table AND the 18-sample fresh-vs-stored table. Do
-not quote either.** Each revision has moved toward caution; this one retracts a
-"clean" verdict I recorded in bold.
+💡 **And the rule to carry forward is not the one I nearly recorded.** I redirected
+this pass to the live index arguing *"staged is an unreliable proxy"*. For
+`osm`/`ohm`, staged and live agree on all 60. The true rule is narrower and more
+useful: **an artefact is unreliable if a known-broken run rewrote it.** `un` and
+`nl` were rewritten; `osm`/`ohm` were not. **Provenance of the artefact, not its
+location.**
 
-**The instrument summary — read before any row:** *every DIFFER is real; a MATCH
-is informative only above **≥400 cells** and meaningless below ~25; neither
-instrument can clear a namespace; and **a table of MATCHes without cover sizes
-cannot be read at all**.*
-
-⚠️ **This line previously said "~100 cells"** (Auditor F5) — the pooled figure the
-section below then retracts. **≥400 is the conservative threshold**; ≥100 gives up
-to 7% false-negative in the worse of the two calibration namespaces. Where later
-text commissions "a targeted ≥100-cell pass", read **≥400**.
-
-**How the threshold was measured rather than guessed.** `un` and `nl` are
-independently proved **100% hull-derived**, so **every MATCH within them is a
-false negative by construction** — the match rate per cover-size bucket *is* the
-false-negative rate at that size:
-
-```
-cover size   tested   MISSED(FN)   false-neg rate   verdict
-       1-4        5            5           100%     MATCH meaningless
-       5-9       14           14           100%     MATCH meaningless
-     10-24       20           14            70%     MATCH meaningless
-     25-99      132           27            20%     MATCH weak
-   100-399      365           16             4%     MATCH informative
-     400+       108            0             0%     MATCH informative
-```
-
-Monotonic, and it explains S8's `namarin`: 7 cells, a 30-part MultiPolygon at 55%
-of its hull area, matching anyway. A coarse cover cannot disagree.
-
-⚠️ **BUT the pooled curve hides a real disagreement between its only two inputs —
-do not quote "≈100 cells" as a constant** (S9, correcting itself after S8
-cautioned the curve might not transfer between namespaces; it does not). Split out
-at identical cover sizes:
-
-```
-cover size    un false-neg      nl false-neg     ratio
-     10-24    3/8    = 38%      11/12  = 92%      2.4x
-     25-99    2/42   =  5%      25/90  = 28%      5.6x
-   100-399    0/142  =  0%      16/223 =  7%       —
-     400+     0/48   =  0%       0/60  =  0%       —
-```
-
-`nl` misses **two to six times as often as `un` at the same cover size**. So:
-**≥100 cells** gives ≤7% false-negative in the *worse* of the two, not the 4% the
-pooled figure implied; **≥400 cells is the only band where both reach 0%** and is
-the conservative threshold; below 100 stands as meaningless either way.
-
-**Why this is signal rather than noise:** the curve is cover granularity against
-shape complexity, and `un`'s countries are far larger and smoother relative to
-their covers than `nl`'s territories. A namespace's position on the curve is a
-property of **its own geometry** — which is exactly S8's caution, and means
-`osm`'s administrative geometry could sit anywhere on it. **The curve is the right
-instrument; two namespaces is not enough to make it universal.**
-
-**Every namespace re-read against that threshold:**
-
-```
-ns                 tested  DIFFER  MATCH>=100  MATCH<100   reading
-whg                    45      35           1          9    DEFECTIVE (78%)
-un.bnda-baseline       45      45           0          0    DEFECTIVE (100%)
-clio                   45      10          33          2    DEFECTIVE (22%)
-kain_par               45       0           0         45    UNINFORMATIVE — no information at all
-vob_lgd                45       0           0         45    UNINFORMATIVE — no information at all
-osm                    45       0           1         44    barely evidenced
-vob_rd                 45       0           1         44    barely evidenced
-ohm                    45       0           3         42    barely evidenced
-pl                     45       0           8         37    weakly evidenced
-vob_cty, hgis, vob_rc, po, ukhc   37-43 matches >=100   see caveat below
-```
-
-⚠️ **"Genuinely clean" is stronger than the data licenses** (S9's own retraction).
-Those five were tabulated against the **pooled ≥100** line; under a ≥400 line each
-would shrink by an unrecorded amount, so the accurate phrasing is **"well
-evidenced at ≥100, unquantified at ≥400"**. They remain the best-evidenced rows.
-A ≥400 re-tabulation is a cheap re-run of part 2 with a second threshold column —
-offered, not yet run, and it does not gate anything.
-
-⚠️ **RETRACTED: "`osm` and `ohm` are CLEAN".** I recorded that in bold on
-18/18 MATCH. At 45 samples `osm` has **1** informative match and `ohm` **3** — the
-rest sit below the threshold where a match means nothing. The correct statement is
-**"not shown to be defective, on very little evidence"**. `kain_par` and
-`vob_lgd` are worse: **zero** informative matches, so those rows carry **no
-information whatever** despite reading 45/45 MATCH. S9's own words: *that is the
-same over-reading of a zero I have been warning about all day, and I did it to my
-own table by not stratifying.*
-
-**What strengthened:** `whg` is far worse than the 12-sample figure suggested —
-**35 of 45 differ (78%)**, up from 9 of 12. `clio` holds at ~22% on the larger
-sample. `un.bnda-baseline` is 45/45.
-
-**Recompute set unchanged in membership — `un`, `nl`, `clio`, `whg` — but `whg` is
-now known badly affected rather than marginally.**
-
-⚠️ **The unresolved namespaces do NOT gate the retile — and the consumer that
-actually matters is worse.** S8 flagged that "`osm` and `ohm` are the largest tile
-buckets and unresolved is not a state to retile from". Checked: **`generate_tiles.py`
-contains no reference to `h3_cover` or `h3_centroid` at all.** The tile builder
-takes geometry from the geom store via `geom_ref`; covers are not a tile input. **S5
-is not blocked by this.**
-
-But `h3_cover` *is* consumed by **`gateway/spatial.py`, `search.py`,
-`reconcile.py` and `es_helpers.py`** — the **live fuzzy-containment path** — plus
-`clustering_payload.py`. So the exposure is **search-side, not tile-side**: a bad
-cover in the live index degrades `containment=fuzzy` for those features, which is
-the `un`/`limuw` failure arriving as a user-facing wrong answer rather than a
-staging defect. And because the live index was built from these staged trees, a
-staged cover that is bad for `osm`/`ohm` implies a live one that is too.
-
-**That makes S9's targeted ≥100-cell pass more important than "before the retile",
-not less — it is a question about production search correctness, and it has a
-different owner and priority from 2.7.** It remains genuinely NOT a blocker for
-2.7 or for S5.
-
-**Open, and explicitly NOT clean:** `osm`, `ohm`, `kain_par`, `vob_lgd`, `vob_rd`
-are **unresolved**. Settling them needs sampling that *deliberately targets
-features with ≥100-cell covers* rather than sampling uniformly — most of their
-area features are small, which is precisely why uniform sampling learns nothing
-about them. That pass has not been run.
+**Recompute set: `un`, `nl`, `clio`, `whg`.** Unchanged throughout every revision,
+because it rests on DIFFER results, which were always real.
 
 #### 🔴 `nl` MUST BE RE-RUN — its covers are hull-derived too, and its clearance was false
 
