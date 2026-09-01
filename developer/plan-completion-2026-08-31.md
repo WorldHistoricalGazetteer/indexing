@@ -2081,6 +2081,50 @@ two days, after S8's `antimeridian` and my own `hard_links_staged` platform-limi
 note, which S8 has likewise withdrawn. Same cause, same one-line fix, three
 sightings.
 
+### 🛑 `nl` CHECK 3 FAILED — 99.66% vs 100%, and the cause is a MISSING STEP, not a degradation
+
+**S8's two-sided check earned its place on the smallest namespace, exactly as
+intended.** `nl`'s `final/` came out 4,348/4,363 coded against the live index's
+4,363/4,363 — 15 records that would lose their ccodes. Unlike `gn`'s undersea
+residual these are **not** legitimately ccode-less: all 15 are small offshore
+islands and coastal territories (the five Channel Islands, Block Island, San Juan
+Islands, Great Barrier Island NZ, two treaty cessions), and the live index holds
+the right answers for exactly them.
+
+**Checks 1 and 2 passed cleanly** — resolver now returns `nl/final/places.parquet`
+(was `extract/`), and `final/` is 4,363 rows, delta 0.
+
+⚠️ **S8's hypothesis was that the ccode stage silently degraded to H3-only with no
+Shapely refine, because the geom store was unavailable. Both halves are wrong, and
+I checked rather than agreed:**
+
+* **The store is fine.** `/vast/ishi/geom/index.sqlite` holds **247 `un` keys**
+  (11,768,864 total). Its 03:37 timestamp is S2's merge writing it, not something
+  predating it.
+* **"4,348 of 4,348 from `un-h3-overlap`" is not a signal — it is a constant.**
+  `ccode_enrichment.SOURCE_LABEL = "un-h3-overlap"` (`:79`) is module-level and
+  stamped on **every** output at `:999`, whether or not the Shapely refine ran. No
+  polygon tier appears in the output because *no label for one exists in that
+  module*. A constant read as evidence.
+
+**The actual cause: tier 2 is a SEPARATE PROGRAM that 2.7's chain does not run.**
+`backfill_uncoded_ccodes` has its own `SOURCE_LABEL = "un-bnda-fallback"` (`:46`),
+its own `main()` and its own argparse — it is not a stage of the ccode pass. The
+live index's 100% includes records coded by that second pass; 2.7's chain stops at
+tier 1. **So this is the `update_merge` omission again: a chain that leaves out a
+step the original corpus run included** — not a regression in the code, a gap in
+the plan.
+
+**Predicted, not verified:** those 15 are tier-2 candidates and should resolve
+under `backfill_uncoded_ccodes`. S8 should test that on `nl` before `gn`/`wd`
+rather than take it from here. Note S9 has *just* repaired that tool
+(`dbf789f`) — it now reads JSONL-only `final/` and reports a zero-scan instead of
+printing nothing, so it is in better shape than when the corpus run used it.
+
+**The hold on `gn`/`wd` was right and stands.** The cost of confirming now is
+minutes; the cost of finding it after `gn` is hours of compute plus a `final/`
+wrong in a way no row count can see.
+
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
 goes flood-stage read-only, leaving room to recover rather than discovering it at
