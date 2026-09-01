@@ -204,8 +204,17 @@ def main() -> int:
     print(f"uncoded          {totals['uncoded']:>12,d}")
     print(f"  no geometry    {totals['no_geom']:>12,d}  (unresolvable)")
     print(f"  RESOLVED       {totals['resolved']:>12,d}  -> {out_path}")
+    # NOT "genuinely outside every country". This tool knows only that ITS OWN
+    # tier placed nothing; it cannot see whether some country's polygon in fact
+    # contains the place. Measured 1 Sep 2026: all 15 of nl's residue sit
+    # INSIDE their country's polygon (limuw and manissean inside un:usa_0,
+    # ngati-rehua inside un:nzl_0, by prep().contains straight off the geom
+    # store) — they were lost by a stale un h3_cover, not by geography. The old
+    # wording asserted a fact about the world from a fact about this run, and
+    # would have closed the ticket for anyone who read it.
     print(f"  still uncoded  {totals['still_unresolved']:>12,d}  "
-          f"(genuinely outside every country: open ocean, Antarctica)")
+          f"(not placed by THIS tier — may still be inside a country polygon; "
+          f"check before concluding open ocean or Antarctica)")
     return 0
 
 
