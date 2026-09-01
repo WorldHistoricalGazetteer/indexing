@@ -2239,6 +2239,46 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
+#### ⚠️ The live cover IS the extract cover — `h3_stage` had never run on `un` before my chain
+
+S8 raised a constraint on the hypothesis: the live `un:usa` cover is correct
+*despite* `select_h3_cover_geometry`'s hull path being live, so either `un:usa`
+does not take the hull branch in prod or the branch is not unconditionally wrong.
+**Tested, and it is neither — the live cover never went through that branch at
+all:**
+
+```
+live cells       376
+extract cells    376        live == extract    TRUE   (identical sets)
+h3_merged cells  278        live == h3_merged  FALSE
+```
+
+The live index's `un:usa` cover **is** the extract's, computed inline by
+`un-countries.py` through `compute_h3_fields` on the real geometry. `un` was
+indexed from an extract-derived cover and **`h3_stage` had never run on it** —
+consistent with `un` being the namespace whose stages get skipped (Fault 12). My
+chain was the first time that code touched `un`, which is exactly when the cover
+broke.
+
+**This resolves S8's constraint in the worse direction.** The hull branch is not
+conditionally safe; it simply had not been applied here before. And every
+namespace that *did* go through `h3_stage` in the rebuild carries a hull-derived
+cover — which is most of them.
+
+**Bounding it, without overstating:** the exposure is features whose **convex
+hull** crosses the antimeridian, not merely large ones. For a city, county or
+parish the hull does not cross; it takes a country-scale multi-part geometry
+spanning the Pacific (US, RU, NZ, FJ, KI). Those are common in `un` and rare
+elsewhere — but "rare" is a prediction, not a measurement, and **which namespaces
+hold such features is exactly the open corpus-wide question**, now sharper and
+more pressing rather than less.
+
+⚠️ **Run ids are UTC (`…Z`); the hosts report EDT (UTC−4)** (S8, and it cost it a
+confident wrong causal chain in under a minute). **Every artefact in this campaign
+is named in one frame and stamped in the other.** Convert before reasoning from
+timestamps, and prefer comparing an artefact's mtime against another mtime rather
+than against a run id.
+
 **S8's lesson stands, correctly aimed at my chain rather than S2's step:** *a step
 that rebuilds an input must verify what is derived from it, not only the input.*
 2.1 was scoped to geometries and verified geometries. My chain recomputed the
