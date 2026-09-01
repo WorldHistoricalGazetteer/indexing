@@ -2193,6 +2193,55 @@ printing nothing, so it is in better shape than when the corpus run used it.
 minutes; the cost of finding it after `gn` is hours of compute plus a `final/`
 wrong in a way no row count can see.
 
+#### 🛑 ROOT CAUSE — `h3_stage` polyfills the convex HULL, and I introduced the bad cover on 31 Aug
+
+**Diagnosed by S9, completed here, and the run that broke it was mine.** Measured
+across the stages my `un-final-chain` (job 11075438, 31 Aug) wrote:
+
+```
+un:usa  extract/    376 cells  r1×7  r2×55  r3×314   Denver covered = TRUE   ← correct
+un:usa  h3_merged/  278 cells  r0×1  r1×8  r2×70 r3×199  Denver covered = FALSE  ← MY RUN
+un:usa  final/      278 cells  (same)                    Denver covered = FALSE
+```
+
+**Mechanism:** `helpers.select_h3_cover_geometry:652` *prefers the convex hull*
+for area geometries — "making H3 polyfill substantially cheaper for complex
+polygons". The USA's hull spans Alaska to the Pacific territories and therefore
+**crosses the antimeridian**, so the fill goes the long way round: it covers the
+wrong hemisphere and misses the interior. That explains every observation — the
+cover spanning lon −179.99…179.94, *more* r4 cells than a fresh run (9,960 vs
+7,294: wrong area, not smaller), Denver uncovered at every resolution, and
+`crosses_antimeridian` returning **False** when asked about the *polygon*, because
+it is the **hull** that crosses. `un-countries.py` computes the extract's cover
+inline from the real geometry, which is why `extract/` is correct.
+
+**Production is NOT affected.** The live index was cut over 5–6 Aug from
+`h3ccode-20260805T120000Z`; my chain ran 31 Aug. The damage is confined to
+`staged/un` and anything derived from it since — i.e. S8's `nl` ccode run, and
+nothing else yet.
+
+⚠️ **This is mine, and the way it got past me is the campaign's own lesson.** I ran
+the chain, and verified it with three checks — resolver picks `final/`, 247 docs,
+ccodes present — and recorded it as "verified independently of the job's own
+report". **Not one of those checks looked at `h3_cover` content.** I verified the
+properties I thought to name; the one I did not name is the one that broke. The
+chain did exactly what the code says, so this is a latent code defect my run
+*triggered* rather than one it invented — but the bad cover reached `final/`
+because I put it there and did not look.
+
+**And I mistrusted a correct result.** My Denver control failing was not a broken
+test — it *was* the defect, observed correctly. I inferred "control failed,
+therefore my test is wrong", when a failing control means either the test is wrong
+**or the defect is wider than hypothesised**. I assumed the first and labelled a
+true finding a dead end. S9 reproduced it independently through the production
+`build_un_prefilter` path before forming any hypothesis.
+
+**Remedy is clear; durability is not.** Recomputing `un`'s `h3_cover` from the
+geom-store polygons makes every test point resolve. Whether anything still
+*generates* a bad cover — and which other namespaces' covers are hull-derived
+across the antimeridian — is open, and determines whether a recompute is a fix or
+a reset. **`select_h3_cover_geometry`'s hull preference is the thing to look at.**
+
 #### Tier 2 REFUTED my prediction; the exact answer was available all along
 
 **S8 tested rather than accepting, and my proposed chain change would not have
