@@ -80,7 +80,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ Resolve the mainland-control contradiction first. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
-| **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — reconcile `wd`'s status → `update_merge` → `h3_stage` → `h3_merge` → ccode → `ccode_merge`. **Gates S5 and the overlay publish.** | ◐ **RELEASED by SG, 1 Sep — running.** `gn` then `wd` sequentially; `/vast` watched independently by `indexing-5e` against a 100 GB stop-line |
+| **S8** | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -2074,6 +2074,26 @@ small snapshot and a large patch would be sized from the wrong quantity.
 it.** `write_parquet_from_jsonl` calls `paj.read_json(...)` then
 `pq.write_table(...)` — a **full Arrow table in memory**, built *after* the patch
 dict, so peak may be the **sum** rather than the max.
+
+### ✅ SG's RULING, 1 Sep — S8 takes the `un` recompute; `update_merge` on `wd` first
+
+Both decisions to S8. The `un` recompute because it holds the validation gate, has
+the three-way test working, is the consumer, and `un` has had no owner since S2
+closed. **`wd` before `gn`** because `wd`'s patch is 93 MB (small dict) against
+11.46 M documents (85% of `gn`'s 13.45 M) — so it **measures the Arrow/parquet
+cost almost in isolation**, and `gn`'s figure becomes measured rather than
+extrapolated from a 200 k sample. **Record `wd`'s actual peak RSS.**
+
+Settled execution notes: `update_merge` by **hand-written sbatch** (no submitter
+exists) at **48 G `wd` / 64 G `gn`**, built from `slurm_env` preamble constants so
+it inherits the conda export; **do not** follow `submit_h3_slurm:153`'s inline
+`Run:` line; `h3_stage`/`h3_merge`/`ccode` through the submitters with no
+override; and the `un` recompute **validated against production's known-good
+376-cell cover BEFORE it touches the staged tree**, by **set** comparison — `limuw`
+is the standing reminder that 55 and 55 can be different 55s.
+
+The two are independent — `staged/un` and `staged/wd` — and 247 documents will not
+perturb a memory measurement.
 
 ✅ **The parquet number is now MEASURED (S8), and the submitter already asks for
 enough.** Running the real `write_parquet_from_jsonl` on a 200,000-doc `gn` sample:
