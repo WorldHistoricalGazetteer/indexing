@@ -2134,6 +2134,57 @@ printing nothing, so it is in better shape than when the corpus run used it.
 minutes; the cost of finding it after `gn` is hours of compute plus a `final/`
 wrong in a way no row count can see.
 
+#### Tier 2 REFUTED my prediction; the exact answer was available all along
+
+**S8 tested rather than accepting, and my proposed chain change would not have
+worked.** `backfill_uncoded_ccodes` on `nl` (job 11102424, S9's repaired tool):
+`scanned=4,363 uncoded=15 no_geom=0 **RESOLVED=0**`. It *had* their polygons and
+placed none. So `… → ccode_merge → backfill_uncoded_ccodes` recovers nothing, and
+2.7's chain does **not** gain that step.
+
+**The decisive test — the country polygons DO contain them.** Read from the geom
+store with `shapely.prepared.prep(...).contains(repr_point)`:
+
+```
+nl:territory:limuw       (-119.709985,  34.014690)  un:usa_0.contains = True
+nl:territory:manissean    ( -71.572870,  41.227198)  un:usa_0.contains = True
+nl:territory:ngati-rehua  ( 175.382163, -36.196741)  un:nzl_0.contains = True
+```
+
+**So the exact answer was in the store the whole time, and the loss is in the H3
+approximation** — S8's original conclusion, reached on evidence that could not
+support it (the `SOURCE_LABEL` constant) and now supported by a test that can.
+
+⚠️ **`backfill_uncoded_ccodes` prints a claim it has not earned.** Its summary line
+reads `still uncoded 15 (genuinely outside every country: open ocean, Antarctica)`
+— **false for all 15, demonstrably**, since the country polygon contains them. The
+tool knows only that *its own tier* placed nothing; it asserts a fact about the
+world, and anyone reading it at face value closes the ticket. Should say what it
+knows ("not placed by tier 2"). Its own instance of the campaign's pattern.
+
+**My attempt at the mechanism, recorded WITH its failure so nobody builds on it.**
+`build_un_prefilter` (`:215`) builds cell→ccode from the **`un` docs' own
+`h3_cover`**, not from `un.h3_coverage.json` — so the aggregate's absence is a red
+herring for *this* path. Testing whether the country cover contains the islands'
+cells: `un:usa` has 278 compacted cells (r0×1, r1×8, r2×70, r3×199), `un:nzl` 296,
+and none of the three islands' cells is covered at any resolution present. **But my
+mainland control — Denver — also tested uncovered**, which cannot be right when
+1,532 `US` resolutions occurred in the same run. **So the test is wrong, or the
+country cover is far more incomplete than a working prefilter allows, and I could
+not distinguish those two before handing over.** Do not treat "the country cover
+excludes the islands" as established; treat the control failure as the next thing
+to explain.
+
+**Open, and it is a code-reading job rather than a compute one:** what does the
+ccode prefilter actually consult for `un`, why is `un.h3_coverage.json` absent
+when `submit_h3_slurm`'s own comment calls it the ccode prefilter, and why does a
+mainland point test as uncovered? `nl` is a 4,363-record reproduction that
+re-tests in two minutes.
+
+**`gn`/`wd` stay held, and more firmly than before** — this is not an `nl` quirk.
+Any small island or coastal feature whose cells miss the prefilter is exposed, and
+`gn` is a global gazetteer full of them at 99.94% live.
+
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
 goes flood-stage read-only, leaving room to recover rather than discovering it at
