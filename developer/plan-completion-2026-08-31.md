@@ -2531,6 +2531,49 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
+#### ✅ PRODUCTION `osm`/`ohm` ARE CLEAN — and "affected" needs two numbers, not one
+
+**Measured against the LIVE index** (job 11103617 + targeted `_mget`; alias
+`places → places_h3ccode-20260805t120000z`), at ≥400-cell covers:
+
+```
+osm   30 tested   30 MATCH   0 DIFFER
+ohm   30 tested   30 MATCH   0 DIFFER
+staged cover == live cover for the same 60 features:  60 agree, 0 differ
+```
+
+The store was asserted open (**11,768,864 entries**) with a control fetch of
+`un:usa_0` before any comparison ran, so a dead reader could not masquerade as a
+corpus-wide difference — the instrument's own exposure to the defect it measures,
+guarded.
+
+⚠️ **This corrects MY premise, not S9's.** I redirected the pass to the live index
+arguing staged was a poor proxy. For `osm`/`ohm` staged and live **agree on all
+60**. The real distinction is not staged-versus-live in general — it is that
+**`un` and `nl` were rewritten by the broken h3 runs and `osm`/`ohm` were not.**
+
+⚠️ **REFRAMING — the test detects whether a cover is WRONG, not whether it was
+HULL-DERIVED, and this plan has conflated them throughout** (S9). A hull-derived
+cover that happens to equal the polygon-derived one **is not defective** — it is
+the correct cover, arrived at cheaply. So the "false negatives" in the calibration
+were never missed defects; they are features where hull substitution **made no
+difference**. **Record affected-ness as two numbers:**
+
+```
+              provenance (hull-derived)     materially WRONG
+un            100%                          ~96%   (244 tested, 9 coincidental)
+nl            100%                          ~83%   (400 tested, 67 coincidental)
+```
+
+**Only the second sizes the remediation; only the first explains the cause.**
+Supersedes "read `nl` as wholly affected" — its provenance is wholly, its effect
+is ~83%.
+
+**`kain_par`, `vob_lgd`, `vob_rd`: zero features with a ≥400-cell cover** across
+23,177 / 9,765 / 4,418 geometries — so no ≥400-threshold sample exists for them.
+⚠️ **But see the threshold note below: under the wrongness framing they may be
+testable at any cover size.**
+
 #### 📊 BLAST RADIUS — CALIBRATED (job 11103195). Third and current version
 
 ⚠️ **Supersedes the `selfEXCL` table AND the 18-sample fresh-vs-stored table. Do
