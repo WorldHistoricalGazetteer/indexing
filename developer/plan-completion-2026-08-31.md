@@ -2246,59 +2246,65 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
-#### 📊 BLAST RADIUS — 16 of 18 area namespaces, and the number is a LOWER BOUND
+#### 📊 BLAST RADIUS — FINAL (job 11103106). Supersedes two earlier tables
 
-**Read the two caveats before the table; S9 led with them and they are what make
-the numbers honest.**
+⚠️ **This REPLACES both the `selfEXCL` table and the first fresh-vs-stored table.
+Do not quote either.** The second was partly S9's own probe bug and its
+`osm`/`ohm`/`pl` rows were wrong **in the alarming direction**.
 
-⚠️ **The `hullX` column is meaningless — a third silent zero.** It reads 0 for
-every namespace *including `un`*, whose hull we have **proved** crosses the
-antimeridian. Cause: `final/places.jsonl` does not carry `hull` at all, so the
-test could never fire. S9's own words: had it led with *"hullX=0 everywhere, so
-nothing else is affected"*, that would have been the most damaging wrong
-conclusion of the day. **NaN wearing a zero's clothes.**
+⚠️ **On the table's face, not in a footnote: neither instrument can CLEAR a
+namespace.** `selfEXCL` — every hit real, absence proves nothing (it scored `un`
+8/247 when all 247 are affected). Fresh-vs-stored — every DIFFER real, **MATCH
+proves nothing**, and proves less the smaller the cover.
 
-⚠️ **`selfEXCL` is sound but INSENSITIVE — high specificity, low sensitivity.**
-`un` scores **8 of 247**, yet all 247 covers came from the same hull-derived run.
-The check therefore catches ~3% of instances of the defect we already understand,
-because a hull *contains* its polygon, so a hull-derived cover usually still holds
-the feature's `repr_point`; only antimeridian mangling relocates it. **Every hit is
-a real defect. The absence of hits proves nothing.**
+**Method:** stored `h3_cover` vs a fresh recompute from the geom-store polygon via
+`compute_h3_fields` — what `h3_stage` actually calls — **set** comparison, not
+counts, reservoir-sampled 18 per namespace. Validated against `nl` ground truth
+including `limuw`: 55 stored, 55 fresh, **same cardinality, different set,
+correctly flagged** — which no count or cardinality test catches.
 
 ```
-ns          docs        area_ft    selfEXCL   examples
-osm         20,622,228  2,908,539     2,148    osm:w4181915, w4252708
-ohm            945,156    311,319       433    ohm:w3271617
-clio            15,690     15,690       761    clio:eg_thebes_libyan_-750_-701
-whg            228,918      2,566        33    po 23 · vob_lgd 22 · vob_cty 9
-nl               4,363      4,363        31    un 8 (fji, fsm, grl)
-hgis 6 · kain_par 6 · vob_rd 5 · og 2 · pl 2 · ukhc 2 · vob_rc 0 (the only clean one)
+ns                 tested  MATCH  DIFFER  indet   verdict
+un                     18      0      18      0   ALL AFFECTED
+un.bnda-baseline       18      0      18      0   ALL AFFECTED
+nl                     17      4      13      1   AFFECTED (wholly — see note 1)
+whg                    12      3       9      6   AFFECTED
+clio                   18     14       4      0   AFFECTED (~22%)
+--- no evidence of defect (NOT a clean bill) ---
+osm, ohm, pl, po, ukhc, hgis, kain_par, vob_cty, vob_lgd, vob_rc, vob_rd
 ```
 
-**16 of 18 area-bearing namespaces carry at least one cover that excludes its own
-`repr_point`** — defects by definition, needing no reference data and encoding no
-hypothesis.
+**`un` at 18/18 is the headline and it validates the instrument** — 100% detection
+on a namespace independently proved 100% hull-derived, against `selfEXCL`'s 3%.
 
-* **`un`'s examples are `fji`, `fsm`, `grl`** — Fiji and Micronesia straddle the
-  antimeridian, Greenland is huge and multi-part. This defect's family, appearing
-  exactly where predicted.
-* **`clio` at 761 / 15,690 = 4.8%** is an order of magnitude denser than anything
-  else and is **not** the antimeridian defect. Unexplained; its own row is 4.14.
-* `osm` 2,148 and `ohm` 433 are small fractions but real, **and neither went
-  through the `un-final` chain** — so this is not confined to what I ran.
+⚠️ **`osm` and `ohm` are CLEAN, and S9's earlier "osm 14/18, ohm 13/18 defective"
+was its own probe bug** — it called `_polyfill_adaptive` directly, which dispatches
+non-crossing input straight to the polygon-only `_polyfill_one_polygon` and so
+returns **empty** for LineString / MultiLineString / GeometryCollection, and it
+scored those empties as differences. Confirmed here: the dispatcher's guard is
+`gtype in ("Polygon","MultiPolygon")` and everything else falls through. `osm` and
+`ohm` are exactly the LineString/GeometryCollection namespaces, which is why the
+bug hit them hardest. **Probe-only — no production path calls it directly.**
+Corrected: **18/18 MATCH.** S9's own words: *"78% of OSM is defective" would have
+been a bad thing to put in a plan.*
 
-**Headline, honestly stated: the corpus holds real cover defects well beyond `un`,
-in at least 16 namespaces, and the true count is higher than these figures by an
-unknown factor. Recomputing `un` remains necessary and is nowhere near
-sufficient.** Counting the hull defect properly means recomputing each cover from
-its geom-store polygon and diffing against the stored one — expensive, and the
-only thing that would actually count it.
+**Two reading notes:**
 
-**`6ad2640` (S9) closes the mechanism**, verified here: `cover_geometry_for` now
-**raises** rather than substituting the hull, and the conda preamble is shared
-across **8 of 8** submitters — **seven lacked it, including `submit_h3_slurm` on
-S8's critical path.** So the missing export was latent across most of the
-pipeline, not a peculiarity of my hand-written sbatch.
+1. **`nl`'s 4 matches are NOT partial damage.** All 4,363 covers are hull-derived;
+   the non-differing ones simply have covers too coarse to disagree. `namarin` is a
+   30-part MultiPolygon at **55% of its hull area** — nowhere near convex — and
+   still yields an identical 7-cell cover. Sensitivity tracks **cover granularity,
+   not shape divergence**: the two that DIFFER sit at 0.94/0.93 of hull area, the
+   one that MATCHES at 0.55. **Read `nl` as wholly affected.**
+2. **`po` rests on 4 testable features** with 14 indeterminate. That row carries
+   almost no information in either direction.
+
+**Not done:** stratifying MATCH by cover size, which would turn "MATCH is weak"
+into a threshold. ~10 minutes if the radius is wanted to that precision.
+
+**Consequence — the scope is much smaller than the earlier tables implied. The
+recompute needed is `un` + `nl` + `clio` + `whg`, not the corpus**, and `un`
+remains the one that gates ccode.
 
 #### 🔴 `nl` MUST BE RE-RUN — its covers are hull-derived too, and its clearance was false
 
