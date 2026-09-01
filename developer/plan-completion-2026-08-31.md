@@ -2215,10 +2215,34 @@ cover spanning lon −179.99…179.94, *more* r4 cells than a fresh run (9,960 v
 it is the **hull** that crosses. `un-countries.py` computes the extract's cover
 inline from the real geometry, which is why `extract/` is correct.
 
-**Production is NOT affected.** The live index was cut over 5–6 Aug from
-`h3ccode-20260805T120000Z`; my chain ran 31 Aug. The damage is confined to
-`staged/un` and anything derived from it since — i.e. S8's `nl` ccode run, and
-nothing else yet.
+**Production is NOT affected, and S8 has now measured BOTH sides** — the live
+index holds the *correct* cover:
+
+```
+LIVE    un:usa  376 cells  12,942,667 km²  Denver ✓ NYC ✓ Anchorage ✓ Honolulu ✓ Guam ✓ limuw ✓
+STAGED  un:usa  278 cells  17,146,048 km²  Guam ✓ — everything else ✗
+        (across all 247 staged un docs, 58,945 cells, NOTHING covers Denver or Auckland)
+```
+
+Three things follow. **`limuw` IS covered by the live cover**, so tier 1 with a
+correct cover resolves S8's 15 — an independent confirmation of the diagnosis.
+**It explains the July run's 9.35 M resolutions**: tier 1 worked then because the
+cover was correct then; it has been inert only since 31 Aug. And it hands us a
+**discriminating validation gate that exists today** — any recompute can be
+checked against production's known-good cover rather than judged by eye.
+
+⚠️ **Attribution, corrected: this is MY run, not 2.1's, and the difference is a
+timezone.** S8 placed the bad cover at "an h3 run at 10:58, inside 2.1's window,
+after S2's geom restore", and read my `un-final` run's *UTC* id as 14:57 —
+concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manifest
+`un-final-20260831T145706Z.json` has mtime **10:58:20**. The 10:57–10:58 stamps on
+`h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
+implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
+
+**S8's lesson stands, correctly aimed at my chain rather than S2's step:** *a step
+that rebuilds an input must verify what is derived from it, not only the input.*
+2.1 was scoped to geometries and verified geometries. My chain recomputed the
+cover and verified resolver-depth, doc count and ccodes — never the cover.
 
 ⚠️ **This is mine, and the way it got past me is the campaign's own lesson.** I ran
 the chain, and verified it with three checks — resolver picks `final/`, 247 docs,
