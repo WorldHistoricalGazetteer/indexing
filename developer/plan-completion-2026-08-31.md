@@ -78,6 +78,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
+| **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ⬜ awaiting contact |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ Resolve the mainland-control contradiction first. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
@@ -124,6 +125,41 @@ Mitigations in force: `--exclude=htc-n56`, and build on `/vast` not `/ix1` — t
 `publish_local` does a `shutil.copyfile`, so it publishes fine across filesystems.
 **Production is unaffected** — the gateway reads `/ix1/ishi/hardlinks` from `pitt`,
 which is healthy.
+
+---
+
+### 📋 The Auditor's brief (SG, 1 Sep) — auditing the DOCUMENT, not the agents
+
+**Why this exists.** This plan is a **chronological** record of a campaign in
+flight: 49 commits today, 3,058 lines, 18 supersession markers, and several
+corrections layered on corrections. **I wrote the superseded parts, so I am the
+worst-placed reader to find them** — and a successor quoting a retracted figure is
+the live risk in a document this size.
+
+**Scope — find, do not fix:**
+
+1. **Claims superseded by a later claim but not marked as such.** The danger is a
+   confident earlier statement still reading as current.
+2. **The same figure appearing in two places with different values.**
+3. **Internal contradictions** between sections written hours apart.
+
+**Known-dangerous areas, because each was revised at least once:** the blast-radius
+table (**three** versions, two superseded); the `update_merge` memory figures
+(16 G / 48 G / 64 G / 128 G all appear, and all four are correct *somewhere*); the
+`h3_cover` informative threshold (≈100 cells, later corrected to ≥400); "`osm` and
+`ohm` are clean" (**retracted**); the `nl` scope-region claim (**struck**); the
+`un` cover attribution (corrected from 2.1's window to my own chain, a timezone
+error); and the tier-2 prediction (**refuted** by measurement).
+
+⚠️ **Do NOT flag deliberately-kept records as inconsistencies.** Several rows are
+retained *because* they were wrong — struck, refuted or retracted **and labelled**
+— so a successor does not re-derive them or "fix" a defect that does not exist.
+The distinction to report is **superseded-and-unmarked**, never
+superseded-and-marked.
+
+**Method:** quote section headings and exact lines rather than paraphrasing, since
+the point is what a cold reader would take from the text. Read-only — no code, no
+plan writes. Report to `indexing-5e`, which owns the document and makes the edits.
 
 ---
 
