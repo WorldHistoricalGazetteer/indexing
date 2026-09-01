@@ -2020,7 +2020,7 @@ decision. Adding `--wall-hours` to `submit_h3_slurm` is the right permanent fix
 and belongs in the post-2.7 residual queue beside the resolver hoisting, **not**
 in the middle of the run that needs it.
 
-### 🛑 BLOCKER — `submit_ccode_slurm`'s sbatch is missing the `LD_LIBRARY_PATH` export
+### ✅ RESOLVED 1 Sep (`a4ada2d`) — was: `submit_ccode_slurm` missing the `LD_LIBRARY_PATH` export
 
 **Found by running, not by reading** (S8, 1 Sep; verified here). `python -m
 processing.submit_ccode_slurm` fails to **import**, on pitt and on `crc2`:
@@ -2055,6 +2055,31 @@ worth re-checking with the export set before that is recorded as permanent. And 
 **Do NOT set the variable in the submitting shell and rely on Slurm propagation** —
 S8's reasoning, and it is right: that works today, leaves no trace, and breaks
 silently for whoever runs this next.
+
+**✅ Landed by S9 as `a4ada2d`**, export at `:278` **after** `conda activate` at
+`:264`, with the precedent's fail-fast `sqlite3` probe at `:279`. Verified here.
+
+**And S9 pinned it with a test that asserts POSITION, not presence** —
+`tests/test_slurm_conda_lib_preload.py`, 6/6, covering both submitters. Its
+reasoning is the sharper half and is worth reading: *a presence-only test passes
+if someone hoists the export **above** `conda activate`, where `$CONDA_PREFIX` is
+unset and the export is a silent no-op* — green test, dead fix. Same trap if the
+probe drifts below the real work, since the probe exists to fail in one second
+rather than after an enrichment pass. Verified against pristine HEAD: three ccode
+assertions fail, three hardlinks pass, so it discriminates. Neither submitter had
+any test before this, which is why the 31 Aug hardlinks fix could have regressed
+silently for four days.
+
+⚠️ **Consequential correction: the "4 pre-existing environmental errors" on CRC
+were neither environmental nor unfixable.** S9 measured on htc-n88, same node and
+commit, the export as the only variable: `test_ccode_skip_regenerates_final` goes
+**FAILED (errors=4) → OK**. S9's original comparison was sound and its conclusion —
+not a 2.8 regression — still stands; the word "environmental" carried an
+implication of *permanent* and would have entered the record as a standing CRC
+limitation. **True conclusion, false reason** — the third instance of that shape in
+two days, after S8's `antimeridian` and my own `hard_links_staged` platform-limit
+note, which S8 has likewise withdrawn. Same cause, same one-line fix, three
+sightings.
 
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
