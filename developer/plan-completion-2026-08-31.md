@@ -2318,6 +2318,31 @@ cover size   tested   MISSED(FN)   false-neg rate   verdict
 Monotonic, and it explains S8's `namarin`: 7 cells, a 30-part MultiPolygon at 55%
 of its hull area, matching anyway. A coarse cover cannot disagree.
 
+⚠️ **BUT the pooled curve hides a real disagreement between its only two inputs —
+do not quote "≈100 cells" as a constant** (S9, correcting itself after S8
+cautioned the curve might not transfer between namespaces; it does not). Split out
+at identical cover sizes:
+
+```
+cover size    un false-neg      nl false-neg     ratio
+     10-24    3/8    = 38%      11/12  = 92%      2.4x
+     25-99    2/42   =  5%      25/90  = 28%      5.6x
+   100-399    0/142  =  0%      16/223 =  7%       —
+     400+     0/48   =  0%       0/60  =  0%       —
+```
+
+`nl` misses **two to six times as often as `un` at the same cover size**. So:
+**≥100 cells** gives ≤7% false-negative in the *worse* of the two, not the 4% the
+pooled figure implied; **≥400 cells is the only band where both reach 0%** and is
+the conservative threshold; below 100 stands as meaningless either way.
+
+**Why this is signal rather than noise:** the curve is cover granularity against
+shape complexity, and `un`'s countries are far larger and smoother relative to
+their covers than `nl`'s territories. A namespace's position on the curve is a
+property of **its own geometry** — which is exactly S8's caution, and means
+`osm`'s administrative geometry could sit anywhere on it. **The curve is the right
+instrument; two namespaces is not enough to make it universal.**
+
 **Every namespace re-read against that threshold:**
 
 ```
@@ -2331,8 +2356,15 @@ osm                    45       0           1         44    barely evidenced
 vob_rd                 45       0           1         44    barely evidenced
 ohm                    45       0           3         42    barely evidenced
 pl                     45       0           8         37    weakly evidenced
-vob_cty, hgis, vob_rc, po, ukhc   37-43 informative matches   genuinely clean
+vob_cty, hgis, vob_rc, po, ukhc   37-43 matches >=100   see caveat below
 ```
+
+⚠️ **"Genuinely clean" is stronger than the data licenses** (S9's own retraction).
+Those five were tabulated against the **pooled ≥100** line; under a ≥400 line each
+would shrink by an unrecorded amount, so the accurate phrasing is **"well
+evidenced at ≥100, unquantified at ≥400"**. They remain the best-evidenced rows.
+A ≥400 re-tabulation is a cheap re-run of part 2 with a second threshold column —
+offered, not yet run, and it does not gate anything.
 
 ⚠️ **RETRACTED: "`osm` and `ohm` are CLEAN".** I recorded that in bold on
 18/18 MATCH. At 45 samples `osm` has **1** informative match and `ohm` **3** — the
