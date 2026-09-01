@@ -2046,6 +2046,49 @@ driven flood-stage read-only, which took production down with it.** Rulings:
    checked. Delete only after **both** S3's re-harvest and S5's retile have
    consumed the result. At current headroom the cost is affordable.
 
+### 💾 `update_merge` MEMORY — the 16G alarm is wrong; the structural point is right
+
+**S8 measured `gn`'s patch dict at 14.4 GB** — `_load_patches:114` builds
+`{place_id: merged_patch}` for the whole file before streaming any document
+(confirmed), so it is all resident. It sampled 8,125,650 lines two ways and took
+the **random** figure (1.86 KB/line → 14.4 GB) over the **head** figure
+(1.68 KB/line → 13.0 GB), because the head sample was ~10% optimistic — the
+ordered-file lesson, applied to itself.
+
+⚠️ **But its conclusion — "will OOM at the 16G every sbatch in this chain
+requests" — does not hold.** The submitters do not hardcode 16G:
+`submit_h3_slurm:206` and `submit_ccode_slurm:256` both use
+`array_memory_gb(namespaces, STAGED_BASE_DIR)`, which tiers off
+`staged_source_bytes`. **`gn`'s largest staged artefact is 7,384,904,990 B =
+6.88 GB, which falls in the `< 8 GB → 64 G` tier.** So `gn` gets **64 G**, which
+covers a 14.4 GB dict with headroom. (S8 was likely reading a hand-written
+template — mine requested 48 G — rather than submitter-generated output.)
+
+**The structural point survives the arithmetic, and is the part worth keeping:**
+`array_memory_gb` sizes from *the largest staged artefact*, which is a good proxy
+for stages that **stream** and a bad one for `update_merge`, the one stage that
+**accumulates**. `gn` landing at 64 G is luck, not design — a namespace with a
+small snapshot and a large patch would be sized from the wrong quantity.
+
+**The genuinely open number is the parquet step, and S8 is right that nobody has
+it.** `write_parquet_from_jsonl` calls `paj.read_json(...)` then
+`pq.write_table(...)` — a **full Arrow table in memory**, built *after* the patch
+dict, so peak may be the **sum** rather than the max.
+
+💡 **`wd` is the ideal experiment and isolates the unknown.** Its patch is 93 MB
+(a small dict) but its document count is 11.46 M against `gn`'s 13.45 M — so
+running `wd`'s `update_merge` first measures the **Arrow/parquet cost almost in
+isolation**, at ~85% of `gn`'s scale, without the 14.4 GB dict confounding it.
+That is the cheap experiment that produces the missing number.
+
+⚠️ **And S8's second point stands entirely: the JSONL-only fallback is NOT a safe
+landing.** If parquet conversion OOMs or fails schema inference, `6ad2640` leaves
+JSONL-only with the stale sidecar removed — which puts `gn` in exactly **`ukhc`'s
+shape**, and audit §3b establishes that a JSONL-only `final/` is *silently
+excluded* from `backfill_uncoded_ccodes` and misreported by
+`staging_orchestrator:748`. **"It degraded gracefully" would quietly drop the
+largest gazetteer in the corpus out of tier 2.**
+
 ⚠️ **The temps do NOT double peak for 2.7 — but they will for a re-run** (S9,
 corrected by S8's measurement). `gn`/`wd`/`nl` are extract-only, so every stage 2.7
 writes is a **first** write and peak is one copy. Anyone *re-running* 2.7 over an
