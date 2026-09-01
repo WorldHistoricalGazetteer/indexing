@@ -79,7 +79,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
-| **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ Resolve the mainland-control contradiction first. | ◐ **assigned by SG, 1 Sep** |
+| **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
@@ -131,7 +131,7 @@ which is healthy.
 ### 📋 The Auditor's brief (SG, 1 Sep) — auditing the DOCUMENT, not the agents
 
 **Why this exists.** This plan is a **chronological** record of a campaign in
-flight: 49 commits today, 3,058 lines, 18 supersession markers, and several
+flight: ~50 commits today, ~3,100 lines, 18 supersession markers, and several
 corrections layered on corrections. **I wrote the superseded parts, so I am the
 worst-placed reader to find them** — and a successor quoting a retracted figure is
 the live risk in a document this size.
@@ -245,7 +245,7 @@ fresh as the last session that remembered to tick one.
 | **S4** | **2.5 complete before 2.6 starts** — `gn`, `wd` and `nl` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` **13,454,817**, `wd` 11,459,393, `nl` 4,363 staged docs — measured, not the stale "~11.6 M" this table used to carry |
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
 | **S5** | ⚠️ **2.5 COMPLETE — a hard gate, not an either/or (SG, 31 Aug).** Verify with the pipeline's **own** resolver, not `ls`: a stub is a valid file of the right name. `gn` **13,454,817**, `wd` **11,459,393**, `nl` **4,363** staged docs, each delta 0 against the live index | all three PASS |
-| **S5** | *(escape hatch, deliberate override only)* `TILE_ES_DOC_NAMESPACES=gn,wd` tiles those two from the index instead. **Costs a ~24.5 M-document scan of production ES** and leaves the staged trees still wrong for the next consumer. Use only if the Beta genuinely cannot wait for `gn`'s extract | not the default |
+| **S5** | ❌ **WITHDRAWN — does not work.** `TILE_ES_DOC_NAMESPACES=gn,wd` was offered here as an escape hatch; `submit_tiles_slurm` **never consults it** (§3.1), so it cannot make an ineligible bucket eligible. Kept struck so nobody re-offers it. **Costs a ~24.5 M-document scan of production ES** and leaves the staged trees still wrong for the next consumer. Use only if the Beta genuinely cannot wait for `gn`'s extract | not the default |
 | **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
 | **S7** | S6 done and the map looked at | — |
 
@@ -920,8 +920,15 @@ are both true and lead to different predictions** — say which you mean.
 > check standing between a degraded harvest and the store the gateway reads on
 > every `include_hard_links` request.
 >
-> Reason with it rather than just comparing: `wd` accounts for **7,516,092** of
-> those rows and `gn` for **5,092,751**. So if 2.5 has genuinely restored both,
+> ⚠️ **CORRECTED (Auditor F3): those two are ENDPOINT-TOUCHING counts** — the
+> wrong measure for predicting a harvest, as this section says above and below.
+> The asserting-source figures are `wd` **3,968,404** (52.2%) and `gn`
+> **1,111,147** (14.6%); reason with those. The "something else is wrong" case
+> this gate describes is also now **closed**: the harvest came in at 6,460,869 —
+> exactly 1,111,147 + 24,943 short, nothing unexplained.
+>
+> ~~Reason with it rather than just comparing: `wd` accounts for 7,516,092 of
+> those rows and `gn` for 5,092,751.~~ So if 2.5 has genuinely restored both,
 > an overlay materially below 7.6 M means something *else* is wrong — a third
 > namespace, a stage-chain resolution, a silent harvest failure — and the right
 > move is to stop rather than publish and investigate afterwards.
@@ -1182,7 +1189,7 @@ optional one — `submit_h3_slurm:140` falls back to `extract/` silently when
 **Acceptance criteria for 2.7's `gn` half** (they read **zero in the broken world
 while the job reports success**, which no document count can do):
 `gn/update_merged/` carries 1,831,130 relation entries, of which 1,111,147 are
-`sameAs`. `wd`'s half is the disjoint one: +58,658 geoshapes, **0 relations**.
+`sameAs`. `wd`'s half is the disjoint one: +58,657 geoshapes (measured; **58,658** appears elsewhere in this plan and is superseded — Auditor F9), **0 relations**.
 
 ⚠️ **`gn` and `wd` are not interchangeable and there is no cheap half.** `gn` is
 relations + toponyms with **0 geometry**; `wd` is geometry + h3 with **0
@@ -1427,12 +1434,17 @@ rebuild regresses both without this.
   handover's phrasing as the unreliable witness and the log as the record.
 
 **How much is missing, measured:** a stage-1 run today would scan **26,269,329 of
-51,188,772 staged places — 51.3% of the corpus** — and report success. Not "two
+51,187,900 staged places — 51.3% of the corpus** (⚠️ this denominator previously
+read 51,188,772, the 4 Aug run-log figure this plan later warns is the wrong
+restoration target — Auditor F10) — and report success. Not "two
 namespaces short": half the corpus, including *all* of GeoNames and *all* of
 Wikidata, which are exactly the namespaces Symphonym trains on
 (`--training-namespaces gn wd tgn`).
 
-**Also noticed, not yours to fix:** `un` now has `extract/` but no `final/` — the
+**~~Also noticed, not yours to fix:~~ ✅ RESOLVED** — `un` was given a `final/` by
+Slurm 11075438 (`un-final-20260831T145706Z`), and 2.7 now uses
+`un → final/places.parquet` as a control. ⚠️ *That same chain is what produced the
+hull-derived cover — see §2.10.* The original note read: `un` has `extract/` but no `final/` — the
 staged-tree residue of Fault 12, distinct from S1's code fix for it. Harmless for
 2.6 (toponyms are populated at extract time), but a future rebuild following the
 normal preference chain will not find a `final/` for the namespace that supplies
@@ -1720,6 +1732,17 @@ continental USA, also tested uncovered**, which cannot be true when **1,532 `US`
 resolutions** occurred in that same run. **Either my test is wrong or the cover is
 far more incomplete than a working prefilter allows. Resolve that contradiction
 FIRST** — until it is explained, the island result means nothing.
+
+⚠️ **ANSWERED — do NOT resolve this first (Auditor F2, 1 Sep).** This brief was
+written at 16:48; the answer landed 16:58–17:20 and the section was never
+revisited. **The Denver control failing was NOT a broken test — it WAS the defect,
+observed correctly.** `un:usa`'s `extract/` holds 376 cells with Denver TRUE, its
+`h3_merged/` 278 with Denver FALSE. **Question 1 below is CLOSED, and so is
+question 4**: the mechanism is `select_h3_cover_geometry:652`'s hull preference
+plus the antimeridian, not `compute_h3_fields` simplification. **Questions 2 and 3
+remain genuinely open.** And the "`nl` re-tests in two minutes" reproduction below
+is stale — `nl`'s own covers are hull-derived, so it must be **RE-RUN**, not
+re-tested.
 
 **Questions, in the order they unlock each other:**
 
@@ -2131,8 +2154,12 @@ is the standing reminder that 55 and 55 can be different 55s.
 The two are independent — `staged/un` and `staged/wd` — and 247 documents will not
 perturb a memory measurement.
 
-✅ **The parquet number is now MEASURED (S8), and the submitter already asks for
-enough.** Running the real `write_parquet_from_jsonl` on a 200,000-doc `gn` sample:
+✅ **The parquet number is now MEASURED (S8) — and read the `update_merge`
+correction below before using this: the "submitter asks for enough" conclusion
+holds for `h3`/`ccode` and is FALSE for `update_merge`, which has no submitter at
+all** (Auditor F4).
+
+**The measurement.** Running the real `write_parquet_from_jsonl` on a 200,000-doc `gn` sample:
 peak delta **0.20 GB = 1.07 KB/doc → 13.8 GB** extrapolated. S8 then adjusted it
 *upward* honestly: that sample is **extract**-shaped (~550 B/doc) while the
 documents actually converted are **post-merge** (~820 B/doc, ~1.5×), so expect
@@ -2421,9 +2448,14 @@ not quote either.** Each revision has moved toward caution; this one retracts a
 "clean" verdict I recorded in bold.
 
 **The instrument summary — read before any row:** *every DIFFER is real; a MATCH
-is informative only above ~100 cells and meaningless below ~25; neither instrument
-can clear a namespace; and **a table of MATCHes without cover sizes cannot be read
-at all**.*
+is informative only above **≥400 cells** and meaningless below ~25; neither
+instrument can clear a namespace; and **a table of MATCHes without cover sizes
+cannot be read at all**.*
+
+⚠️ **This line previously said "~100 cells"** (Auditor F5) — the pooled figure the
+section below then retracts. **≥400 is the conservative threshold**; ≥100 gives up
+to 7% false-negative in the worse of the two calibration namespaces. Where later
+text commissions "a targeted ≥100-cell pass", read **≥400**.
 
 **How the threshold was measured rather than guessed.** `un` and `nl` are
 independently proved **100% hull-derived**, so **every MATCH within them is a
@@ -2879,8 +2911,13 @@ Preconditions and traps:
 
 1. **2.1 must be done.** With `un` at 0 in the store, retiling it replaces the
    country boundaries with points — the §2 failure, repeated.
-2. ⚠️ **WAIT FOR 2.5 — this is now a hard gate (SG, 31 Aug), not the either/or
-   this step first described.** `gn`, `wd` and `nl` must be restored and counted
+0. 🛑 **2.7 MUST BE COMPLETE.** Added 1 Sep (Auditor F6) — this list named 2.1 and
+   2.5 only, and every item in it is currently satisfied, so a cold S5 reading it
+   would conclude it may proceed. **It may not.** §2.7's own heading is "GATES
+   S5": `gn`/`wd`/`nl` have no `final/`, so the submitter would silently drop
+   them. 2.5 restored the *data*; 2.7 restores the *stage depth*.
+
+2. ⚠️ **WAIT FOR 2.5 — necessary but NOT sufficient; see 0 above.** `gn`, `wd` and `nl` must be restored and counted
    (13,454,817 / 11,459,393 / 4,363, delta 0 against the live index) before you
    tile. Check with the pipeline's own resolver rather than by looking at the
    directory: every one of the six stage-preference chains tests
@@ -3007,13 +3044,18 @@ S4  2.6 toponyms ipa (~9 h) + 2.5 gn/wd ──┘        │
 reads the same staged trees 2.5 repairs, and 98.9% of the overlay's rows touch
 `wd`. That edge did not exist when this graph was drawn.
 
-Only **S2** gates the retile — S4 does too, but only softly (`gn`/`wd` can be
-read from the index with `TILE_ES_DOC_NAMESPACES` instead). S1, S2, S3 and S4 are
+⚠️ **CORRECTED 1 Sep — this paragraph was dangerously stale (Auditor F1).** It
+read: *"Only S2 gates the retile — S4 does too, but only softly (`gn`/`wd` can be
+read from the index with `TILE_ES_DOC_NAMESPACES` instead)"*. **Both halves are
+now false.** `TILE_ES_DOC_NAMESPACES` **does not work** — `submit_tiles_slurm`
+never consults it (§3.1) — and **S5 is BLOCKED on 2.7**, not on S2. A session
+reading this summary for a green light would have run the 24-bucket silent-drop
+retile. S1, S2, S3 and S4 are
 otherwise mutually independent and may run concurrently.
 
-Everything in Phase 2 is ordered ahead of Phase 3 by decision (3), not by
-dependency — so if the Atlas Beta needs its boundaries back sooner, **S2 → S5
-alone is a valid short path**, leaving S1, S3 and S4 to follow.
+⚠️ **"S2 → S5 alone is a valid short path" was true when written and is now
+FALSE** (Auditor F1). **S5 is blocked on 2.7**, which is blocked on the `un`
+recompute. There is no short path to the retile.
 
 ---
 
@@ -3032,7 +3074,7 @@ push because it was not theirs — the right call, and worth recording as the no
 | session | completed | left behind |
 |---|---|---|
 | **S1** `indexing-81` | 1.1, 1.2 (`f94b8b8`); 2.2 verified on prod (`4286a0f`, `177ba72`); 2.4 with a test (`0c2819c`) | Nothing outstanding. Three follow-ups nobody had written down — see below |
-| **S2** `indexing-ab` | 2.1: `un` 247/247 in the store, 0 bounds mismatch; the refuse-to-stage guard + the counters that were tracked and never printed (`b05d5b0`, `6a632a1`) | **One open decision** — `staged/un` holds `extract/` and no `final/` (§2.1). `staging-parked/` is a deletion queue with a README, inert |
+| **S2** `indexing-ab` | 2.1: `un` 247/247 in the store, 0 bounds mismatch; the refuse-to-stage guard + the counters that were tracked and never printed (`b05d5b0`, `6a632a1`) | ✅ **RESOLVED, not open** — `staged/un` was given a `final/` (Slurm 11075438). Reads as live outstanding work otherwise (Auditor F7). `staging-parked/` is a deletion queue with a README, inert |
 | **S3** `indexing-c7` | 2.3 live and verified on prod: `whg:1052:8` resolves, 0 dangling of 1,935 endpoints; id map; `adc7345`, `42b6e4a`, `1f5aa50` | The overlay rebuild, gated and documented (`d10ef97`, `344c66b`) — **but its publish path has never been executed** |
 | **S4** `indexing-2f` | 2.5 two-thirds: `wd` 11,459,393 and `nl` 4,363 restored, both delta 0; the staged census; the parked verifier (`adff6dc`, `dc40957`) | `gn` extracting; 2.6 unstarted. Both finishable without an S4 session |
 
