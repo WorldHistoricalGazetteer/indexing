@@ -2075,6 +2075,40 @@ it.** `write_parquet_from_jsonl` calls `paj.read_json(...)` then
 `pq.write_table(...)` — a **full Arrow table in memory**, built *after* the patch
 dict, so peak may be the **sum** rather than the max.
 
+✅ **The parquet number is now MEASURED (S8), and the submitter already asks for
+enough.** Running the real `write_parquet_from_jsonl` on a 200,000-doc `gn` sample:
+peak delta **0.20 GB = 1.07 KB/doc → 13.8 GB** extrapolated. S8 then adjusted it
+*upward* honestly: that sample is **extract**-shaped (~550 B/doc) while the
+documents actually converted are **post-merge** (~820 B/doc, ~1.5×), so expect
+**~20 GB**. And peak is nearer the **sum** than the max — `_load_patches`' 14.4 GB
+dict drains via `pop()` but CPython does not return the arena to the OS, and the
+conversion runs inside the same live frame. **Realistic peak ~30 GB+.**
+
+⚠️ **S8 recommends 64 G for `gn` and 48 G for `wd`, still on the belief that the
+sbatch asks for 16 G. It does not — and the submitter already asks for more than
+it recommends:**
+
+```
+gn  largest staged artefact  6.88 GB  ->  array_memory_gb  =  64 G   (covers ~30 GB peak)
+wd  largest staged artefact  9.56 GB  ->  array_memory_gb  = 128 G
+```
+
+**So the operative instruction is: use `submit_h3_slurm`, do not hand-write the
+sbatch.** No memory override is needed for either namespace.
+
+💡 **And note how both of this campaign's silent defects entered.** My `un` chain
+ran from a **hand-written** sbatch that omitted the `LD_LIBRARY_PATH` export, which
+is what produced the hull-derived cover. S8's 16 G alarm came from reading a
+**hand-written** template rather than submitter output. The submitters are where
+the accumulated knowledge lives — `array_memory_gb`'s tiers, the conda preamble,
+the wall-time floors — and hand-rolling around them discards it silently.
+
+⚠️ **The structural caveat still stands:** `array_memory_gb` tiers off
+`staged_source_bytes`, a good proxy for stages that stream and a bad one for
+`update_merge`, which accumulates. `gn` landing at 64 G against a ~30 GB peak is
+**luck, not design** — a namespace with a small snapshot and a large patch would be
+sized from the wrong quantity, and that wants fixing before it bites someone.
+
 💡 **`wd` is the ideal experiment and isolates the unknown.** Its patch is 93 MB
 (a small dict) but its document count is 11.46 M against `gn`'s 13.45 M — so
 running `wd`'s `update_merge` first measures the **Arrow/parquet cost almost in
