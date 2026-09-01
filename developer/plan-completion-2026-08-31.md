@@ -2239,6 +2239,46 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
+#### 🔴 `nl` MUST BE RE-RUN — its covers are hull-derived too, and its clearance was false
+
+**S8 retracted its own clearance after the field-path correction, and the
+consequence is larger than the retraction.** Its `nl` artefact was cleared on the
+premise "`has_geom` is unset, therefore the store is never consulted, therefore
+the hull fallback cannot apply". The premise was a **field-path error** —
+`has_geom` and `geom_class` are **per-geometry**, not document-level — so the
+clearance was false, and re-testing three ways shows the signature:
+
+```
+samish       stored 119 = hull 119  IDENTICAL    fresh-from-store 103
+ngati-rehua  stored  74 = hull  74  IDENTICAL    fresh-from-store  82
+limuw        stored  55 = hull  55  IDENTICAL    fresh-from-store  55 (DIFFERENT SET)
+```
+
+Verified independently here: `nl:territory:samish` is **103 cells live, 119
+staged, not identical** — production holds the polygon-derived cover, the staged
+tree holds the hull one. **`nl`'s `h3_merged/` and `final/` are both hull-derived
+and must be RE-RUN, not re-verified.** That is a fourth stage of the chain to
+redo, and S8's `nl` ccode losers may change once the covers are correct, so the
+re-run becomes a genuine re-test rather than a confirmation.
+
+**The recompute list is `un` AND `nl`** — plus any namespace whose h3 ran through
+`submit_h3_slurm` before `6ad2640` on an affected node.
+
+⚠️ **S8's discriminator was invalid and it is worth knowing why.** It compared
+*counts* against production, saw "three match, three differ in both directions",
+and read that as polyfill drift. **Counts are not sets** — `limuw` matches
+production at 55 and is a *different* 55 — and the differences were exactly
+hull-versus-polygon. A count comparison cannot distinguish those two worlds; the
+three-way test (stored vs fresh-from-store vs from-hull) can, and does.
+
+⚠️ **Stale documentation corroborated the wrong reading, and should be fixed.**
+`helpers.compute_h3_fields`'s docstring (`:680`) still says these are
+"**top-level** fields on the place document (not nested inside `geometries[]`)"
+and shows `doc["h3_cover"] = h3_cover`. That is wrong for the current schema.
+Anyone checking S8's reading against the docstring would have had it confirmed.
+**Documentation that agrees with a wrong reading is worse than none** — a
+one-line fix, unassigned, for whoever next touches `helpers.py`.
+
 #### 🔴 THE TRIGGER — the same missing `LD_LIBRARY_PATH` export, failing silently instead of loudly
 
 **S9 established the code takes the *good* path today and could not explain why my
