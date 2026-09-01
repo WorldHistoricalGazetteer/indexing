@@ -165,8 +165,11 @@ plan writes. Report to `indexing-5e`, which owns the document and makes the edit
 
 ### Running sessions concurrently — read before starting more than one
 
-**Safe to start together right now: S1, S2, S3.** Hold **S4** until S3's indexing
-has finished, and do not start **S5** until S2 is verified. The dependency graph
+⚠️ **STALE SCHEDULING, corrected 1 Sep (Auditor F16).** This read *"safe to start
+together: S1, S2, S3 … do not start S5 until S2 is verified"*. S1–S4 are **closed**
+and S2 **is** verified, so the only condition it placed on S5 is satisfied — the
+same false green light as the Critical path carried. **S5 is blocked on 2.7**, and
+2.7 on the `un` recompute. The live sessions are S8 (2.7 + `un`) and the Auditor. The dependency graph
 above is necessary but not sufficient — these sessions also share three
 resources it does not model.
 
@@ -174,7 +177,15 @@ resources it does not model.
 |---|---|---|
 | **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment) and S5 (corpus-wide streaming for tiles). ⚠️ **S4's 2.6 is NOT one of them** — corrected 31 Aug: it runs `--skip-es-index` and never consults ES, so it neither contends here nor needs a restart. The hold placed on S4 behind S3 was unnecessary, though harmless and correct on the plan's word at the time | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
 | **Gateway restarts** | S1 (2.2 needs one to deploy the scope fix) and S2 (2.1 ends with one) | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
-| **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest — **and so does S5's retile, which is not read-only** (S5, 31 Aug, verified). `generate_tiles_from_staged` calls `update_namespace_stage_status(manifest_path, ns, "tiles", …)` at `:1858` and `:2144` for **every contributing namespace** — all 27 on a full run — plus `write_stage_event` / `write_runtime_history_event`. Two sessions independently assumed "the retile is an output stage, therefore it only reads the corpus"; only reading the code settled it. **Scope of the write is the per-namespace `tiles` stage key and appended events only** — never `final/`, `h3_merged/`, `boundary_merged/`, `extract/` or any `places.parquet` — so a concurrent parquet *read* (the overlay harvest) is safe. Both writes are guarded on `manifest_path.exists()` and a non-empty `run_id`, so a retile invoked without them touches nothing | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. ⚠️ **"Keep concurrent sessions on different namespaces" is no longer sufficient, and stopped being true on 31 Aug.** S8's 2.7 *writes* `final/` for `gn`/`wd`/`nl` while the overlay harvest *reads* those same trees — the first time two sessions have wanted the same namespaces rather than merely the same manifest. **Read-versus-write is the collision, and `ccode_merge` is not atomic**: `:181` opens `final/places.jsonl` with mode `"w"` and derives the parquet afterwards at `:201`, with no temp-and-rename. Every resolver prefers `final/` over `extract/`, so a reader that resolves inside that window silently reads a partial file where a complete one existed. `wd` is 98.9% of the overlay and `gn` 67%. **Serialise: no session may write a namespace's staged tree while another is reading it.** |
+| **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest — **and so does S5's retile, which is not read-only** (S5, 31 Aug, verified). `generate_tiles_from_staged` calls `update_namespace_stage_status(manifest_path, ns, "tiles", …)` at `:1858` and `:2144` for **every contributing namespace** — all 27 on a full run — plus `write_stage_event` / `write_runtime_history_event`. Two sessions independently assumed "the retile is an output stage, therefore it only reads the corpus"; only reading the code settled it. **Scope of the write is the per-namespace `tiles` stage key and appended events only** — never `final/`, `h3_merged/`, `boundary_merged/`, `extract/` or any `places.parquet` — so a concurrent parquet *read* (the overlay harvest) is safe. Both writes are guarded on `manifest_path.exists()` and a non-empty `run_id`, so a retile invoked without them touches nothing | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. ⚠️ **"Keep concurrent sessions on different namespaces" is no longer sufficient, and stopped being true on 31 Aug.** S8's 2.7 *writes* `final/` for `gn`/`wd`/`nl` while the overlay harvest *reads* those same trees — the first time two sessions have wanted the same namespaces rather than merely the same manifest. ⚠️ **UPDATED 1 Sep — 2.8 HAS LANDED (`554e43a` + `e37c93b`), so the zero-byte
+window described below is GONE.** All four writers publish via
+`atomic_staged_snapshot`. **Serialisation is now belt-and-braces rather than
+load-bearing — but do NOT drop it**: two things survive 2.8. A brief
+**complete-but-mismatched pair** exists between the two renames (new parquet
+beside old jsonl), and `write_parquet_from_jsonl` **strips hull**, so the pair
+genuinely disagrees for hull-consumers whichever rename order is used. The
+historical description follows. ~~**Read-versus-write is the collision, and
+`ccode_merge` is not atomic**: `:181` opens `final/places.jsonl` with mode `"w"` and derives the parquet afterwards at `:201`, with no temp-and-rename. Every resolver prefers `final/` over `extract/`, so a reader that resolves inside that window silently reads a partial file where a complete one existed. `wd` is 98.9% of the overlay and `gn` 67%. **Serialise: no session may write a namespace's staged tree while another is reading it.**~~ |
 | **Degraded staged trees** ⚠️ NEW 31 Aug | S3's overlay rebuild, S4's 2.6, and any future rebuild | `hard_links_staged.py` and toponyms stage 1 both read `staged/<ns>/final/places.parquet` through the stage chain, and `gn`/`wd` are **one row each** with `nl` absent. **98.9% of the overlay's 7,596,959 rows touch `wd` and 67.0% touch `gn`**, so a harvest today replaces the gateway's live co-reference store with a fraction of one. **Both now depend on 2.5.** The published overlay is intact only because it was built on 6 Aug, the day before the accident |
 | **The pitt VM** | any step running inline rather than via Slurm | Heavy work goes to Slurm. Several steps do small inline work on pitt; eight parallel inline resolvers once OOM-thrashed the VM into a ~1 h production outage. Two or three sessions doing "just a little" inline work is that same pattern. |
 
@@ -229,9 +240,11 @@ the job it was about to run — and recorded it in that runbook. It is not a 2.3
 problem: it is the precondition for **every** step that executes code on CRC,
 which is most of what is left.
 
-⏳ **Not right now, though.** `gn`'s extract (Slurm 11074352) is running *from
-that clone*. Pull after it finishes and before the next job starts, not under a
-running job.
+✅ **The hold is LIFTED (Auditor F15).** It read: *"not right now — `gn`'s extract
+(Slurm 11074352) is running from that clone"*. **That job COMPLETED**, and the
+stale hold sat at the end of the section every session must read *before* running
+pipeline code, contradicting the section's own instruction. **Pull, and still not
+under a running job** — check `squeue` first.
 
 **Preconditions, as checks rather than prose.** A session must run its own before
 starting, and must not trust this document's status boxes — they are only as
@@ -261,7 +274,7 @@ fresh as the last session that remembered to tick one.
 **Do NOT yet delete** `/vast/ishi/tiles-verify` (17 GB) or
 `/ix1/ishi/data/tiles/_step0` (2.7 GB) — the `ohm` band `.geojsonl` files in them
 are the cheap fixtures for exercising the tile builder before Phase 3. They go in
-step 3.5.
+step 3.3 (Auditor F21 — this read 3.5, which does not exist; 3.3 already lists both).
 
 ---
 
@@ -1963,7 +1976,8 @@ conversation.
 (S8), because this step's own text misled on it.** Framing 2.7 around
 "`ccode_merge` is the only writer of `final/`" invites the reading that the
 earlier stages are safe to start. They are not: `h3_merged` **also outranks
-`extract`** in every priority chain, and `h3_merge.py:235` has the identical
+`extract`** in every priority chain, and ⚠️ **SUPERSEDED BY 2.8 (landed `554e43a`+`e37c93b`) — the zero-byte window below
+no longer exists; kept because it is why 2.8 was ordered first.** ~~`h3_merge.py:235` has the identical
 non-atomic pattern — `jsonl_path.open("w")`, parquet derived afterwards, no
 temp-and-rename in either file (verified: zero occurrences in both).
 
@@ -1973,7 +1987,7 @@ size, no completeness, no manifest consult. So from the moment `h3_merge` starts
 on `gn`, a concurrent reader prefers a **zero-byte** `h3_merged/places.jsonl`
 over the complete 7.38 GB `extract/places.jsonl` and yields **no rows at all**,
 silently. For `gn` and `wd` that window is *hours* wide. Worse than truncation,
-because a partial JSONL is valid JSONL all the way to wherever it has reached.
+because a partial JSONL is valid JSONL all the way to wherever it has reached.~~
 
 ### 🛑 2.7 CANNOT BE RUN AS FIRST WRITTEN — the chain omits `update_merge`
 
@@ -2907,17 +2921,19 @@ place#159 label anchors, which wave 2 also lost; and puts `clio`'s 2,986
 newly-addressable polygons on the map for the first time — **a visible change to
 the Cliopatria layer, worth a look before it ships**.
 
+🛑 **GATE — 2.7 MUST BE COMPLETE BEFORE ANY OF THIS.** Added 1 Sep (Auditor F6),
+deliberately *outside* the numbered list: a gate that blocks the whole step is not
+one trap among four, and as a list item it renumbered and broke its own
+cross-references. This list named 2.1 and 2.5 only, and every item in it is
+currently satisfied — so a cold S5 would conclude it may proceed. **It may not.**
+§2.7's heading is "GATES S5": `gn`/`wd`/`nl` have no `final/`, so the submitter
+would silently drop them. 2.5 restored the *data*; 2.7 restores the *stage depth*.
+
 Preconditions and traps:
 
 1. **2.1 must be done.** With `un` at 0 in the store, retiling it replaces the
    country boundaries with points — the §2 failure, repeated.
-0. 🛑 **2.7 MUST BE COMPLETE.** Added 1 Sep (Auditor F6) — this list named 2.1 and
-   2.5 only, and every item in it is currently satisfied, so a cold S5 reading it
-   would conclude it may proceed. **It may not.** §2.7's own heading is "GATES
-   S5": `gn`/`wd`/`nl` have no `final/`, so the submitter would silently drop
-   them. 2.5 restored the *data*; 2.7 restores the *stage depth*.
-
-2. ⚠️ **WAIT FOR 2.5 — necessary but NOT sufficient; see 0 above.** `gn`, `wd` and `nl` must be restored and counted
+2. ⚠️ **WAIT FOR 2.5 — necessary but NOT sufficient; see the 🛑 gate above.** `gn`, `wd` and `nl` must be restored and counted
    (13,454,817 / 11,459,393 / 4,363, delta 0 against the live index) before you
    tile. Check with the pipeline's own resolver rather than by looking at the
    directory: every one of the six stage-preference chains tests
@@ -3012,7 +3028,7 @@ holds no alias before deleting it.
 | 4.1 | **`og` geometry is at its sources' ceiling, not broken** — 251 of 6,260, because ofs attests only 1,123 of og's admin units and **no og doc carries a wd link at all**. Raising it is a reconciliation task (establish og↔wd links), not a pipeline fix. Its 3.9% ccode coverage follows from this and needs no separate work. **But the 249 hulls it does compute are not retrievable either** (4.2), so fixing the writer is the cheaper half and comes first: it makes the geometry og already has usable, before any effort goes into acquiring more. |
 | 4.2 | ⚠️ **`og`'s CODE is fixed (`4b1f8ca`) but its live hulls are STILL UNSERVABLE** — the fix takes effect only on an `og` re-extract, which nobody has run. Do not read this row as closed. It was **two** missing halves, not one: no `geom_key` *and* no configured module writer, and either alone stores nothing — `enrich_geometry` ignores the key without a writer and discards the polygon without the key. The staging log said "with computed geometry: N" throughout because that counter counts *entries*; it now prints stored polygons separately and warns on divergence, since equality of those two numbers is the only thing distinguishing a stored hull from a discarded one. | **Diagnosed 31 Aug, no longer a mystery tail.** The 2,569 `has_geom=false` docs are two authority bugs: `whg` (1,248 area + 1,072 line) passed `geom_key` but never configured a module writer — **fixed inside 2.3**; `og` (249 area) calls `enrich_geometry` with no `geom_key` at all, so its hulls are never keyed. The geometry was never written, not lost. `og`'s half is a small fix but needs a re-extract, so it sits here rather than in Phase 2 — take it with 4.1. Plus 1 areal doc with no `h3_cover`, unrelated. |
 | 4.3 | `authorities/backfill_admin_levels.py` has a broken `BOUNDARIES_INDEX` import; not in `INGESTION_ORDER`, so not a rebuild blocker. |
-| 4.4 | `geom_store --merge` grows every rebuild and has no prune step for keys absent from the current corpus. 2.3 will add ~229 k more orphans. |
+| 4.4 | `geom_store --merge` grows every rebuild and has no prune step for keys absent from the current corpus. ~~2.3 will add ~229 k more orphans.~~ ⚠️ **Refuted by measurement (Auditor F18):** there were never any old `whg:` keys to orphan — `index.sqlite` held **0** — and 2.3 added **9,849 first-time keys**, not 229 k of garbage. This is the row where a successor would size the prune work. |
 | 4.9 | **Make the store cross-check permanent — S2's proposal, run once and answered.** Nobody had ever asked which namespaces claim retrievable geometry the store does not hold; `un` was found by a tile failure and `whg` by S3 reading an authority script, both by accident. I ran it 31 Aug, after S2's merge: **clean — all 15 namespaces claiming areal/line `has_geom=true` have keys**, `un` now 247/247. But note it takes **two** predicates, not one, and S2's framing catches only the first: a namespace whose index *claims* `has_geom=true` with zero keys (the `un` class, silent exact-containment degradation), **and** docs with `geom_class ∈ {area,line}` and `has_geom=false` (the `whg`/`og` class, 4.2 — geometry never written, so the index claims nothing and the first check sees nothing wrong). `processing/audit_rebuild.py` already computes the second and cannot do the first, because it never opens `index.sqlite`. Adding that is small and makes both run on every rebuild instead of waiting for the next accident. **⚠️ The pair is still not complete, and the gap cannot be closed from ES at all** (S2, 31 Aug). `geom_class_of` folds `MultiPoint` into `point`, so a multi-part point feature whose store entry is missing reads `geom_class:point, has_geom:false` — indistinguishable from an ordinary point, invisible to the second predicate. And it cannot be caught by the first either: I checked, and `whg` and `og` carry **0** docs with a `geometries.geom_ref`, because the ref is written only when the store write happens. A never-written geometry therefore leaves *nothing in the index that says it should have existed* — no claim, no ref, no class that differs from a point. S3 measured 690 such coordinates in `whg`: trivial there, arbitrary in a namespace of genuine multi-part point features. **So the third check has to sit upstream, not in the audit:** the static `grep -L configure_module_writer` over authorities that compute geometry, and per-extract reconciliation of geometries *computed* against the `Geometries in VAST store: N` the writer already prints. 4.9 is two of three; state it that way rather than as a closed question. |
 | 4.10 | ⚠️ **THE PATTERN BEHIND EVERY FAILURE IN THIS CAMPAIGN — a destructive publish that never compares what it writes against what it replaces.** S3's observation, 31 Aug, verified: `processing/publish_hardlinks.publish` computes `row_count` from the **new** database, writes it into the completion marker, and never opens the incumbent at the target — so replacing a 7,596,959-row overlay with ~100 k lands looking exactly like a clean run. Four instances today alone, all the same shape: this one; `consolidate_geom_store` returning 0 and exiting 0 on a mis-pointed staging directory (S2, fixed in `adc7345`); the 7 August tile deploy pushing `poly=0` for every bucket; and, in May, a two-feature synthetic store overwriting the live geom index. The counter-example S3 spotted is instructive — `h3_stage` raises loudly on the *identical* bad variable three lines later, so the difference is a habit, not a constraint. **The fix is one shape applied in several places: before a destructive write, read the incumbent, compare magnitude, and refuse a material shrink unless overridden by name** (`--allow-shrink`, as `WHG_ALLOW_BNDA_ONLY` now guards `un`). Sites: `publish_hardlinks`, `consolidate_geom_store`, the tile deploy, `index_from_stage`. Note the overlay publish does keep one generation as `.previous`, so this class is recoverable — but only once, and silently consumed. |
 | 4.11 | **Stage-preference chains test existence, not content — audited 31 Aug, and it is every one of them.** S4 found the third instance (`h3_stage._extract_stage_dir` returns `update_merged/` on `.exists()`, so a 1-row stub tree would have been fed to H3 while the correct 10.26 GB `extract/` sat unread) and asked whether `generate_tiles` and `index_namespace` behave the same way. They do, and so does the rest: **`index_from_stage:88`, `h3_stage:93`, `generate_tiles:862`, `index_namespace:112`, `gazetteer_temporal_extent:106`, and `rebuild_toponyms_index`** — six chains, all `if path.exists()`, none checking that the file it selects holds a plausible number of rows. Each prefers `places.parquet` over `places.jsonl` in the same directory, which is what makes a 4,925-byte stub a poison pill rather than a nuisance. **Fix once, apply six times:** the chain should skip a candidate whose row count is implausible for the namespace, or at minimum log the count and source it chose so a 1-row selection is visible in the log. Related to 4.10 — that one is about not overwriting good data with bad, this one about not *reading* bad data as good. ⚠️ **"Apply six times" is right but "fix once" needs care: the six chains are not the same chain** (S4, 31 Aug). Four are byte-identical — `index_from_stage`, `generate_tiles`, `hard_links_staged`, `gazetteer_temporal_extent` all use `(final, h3_merged, boundary_merged, update_merged, extract)`. Three do not: `rebuild_toponyms_index` omits `update_merged` (defensible — toponyms are populated at extract time and not mutated later); `h3_stage` is per-namespace and tests **directory** existence rather than a file, which is why it was the worst of them; and **`index_namespace` uses `(final, ccode_merged, h3_merged, extract)`** — which has two problems. `ccode_merged` **is written by nothing**: it appears in exactly two places in the tree, this tuple and `staging_orchestrator:58`, both readers, because the ccode stage's output is `final/` (as this plan says in the incremental-add workflow). So that entry is dead, and it makes the chain *look* like it covers the ccode stage when it does not. Meanwhile it omits `boundary_merged` and `update_merged`, which **are** written — so for `osm`/`ohm` with no `final/`, `index_namespace` skips the enriched `boundary_merged/` and falls through to the raw `extract/`, and `--source-stage` cannot even be asked for those stages because they are not in its `choices`. A shared helper must therefore take the chain as a parameter, and `index_namespace`'s wants fixing on its own account, not just refactoring. ⚠️ **And this audit was itself incomplete, in an instructive direction (S5, 31 Aug): it looked at *resolvers* and never at *gates*.** Within the tile subsystem the two disagree. `generate_tiles._staged_namespace_source` (`:862`) is tolerant like the rest and would have streamed `gn`'s and `wd`'s `extract/` perfectly well — but `submit_tiles_slurm._eligible_buckets` is **strict**, requiring `final/` and otherwise bare-`continue`ing. The strictness sits *upstream* of the tolerance, so the bucket is never submitted and **the failure presents as an absence rather than an error**: no log line, no exception, 24 tilesets where 27 were expected. A seventh site with the opposite polarity to the other six, and the reason a "which resolver does it use" sweep could not have found it. The general form worth inheriting: **anything that SELECTS work deserves the same audit as anything that READS data.** |
@@ -3127,7 +3143,7 @@ would otherwise have carried:
 * **S3:** *"the gate is cold-readable; the procedure past the gate is documented
   but unexercised."* Its harvest was cancelled during Phase 1A, so `loc_links`,
   `finalise_local`, `publish_hardlinks`, the ship marker and the prune were never
-  reached. **Expect to debug the publish path, not run it.** Asking about
+  reached. **Expect to debug the publish path, not run it.** ⚠️ **Largely superseded (Auditor F19):** all but the final publish have since run — LOC 1,132 attempted / 1,129 inserted, contributor replay reached DO Postgres unconfigured, `finalise_local` ran, and `1f5aa50`'s renamed drop-ledger fields ran on CRC for the first time. **Only `publish_hardlinks --execute` remains untried.** Asking about
   in-flight state also turned up a stale 16 MB SQLite WAL beside the deleted
   partial database, which a rerun under the same run id would have adopted.
 * **S4:** 2.5 and 2.6 are both finishable cold — *"the residual risk is not
