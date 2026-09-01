@@ -2654,7 +2654,11 @@ three-way test (stored vs fresh-from-store vs from-hull) can, and does.
 and shows `doc["h3_cover"] = h3_cover`. That is wrong for the current schema.
 Anyone checking S8's reading against the docstring would have had it confirmed.
 **Documentation that agrees with a wrong reading is worse than none** — a
-one-line fix, unassigned, for whoever next touches `helpers.py`.
+✅ **FIXED 1 Sep (`56b947b`)** — the docstring now states the fields are
+**per-geometry**, shows `geom_entry[...]` rather than `doc[...]`, and records *why*
+it was wrong, since this plan's own finding is that documentation agreeing with a
+wrong reading is worse than none. Found still-live by the Auditor's batch-3
+code-claim check.
 
 #### 🔴 THE TRIGGER — the same missing `LD_LIBRARY_PATH` export, failing silently instead of loudly
 
