@@ -50,13 +50,49 @@ def _final_parquet(namespace: str) -> Path:
     return Path(STAGED_BASE_DIR) / namespace / "final" / "places.parquet"
 
 
+def _final_source(namespace: str) -> Path | None:
+    """Return the readable ``final/`` snapshot, parquet preferred, else None.
+
+    The parquet sidecar is **best-effort**: ``write_parquet_from_jsonl``
+    returns False rather than raising when pyarrow's schema inference fails
+    (ragged GeoJSON ``coordinates``, mixed LPF timespan types), leaving a
+    complete canonical JSONL and no sidecar. Every other consumer in the repo
+    reads "parquet if it exists, else jsonl" for exactly that reason; this
+    tool required the parquet and so skipped such a namespace entirely.
+
+    ``ukhc`` is the one namespace in that shape today, and it was silently
+    excluded from the un-BNDA backfill — undiscovered by default, and
+    contributing zero rows with no error when named explicitly. It is a
+    coastal-boundary authority, which is precisely the population tier 2
+    exists to resolve.
+    """
+    base = Path(STAGED_BASE_DIR) / namespace / "final"
+    parquet = base / "places.parquet"
+    if parquet.exists():
+        return parquet
+    jsonl = base / "places.jsonl"
+    if jsonl.exists():
+        return jsonl
+    return None
+
+
 def _iter_final(namespace: str) -> Iterator[dict[str, Any]]:
-    path = _final_parquet(namespace)
-    if not path.exists():
+    path = _final_source(namespace)
+    if path is None:
         return
-    pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(batch_size=2000):
-        for row in batch.to_pylist():
+    if path.suffix == ".parquet":
+        pf = pq.ParquetFile(path)
+        for batch in pf.iter_batches(batch_size=2000):
+            for row in batch.to_pylist():
+                if isinstance(row, dict):
+                    yield row
+        return
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
             if isinstance(row, dict):
                 yield row
 
@@ -67,7 +103,7 @@ def _namespaces(explicit: str | None) -> list[str]:
     base = Path(STAGED_BASE_DIR)
     return sorted(
         p.name for p in base.iterdir()
-        if p.is_dir() and (p / "final" / "places.parquet").exists()
+        if p.is_dir() and _final_source(p.name) is not None
         and p.name != "un"
     )
 
@@ -91,6 +127,24 @@ def main() -> int:
     except FileNotFoundError:
         reader = None
 
+    selected = _namespaces(args.namespaces)
+
+    # An explicitly-named namespace with no readable final/ must not pass as a
+    # zero contribution. This tool's per-namespace line is gated on
+    # uncoded>0, so a namespace that scanned nothing printed nothing at all —
+    # indistinguishable from one that scanned everything and found no work.
+    # That is this campaign's signature defect: absent input treated as
+    # nothing-to-do.
+    if args.namespaces:
+        missing = [ns for ns in selected if _final_source(ns) is None]
+        if missing:
+            print(f"No readable final/ snapshot for: {', '.join(missing)} — "
+                  f"expected places.parquet or places.jsonl under "
+                  f"{Path(STAGED_BASE_DIR)}/<ns>/final/. Refusing to report a "
+                  f"zero contribution for a namespace that was never read.",
+                  file=sys.stderr)
+            return 1
+
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -99,7 +153,7 @@ def main() -> int:
     per_ns: dict[str, dict[str, int]] = {}
 
     with out_path.open("w", encoding="utf-8") as fh:
-        for ns in _namespaces(args.namespaces):
+        for ns in selected:
             n = {"scanned": 0, "uncoded": 0, "no_geom": 0, "resolved": 0,
                  "still_unresolved": 0}
             for doc in _iter_final(ns):
@@ -138,6 +192,12 @@ def main() -> int:
                       f"RESOLVED={n['resolved']:>8,d} "
                       f"still_unresolved={n['still_unresolved']:>8,d}",
                       flush=True)
+            elif not n["scanned"]:
+                # Distinguish "read it, nothing to do" from "never read it".
+                # Only the second is a defect, and without this line they look
+                # identical in the log.
+                print(f"  {ns:10s} scanned=         0  "
+                      f"** NOTHING READ — no final/ snapshot **", flush=True)
 
     print("\n" + "=" * 78)
     print(f"scanned          {totals['scanned']:>12,d}")
