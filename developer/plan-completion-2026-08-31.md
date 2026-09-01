@@ -2239,6 +2239,62 @@ concluding it "left nothing newer". pitt reports **EDT (UTC−4)**, and my manif
 `h3/`, `h3_merged/` and `final/` **are** my chain's four stages. **2.1 is not
 implicated at all** — S2's geom merge at 03:37 was correct and remains correct.
 
+#### 🔴 THE TRIGGER — the same missing `LD_LIBRARY_PATH` export, failing silently instead of loudly
+
+**S9 established the code takes the *good* path today and could not explain why my
+run took the fallback. This is why, and it is the same defect S8 was blocked by.**
+
+The complete chain, every link verified:
+
+```
+my un_final_chain.sbatch      conda activate whg; cd /vast/ishi/elastic     ← NO LD_LIBRARY_PATH export
+geom_store:47                 import sqlite3
+                              → ImportError: GLIBCXX_3.4.30 not found       (the S8 blocker, exactly)
+h3_stage:46-51                try: from processing.geom_store import GeomStoreReader
+                              except Exception: _GeomStoreReader = None     ← swallowed
+h3_stage:60-67                if _GeomStoreReader is not None: ...          ← never constructs a reader
+h3_stage:79   cover_geometry_for   if reader is not None and has_geom: ...  ← skipped
+h3_stage:90                   return select_h3_cover_geometry(geom, hull)   ← HULL, silently
+```
+
+**Corroboration:** my job's log contains **no `geom-store: opened …` line at all**,
+which is precisely what this path produces — the reader is never constructed, so
+it never announces itself. And S9 confirmed that today, in a working env, the same
+code yields the correct 376 cells.
+
+⚠️ **Three stacked bare `except Exception`s** — the import (`:49`), the reader
+construction (`:64`), and the lookup (`:82`) — each turning *"the authoritative
+polygon is unavailable"* into *"use the hull"* without a word.
+
+**The two halves of today's campaign are one defect.** S8's ccode submitter and my
+hand-written h3 sbatch both lacked the export. **S8's failed loudly at import and
+cost an hour. Mine failed silently, produced a plausible artefact, and cost the
+`gn`/`wd` hold plus everything since.** Same missing line; the difference between
+them is entirely whether the code swallowed the error. That is the argument for
+S9's part 1 in its strongest form.
+
+⚠️ **Labelled as a strongly-evidenced hypothesis, not a proof:** I have not
+re-run `h3_stage` on a node without the export to reproduce it. That test is cheap
+and would settle it — and S9's part 1 makes it unreproducible regardless, which is
+why it should land without waiting for the trigger to be confirmed.
+
+**S9's reframing of the fix is right and I would not soften it.** The defect is not
+"we prefer a cheap approximation" — it is a **silent degradation to a known-inferior
+geometry for a feature explicitly marked `has_geom=True`**, which then reports
+success. `has_geom=True` is a *promise* the real polygon is retrievable; when the
+store cannot honour it, the correct behaviour is to fail loudly.
+
+1. `cover_geometry_for` must **not** substitute the hull when `has_geom` is true
+   and the store lookup fails — that is an error condition, not a fallback.
+2. Where the hull genuinely is the only geometry, **refuse it when it crosses the
+   antimeridian and the polygon does not** — there it is not a coarser
+   approximation but a wrong one.
+
+**And the stale-clone lead is REFUTED, not merely unverified** (S9): the reflog
+shows the clone sat at `177ba72` from 03:41 to 16:57 EDT, and `177ba72` contains
+`cover_geometry_for` (afab7d6), the antimeridian fix (627ae79) and the outward
+dilation (b764941). Right code, populated store, wrong output.
+
 #### ⚠️ The live cover IS the extract cover — `h3_stage` had never run on `un` before my chain
 
 S8 raised a constraint on the hypothesis: the live `un:usa` cover is correct
