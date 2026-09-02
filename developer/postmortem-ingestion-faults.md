@@ -451,6 +451,19 @@ These are not code faults, but they cost real time this campaign.
   * ⚠️ **And an alarm that outlives its cause is worse than no alarm**, because
     it trains readers to discount the next one — which is expensive in a
     document whose whole purpose is to be believed.
+* ⚠️ **A document's AUTHORITY and its FRESHNESS are inversely related unless
+  something forces them together — because authority is what stops people
+  editing it.** The propagation runs finding → plan → post-mortem → CLAUDE.md →
+  **handover**, and the handover is the only one **cited as authoritative by two
+  of the others while being downstream of all of them.** Measured 2 Sep: it had
+  not been touched since 31 Aug, and its **one-line summary carried both
+  staleness directions four lines apart** — "complete and correct in
+  production" (false; 5,268 live-defective geometries measured and remediated
+  that day) and a gateway defect named as outstanding that had been **fixed on
+  the very day the document was last edited** (`4286a0f`). **The most trusted
+  document was the least maintained**, which is the asymmetry above at its
+  limit: nothing prompts a re-read of a document whose whole purpose is to be
+  stable.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.

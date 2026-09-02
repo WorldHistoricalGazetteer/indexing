@@ -6,12 +6,37 @@ never against a manifest status or a plan's own claim. Sources audited:
 `plan-temporal-model.md` §10, `plan-atlas-data-architecture.md` §8,
 `HANDOVER-2026-08-09-geom-store.md`.
 
-**One-line summary:** the re-ingestion itself is complete and correct in
-production. The *publication* half is not: a partial retile on 7 August ran
-against the geom store while it was destroyed, and **nine gazetteer boundary
-layers are on the live map today as points with no polygons**. A second,
-unrelated defect turned up while verifying that one: the gateway answers an
-*unresolvable* containment scope globally instead of failing closed (§2b).
+> ⚠️ **UPDATED 2 Sep 2026 — this document was written on 31 Aug and is cited as
+> authoritative by CLAUDE.md and by `plan-completion-2026-08-31.md`. Its summary
+> had gone stale in BOTH directions. Corrected below; the body beyond §1 has NOT
+> been re-verified against 2 Sep's findings, so read it as of 31 Aug unless a
+> line says otherwise.**
+
+**One-line summary:** the re-ingestion is complete in production, and ~~correct~~
+**was NOT wholly correct — see the 2 Sep correction below.** The *publication*
+half is also not: a partial retile on 7 August ran against the geom store while
+it was destroyed, and **nine gazetteer boundary layers are on the live map today
+as points with no polygons** (still true — the geom store now holds all nine
+layers' geometries, 62,603 of them, but **the deployed tilesets are unchanged
+until S5 retiles**; store coverage and tileset contents are different claims).
+~~A second, unrelated defect turned up while verifying that one: the gateway
+answers an *unresolvable* containment scope globally instead of failing
+closed (§2b).~~ ✅ **FIXED 31 Aug — `4286a0f`, "a scope that cannot be applied
+must not answer globally", deployed and verified on prod the same day
+(`ScopeInfo` / `mark_scope_degraded` in `gateway/spatial.py`). §2b's body still
+reads as outstanding work; it is not.**
+
+🛑 **2 Sep correction to "correct in production".** It was not. Production was
+serving **hull-derived `h3_cover`s** for two namespaces — `clio` 3,522 of 15,683
+(22.5%) and `whg` 1,746 of 2,565 (68.1%), **5,268 geometries**, both censused
+rather than estimated. Their covers were written by
+`h3ccode-20260805T120000Z`, *the run behind the live index*, so unlike `un`'s
+they shipped. **79% of the damage was UNDER-covering**, i.e. `containment=fuzzy`
+silently omitting places that should have matched. ✅ **Remediated the same day**
+(§2.11 of the plan): 5,268 `_bulk` updates, 0 errors, re-census **0 defective of
+18,248 examined**. Two things it did not fix remain open there: 248 `whg`
+`point`-class geometries whose `geom_class` may be wrong, and a stale top-level
+`h3_cover` that nothing reads.
 
 ---
 
