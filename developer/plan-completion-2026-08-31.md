@@ -3301,7 +3301,33 @@ survives in exactly one place:
 |---|---|
 | live index | **no** — stripped on the index path; 0 occurrences in the mapping |
 | any `places.parquet`, any stage | **no** — `strip_hull_for_parquet` |
-| staged `places.jsonl` | **yes** — the only surviving carrier |
+| `extract` / `update_merged` / `boundary_merged` / `h3_merged` **JSONL** | **yes** |
+| **`final/places.jsonl`** | **NO — measured 2 Sep** |
+
+⚠️ **`final/places.jsonl` carries no `hull` either, which narrows the surviving
+carrier further than first stated.** `ccode_merge._iter_source_docs` prefers
+`h3_merged/places.parquet` over the JSONL, and the parquet is already
+hull-stripped — so `final/` inherits hull-less documents no matter that
+`ccode_merge` applies only `normalize_for_parquet` (empty-list → `None`) on the
+way out. Measured, both namespaces that have a `final/`:
+
+```
+un/h3_merged  hull=247    un/final  hull=0
+nl/h3_merged  hull=4,363  nl/final  hull=0
+```
+
+**This makes the §4.14 exclusion *more* likely void, not less**, because the
+761 are described by their **stored** fields and `final/` is the most likely
+staged source for that word. Revised outcome list: *field, from `extract` /
+`update_merged` / `boundary_merged` / `h3_merged` JSONL* → **stands**;
+*recomputed from the geom store* → **stands**; *field, from ES, any parquet,
+**or `final/places.jsonl`*** → **VOID**.
+
+⚠️ **`ccode_merge`'s own comment is wrong** — it states "the canonical JSONL
+keeps hull and explicit nulls intact for downstream consumers". The nulls, yes;
+the hull, no, because the *source preference* silently defeats it. Harmless in
+function (`hull` is an ingestion intermediate consumed before `final/`) and
+misleading in fact — which is how this thread started.
 
 **The question to put to S9 is not "which file" but "field read, or
 recomputed?"** — the probe may have recomputed the hull from the geom-store
