@@ -507,6 +507,29 @@ These are not code faults, but they cost real time this campaign.
   them 248-of-248 defective. **An instrument narrower than its reputation,
   reporting success**: the same class as the rest of this document, applied to
   a result that had already been accepted and filed.
+* 🛑 **VALIDATING A GATE WITH A SYNTHESISED INPUT VALIDATES YOUR ASSUMPTION, NOT
+  REALITY — a ~15-minute production outage, 2 Sep, caused by the coordinator.**
+  A `Referer` allowlist was added to the tileserver's nginx config to shed
+  hotlinking. The access log showed **13,222 refererless requests against 1,595
+  from `https://whgazetteer.org/`**, read as *abuse vs legitimate*. **It was
+  backwards:** MapLibre fetches style and tile JSON **without a Referer**, so the
+  refererless bucket was mostly *the map itself*. The map vanished from
+  production until rollback.
+  * **The pass-half was performed and still missed it.** Every allowed origin was
+    tested — with **`curl -e`**, synthesising the referer expected. The one
+    known-good input that mattered, **a real map page load**, was never tried.
+    **"Prove it passes on known-good" means the REAL good input, not a
+    reconstruction of it**; otherwise the test confirms the model rather than
+    the world.
+  * **The 8:1 ratio was the tell and was read as confirmation.** A number that
+    large should have prompted *"is my model of this traffic wrong?"* rather than
+    *"look how much abuse there is"* — **absence of variance where the world has
+    variance**, the same tell recorded elsewhere in this document, missed by its
+    author hours later.
+  * **What was actually wrong was unrelated and real:** the tileserver bound
+    `*:8080`, publicly reachable, bypassing nginx entirely. Closing that needed
+    no referer logic. **The genuine finding was fixed alongside a fabricated one,
+    and only the fabricated one caused an outage.**
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
