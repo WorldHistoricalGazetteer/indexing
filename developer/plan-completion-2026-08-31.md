@@ -2976,6 +2976,79 @@ than assumed benign: the sole non-doc file is `processing/helpers.py`, and an
 **AST comparison with docstrings stripped shows the executable code is
 identical**, so the running job is behaviourally unaffected.
 
+### ✅ 2.7 — `nl` COMPLETE, 2 Sep; the causal chain demonstrated end to end
+
+S8's three checks against a baseline locked before the change, all passing:
+
+```
+stage depth   nl -> final/places.parquet (was extract/places.jsonl); gn still extract/, wd update_merged/  -> still discriminates
+counts        4,363   delta 0 against the live index
+ccode         100.00% (was 99.66%)  == live index exactly
+              previously-unresolved 15 -> RESOLVED 15, still unresolved 0
+```
+
+All 15 are small offshore territories — `ngati-rehua` `['NZ']`, `limuw`,
+`samish`, `manissean`, `tuqan`/`anyapax`/`wima`/`nicoleno`, `shoalwater-bay`,
+`cession-349`/`-493` `['US']`. **The chain is now measured at every link rather
+than argued:** `un`'s hull-derived cover → tier-1 prefilter inert → everything
+falls through to tier 2's 232-vertex BNDA outlines → small islands swallowed.
+Fix the cover, tier 1 engages, the islands resolve.
+
+Covers underneath verified polygon-derived by the three-way test: `samish` 103
+(hull gave 119), `ngati-rehua` 82 (hull 74), and **`limuw` 55 matching the
+*fresh* set rather than the *hull* set at the same cardinality** — the case no
+count test could have caught, and the reason the three-way test exists.
+
+### ⚠️ `gn`'s 96 G is right, and the reasoning published for it is not
+
+Checked before authorising S8 to proceed. **`update_merge._load_patches` holds
+the entire patch file in memory** as `dict[place_id → merged_patch]`, lists
+included, before any document streams — a **fixed additive term that does not
+scale with the corpus ratio.** The two namespaces are in different regimes:
+
+```
+wd patch     89 MB      58,657 lines        gn patch   1.4 GB   8,125,650 lines
+```
+
+`gn`'s is GeoNames' alternate names — the ~26.7M the corpus went without until
+`update_merge` was fixed. Measured by replicating the merge semantics on real
+rows and taking the marginal slope (per-row cost amortises: 2,006 → 1,652 →
+1,493 B/row, marginal 1,335):
+
+```
+200,000 rows -> 0.37 GiB    400,000 -> 0.62 GiB    800,000 -> 1.11 GiB
+extrapolated full patch dict: 10.2 GiB      (1.00 rows/place, no key collapse)
+```
+
+Decomposing `wd`: 40.96 GiB peak with a ~0.15 GiB dict ⇒ ~40.8 GiB non-dict
+(the Arrow/parquet peak). For `gn` that scales by merged bytes (~34.7 GiB) or
+by row count (~48 GiB) — undetermined without measuring, so assume the worse:
+**~58 GiB, ~70 GiB if both compound. Under 96 G with margin.**
+
+**Why this is recorded rather than dropped as a non-event:** the two routes
+agree at 96 G and *disagree at 64 G*. The ratio argument said 62.5 GiB — "98%
+of 64 G", i.e. it fits. The decomposition says a 10.2 GiB floor plus a peak
+reaching 48 GiB, i.e. **it would have OOMed after hours on a 13M-doc corpus.**
+The decision was right; the published argument for it would mislead the next
+person to re-derive it. **Permanent fix: `_load_patches` should stream or spill
+— a whole-file in-memory dict is an unbounded term keyed to patch size, not
+corpus size, and nothing in the request estimator knows about it.**
+
+### ⚠️ Minor submitter defect — `un`'s ccode plants a FAILED row for work that succeeded
+
+`11103929`, FAILED in 7 s, exit 1 — investigated rather than assumed benign,
+and it **is** benign: `ccode_enrichment.py:859` raises `ValueError: ccode
+enrichment is not applicable to the UN namespace itself`.
+`submit_ccode_slurm` marks `un` skipped, runs the pass-through **inline**
+(which is what regenerated `un`'s `final/`), and *then* still submits an array
+task the guard correctly refuses.
+
+The work succeeded; the job was redundant. But it leaves **`un ccode FAILED,
+exit 1` in `sacct`** for a namespace whose `final/` is exactly what this
+campaign spent days establishing you can trust. A later auditor either chases
+it or concludes `un` is untrustworthy. **A guard expected to fire belongs
+before submission, not after.**
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 3.1 Retile all 27 buckets  — **S5**
