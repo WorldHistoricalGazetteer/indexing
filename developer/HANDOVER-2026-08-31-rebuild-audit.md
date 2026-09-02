@@ -6,11 +6,21 @@ never against a manifest status or a plan's own claim. Sources audited:
 `plan-temporal-model.md` §10, `plan-atlas-data-architecture.md` §8,
 `HANDOVER-2026-08-09-geom-store.md`.
 
-> ⚠️ **UPDATED 2 Sep 2026 — this document was written on 31 Aug and is cited as
-> authoritative by CLAUDE.md and by `plan-completion-2026-08-31.md`. Its summary
-> had gone stale in BOTH directions. Corrected below; the body beyond §1 has NOT
-> been re-verified against 2 Sep's findings, so read it as of 31 Aug unless a
-> line says otherwise.**
+> ✅ **SWEPT 2 Sep 2026 — summary AND body.** Written 31 Aug and cited as
+> authoritative by CLAUDE.md and by `plan-completion-2026-08-31.md`, this
+> document had gone stale in **both** directions. Corrected: the one-line
+> summary; **§3.1 preconditions 1 and 2** (both refuted — the section CLAUDE.md
+> marks required reading before any retile); **§3.4** (`un` resolved); the
+> `gn`/`wd`/`nl` stub claims (restored by 2.5); and the `whg` store gap (fixed
+> in 2.3). **Checked and deliberately NOT changed** — still true: the nine
+> boundary layers deployed as points (store coverage ≠ tileset contents);
+> `toponyms-temporal-…db` lacking `ipa`/`panphon_features` (2.6 has not run);
+> `og`'s wd-link fallback contributing 0; Symphonym at 100%.
+>
+> *(This replaces a "read as of 31 Aug unless a line says otherwise" banner.
+> That was a disclaimer, not a schedule — it asserted nothing testable and so
+> could never fail, which is this campaign's own "a comment cannot fail" in
+> documentation form. The sweep it stood in for has now been done.)*
 
 **One-line summary:** the re-ingestion is complete in production, and ~~correct~~
 **was NOT wholly correct — see the 2 Sep correction below.** The *publication*
@@ -165,7 +175,9 @@ reason `un`'s absence from the store is invisible to search.)
 > geometries are missing from the store does not fail exact containment; it
 > quietly downgrades it.** The `whg` case S3 found on the same day is the same
 > class: 2,320 areal and linear shapes that never reached the store, so any
-> `contained_in` scoped to a contributed dataset degraded identically. So "which
+> `contained_in` scoped to a contributed dataset degraded identically. ✅
+> **FIXED inside 2.3 — the `whg` store went 0 → 9,849 keys**, and
+> `whg-places.py` no longer passes `geom_key` without `configure_module_writer`. So "which
 > namespaces claim `has_geom` but hold no store keys" is a **search-correctness**
 > question, not only a tile-generation one.
 
@@ -187,13 +199,21 @@ puts `clio`'s 2,986 newly-addressable polygons on the map for the first time
 
 Three preconditions, all of them traps:
 
-1. **⚠️ EXCLUDE `un`, or restore its geometries first.** The store holds
-   **0** `un` geometries (SG's open decision, §3.4). The deployed `un` tileset
-   still has real polygons from wave 1 — retiling it today would replace the
-   country boundaries with points, repeating exactly the §2 failure.
-2. **Set `TILE_ES_DOC_NAMESPACES=gn,wd`** — their staged trees are still test
-   stubs (6.5 KB / 14 KB); `71bcc39` makes the builder read those two from the
-   places index instead.
+1. ~~**⚠️ EXCLUDE `un`, or restore its geometries first.** The store holds
+   **0** `un` geometries~~ ✅ **RESOLVED 31 Aug — DO NOT EXCLUDE `un`.** The
+   store holds all **247** (job 11074309; `index.sqlite` `un:` keys = 247 =
+   the full corpus; bounds delta 0.0 against the live index; re-verified 2 Sep).
+   **`un` is no longer a retile blocker.** The rule the trap encoded still
+   stands: **a tile job that reports success is not evidence it read any
+   geometry** — check the store's per-namespace key count before retiling any
+   boundary layer.
+2. ~~**Set `TILE_ES_DOC_NAMESPACES=gn,wd`** — their staged trees are still test
+   stubs (6.5 KB / 14 KB)~~ ❌ **WITHDRAWN — this does not do what the
+   precondition assumes, and the premise is gone.** `submit_tiles_slurm` **never
+   consults** the variable (verified: it appears only in `generate_tiles.py:951`
+   and `settings.py:158`), so it **cannot make an ineligible bucket eligible** —
+   eligibility gates on `final/` regardless. And the stubs were restored by 2.5:
+   `gn` 13,454,817 / `wd` 11,459,393 / `nl` 4,363, delta 0.
 3. **Assert a non-zero polygon count per bucket before deploying**, and restart
    the tileserver promptly afterwards (it holds descriptors on the old inodes;
    last push hit 99% disk. It is at 83% / 8.5 GB free now).
@@ -217,11 +237,16 @@ dangle** — `clustering/harvest/contributor_replay.py` mints ids for datasets t
 ingestion never accepted (89 referenced, 48 in the index). Both problems are
 handled by the emitted id map in `plan-completion-2026-08-31.md` §2.3.
 
-### 3.4 `un` — still awaiting SG's decision
+### ✅ 3.4 `un` — RESOLVED 31 Aug (was: still awaiting SG's decision)
 
-Unchanged from the 9 Aug handover §2: 247 geometries absent from the store,
+~~Unchanged from the 9 Aug handover §2: 247 geometries absent from the store,
 untouched because of the geoBoundaries-vs-BNDA question. Now blocks a clean
-retile (§3.1 precondition 1), so it is no longer cost-free to defer.
+retile (§3.1 precondition 1), so it is no longer cost-free to defer.~~ ✅ **SG
+decided and it ran: job 11074309, all 247 merged, 247/247 resolved from the
+store, bounds delta 0.0, `repr_point` outside its polygon 0. `un` no longer
+blocks the retile.** The source question was already settled in code —
+`un-countries.py` takes identifiers/names/timespans from BNDA and overrides the
+polygon with geoBoundaries HPSC where it has one.
 
 ### 3.5 Housekeeping — ~145 GB, no risk
 
@@ -240,9 +265,12 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
   still only marks `un`'s ccode stages `skipped`; nothing regenerates `final/`
   from `h3_merged`, so `un` will again index a stale `h3_cover`. It was fixed by
   hand for this run only. (Fault 13, the wall-time floors, **is** committed.)
-* **`gn` / `wd` staged trees are stubs** (6.5 KB / 14 KB — in fact **one row
-  each**), collateral from the `unittest discover` accident, **and `nl` is missing
-  entirely** — no directory at all, against 4,363 `nl` places in prod (S4's
+* ✅ **RESOLVED by 2.5 — restored to `gn` 13,454,817 / `wd` 11,459,393 / `nl`
+  4,363, delta 0 against prod.** ~~**`gn` / `wd` staged trees are stubs** (6.5 KB
+  / 14 KB — in fact **one row each**), collateral from the `unittest discover`
+  accident, **and `nl` is missing entirely**~~ ⚠️ *(Data restored; **stage depth**
+  is a separate question — see the plan's 2.5 for what that does and does not
+  unblock.)* Original text retained for the diagnosis: — no directory at all, against 4,363 `nl` places in prod (S4's
   census, 31 Aug). `nl` **belongs with this accident after all** — I first
   recorded it as older, on the 9 August handover's "already missing before any of
   this", then found the tile log `tiles-ns-10756173_*.out` of **2026-08-07T01:21**
