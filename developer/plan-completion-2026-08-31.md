@@ -3331,6 +3331,70 @@ reading of a null result:** if prod and staged agree for `wd`, that is *equally*
 consistent with "both correct" and "both hull-derived", and it will say so
 rather than report agreement as a pass.
 
+### 🛑 PRODUCTION EXPOSURE, BOUNDED — with one denominator I cannot reconcile
+
+**S9's uniform reservoir samples (not the intersection, not a prefix), fresh
+covers from the geom-store polygon, set comparison, 400/400 found live, store
+open asserted with a control fetch first:**
+
+```
+ns     tested  MATCH  DIFFER   rate   95% CI     S9's est. affected
+clio      200    162      38    19%   14-24%     ~2,980 of 15,683
+whg       200     78     122    61%   54-68%     ~1,565 of  2,565   <- denominator disputed
+staged cover == live cover: 400 of 400
+```
+
+✅ **`clio` reconciles exactly.** Live `clio` docs with an area geometry =
+**15,690**, matching S9's 15,683 frame to within rounding. **19%, not the 100%
+the 309-intersection might have implied** — and S9 flagged that risk itself
+before measuring. It also agrees with the earlier staged uniform sample (~22%),
+a genuine cross-check that two sampling frames measure the same thing.
+
+⚠️ **`whg`'s denominator does NOT reconcile, and it roughly halves the estimate.**
+Measured here, staged `whg`, full pass:
+
+```
+docs 228,918   geometries 215,401
+geom_class: point 213,081   area 1,248   line 1,072
+docs with >=1 area geometry 1,248   AREA GEOMETRIES 1,248   (1:1, no doc has two)
+LIVE whg docs with an area geometry: 1,248   <- independent ES count, agrees exactly
+```
+
+**1,248 area features, not 2,565** — and 1,248 is exactly the 770 Polygons +
+478 MultiPolygons already recorded in S5's Check 1 derivation. `area + line` =
+2,320, still not 2,565.
+
+**So at S9's measured 61% rate the affected count is ≈761 features, not ≈1,565**
+— unless S9 sampled a frame wider than area geometries, in which case the *rate*
+applies to that frame and the extrapolation needs restating against it. **The
+rate is not in question; the frame it multiplies is.** S9 has been asked which
+frame it drew from.
+
+🛑 **Nothing downstream should quote a `whg` affected-count until that is
+settled.** This is the campaign's own denominator rule biting on the campaign's
+own headline number — *"0 defective" is meaningless without "of N examined"*,
+and so is "1,565 affected" without the N it extrapolates from.
+
+**Revised production picture, with the disputed figure marked:**
+
+```
+clio    ~2,980 of 15,690 wrong in the live index   (19%, CI 14-24)   RECONCILED
+whg     rate 61% (CI 54-68); affected count DISPUTED — ~761 on a 1,248 frame
+un      live cover CORRECT — bad covers postdate the cutover; staged recompute only
+nl      live cover CORRECT — same reason; staged recompute only
+osm/ohm live CORRECT, 30/30 each
+```
+
+✅ **`staged == live` for all 400** — so staged is a faithful proxy for production
+for `clio` and `whg`. Now measured for `osm`/`ohm` (60/60), `clio` + `whg`
+(400/400), and false only for `un` and `nl`, whose staged trees the 31 Aug runs
+rewrote. **The rule holds as stated: an artefact is unreliable if a known-broken
+run rewrote it — provenance, not location.**
+
+⚠️ S9 has **retired its own earlier `whg` figure**: 78% came from n=45; **61% at
+n=200 is the number to use**, and the CIs overlap at 63–68% so they are
+consistent rather than contradictory.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
