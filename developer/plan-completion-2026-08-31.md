@@ -3540,6 +3540,65 @@ heading into when stored-vs-fresh was being reported by cardinality.
 undetermined mechanism, and the 248 `point`-class geometries carrying covers up
 to 1,230 cells.
 
+### 2.11 REMEDIATE THE LIVE `h3_cover` DEFECT — **S9 (`indexing-98`)** — 🛑 SG RULING, 2 Sep
+
+**SG's decision, overruling S8's recommendation to defer: do it now.** This is
+the corpus-correctness class SG's standing ruling already places ahead of the
+beta-gated retile, and it is a live user-facing wrong answer.
+
+**Scope — exactly these, nothing else:**
+
+```
+clio   3,522 of 15,683 defective geometries
+whg    1,746 of  2,565
+       5,268 total, in places_h3ccode-20260805t120000z (behind the `places` alias)
+```
+
+🛑 **DO NOT TOUCH `un`, `nl`, `osm`, `ohm`** — all measured **live-correct**.
+A write to them is a regression, not a fix.
+
+**Method.** For each defective geometry: read the polygon from the geom store by
+`geom_ref`, recompute `h3_cover` + `h3_centroid` with `compute_h3_fields`, and
+patch the live index. S9 already holds this machinery from the censuses.
+
+**Hard requirements — each exists because of a fault this campaign recorded:**
+
+1. **Use `_bulk` with `update` actions. NOT `_update_by_query`**, which re-runs
+   the ingest pipeline (the `geom_store_way_gap` lesson).
+2. **Rewrite the WHOLE `geometries` array per document.** `h3_cover` is nested
+   *inside* `geometries[]`; a partial-doc update cannot patch one array element,
+   and a naive attempt will silently write a top-level field instead — which is
+   exactly the `compute_h3_fields` docstring error corrected on 31 Aug.
+3. **Capture the pre-change `geometries` arrays to a rollback file BEFORE the
+   first write.** 5,268 documents is cheap insurance and the only reversal path.
+4. **Dry-run first**, reporting counts, and **report the denominator** —
+   *"N patched of M attempted of 5,268 identified"*, not "done".
+5. **Verify by RE-CENSUS, not by exit code.** Re-run the same census over both
+   namespaces afterwards and expect **0 defective**, plus unchanged document
+   counts (`clio` 15,683 / `whg` 2,565). ⚠️ **A census that reports 0 because it
+   examined 0 is this campaign's signature failure — report what was examined.**
+6. **Idempotent and re-runnable.** A second run must be a no-op.
+
+⚠️ **Recomputing fixes the COVER, not the CLASS.** The 248 `point`-class
+geometries carrying covers up to 1,230 cells will get correct covers for their
+*stored polygons* — but if `geom_class` is itself wrong for them, **that remains
+wrong afterwards**. Do not close that row on the strength of this fix.
+
+✅ **Preconditions verified 2 Sep before dispatch:**
+`places_h3ccode-20260805t120000z` still carries `default_pipeline =
+extract_namespace`, and the pipeline exists (HTTP 200) — so the
+snapshot-restore silent-400 trap is **not** present. Cluster yellow (single
+node, expected).
+
+✅ **SAFE TO RUN CONCURRENTLY WITH S8's `wd` PASS — the targets are disjoint.**
+S8 writes **only** `staged/wd/` trees and does **not** write to the live index;
+this writes **only** `clio`/`whg` documents in the live index and no staged
+tree. Both **read** the geom store, and concurrent reads are safe — neither
+writes it. Namespaces are disjoint (`wd` vs `clio`/`whg`). Disk is not a
+constraint: the patch is a few MB against S8's ~20–25 GB, with 235 GB free.
+**The real risks are ES-side, not S8-side** — and `h3_cover` updates touch no
+`dense_vector`, so the HNSW-merge heap failure mode does not apply.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
