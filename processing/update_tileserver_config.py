@@ -42,6 +42,13 @@ from processing.settings import (
 )
 
 CONFIG_PATH = "/srv/tileserver/configs/config.json"
+#: Version-controlled record of the generated config. ``/srv`` IS a checkout
+#: of the tileboss repo, so writing here makes the snapshot show up in
+#: ``git status`` and be committable. The live ``config.json`` itself is
+#: generated in place by this script and is NOT tracked — see
+#: tileboss ``tileserver/nginx/README.md``.
+SNAPSHOT_PATH = "/srv/tileserver/configs/config.snapshot.json"
+REPO_DIR = "/srv"
 TILES_DIR = "/srv/tileserver/tiles"
 HTTP_PORT = 8080
 RESTART_SCRIPT = "cd /srv && bash restart_services.sh"
@@ -129,6 +136,50 @@ def write_remote_config(merged: dict) -> str:
                          f"rc={r.returncode} err={r.stderr.strip()} out={r.stdout.strip()}")
     print(f"  config.json rewritten (backup kept: {backup})")
     return backup
+
+
+def snapshot_config_to_repo(merged: dict) -> bool:
+    """Write a stable, diffable copy of the live config into the ``/srv``
+    tileboss checkout, and report whether that checkout has drifted.
+
+    **Why this exists.** ``config.json`` is regenerated in place by this script
+    on every deploy, so a tracked copy can never be current — on 2 Sep 2026 the
+    repo's copy held 110 data entries against the server's 160, and ``/srv``
+    was sitting three months behind ``origin/production`` with nobody aware.
+    Nothing anywhere noticed that a deployment target had drifted.
+
+    Writes ``sort_keys=True`` so successive snapshots diff meaningfully rather
+    than reordering noise.
+
+    **Never fails the deploy.** This is bookkeeping: a snapshot that cannot be
+    written is worth a warning, not a rollback of a working tileserver.
+    """
+    try:
+        payload = json.dumps(merged, indent=2, sort_keys=True, ensure_ascii=False)
+        r = _ssh(f'cat > {SNAPSHOT_PATH}', input_text=payload)
+        if r.returncode != 0:
+            print(f"  ⚠ snapshot NOT written ({SNAPSHOT_PATH}): {r.stderr.strip()}")
+            return False
+        print(f"  config snapshot written: {SNAPSHOT_PATH}")
+
+        # Drift report — the thing whose absence let /srv fall 3 months behind.
+        g = _ssh(f'cd {REPO_DIR} && git status --porcelain 2>/dev/null | head -20; '
+                 f'echo "---"; git rev-list --count HEAD..origin/production 2>/dev/null')
+        if g.returncode == 0 and g.stdout:
+            dirty, _, behind = g.stdout.partition("---")
+            behind = behind.strip()
+            changed = [l for l in dirty.splitlines() if l.strip()]
+            if behind and behind.isdigit() and int(behind) > 0:
+                print(f"  ⚠ {REPO_DIR} is {behind} commit(s) BEHIND origin/production")
+            if changed:
+                print(f"  ⚠ {REPO_DIR} has {len(changed)} uncommitted change(s); "
+                      f"commit the snapshot so the generated config is recorded:")
+                for l in changed[:5]:
+                    print(f"      {l}")
+        return True
+    except Exception as e:                      # noqa: BLE001 - never fail the deploy
+        print(f"  ⚠ snapshot step failed, continuing: {e}")
+        return False
 
 
 def rollback_config(backup: str) -> bool:
@@ -239,6 +290,8 @@ def update_tileserver_config(buckets: list[str], *, execute: bool = False,
         print(f"  rollback {'restored prior config' if restored else 'INCOMPLETE — check the host'}.",
               file=sys.stderr)
         return False
+
+    snapshot_config_to_repo(merged)
 
     print("Done — tileserver config updated and serving confirmed.")
     return True
