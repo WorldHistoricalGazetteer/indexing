@@ -1395,7 +1395,7 @@ been reached. All but the final publish have now run:
   only ever observed as the old single key `"total": 25997`.
 * `id_map_entries: 228,918`, `id_map_run_ids: ['whg-idmap-20260831T071935Z']`.
 
-**Only `publish_hardlinks --execute` remains untried.**
+~~**Only `publish_hardlinks --execute` remains untried.**~~ ✅ **RUN 2 Sep — see §2.3 COMPLETE.**
 
 ###### Timings, for whoever sizes the re-harvest
 
@@ -1511,7 +1511,7 @@ nevertheless says FAIL, so this step stops here.** 🛑 **The publish is SG's al
 ###### For whoever publishes
 
 * cutoff **`2026-09-02T14:21:36.274562+00:00`** — the 31 Aug one is **void**;
-* `publish_hardlinks --execute` is still the one step in this row never executed;
+* ~~`publish_hardlinks --execute` is still the one step in this row never executed~~ ✅ **EXECUTED 2 Sep** — overlay published, gateway restarted, serving verified;
 * ⚠️ **a publish is invisible until the gateway restarts** — `publish_local` is an
   atomic `os.replace` and the gateway's open descriptors against the previous
   inode stay valid until it re-opens. Restart ownership is S5's.
@@ -4074,6 +4074,31 @@ new live inode 64626 · 6 Aug build preserved as hard_links.sqlite.previous (ino
 top sources: wd 3,968,404 · osm 2,295,659 · gn 1,111,147 · ohm 98,569 · iv 68,935
 ```
 
+✅ **THE GATE BEHAVED CORRECTLY — it was not deficient.** It cannot distinguish
+an *intended* drop's cascade from an *unintended* drop, so it reports both.
+**That is a guard failing closed, working as designed.** Reporting FAIL on a
+correct artefact is the unavoidable price of a guard that will also FAIL on an
+incorrect one — and this plan's own doctrine is that *"a guard that cannot say
+PASS is as useless as one that cannot say FAIL."* **The gate was conservative in
+the correct direction.**
+
+🛑 **THE STANDARD THIS OVERRIDE MET — all four. An override that does not meet
+all four is NOT this precedent.**
+
+1. **Every deviation predicted to the unit, IN WRITING, BEFORE publication** —
+   not reconciled afterwards. (`bnf` 120, `gnd` 145, `loc` 138, `viaf` 193,
+   `tgn` 85, each predicted then measured.)
+2. **The gate left untouched.** No flag added, no threshold relaxed, no
+   `--allow-shrink` widened to manufacture a PASS.
+3. **A named human took the decision** — not the session holding the row — and
+   S3 held for SG's own words rather than acting on a relayed authorisation.
+4. **Rollback verified real before publishing**, not assumed: `.previous` at
+   inode 59781, restorable by one `mv` plus a restart.
+
+⚠️ **The negative condition, which is what makes this a standard rather than a
+story: had ANY deviation been unexplained, the correct action was to STOP.
+The override was licensed by the arithmetic, not by the confidence.**
+
 ✅ **Verified live by the coordinator AFTER the gateway restart** (SG restarted
 directly): gateway PID 1865149, health `ok`, and a search returned **6
 hard-link edges spanning `wd`/`gn`/`osm`/`iv`**. **`gn` appearing in served
@@ -4929,7 +4954,7 @@ would otherwise have carried:
 * **S3:** *"the gate is cold-readable; the procedure past the gate is documented
   but unexercised."* Its harvest was cancelled during Phase 1A, so `loc_links`,
   `finalise_local`, `publish_hardlinks`, the ship marker and the prune were never
-  reached. **Expect to debug the publish path, not run it.** ⚠️ **Largely superseded (Auditor F19):** all but the final publish have since run — LOC 1,132 attempted / 1,129 inserted, contributor replay reached DO Postgres unconfigured, `finalise_local` ran, and `1f5aa50`'s renamed drop-ledger fields ran on CRC for the first time. **Only `publish_hardlinks --execute` remains untried.** Asking about
+  reached. **Expect to debug the publish path, not run it.** ⚠️ **Largely superseded (Auditor F19):** all but the final publish have since run — LOC 1,132 attempted / 1,129 inserted, contributor replay reached DO Postgres unconfigured, `finalise_local` ran, and `1f5aa50`'s renamed drop-ledger fields ran on CRC for the first time. ~~**Only `publish_hardlinks --execute` remains untried.**~~ ✅ **It has since run** — 2 Sep, published and verified live. *(Second-order staleness: this correction was accurate when written and was overtaken by the event it described.)* Asking about
   in-flight state also turned up a stale 16 MB SQLite WAL beside the deleted
   partial database, which a rerun under the same run id would have adopted.
 * **S4:** 2.5 and 2.6 are both finishable cold — *"the residual risk is not
