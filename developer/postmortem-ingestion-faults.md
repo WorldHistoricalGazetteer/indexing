@@ -86,6 +86,22 @@ downstream check can see it.
    A stage that finds nothing to do must say so in a machine-readable way that
    the barrier can distinguish from success.
 
+> **Three instruments failed this way in a single session — 2 Sep — and all
+> three would have read as findings:**
+>
+> | Instrument | Returned | Actually meant |
+> |---|---|---|
+> | `sacct -M htc -S 2026-09-01T20:00` | empty | the window was parsed in the **host's local time** against UTC-named run ids — off by four hours |
+> | `grep -o "\"toponym_id\"" places.jsonl` | `0` on **both** sides | quoting mangled through an ssh heredoc; **matched nothing**, and a zero on both sides reads as *"no change"* |
+> | `cardinality` agg on `dataset` over `whg:` | `0` | **there is no `dataset` field** — the schema has `dataset_id`, and a well-formed agg on an absent field is a legitimate, silent zero |
+>
+> None errored. Each produced a well-formed, plausible, **wrong** answer of the
+> right type — which is the definition of this class, arrived at from the
+> observer's side rather than the pipeline's. **A silent filter cannot report an
+> empty result as absence**, and the discipline that catches it is the same one
+> the code needs: ask what the *broken* world would produce, and if it is the
+> same output, the check is decorative.
+>
 > **This class has a mirror in the operators, including me.** Diagnosing the
 > campaign, I twice reported "nothing happened" from an instrument that could
 > not support it: `squeue`-empty (a statement about an *instant*) read as
