@@ -1,0 +1,5271 @@
+{
+ "@context": "https://raw.githubusercontent.com/LinkedPasts/linked-places/master/linkedplaces-context-v1.1.jsonld",
+ "type": "FeatureCollection",
+ "license": "https://creativecommons.org/licenses/by/4.0/",
+ "indexing": {
+  "@context": "https://schema.org/",
+  "@type": "Dataset",
+  "name": "Kyrgyzstan Lakes Dataset: Morphometry, Geography, Hydrology, Glacial-Lake Dynamics and Source Provenance",
+  "description": "Kyrgyzstan Lakes Dataset v1.0.0 is a curated, source-traceable geographic and hydrological reference dataset covering selected lakes of Kyrgyzstan, published morphometry, glacial-lake dynamics, dated observations, drainage and outburst events, source lineage, conflicts, and national or regional lake-inventory statistics. The release contains 73 lake, lake-complex, and unresolved inventory entities, 166 source-specific morphometric measurement records, 37 referenced sources, 199 source-backed classifications, 5 inventory records, 12 aggregate statistics, and 16 explicit conflict or non-comparability cases. It also includes 129 audited selected reference measurements, of which 119 are public-eligible and 10 are deliberately withheld from the simplified public reference layer, plus 11 documented glacial-lake events, 26 dated lake observations, and 9 study-local ephemeral features. Kyrgyzstan Lakes Dataset separates lake entities from source-specific measurements and retains defensible alternative or conflicting values instead of silently overwriting them. Reference selection uses explicit comparability groups, source quality, observation dates, methods, and a separate public-release audit. Dynamic glacial lakes are represented through dated observations and event records where the evidence supports them. The dataset is curated rather than exhaustive and is not a complete national polygon inventory of every lake in Kyrgyzstan. The package includes UTF-8 CSV files, a point GeoJSON layer of source-traceable representative locations, a source registry, source-lineage table, conflict register, data dictionary, methodology, rights metadata, a Frictionless Data Package descriptor, CITATION.cff, validation report, public-file manifest, SHA-256 checksums, and workbook. The v1.0.0 validation report contains 110 checks with 0 failures. Dataset documentation and contextual guide: https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/",
+  "datePublished": "2026",
+  "version": "1.0.0",
+  "publisher": {
+   "@type": "Organization",
+   "name": "Zenodo"
+  },
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "identifier": "https://doi.org/10.5281/zenodo.22178862",
+  "url": "https://doi.org/10.5281/zenodo.22178862",
+  "creator": {
+   "@type": "Person",
+   "family": "Hamilton",
+   "given": "Ethan"
+  },
+  "citation": "Hamilton, Ethan (2026). Kyrgyzstan Lakes Dataset: Morphometry, Geography, Hydrology, Glacial-Lake Dynamics and Source Provenance (Version 1.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.22178862"
+ },
+ "citation": {
+  "schema": "https://whgazetteer.org/schema/csl-citation.json",
+  "citationID": "whg-kyrgyzstan-lakes-dataset",
+  "citationItems": [
+   {
+    "id": "kyrgyzstan-lakes-dataset",
+    "itemData": {
+     "type": "dataset",
+     "id": "kyrgyzstan-lakes-dataset",
+     "title": "Kyrgyzstan Lakes Dataset: Morphometry, Geography, Hydrology, Glacial-Lake Dynamics and Source Provenance",
+     "author": [
+      {
+       "family": "Hamilton",
+       "given": "Ethan"
+      }
+     ],
+     "issued": {
+      "date-parts": [
+       [
+        2026
+       ]
+      ]
+     },
+     "publisher": "Zenodo",
+     "version": "1.0.0",
+     "DOI": "10.5281/zenodo.22178862",
+     "URL": "https://doi.org/10.5281/zenodo.22178862",
+     "license": "https://creativecommons.org/licenses/by/4.0/",
+     "keyword": "Kyrgyzstan, Tian Shan, Central Asia, lakes, lake morphometry, hydrology, glacial lakes, GLOF, lake inventory, lake dynamics, geographic reference data, open data, physical geography, provenance, Issyk-Kul, Son-Kul, Chatyr-Kul"
+    }
+   }
+  ]
+ },
+ "features": [
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0001",
+   "type": "Feature",
+   "properties": {
+    "title": "Issyk-Kul",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0001",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Issyk-Kul",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Kungey Ala-Too / Terskey Ala-Too",
+    "record_status": "verified_partial",
+    "coordinate_method": "published Ramsar site approximate centre",
+    "coordinate_precision_m": "5000",
+    "observation_years": "1990",
+    "ramsar_site_id": "1231"
+   },
+   "names": [
+    {
+     "toponym": "Issyk-Kul",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "tectonic"
+      }
+     ]
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     77.25,
+     42.416667
+    ],
+    "citations": [
+     {
+      "label": "Ramsar Sites Information Service — Annotated List of Wetlands of International Importance — Kyrgyzstan (2025)"
+     }
+    ],
+    "certainty": "less-certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 5.0
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://rsis.ramsar.org/ris/1231",
+     "citations": [
+      {
+       "label": "Ramsar Site; the site boundary may extend beyond the lake, so this is not an identity claim"
+      }
+     ]
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 6236 km²; elevation 1606 m; maximum depth 668 m; volume 1738 km³. Sources: National Statistical Committee of the Kyrgyz Republic — 20 Years of Independence of the Kyrgyz Republic (2011) | International Lake Environment Committee (ILEC) — World Lake Database — Lake Issyk-Kool.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0002",
+   "type": "Feature",
+   "properties": {
+    "title": "Son-Kul",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0002",
+    "admin1": "Naryn",
+    "record_status": "verified_partial",
+    "coordinate_method": "published Ramsar site approximate centre",
+    "coordinate_precision_m": "3000",
+    "observation_years": "2010",
+    "ramsar_site_id": "1943"
+   },
+   "names": [
+    {
+     "toponym": "Son-Kul",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     75.116667,
+     41.833056
+    ],
+    "citations": [
+     {
+      "label": "Ramsar Sites Information Service — Annotated List of Wetlands of International Importance — Kyrgyzstan (2025)"
+     }
+    ],
+    "certainty": "less-certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 3.0
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://rsis.ramsar.org/ris/1943",
+     "citations": [
+      {
+       "label": "Ramsar Site; the site boundary may extend beyond the lake, so this is not an identity claim"
+      }
+     ]
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 275 km²; elevation 3015.2 m; maximum depth 13.2 m. Sources: National Statistical Committee of the Kyrgyz Republic — 20 Years of Independence of the Kyrgyz Republic (2011) | Ramsar Sites Information Service — Information Sheet on Ramsar Wetlands — Son-Kol Lake (Site 1943). Note: KGLD records a source conflict for at least one of these values; the full evidence and conflict register are in the Zenodo release.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0003",
+   "type": "Feature",
+   "properties": {
+    "title": "Chatyr-Kul",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0003",
+    "admin1": "Naryn",
+    "mountain_range": "At-Bashy",
+    "record_status": "verified_partial",
+    "coordinate_method": "published Ramsar site approximate centre",
+    "coordinate_precision_m": "3000",
+    "ramsar_site_id": "1588"
+   },
+   "names": [
+    {
+     "toponym": "Chatyr-Kul",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     75.3,
+     40.616667
+    ],
+    "citations": [
+     {
+      "label": "Ramsar Sites Information Service — Annotated List of Wetlands of International Importance — Kyrgyzstan (2025)"
+     }
+    ],
+    "certainty": "less-certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 3.0
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://rsis.ramsar.org/ris/1588",
+     "citations": [
+      {
+       "label": "Ramsar Site; the site boundary may extend beyond the lake, so this is not an identity claim"
+      }
+     ]
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 175 km²; elevation 3530 m; maximum depth 16.6 m. Sources: National Statistical Committee of the Kyrgyz Republic — 20 Years of Independence of the Kyrgyz Republic (2011) | Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013). Note: KGLD records a source conflict for at least one of these values; the full evidence and conflict register are in the Zenodo release.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0004",
+   "type": "Feature",
+   "properties": {
+    "title": "Sary-Chelek",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0004",
+    "admin1": "Jalal-Abad",
+    "mountain_range": "Chatkal",
+    "record_status": "verified_partial",
+    "coordinate_method": "published study-site coordinates (rounded)",
+    "coordinate_precision_m": "500",
+    "observation_years": "2013"
+   },
+   "names": [
+    {
+     "toponym": "Sary-Chelek",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "landslide_dammed"
+      }
+     ]
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     71.96,
+     41.89
+    ],
+    "citations": [
+     {
+      "label": "Lauterbach, S.; Mingram, J.; Schettler, G.; Orunbaev, S. — Two twentieth-century MLH = 7.5 earthquakes recorded in annually laminated lake sediments from Sary Chelek, western Tian Shan, Kyrgyzstan (2019)"
+     }
+    ],
+    "certainty": "certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 0.5
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 4.9 km²; elevation 1874 m; volume 0.48 km³. Sources: Lauterbach, S.; Mingram, J.; Schettler, G.; Orunbaev, S. — Two twentieth-century MLH = 7.5 earthquakes recorded in annually laminated lake sediments from Sary Chelek, western Tian Shan, Kyrgyzstan (2019). Note: KGLD records a source conflict for at least one of these values; the full evidence and conflict register are in the Zenodo release.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0005",
+   "type": "Feature",
+   "properties": {
+    "title": "Kel-Suu",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0005",
+    "admin1": "Naryn",
+    "record_status": "verified_partial",
+    "coordinate_method": "GNS gazetteer representative point",
+    "coordinate_precision_m": "2000"
+   },
+   "names": [
+    {
+     "toponym": "Kel-Suu",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "strongly_variable_intermittent"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.395,
+     40.643056
+    ],
+    "citations": [
+     {
+      "label": "Wikidata / U.S. Geographic Names Server — Köl-Suu (Wikidata Q13642455; coordinate statement attributed to Geographic Names Server) (2018)"
+     }
+    ],
+    "certainty": "less-certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 2.0
+    }
+   },
+   "links": [
+    {
+     "type": "closeMatch",
+     "identifier": "wd:Q13642455",
+     "certainty": "less-certain",
+     "citations": [
+      {
+       "label": "KGLD source S0019 takes this lake's coordinate and elevation from Wikidata Q13642455"
+      }
+     ]
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3514 m. Sources: Wikidata / U.S. Geographic Names Server — Köl-Suu (Wikidata Q13642455; coordinate statement attributed to Geographic Names Server) (2018).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0006",
+   "type": "Feature",
+   "properties": {
+    "title": "Kulun",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0006",
+    "admin1": "Osh",
+    "admin2": "Kara-Kulja",
+    "basin_name": "Kulun / Tar",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Fergana Range",
+    "record_status": "verified_partial",
+    "coordinate_method": "GeoNames representative point cross-checked against classic atlas coordinate tradition",
+    "coordinate_precision_m": "500"
+   },
+   "names": [
+    {
+     "toponym": "Kulun",
+     "lang": "en"
+    },
+    {
+     "toponym": "Кулун",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Bolshaya Rossiyskaya Entsiklopediya — Kulun (2023)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "landslide_dammed"
+      }
+     ]
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     74.313168,
+     40.542511
+    ],
+    "citations": [
+     {
+      "label": "GeoNames — GeoNames search results — duplicate Kulun lake records in Osh Region (2026)"
+     }
+    ],
+    "certainty": "certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 0.5
+    }
+   },
+   "links": [
+    {
+     "type": "closeMatch",
+     "identifier": "gn:8403583",
+     "certainty": "less-certain",
+     "citations": [
+      {
+       "label": "KGLD source S0021 adopts the GeoNames point 40.542511,74.313168; gn:8403583 'Ozero Kulun' is within 200 m of it"
+      }
+     ]
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 3.25 km²; elevation 2856 m; maximum depth 91 m. Sources: Kyrgyz Express Post — Pearls of Kyrgyz Nature. Kulun Lakes — Newsletter No. 113 (2025) | Bolshaya Rossiyskaya Entsiklopediya — Kulun (2023). Note: KGLD records a source conflict for at least one of these values; the full evidence and conflict register are in the Zenodo release.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0007",
+   "type": "Feature",
+   "properties": {
+    "title": "Ala-Kul",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0007",
+    "admin1": "Issyk-Kul",
+    "mountain_range": "Terskey Ala-Too",
+    "record_status": "verified_partial",
+    "coordinate_method": "published study-site coordinates",
+    "coordinate_precision_m": "100",
+    "mchs_catalog_id": "I-102",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Ala-Kul",
+     "lang": "en"
+    },
+    {
+     "toponym": "Алакёль",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "rock_dammed_proglacial"
+      },
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     78.534664,
+     42.317167
+    ],
+    "citations": [
+     {
+      "label": "Rousseau, M.; Demory, F.; Miramont, C.; Brisset, E.; Guiter, F.; Sabatier, P.; Sorrel, P. — Palaeoenvironmental change and glacier fluctuations in the high Tian Shan Mountains during the last millennium based on sediments from Lake Ala Kol, Kyrgyzstan (2020)"
+     }
+    ],
+    "certainty": "certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 0.1
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 1.6 km²; elevation 3560 m. Sources: Rousseau, M.; Demory, F.; Miramont, C.; Brisset, E.; Guiter, F.; Sabatier, P.; Sorrel, P. — Palaeoenvironmental change and glacier fluctuations in the high Tian Shan Mountains during the last millennium based on sediments from Lake Ala Kol, Kyrgyzstan (2020). Note: KGLD records a source conflict for at least one of these values; the full evidence and conflict register are in the Zenodo release.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0008",
+   "type": "Feature",
+   "properties": {
+    "title": "Kol-Ukok",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0008",
+    "admin1": "Naryn",
+    "record_status": "seed"
+   },
+   "names": [
+    {
+     "toponym": "Kol-Ukok",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 1.6 km²; elevation 3048 m; maximum depth 17 m. Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0009",
+   "type": "Feature",
+   "properties": {
+    "title": "Tulpar-Kol",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0009",
+    "admin1": "Osh",
+    "mountain_range": "Trans-Alay",
+    "record_status": "seed"
+   },
+   "names": [
+    {
+     "toponym": "Tulpar-Kol",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0010",
+   "type": "Feature",
+   "properties": {
+    "title": "Petrov Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0010",
+    "admin1": "Issyk-Kul",
+    "mountain_range": "Ak-Shyyrak",
+    "record_status": "verified_partial",
+    "observation_years": "1911,1947,1957,1980,1995,2006,2009"
+   },
+   "names": [
+    {
+     "toponym": "Petrov Lake",
+     "lang": "en"
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_dammed_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 3.9 km²; elevation 3741 m; maximum depth 69.3 m; volume 0.0603 km³. Sources: Janský, B.; Engel, Z.; Šobr, M.; Beneš, V.; Špaček, K.; Yerokhin, S. — The evolution of Petrov lake and moraine dam rupture risk (Tien-Shan, Kyrgyzstan) (2009) | Engel, Z.; Šobr, M.; Yerokhin, S. A. — Changes of Petrov glacier and its proglacial lake in the Akshiirak massif, central Tien Shan, since 1977 (2012).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0012",
+   "type": "Feature",
+   "properties": {
+    "title": "Kapka-Tash Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0012",
+    "admin1": "Jalal-Abad",
+    "admin2": "Toktogul",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Kapka-Tash Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 1.0 km²; elevation 2303 m. Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0013",
+   "type": "Feature",
+   "properties": {
+    "title": "Kara-Suu Lake (Toktogul)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0013",
+    "admin1": "Jalal-Abad",
+    "admin2": "Toktogul",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Kara-Suu Lake (Toktogul)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "landslide_dammed"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 3.82 km²; elevation 1998 m; maximum depth 147 m. Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0014",
+   "type": "Feature",
+   "properties": {
+    "title": "Kara-Kol Lake (Tyup)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0014",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Kara-Kol Lake (Tyup)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.46 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0015",
+   "type": "Feature",
+   "properties": {
+    "title": "Kolotilin Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0015",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Kolotilin Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.012 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0016",
+   "type": "Feature",
+   "properties": {
+    "title": "Kuturginskoe Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0016",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Kuturginskoe Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.012 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0017",
+   "type": "Feature",
+   "properties": {
+    "title": "Oh-Tal Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0017",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Oh-Tal Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.04 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0018",
+   "type": "Feature",
+   "properties": {
+    "title": "Osipov Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0018",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Osipov Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.013 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0019",
+   "type": "Feature",
+   "properties": {
+    "title": "Shuvaeva Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0019",
+    "admin1": "Issyk-Kul",
+    "admin2": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Shuvaeva Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.011 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0020",
+   "type": "Feature",
+   "properties": {
+    "title": "Ala-Kol Lake (Bazar-Korgon)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0020",
+    "admin1": "Jalal-Abad",
+    "admin2": "Bazar-Korgon",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Ala-Kol Lake (Bazar-Korgon)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 4.1 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0021",
+   "type": "Feature",
+   "properties": {
+    "title": "Ak-Kol Lake (Kochkor)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0021",
+    "admin1": "Naryn",
+    "admin2": "Kochkor",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Ak-Kol Lake (Kochkor)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.07 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0022",
+   "type": "Feature",
+   "properties": {
+    "title": "Aragol Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0022",
+    "admin1": "Naryn",
+    "admin2": "Kochkor",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Aragol Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.1 km². Sources: Food and Agriculture Organization of the United Nations — Fish species introductions in the Kyrgyz Republic (2013).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0023",
+   "type": "Feature",
+   "properties": {
+    "title": "Adygine Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0023",
+    "admin1": "Chuy",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Kyrgyz Ala-Too",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Adygine Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Falatkova, K.; Šobr, M.; Neureiter, A.; Schöner, W.; Janský, B.; Häusler, H.; Engel, Z.; Beneš, V. — Development of proglacial lakes and evaluation of related outburst susceptibility at the Adygine ice-debris complex, northern Tien Shan (2019)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "intramorainic"
+      },
+      {
+       "label": "non_permanent"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0024",
+   "type": "Feature",
+   "properties": {
+    "title": "Adygine Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0024",
+    "admin1": "Chuy",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Kyrgyz Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2005,2008,2015,2017"
+   },
+   "names": [
+    {
+     "toponym": "Adygine Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Falatkova, K.; Šobr, M.; Neureiter, A.; Schöner, W.; Janský, B.; Häusler, H.; Engel, Z.; Beneš, V. — Development of proglacial lakes and evaluation of related outburst susceptibility at the Adygine ice-debris complex, northern Tien Shan (2019)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel_moraine_dammed"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.0309 km²; maximum depth 21.3 m; volume 0.000195 km³. Sources: Falatkova, K.; Šobr, M.; Neureiter, A.; Schöner, W.; Janský, B.; Häusler, H.; Engel, Z.; Beneš, V. — Development of proglacial lakes and evaluation of related outburst susceptibility at the Adygine ice-debris complex, northern Tien Shan (2019).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0025",
+   "type": "Feature",
+   "properties": {
+    "title": "Adygine Lake 3",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0025",
+    "admin1": "Chuy",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Kyrgyz Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2007,2012,2017"
+   },
+   "names": [
+    {
+     "toponym": "Adygine Lake 3",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Falatkova, K.; Šobr, M.; Neureiter, A.; Schöner, W.; Janský, B.; Häusler, H.; Engel, Z.; Beneš, V. — Development of proglacial lakes and evaluation of related outburst susceptibility at the Adygine ice-debris complex, northern Tien Shan (2019)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.01602 km²; maximum depth 14 m; volume 0.000106 km³. Sources: Falatkova, K.; Šobr, M.; Neureiter, A.; Schöner, W.; Janský, B.; Häusler, H.; Engel, Z.; Beneš, V. — Development of proglacial lakes and evaluation of related outburst susceptibility at the Adygine ice-debris complex, northern Tien Shan (2019).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0026",
+   "type": "Feature",
+   "properties": {
+    "title": "Köl-Tör Lake (Kegeti)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0026",
+    "admin1": "Chuy",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Kyrgyz Ala-Too",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Köl-Tör Lake (Kegeti)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chüy oblusy: Köl-Tör kölüündö koopsuzduk ishteri jürgüzüldü (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0027",
+   "type": "Feature",
+   "properties": {
+    "title": "Zyndan Western Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0027",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "coordinate_method": "published study-area coordinate",
+    "coordinate_precision_m": "100",
+    "observation_years": "2008"
+   },
+   "names": [
+    {
+     "toponym": "Zyndan Western Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Monitoringovoe nazemnoe obsledovanie na ozere Zyndan Zapadnoe (2024)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "short_lived"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     77.022222,
+     41.943889
+    ],
+    "citations": [
+     {
+      "label": "Narama, C.; Duishonakunov, M.; Kääb, A.; Daiyrov, M.; Abdrakhmatov, K. — The 24 July 2008 outburst flood at the western Zyndan glacier lake and recent regional changes in glacier lakes of the Teskey Ala-Too range, Tien Shan, Kyrgyzstan (2010)"
+     }
+    ],
+    "certainty": "certain",
+    "approximation": {
+     "type": "geo:hasSpatialAccuracy",
+     "tolerance": 0.1
+    }
+   },
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2008"
+      },
+      "end": {
+       "in": "2008"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "documented formation/drainage episode"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0028",
+   "type": "Feature",
+   "properties": {
+    "title": "Lower Merzbacher Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0028",
+    "admin1": "Issyk-Kul",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Central Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Lower Merzbacher Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ng, F.; Liu, S. — Temporal dynamics of a jökulhlaup system (2009)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "ice_dammed"
+      },
+      {
+       "label": "cyclic_seasonal"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3250 m; volume 0.2 km³. Sources: Ng, F.; Liu, S. — Temporal dynamics of a jökulhlaup system (2009).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0029",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Merzbacher Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0029",
+    "admin1": "Issyk-Kul",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Central Tian Shan",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Upper Merzbacher Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ng, F.; Liu, S. — Temporal dynamics of a jökulhlaup system (2009)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3300 m. Sources: Ng, F.; Liu, S. — Temporal dynamics of a jökulhlaup system (2009).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0030",
+   "type": "Feature",
+   "properties": {
+    "title": "Tuz Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0030",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Sary-Jaz",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-87",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Tuz Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Тюз",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3760 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0031",
+   "type": "Feature",
+   "properties": {
+    "title": "Ak-Suu Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0031",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-17",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Ak-Suu Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Ак-Суу-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3620 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0032",
+   "type": "Feature",
+   "properties": {
+    "title": "Ak-Suu Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0032",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-18",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Ak-Suu Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Ак-Суу-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3640 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0033",
+   "type": "Feature",
+   "properties": {
+    "title": "Anyrtor Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0033",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-19",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Anyrtor Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Аныртор-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3650 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0034",
+   "type": "Feature",
+   "properties": {
+    "title": "Anyrtor Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0034",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-20",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Anyrtor Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Аныртор-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3700 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0035",
+   "type": "Feature",
+   "properties": {
+    "title": "Intor Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0035",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-21",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Intor Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Интор-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3520 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0036",
+   "type": "Feature",
+   "properties": {
+    "title": "Intor Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0036",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-22",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Intor Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Интор-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3640 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0037",
+   "type": "Feature",
+   "properties": {
+    "title": "Arasan Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0037",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu-Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-54",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Arasan Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Арасан-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3400 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0038",
+   "type": "Feature",
+   "properties": {
+    "title": "Arasan Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0038",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu-Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-55",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Arasan Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Арасан-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3460 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0039",
+   "type": "Feature",
+   "properties": {
+    "title": "Arasan Lake 3",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0039",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu-Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-56",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Arasan Lake 3",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Арасан-3",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3270 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0040",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Arasan Lake 4",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0040",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu-Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-82",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Upper Arasan Lake 4",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Арасан-4 верхнее",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3840 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0041",
+   "type": "Feature",
+   "properties": {
+    "title": "East Arasan Lake 5",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0041",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Ak-Suu-Arasan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-83",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "East Arasan Lake 5",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Арасан-5 вост.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 4120 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0042",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Ala-Köl Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0042",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Karakol",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-23",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Upper Ala-Köl Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Алакёль-верхнее",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3600 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0043",
+   "type": "Feature",
+   "properties": {
+    "title": "West Uyuktor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0043",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Karakol",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-81",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "West Uyuktor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Уюктор-западное",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3615 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0044",
+   "type": "Feature",
+   "properties": {
+    "title": "Sekitor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0044",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Boz-Uchuk",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-57",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Sekitor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Секитор",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3320 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0045",
+   "type": "Feature",
+   "properties": {
+    "title": "Geltor-2 Double Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0045",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Boz-Uchuk",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-63",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Geltor-2 Double Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Гельтор-2 двойное",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3340 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0046",
+   "type": "Feature",
+   "properties": {
+    "title": "Small Sharkyratma Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0046",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Dzhergez",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-58",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Small Sharkyratma Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Шаркыратма малое",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3500 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0047",
+   "type": "Feature",
+   "properties": {
+    "title": "Large Sharkyratma Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0047",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Dzhergez",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-59",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Large Sharkyratma Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Шаркыратма бол.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3450 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0048",
+   "type": "Feature",
+   "properties": {
+    "title": "Issyktor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0048",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Dzhergez",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-60",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Issyktor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Иссыктор",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3125 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0049",
+   "type": "Feature",
+   "properties": {
+    "title": "Kel-Tor Lake (Dzhergez)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0049",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Dzhergez",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-62",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Kel-Tor Lake (Dzhergez)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Кель-Тор",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3125 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0050",
+   "type": "Feature",
+   "properties": {
+    "title": "Tuyuktor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0050",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Dzhergez",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-65",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Tuyuktor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Туюктор",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3400 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0051",
+   "type": "Feature",
+   "properties": {
+    "title": "Torgenaksu Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0051",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Torgen-Ak-Suu",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-85",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Torgenaksu Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Торгенаксу-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3660 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0052",
+   "type": "Feature",
+   "properties": {
+    "title": "Torgenaksu Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0052",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Torgen-Ak-Suu",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-86",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Torgenaksu Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Торгенаксу-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3750 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0053",
+   "type": "Feature",
+   "properties": {
+    "title": "Tuyuktor Small Lakes (catalog complex)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0053",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Torgen-Ak-Suu",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-129",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Tuyuktor Small Lakes (catalog complex)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Туюктор малые",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3780 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0054",
+   "type": "Feature",
+   "properties": {
+    "title": "Jyrgalan Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0054",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Jyrgalan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-103",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Jyrgalan Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Джергалан-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3180 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0055",
+   "type": "Feature",
+   "properties": {
+    "title": "Sharkyratma Lake 3 (Tyup)",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0055",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Jyrgalan",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-138",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Sharkyratma Lake 3 (Tyup)",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Шаркыратма-3.Тюп.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3480 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0056",
+   "type": "Feature",
+   "properties": {
+    "title": "Dzherges Lake 2",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0056",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-105",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Dzherges Lake 2",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Джергес-2",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3833 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0057",
+   "type": "Feature",
+   "properties": {
+    "title": "Dzherges Lake 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0057",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-104",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Dzherges Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Джергес-1",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3873 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0058",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Kyzyl-Tor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0058",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-120",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Upper Kyzyl-Tor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Кызылтор верх.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3360 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0059",
+   "type": "Feature",
+   "properties": {
+    "title": "Lower Kyzyl-Tor Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0059",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-121",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Lower Kyzyl-Tor Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Кызылтор нижн.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3360 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0060",
+   "type": "Feature",
+   "properties": {
+    "title": "Left Taigak Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0060",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-122",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Left Taigak Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Тайгак-левое",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3480 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0061",
+   "type": "Feature",
+   "properties": {
+    "title": "Right Taigak Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0061",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-123",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Right Taigak Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Тайгак-правое",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3450 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0062",
+   "type": "Feature",
+   "properties": {
+    "title": "Chakyrkorum Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0062",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Tyup",
+    "mountain_system": "Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "I-130",
+    "observation_years": "2026"
+   },
+   "names": [
+    {
+     "toponym": "Chakyrkorum Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    },
+    {
+     "toponym": "Чакыркорум",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "riegel"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3850 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 5: Issyk-Kul Region — forecast of possible activation of outburst-hazardous lakes (2026).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0063",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Ukok Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0063",
+    "admin1": "Naryn",
+    "basin_name": "Kel-Ukek",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "N-20",
+    "observation_years": "2025"
+   },
+   "names": [
+    {
+     "toponym": "Upper Ukok Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    },
+    {
+     "toponym": "Укок верхнее",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3730 m. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0064",
+   "type": "Feature",
+   "properties": {
+    "title": "East Karakum Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0064",
+    "admin1": "Naryn",
+    "basin_name": "Karakum–Kel-Ukök",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "N-18",
+    "observation_years": "2025"
+   },
+   "names": [
+    {
+     "toponym": "East Karakum Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    },
+    {
+     "toponym": "Каракум-вост.",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3680 m; volume 0.000100 km³. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0065",
+   "type": "Feature",
+   "properties": {
+    "title": "Upper Karakum Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0065",
+    "admin1": "Naryn",
+    "basin_name": "Karakum–Kel-Ukök",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "N-6",
+    "observation_years": "2025"
+   },
+   "names": [
+    {
+     "toponym": "Upper Karakum Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    },
+    {
+     "toponym": "Каракум-верхнее",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3590 m; volume 0.000250 km³. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0066",
+   "type": "Feature",
+   "properties": {
+    "title": "Buzulgansuu (Shamsy) Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0066",
+    "admin1": "Naryn",
+    "basin_name": "Buzilgan-Suu–Shamsy",
+    "mountain_system": "Inner Tian Shan",
+    "record_status": "verified_partial",
+    "mchs_catalog_id": "N-14",
+    "observation_years": "2025"
+   },
+   "names": [
+    {
+     "toponym": "Buzulgansuu (Shamsy) Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    },
+    {
+     "toponym": "Бузулгансу (Шамсы)",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "moraine_glacial"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: elevation 3704 m; volume 0.000100 km³. Sources: Ministry of Emergency Situations of the Kyrgyz Republic — Chapter 6: Naryn Region — forecast of possible activation of outburst-hazardous lakes (2025).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0067",
+   "type": "Feature",
+   "properties": {
+    "title": "Small Kulun Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0067",
+    "admin1": "Osh",
+    "admin2": "Kara-Kulja",
+    "basin_name": "Kulun / Tar",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Fergana Range",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Малый Кулун",
+     "lang": "ru",
+     "citations": [
+      {
+       "label": "Bolshaya Rossiyskaya Entsiklopediya — Kulun (2023)"
+      }
+     ]
+    },
+    {
+     "toponym": "Small Kulun Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Bolshaya Rossiyskaya Entsiklopediya — Kulun (2023)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "landslide_dammed"
+      }
+     ]
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "descriptions": [
+    {
+     "value": "Published reference values: surface area 0.45 km². Sources: Bolshaya Rossiyskaya Entsiklopediya — Kulun (2023).",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0068",
+   "type": "Feature",
+   "properties": {
+    "title": "Middle Kulun Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0068",
+    "admin1": "Osh",
+    "admin2": "Kara-Kulja",
+    "basin_name": "Kulun / Tar",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Fergana Range",
+    "record_status": "verified_partial"
+   },
+   "names": [
+    {
+     "toponym": "Middle Kulun Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Kyrgyz Express Post — Pearls of Kyrgyz Nature. Kulun Lakes — Newsletter No. 113 (2025)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0070",
+   "type": "Feature",
+   "properties": {
+    "title": "Kashkasuu Glacial Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0070",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Kashkasuu / western Teskey",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Teskey Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2006"
+   },
+   "names": [
+    {
+     "toponym": "Kashkasuu Glacial Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Narama, C.; Daiyrov, M.; Duishonakunov, M.; Tadono, T.; Sato, H.; Kääb, A.; Ukita, J.; Abdrakhmatov, K. — Large drainages from short-lived glacial lakes in the Teskey Range, Tien Shan Mountains, Central Asia (2018)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "short_lived"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2006"
+      },
+      "end": {
+       "in": "2006"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "documented formation/drainage episode"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0071",
+   "type": "Feature",
+   "properties": {
+    "title": "Jeruy Glacial Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0071",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Jeruy / western Teskey",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Teskey Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2013"
+   },
+   "names": [
+    {
+     "toponym": "Jeruy Glacial Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Narama, C.; Daiyrov, M.; Duishonakunov, M.; Tadono, T.; Sato, H.; Kääb, A.; Ukita, J.; Abdrakhmatov, K. — Large drainages from short-lived glacial lakes in the Teskey Range, Tien Shan Mountains, Central Asia (2018)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "short_lived"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2013"
+      },
+      "end": {
+       "in": "2013"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "documented formation/drainage episode"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0072",
+   "type": "Feature",
+   "properties": {
+    "title": "Karateke Glacial Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0072",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Karateke / western Teskey",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Teskey Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2014"
+   },
+   "names": [
+    {
+     "toponym": "Karateke Glacial Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Narama, C.; Daiyrov, M.; Duishonakunov, M.; Tadono, T.; Sato, H.; Kääb, A.; Ukita, J.; Abdrakhmatov, K. — Large drainages from short-lived glacial lakes in the Teskey Range, Tien Shan Mountains, Central Asia (2018)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "short_lived"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2014"
+      },
+      "end": {
+       "in": "2014"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "documented formation/drainage episode"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-L0073",
+   "type": "Feature",
+   "properties": {
+    "title": "Toguz-Bulak Glacial Lake",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-L0073",
+    "admin1": "Issyk-Kul",
+    "basin_name": "Toguz-Bulak / Tosor",
+    "mountain_system": "Tian Shan",
+    "mountain_range": "Teskey Ala-Too",
+    "record_status": "verified_partial",
+    "observation_years": "2019"
+   },
+   "names": [
+    {
+     "toponym": "Toguz-Bulak Glacial Lake",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Daiyrov, M.; Narama, C.; Kääb, A.; Tadono, T. — Formation and Outburst of the Toguz-Bulak Glacial Lake in the Northern Teskey Range, Tien Shan, Kyrgyzstan (2020)"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "seasonally_recurrent"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2019"
+      },
+      "end": {
+       "in": "2019"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "documented formation/drainage episode"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0001",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 1",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0001",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "1",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 1",
+    "observation_years": "2017,2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 1",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2017-07-24"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 1 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 4 documented drainage event(s) between 2017-07-24 and 2018-07-18, of which 2 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0003",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 3",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0003",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "3",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 3",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 3",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 3",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-07-16"
+      },
+      "end": {
+       "in": "2018-07-16"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 3 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 1 documented drainage event(s) between 2018-07-16 and 2018-07-16.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0004",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 4",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0004",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "4",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 4",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 4",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 4",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-05-12"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 4 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 2 documented drainage event(s) between 2018-05-12 and 2018-07-18, of which 2 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0005",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 5",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0005",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "5",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 5",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 5",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 5",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-05-12"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 5 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 2 documented drainage event(s) between 2018-05-12 and 2018-07-18, of which 2 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0007",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 7",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0007",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "7",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 7",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 7",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 7",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-05-12"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 7 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 2 documented drainage event(s) between 2018-05-12 and 2018-07-18, of which 2 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0008",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 8",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0008",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "8",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 8",
+    "observation_years": "2017,2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 8",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 8",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2017-07-25"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 8 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 3 documented drainage event(s) between 2017-07-25 and 2018-07-18, of which 2 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0009",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 9",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0009",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "9",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 9",
+    "observation_years": "2017"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 9",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 9",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2017-07-24"
+      },
+      "end": {
+       "in": "2017-07-24"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   }
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0014",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 14",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0014",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "14",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 14",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 14",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 14",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-07-17"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 14 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 1 documented drainage event(s) between 2018-07-17 and 2018-07-18, of which 1 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  },
+  {
+   "@id": "https://doi.org/10.5281/zenodo.22178862#KGLD-F0015",
+   "type": "Feature",
+   "properties": {
+    "title": "Hamilton 15",
+    "ccodes": [
+     "KG"
+    ],
+    "kgld_id": "KGLD-F0015",
+    "feature_type": "supraglacial_lake",
+    "parent_glacier": "Southern Inylchek Glacier",
+    "study_local_id": "15",
+    "study_year_scope": "2017–2019",
+    "study_label": "Southern Inylchek supraglacial Lake 15",
+    "observation_years": "2018"
+   },
+   "names": [
+    {
+     "toponym": "Hamilton 15",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Name coined by the World Historical Gazetteer for this contribution, after Ethan Hamilton, compiler of the Kyrgyzstan Lakes Dataset; the numeral is KGLD's own study-local lake number. Not a local, historical or otherwise attested toponym.",
+       "@id": "https://doi.org/10.5281/zenodo.22178862"
+      }
+     ]
+    },
+    {
+     "toponym": "Southern Inylchek supraglacial Lake 15",
+     "lang": "en",
+     "citations": [
+      {
+       "label": "Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022) — Figures 2–11 / study-local lake numbering"
+      }
+     ]
+    }
+   ],
+   "types": [
+    {
+     "identifier": "aat:300008680",
+     "label": "lakes (bodies of water)",
+     "sourceLabels": [
+      {
+       "label": "supraglacial_lake"
+      }
+     ]
+    },
+    {
+     "identifier": "aat:300387086",
+     "label": "intermittent lakes"
+    }
+   ],
+   "geometry": null,
+   "links": [
+    {
+     "type": "seeAlso",
+     "identifier": "https://doi.org/10.5281/zenodo.22178862"
+    },
+    {
+     "type": "seeAlso",
+     "identifier": "https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/"
+    }
+   ],
+   "when": {
+    "timespans": [
+     {
+      "start": {
+       "in": "2018-07-17"
+      },
+      "end": {
+       "in": "2018-07-18"
+      }
+     }
+    ],
+    "certainty": "less-certain",
+    "label": "observed drainage/recharge cycles"
+   },
+   "descriptions": [
+    {
+     "value": "Ephemeral supraglacial lake on the Southern Inylchek Glacier, study-local lake 15 of Sakurai, N.; Narama, C.; Daiyrov, M.; Esenamanov, M.; Usekov, Z.; Inoue, H. — Simultaneous drainage events from supraglacial lakes on the southern Inylchek Glacier, Central Asia (2022). 1 documented drainage event(s) between 2018-07-17 and 2018-07-18, of which 1 drained simultaneously with other lakes on the same glacier through a shared englacial conduit network.",
+     "lang": "en",
+     "source": "https://doi.org/10.5281/zenodo.22178862"
+    }
+   ]
+  }
+ ]
+}
