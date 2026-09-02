@@ -3248,6 +3248,74 @@ True on the first and False on the second** — exactly what the plan measured f
 to run `_crosses_antimeridian` over the 309 store polygons, which discriminates
 its two candidate faults directly.
 
+### ✅ S5's TWO CHECKS — full specifications, filed 2 Sep before S5 runs them
+
+**Filed here deliberately.** These converged across three sessions' messages
+while S5 is blocked on 2.7; if its session ends first the reasoning goes with
+it. **A specification that exists only in a message is the failure this audit
+exists to catch.** All three load-bearing claims verified here against the code.
+
+**CHECK 1 — parsed, pre-retile, no tileset needed.**
+
+> Count `whg` docs whose geometry entry has a **`hull` of type `Polygon` or
+> `MultiPolygon`** *and* where neither `geom_ref` nor `has_geom` resolves
+> against the geom store. **Expect 0.** Count distinct `place_id`s in the same
+> pass.
+
+⚠️ **The type filter is load-bearing, not a refinement.**
+`helpers.enrich_geometry` computes `hull = geom.convex_hull` with **no type
+gate** (`:1200`) and assigns `entry['hull']` unconditionally (`:1267`) — **so a
+bare Point hulls to a Point and a 2-point MultiPoint to a LineString.** ~57% of
+`whg` docs carry a `"hull":` key (16,427 measured in 20 MB, all genuine keys).
+**Specified without the type filter the check returns ~135k and means nothing**,
+because `generate_tiles:1136` renders **only** a hull typed
+`Polygon`/`MultiPolygon`.
+
+**0 is derived, not assumed:** a Polygon-typed hull needs ≥3 non-collinear
+vertices, so within `whg` it can arise only from the 770 Polygons, 478
+MultiPolygons, and the ~690-member MultiPoint tail (2.3: 7,529 MultiPoints
+holding 8,219 points, so all but ~690 are single-member and hull to a Point).
+**All are in the store — 2.3 wrote all 9,849.**
+
+The **distinct-`place_id`** count settles whether the extract holds more than
+one run's docs (`write_staged_place_doc` **appends**) without extrapolating.
+⚠️ **Do not substitute a bytes-per-line estimate** — staged `places.jsonl` is
+ordered and geometry-bearing docs are longer, which is the `gn`
+100.00%/65.83%/99.94% trap.
+
+**CHECK 2 — span assertion, per polygon bucket, post-build pre-deploy.**
+
+> After building each polygon bucket, count features whose bounding box exceeds
+> **180° of longitude. Expect 0.** **Prove it FAILS first** by building a
+> feature from `clio:es_spanish_emp_1_1572_1578` (232.63°) before trusting a
+> pass.
+
+**Keep this even though the submitter path cannot reach tier 3.**
+`_eligible_buckets` requires `final/`, and `final/` carries no hull, so a store
+miss there degrades to points — **but that protection is a side effect, not a
+design.** Nothing in `_build_feature` knows the gate exists, and the `whg-*`
+loop (`submit_tiles_slurm:229-231`) gates on **`_stage_completed(manifest, …)`
+— manifest status only, with no filesystem check** (verified), so it bypasses
+the protection entirely for the larger half of S5's run.
+
+🛑 **The real reason to keep it: it is the ONLY assertion on S5's row with a
+known-correct answer.** `poly=` non-zero, the tileset polygon count, `clio`
++2,986 and `wd` +58,657 are **all satisfied by a broken world**. *"0 features
+with span > 180°"* is not.
+
+⚠️ **The bypass route costs more than leaving staged trees wrong.** Running
+`generate_tiles` directly on named buckets, or via `TILE_ES_DOC_NAMESPACES`,
+skips the `final/` gate and can resolve to `h3_merged/` or `extract/` **where
+hull is abundant — moving the failure mode from points to smears.** Worse, and
+more visible. (S5's argument, and the strongest case against the shortcut yet.)
+
+ℹ️ **Specimen worth keeping:** the Auditor hypothesised the 16,427 were
+substring matches — the *correct* rule (parse, don't grep) invoked against a
+measurement that had **already satisfied it**. S5 refuted it by re-measuring
+with a sharper anchor (`grep -o '"hull"[^:]'` → **0** non-key uses). The real
+cause was the ungated `convex_hull` above. **A rule can be right and still be
+misapplied; the refutation came from better anchoring, not from the rule.**
+
 ### 3.1 Retile all 27 buckets  — **S5**
 
 ```bash
