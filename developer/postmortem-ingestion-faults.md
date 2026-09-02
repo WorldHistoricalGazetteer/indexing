@@ -396,6 +396,16 @@ These are not code faults, but they cost real time this campaign.
   any handover — because the inner documents are already right. Two of the eight
   findings would have been caught by grepping one number outward, and the
   severe one by grepping `-cluster` outward when the branches were deleted.
+* **Prefer a STRUCTURAL discriminator to a historical one.** To answer *"was
+  this artefact rewritten?"* the obvious route is timestamps and job history —
+  which is where the UTC/EDT trap, the mis-specified `sacct` window and the
+  run-id/mtime mismatch all live. The Auditor's `clio` test answers it with
+  **no history at all**: a geom-store shard rewrite is **not per-key
+  selective**, so if the suspect keys interleave with keys that are demonstrably
+  *not* stale, a rewrite cannot have produced the difference. It did — shards
+  `[83, 84]` for both populations, **0 shards holding only the residual** — and
+  the hypothesis died in one read. **This generalises to the whole geom store
+  and well past this campaign.**
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.

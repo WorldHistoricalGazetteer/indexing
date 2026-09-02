@@ -2642,10 +2642,12 @@ currently in the geom store**. Two ways that could mislead — if the current co
 were itself wrong, every stored cover would have to be wrong *identically* to
 score MATCH (implausible, not impossible); and if a polygon were **replaced** in
 the store after its cover was computed, a DIFFER would be flagging **staleness**
-rather than hull substitution. ✅ **No longer hypothetical — see §4.14's 45
-residual `clio` features (job 11105903), where neither today's polygon nor
-today's stored hull reproduces the cover.** Remedy is unchanged either way;
-the *explanation* is not. Neither changes a verdict above.
+rather than hull substitution. ⚠️ **Still hypothetical — deliberately UNLINKED
+2 Sep.** It was briefly wired to §4.14's 45 residual `clio` features as its
+first concrete instance; **that instance was refuted within the hour** (job
+11105905, shard interleaving). The caveat remains a legitimate qualifier in
+principle and **has no evidence behind it** — leaving it evidenced-by-the-45
+would have been worse than leaving it hypothetical. Neither changes a verdict above.
 
 💡 **And the rule to carry forward is not the one I nearly recorded.** I redirected
 this pass to the live index arguing *"staged is an unreliable proxy"*. For
@@ -3555,15 +3557,36 @@ rest**.
 >
 > **45 → 45.** Refuted, and simplification eliminated as a bonus.
 >
-> 💡 **The remaining candidate, and it generalises: the geom-store geometry
-> CHANGED AFTER the cover was written.** Neither today's polygon nor today's
-> stored hull reproduces those covers — which is exactly what staleness looks
-> like, and **this campaign rebuilt and re-merged that store repeatedly.** See
-> the DIFFER-scope caveat above: this is its **first concrete instance rather
-> than a hypothetical**. If right, a small share of DIFFERs corpus-wide are
-> **staleness, not hull substitution** — which changes the *explanation* for
-> some features and **not the remedy**, since recompute-from-current-polygon
-> fixes both. (ii) This measures the **309-feature intersection, not all 15,690**;
+> ❌ **STALENESS REFUTED TOO — job 11105905. FOUR hypotheses eliminated.**
+> The Auditor's discriminator needs no timestamps at all: **a shard rewrite is
+> not per-key selective**, so if the 45 and the 264 share shards, a store
+> rewrite cannot distinguish them.
+>
+> ```
+> shards holding the 264 hull-derived : [83, 84]
+> shards holding the 45 residual      : [83, 84]
+> shards with ONLY residual           : []
+> 45 of 45 residual keys share a shard with a hull-derived key
+> ```
+>
+> **Perfect interleaving.** A re-merge replacing the 45's geometry would have
+> replaced the 264 in the same two shards — and those reproduce their covers
+> exactly. Consistent with what CLAUDE.md already documents: `geom_store
+> --merge --keep-staging` leaves existing shards untouched.
+>
+> **Eliminated: dateline-crossing polygon (0/309); the `enrich_geometry` repair
+> path (45 → 45 against the stored hull); simplification (12–35 vertices against
+> a 5,000 threshold); staleness (shard interleaving).** Code-version-at-write-time
+> is the last standing candidate and **S9 explicitly declines to promote it by
+> elimination — "the only hypothesis left" is not evidence**, and testing it
+> would need the `clio` h3 job id and the reflog window, which is the same
+> reasoning that misled this campaign once already.
+>
+> 🔒 **Freeze the row here: 264 hull-derived, 45 wrong by an undetermined
+> mechanism, all 309 remediated identically.** C is 309/309; the recompute fixes
+> every one regardless of cause. **Nothing in the decision moved — the third
+> time that has been true in this thread, which is why it was safe to keep
+> digging.** (ii) This measures the **309-feature intersection, not all 15,690**;
 C = 100% here does **not** license "100% of `clio` is wrong" — the sampled
 figure was 22%.
 
