@@ -20,9 +20,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 import osmium
+
+# Share the assembler's classifier so the input table and the assembly table
+# count the SAME population. Reporting "closed ways IN" from natural=water
+# against "areas from ways OUT" across every water tag produced a ratio above
+# 1 (6,721 out of 6,123 in), which reads as untrustworthy counts even though
+# the pipeline was correct. The fix is a shared predicate, not a relabelled
+# column: labels drift, an imported function cannot.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from assemble_inland_water import classify  # noqa: E402
 
 
 TAGS = {
@@ -39,11 +49,19 @@ def _tagdict(obj) -> dict:
     return {t.k: t.v for t in obj.tags}
 
 
+def _safe(pred, tags) -> bool:
+    try:
+        return bool(pred(tags))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def count(path: str, progress_every: int = 0) -> dict:
+    keys = list(TAGS) + ["ANY (assembler classify union)"]
     counts: dict[str, dict[str, int]] = {
         k: {"way": 0, "way_closed": 0, "way_open": 0, "relation": 0,
             "relation_multipolygon": 0}
-        for k in TAGS
+        for k in keys
     }
     seen = 0
 
@@ -66,12 +84,12 @@ def count(path: str, progress_every: int = 0) -> dict:
         if not tags:
             continue
         is_way = isinstance(obj, osmium.osm.Way)
-        for name, pred in TAGS.items():
-            try:
-                if not pred(tags):
-                    continue
-            except Exception:  # noqa: BLE001
-                continue
+        matched = [n for n, pred in TAGS.items() if _safe(pred, tags)]
+        # The union row is the honest denominator for the assembler's output,
+        # because the assembler emits an area for anything classify() accepts.
+        if classify(tags) is not None:
+            matched.append("ANY (assembler classify union)")
+        for name in matched:
             c = counts[name]
             if is_way:
                 c["way"] += 1
