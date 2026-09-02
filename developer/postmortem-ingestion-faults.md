@@ -124,6 +124,15 @@ downstream check can see it.
 > `0/0` had no denominator on either side; the `sacct` empty set never echoed
 > the window it searched.
 >
+> ⚠️ **The denominator rule alone does NOT catch the seventh instance, and that
+> is why it needs a companion clause.** `hullX = 0 of 761 examined` is a
+> perfectly well-formed report, **correct in both halves, and still void** —
+> because `hull` cannot exist in the source. No denominator reveals that; only
+> knowing the field is absent from what you read does. So the rule is two
+> clauses: **report the denominator, AND confirm the field can exist in the
+> source you read.** The first catches a predicate that never matched; only the
+> second catches a field that was never there.
+>
 > **The tell, when no denominator is available: absence of variance where the
 > world has variance.** Thirty-one namespaces of differing character cannot all
 > score exactly 0; 4,363 records cannot all be `None`; two independently

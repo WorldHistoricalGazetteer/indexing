@@ -3291,11 +3291,33 @@ holds no alias before deleting it.
 EXCLUSION IS NOT YET SAFE TO RELY ON (flagged 2 Sep).** `hull` is an *ingestion
 intermediate*: `staged_parquet.strip_hull` drops it from every parquet sidecar,
 so a probe reading anything downstream of `extract/` sees **no `hull` at all**
-and must report `hullX = 0` whether or not the defect is present. **Before this
-exclusion is used, confirm which source the probe read.** If it was `final/`,
-the parquet, or the live index, the measurement is null and **the antimeridian
-hypothesis is NOT excluded** — which matters, because the exclusion is what
-currently directs triage away from it. It matters because it is not a data oddity but **761 counter-examples to an invariant two subsystems are documented as relying on**: `gateway/spatial.py:11` and `:900` ("Cheap, exact fast-reject: `repr_point` is guaranteed within the…"), `ccode_enrichment.py:518` ("`repr_point` is guaranteed to lie within the geometry"), and CLAUDE.md at `:359` and `:664`. If the guarantee does not hold, `containment=exact` can return a wrong answer for those features and the ccode refine can discard a correct candidate — **and neither would look like an error**. Triage as a correctness question, not a curiosity. No explanation offered by anyone yet; `clio` being one of the nine point-only boundary layers may or may not bear on it. |
+and must report `hullX = 0` whether or not the defect is present. Measured 2 Sep: `hull` occurs **0 times in
+`schemas/places.json`** — it is not in the ES mapping at all — and `strip_hull`
+runs on the **index path too**, in `index_namespace.py:134,140` and
+`index_from_stage.py:106,113`, for parquet rows *and* JSONL lines. So `hull`
+survives in exactly one place:
+
+| source | can `hull` be present? |
+|---|---|
+| live index | **no** — stripped on the index path; 0 occurrences in the mapping |
+| any `places.parquet`, any stage | **no** — `strip_hull_for_parquet` |
+| staged `places.jsonl` | **yes** — the only surviving carrier |
+
+**The question to put to S9 is not "which file" but "field read, or
+recomputed?"** — the probe may have recomputed the hull from the geom-store
+polygon, which is available on every path:
+
+* **recomputed from the store** → exclusion **stands**, on any source;
+* **field, from staged JSONL** → **stands**;
+* **field, from ES or any parquet** → **VOID — the antimeridian hypothesis is
+  not excluded.**
+
+⚠️ **Two of the four outcomes reinstate a live correctness hypothesis** about
+the `repr_point`-within-geometry invariant. Note also that 4.14 describes the
+761 by their **stored** `h3_cover` and `repr_point` — fields that live in ES and
+in the parquet, i.e. precisely the two sources where the exclusion would be void
+by construction. **That is an inference from the wording, not a finding**; only
+S9 can say which file it opened. It matters because it is not a data oddity but **761 counter-examples to an invariant two subsystems are documented as relying on**: `gateway/spatial.py:11` and `:900` ("Cheap, exact fast-reject: `repr_point` is guaranteed within the…"), `ccode_enrichment.py:518` ("`repr_point` is guaranteed to lie within the geometry"), and CLAUDE.md at `:359` and `:664`. If the guarantee does not hold, `containment=exact` can return a wrong answer for those features and the ccode refine can discard a correct candidate — **and neither would look like an error**. Triage as a correctness question, not a curiosity. No explanation offered by anyone yet; `clio` being one of the nine point-only boundary layers may or may not bear on it. |
 | ~~4.15~~ | ❌ **REFUTED — do not record. `nl` CAN serve as a `contained_in` scope.** S8 reported that all 4,363 `nl` docs carry `has_geom=None` and `geom_class=None` in both its `final/` and the live index, so no Native Land territory could be used as a scope region. **Checked on both sides and it does not hold.** Its own `staged/nl/final/places.jsonl` reads `geom_class='area'`, `has_geom=True`; and in the live index `exists` returns **4,363 of 4,363** for each of `geometries.geom_class` and `geometries.has_geom` (ES `exists` is false for nulls, so they are set). Kept as a struck row rather than deleted, because a plausible user-facing defect that does not exist is worse in an audit than no row at all — and because whatever S8 read to get `None` is worth knowing (a parquet sidecar, or nested `_source` filtering, both of which can present set fields as absent). |
 | 4.5 | AAT coverage 4,436 / 15,448 = 28.7% (place#142). |
 | 4.6 | ⚠️ **PROMOTED 31 Aug from housekeeping to REQUIRED — and CORRECTED: this is S5's work, not a separate migration.** My first write-up filed the `whg-*` tilesets with the genuinely legacy `datasets-*` / `collections-*` family. They are not: `generate_tiles` builds them natively as **per-WHG-dataset buckets** (`_whg_dataset_sub_ids`, `whg-<dataset_sub_id>.mbtiles`, "one per contributor dataset discovered at submit time"), and the current 47 were produced by that same pipeline on 22–23 July. So S5 rebuilds them by naming those buckets — no separate project, no migration. The `datasets-*` / `collections-*` tilesets are the actual legacy family and stay in `plan-outstanding-2026-07.md` §8. S3 flagged that the `whg` tiles now carry dead place ids after 2.3's re-mint, and expected §3.1's 27-bucket retile to cover it. It does not: **there is no `whg` bucket**. `whg` is served as **47 legacy per-dataset tilesets** (`whg-<dataset_id>.mbtiles`, 22–23 July), which sit outside the 27 and are untouched by 3.1. Verified by decoding `whg-1052.mbtiles`: it carries `whg:1052:6954924`, `whg:1052:6954927` … — the old place-key form, which after 2.3 returns `found:false`. So **every click-through from those 47 layers is now dead**, and regenerating them is the completion of 2.3. **Add the 47 `whg-*` buckets to S5's run.** |
