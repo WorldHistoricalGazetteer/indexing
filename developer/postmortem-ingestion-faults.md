@@ -315,12 +315,32 @@ broken. These are worse than no check, because they are cited as evidence.
   defect was wider than my hypothesis. **A failing control means the test is
   wrong *or* the defect is bigger than you think** — and the second reading is
   the one that gets skipped.
+* **A query that returns zero for everything, including the control.** Asked
+  2 Sep whether the `osm` corpus held water polygons, I aggregated on
+  `types.label` and got **0 for all seven tag keys — including `boundary`,
+  which builds the admin tiles and cannot be zero**. The field was wrong
+  (`label` is always the literal `"osm"`, the *vocabulary*; the tag key lives in
+  `types.sourceLabel` as `natural=bay`), so the filter could match nothing at
+  all. Seven uniform zeros would have read as seven findings. **Only a control
+  whose answer was known in advance could expose it** — a control that merely
+  *fires* would not have, since this one fired on nothing.
+  ⚠️ **This is Class C in a different substrate: the instrument, not the gate.**
+  A gate that passes everything and a query that returns nothing are the same
+  defect — a test whose output is independent of its input — and they take the
+  same remedy. Track them as one class, or the instrument case gets rediscovered
+  every time, as it was three times in one day.
+  ⚠️ **Documentation does not prevent this and only the control does.**
+  CLAUDE.md already states, correctly, that `label` *"indicates the source
+  vocabulary"*. It was read, and the trap was hit anyway. The reflex remedy —
+  "document the field better" — was already in place and did not work.
 
 ### The permanent fixes
 
-1. **Every gate must be shown to FAIL on known-bad AND to PASS on known-good.
-   Proving only the first half is how a check that manufactures confidence gets
-   adopted.** Measured 2 Sep: the proposed tile span assertion (`max(lon) −
+1. **Every check must be shown to FAIL on known-bad AND to PASS on known-good —
+   both directions, and in both substrates: gates *and* the ad-hoc queries used
+   as evidence. Proving only the first half is how a check that manufactures
+   confidence gets adopted.** For a query this means: include a value whose
+   answer you already know, or its zero is unfalsifiable. Measured 2 Sep: the proposed tile span assertion (`max(lon) −
    min(lon) > 180`) **correctly rejected** the known-bad hull at 232.63° — and
    **flagged six legitimate `un` countries** (`ata`/`rus`/`fji` 360.00, `usa`
    358.93, `nzl` 355.47, `kir` 348.57), while normalising the wrap to fix that
