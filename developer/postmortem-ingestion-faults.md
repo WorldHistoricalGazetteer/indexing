@@ -432,6 +432,25 @@ These are not code faults, but they cost real time this campaign.
   `[83, 84]` for both populations, **0 shards holding only the residual** — and
   the hypothesis died in one read. **This generalises to the whole geom store
   and well past this campaign.**
+* **Stale-alarming and stale-reassuring are TWO classes needing TWO remedies,
+  not one habit needing more diligence.** Both were produced on 2 Sep, on the
+  same subject, hours apart — which is the evidence that they are distinct.
+  * **Stale-reassuring** ("production is unaffected", held for weeks while
+    `clio` served 3,522 wrong covers) is **not self-correcting**: nothing
+    prompts anyone to re-check a reassurance. Its remedy is a **scheduled
+    outward re-read** — the sweep that found CLAUDE.md documenting a deleted
+    subsystem.
+  * **Stale-alarming** ("this is a LIVE WRONG ANSWER", still standing two hours
+    after the fix, in CLAUDE.md and four plan sites) **is** self-correcting the
+    moment anyone checks — so it needs only that **the resolution be
+    CO-LOCATED with the alarm.** All five failed on co-location alone: the fix
+    existed, was correct, and sat 40–300 lines away.
+  * **The remedy is therefore cheap and specific: whoever resolves an alarm
+    edits the alarm, not only the log.** One edit at the moment of resolution
+    would have caught all five.
+  * ⚠️ **And an alarm that outlives its cause is worse than no alarm**, because
+    it trains readers to discount the next one — which is expensive in a
+    document whose whole purpose is to be believed.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.

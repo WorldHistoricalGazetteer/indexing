@@ -3473,7 +3473,21 @@ argued.
 (CI 54–68) — **exactly at the CI's upper edge.** Consistent, and a fair reminder
 that a point estimate at n=200 sits where it sits.
 
-### ⚠️ NEW ANOMALY — 248 `point`-class geometries carry polygon-sized covers, 100% defective
+### 🛑 A SECOND DEFECT, NOT A LEFTOVER — 248 `point`-class geometries carry polygon-sized covers, 100% defective
+
+⚠️ **This is NOT the hull fault, and the argument is decisive rather than
+suggestive: a point has no areal hull to derive from.** `hull =
+geom.convex_hull` of a Point **is a Point**, so a hull-derived cover is
+physically incapable of producing an areal cover on a point-class geometry.
+Whatever produced these, it was not the mechanism that produced the other
+5,020. **It is a second defect that the census happened to expose** — and at
+**248 of 248** it is the only one of the three open rows with a 100% rate.
+
+**Do not file it as a leftover of the hull fault.** The three open rows have
+three different causes: the **45** are a subset of the remediated set whose
+byte-level mechanism is unknown but which were fixed anyway (a question about
+bytes, not correctness); **these 248** are a distinct ingestion/classification
+defect; the **top-level `h3_cover`** is a schema artefact unrelated to either.
 
 **Flagged, not explained. Verified independently here — exactly 248 of `whg`'s
 213,081 point-class geometries have a multi-cell cover, matching S9's count.**
