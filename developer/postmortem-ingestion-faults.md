@@ -347,6 +347,20 @@ broken. These are worse than no check, because they are cited as evidence.
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
   properly, a screenshot).
+  ⚠️ **The class is not confined to instruments — a REMEDY can be aimed at the
+  wrong object too, and that form is harder to catch because nothing measures
+  it until it is used.** #233's size-pressure fallback said *"drop
+  `waterway=riverbank` first — pure saving"*. Measured across the filtered
+  planet: **3 ways, planet-wide.** The tag was deprecated in favour of
+  `natural=water` + `water=river` and the migration is essentially complete, so
+  river areas still ship — they arrive under `natural=water` — and the lever
+  grabs nothing. It would have executed cleanly, saved nothing, and left the
+  operator concluding their build was broken. **A well-formed remedy answering
+  a question nobody asked**, and it survived review by three participants
+  because all of us checked whether the *reasoning* was sound and none checked
+  whether the *object* still existed. For any remedy phrased as "drop X to save
+  space", the reasoning is not the thing to review: **measure X.**
+
   ✅ **A third detection method, and the cheapest: write the claim out in full
   before believing it.** indexing-db caught the `check-refs` substitution not by
   habit or process but by drafting the sentence "the filter is verified" and
