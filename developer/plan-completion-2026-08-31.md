@@ -1651,6 +1651,48 @@ consciously discarded for `2026-09-02T14:21:36.274562+00:00`.
 `processing/compare_hardlink_overlays.py` is committed and validated (known-good,
 known-bad, sub-tolerance noise, and the `--allow-shrink` exemption). **It is
 reusable for any future overlay publish, not a one-off.**
+
+###### 🛑 CORRECTION — no gateway restart is needed; the publish is live on write
+
+**Everything above (and in §2.3's earlier notes) saying *"a publish is invisible
+until the gateway restarts"* is WRONG.** It was inferred from `publish_local`'s
+docstring — *"the gateway's open descriptors against the previous inode stay
+valid until it re-opens"* — which is a true statement about POSIX and a **false
+inference about this consumer**, because nobody checked what the gateway does.
+
+**What the gateway actually does** (`gateway/hard_link_expansion.py`):
+
+* `expand_hard_links` calls `_connect_ro(path)` **per invocation** and
+  `conn.close()` in a `finally`. **No module-level connection, no `lru_cache`, no
+  pooling.**
+* `_connect_ro` opens `file:{path}?mode=ro` **by path**, and its own docstring
+  anticipates exactly this: *"Any error — missing file, **mid-atomic-swap**,
+  permissions — is logged and skipped."*
+
+So the overlay is re-opened on **every** `include_hard_links` request. `os.replace`
+swapped the path; the next request opened the new inode. **There were never any
+long-lived descriptors to invalidate.**
+
+**Verified three ways rather than read once:**
+
+1. **No process on `pitt` holds `hard_links.sqlite` open** — every `/proc/*/fd`
+   scanned. The gateway (`python -m gateway`, pid 1865149) is running and holds
+   nothing.
+2. **On-disk is inode `64626`** — the published file.
+3. **A live query serves it**: `POST /api/search {"query":"Paris",
+   "include_hard_links":true}` → gateway `ok`, 3 hits, **10 edges**, including
+   `{'a':'gn:4402452','b':'wd:Q960025','relation_type':'sameAs','source':'gn'}`.
+
+**The 7,572,016-row overlay is serving production now.** A restart would have been
+a production action taken on incorrect advice.
+
+⚠️ **The transferable lesson, which is this campaign's own shape in new clothes:**
+a downstream consequence was asserted from a **producer's** docstring without
+checking the **consumer**. The docstring was accurate about what `publish_local`
+guarantees; it could not know whether any reader held a descriptor. **A statement
+about what a writer does is not a statement about what a reader sees** — the same
+error as reading permission bits instead of taking a write lock, and as counting
+documents instead of the content the consumer needs. Three instances in one day.
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
