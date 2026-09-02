@@ -2713,10 +2713,25 @@ after the 5–6 Aug cutover, and never shipped). **`clio` does not** — its
 `h3_merged` is `2026-08-05T18:14:49Z`, *is* the cutover run, and shipped. For
 every other namespace it is **unmeasured**.
 
-✅ **THE SOUND FORMULATION (S8, 2 Sep) — this is the wording to use, and my
-caution above was over-broad.** **Production is a valid *corroborator* for any
-namespace, and a valid *reference* only where its provenance postdates the
-cutover. The gate that is always sound is FRESH-FROM-POLYGON.**
+✅ **THE SOUND FORMULATION (S8, 2 Sep; extended by the Auditor after 2.11) — my
+caution above was over-broad, and S8's original wording is now itself one
+category short.** **Production is a valid *corroborator* for any namespace, and
+a valid *reference* where its provenance postdates the cutover — OR where it
+has been remediated and independently verified. The gate that is always sound
+is FRESH-FROM-POLYGON.**
+
+⚠️ **The discriminator is provenance OR verified remediation — not provenance
+alone**, which after 2.11 leaves a real category with no slot:
+
+```
+provenance POSTDATES the fix          -> reference          un, nl
+provenance predates, NOT remediated   -> corroborator only  osm, ohm, all unmeasured
+provenance predates, REMEDIATED       -> reference          clio, whg   <- added 2 Sep
+```
+
+Without the third row, the next session validating a `clio` recompute reads
+*"provenance predates ⇒ corroborator only"* and **needlessly distrusts a
+reference that is now correct.**
 
 S8's `un` gate was never production-as-ground-truth. It computed
 `fresh = compute_h3_fields(repr_point, geom_store_polygon)` as the **reference**
@@ -3242,7 +3257,9 @@ returned false **zeros**; this one returned a false **non-zero**. The class is
 *an instrument answering a narrower or wider question than the one asked*, and
 it is not only about zeros — **a match count is not a key count.**
 
-### 🛑🛑 PRODUCTION IS AFFECTED — the campaign's "staging-only" premise is FALSE for `clio` (2 Sep)
+### ✅ PRODUCTION WAS AFFECTED (2 Sep, since FIXED) — the campaign's "staging-only" premise was FALSE for `clio`
+
+✅ **RESOLVED SAME DAY — see §2.11 COMPLETE below: 5,268 remediated, re-census 0 defective of 18,248 examined.** Kept in the present tense of its discovery; this is HISTORY, not status.
 
 **Found by S9; every element re-measured independently here before recording.**
 
@@ -3257,9 +3274,11 @@ correct counts: 469 / 472 / 631  ->  live covers are ~1.8x too many cells
 
 **Production's `clio` covers are the hull-derived ones.** They span the Pacific.
 
-🛑 **This is a LIVE WRONG ANSWER, not a staging defect.** `gateway/spatial.py`
-reads `h3_cover` for `containment=fuzzy`, so **a fuzzy containment scoped to any
-of these polities is today answering from a cover roughly 1.8× too large.**
+🛑 **This WAS a live wrong answer, not a staging defect** (✅ fixed same day,
+§2.11). `gateway/spatial.py` reads `h3_cover` for `containment=fuzzy`, so a
+fuzzy containment scoped to these polities **was** answering from a cover
+roughly 1.8× too large. **That is why it was remediated immediately rather than
+deferred.**
 
 **Why the reasoning that made us confident does not cover this — and the rule
 that replaces it.** The standing argument was that the live index was cut over
@@ -3476,20 +3495,20 @@ like the same fault.** Compare the standing predicate in
 incomplete-ingestion defect. **This is its inverse** — `geom_class = point` with
 an areal cover — and is not currently anybody's check.
 
-**Revised production exposure:**
+**Production exposure as measured (✅ ALL REMEDIATED — §2.11):**
 
 ```
-whg   1,746 of 2,565 geometries live-defective    EXACT (census)
+whg   1,746 of 2,565 geometries were live-defective   EXACT (census)
 clio  ~2,980 of 15,683                            19%, n=200 uniform — still an ESTIMATE
 un / nl / osm / ohm                               live correct
 ```
 
-### 🛑 FINAL PRODUCTION EXPOSURE — both namespaces CENSUSED, no estimates remain
+### ✅ FINAL PRODUCTION EXPOSURE AS MEASURED — both censused, ALL SINCE REMEDIATED (§2.11)
 
 ```
 clio    3,522 of 15,683 live-defective   (22.5%)   CENSUS, 15,683/15,683 found live
 whg     1,746 of  2,565 live-defective   (68.1%)   CENSUS, 2,565/2,565 found live
-TOTAL   5,268 geometries wrong in the live index
+TOTAL   5,268 geometries were wrong in the live index   -> ALL FIXED, verified 0 remaining
 
 un, nl                              live CORRECT — bad covers postdate the cutover
 osm, ohm                            live CORRECT — 30/30 each at >=400 cells
@@ -3608,7 +3627,10 @@ by nothing — and it is exactly the shape of the docstring error corrected on 3
 Aug**, which told readers `h3_cover` was a top-level field. **Someone will
 eventually assume it means something.** Its own row, unresolved.
 
-### 2.11 spec (as dispatched) — **S9 (`indexing-98`)** — 🛑 SG RULING, 2 Sep
+### 2.11 spec (as dispatched, retained verbatim) — **S9 (`indexing-98`)** — SG RULING, 2 Sep
+
+ℹ️ **Body left in its dispatched present tense deliberately** — it records *why*
+SG ruled to remediate now rather than defer, and that reasoning outlives the tense.
 
 **SG's decision, overruling S8's recommendation to defer: do it now.** This is
 the corpus-correctness class SG's standing ruling already places ahead of the
