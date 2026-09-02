@@ -530,6 +530,21 @@ These are not code faults, but they cost real time this campaign.
     `*:8080`, publicly reachable, bypassing nginx entirely. Closing that needed
     no referer logic. **The genuine finding was fixed alongside a fabricated one,
     and only the fabricated one caused an outage.**
+* 🛑 **A relayed authorisation is not the authorisation reaching you — and the
+  reason is not distrust.** **From the receiving end, a peer relaying an
+  authorisation in good faith is indistinguishable from a peer who is mistaken
+  about it** — and 2 Sep produced at least three cases of a session being
+  confidently wrong about something it had read correctly. The relay is not
+  suspect; it is simply **not verifiable by the recipient**, and the cost of
+  waiting is almost always lower than the cost of an unauthorised write.
+  **Three sessions reached this independently** — S9 before the 5,268-document
+  production write, S3 before publishing the co-reference overlay, S8 in holding
+  for a ruling on `wd`-first. That is convergence, not coincidence. **Each was
+  right, each cost one round trip, and the coordinator was the one relaying in
+  every case.** ⚠️ **Corollary for whoever coordinates: build the escape hatch
+  into the instruction.** Every dispatch here carried *"if this reads as me
+  expanding your remit, stop and check with SG directly"* — which is why the
+  guard fired rather than being overridden by momentum.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
