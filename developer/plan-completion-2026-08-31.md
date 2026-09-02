@@ -3333,8 +3333,8 @@ holds no alias before deleting it.
 | 4.11 | **Stage-preference chains test existence, not content — audited 31 Aug, and it is every one of them.** S4 found the third instance (`h3_stage._extract_stage_dir` returns `update_merged/` on `.exists()`, so a 1-row stub tree would have been fed to H3 while the correct 10.26 GB `extract/` sat unread) and asked whether `generate_tiles` and `index_namespace` behave the same way. They do, and so does the rest: **`index_from_stage._staged_namespace_source:88`, `h3_stage._extract_stage_dir:135`, `generate_tiles._staged_namespace_source:856`, `index_namespace.SOURCE_STAGES:84`, `gazetteer_temporal_extent._staged_namespace_source:106`, and `rebuild_toponyms_index`** — six chains, all `if path.exists()`, none checking that the file it selects holds a plausible number of rows. Each prefers `places.parquet` over `places.jsonl` in the same directory, which is what makes a 4,925-byte stub a poison pill rather than a nuisance. **Fix once, apply six times:** the chain should skip a candidate whose row count is implausible for the namespace, or at minimum log the count and source it chose so a 1-row selection is visible in the log. Related to 4.10 — that one is about not overwriting good data with bad, this one about not *reading* bad data as good. ⚠️ **"Apply six times" is right but "fix once" needs care: the six chains are not the same chain** (S4, 31 Aug). Four are byte-identical — `index_from_stage`, `generate_tiles`, `hard_links_staged`, `gazetteer_temporal_extent` all use `(final, h3_merged, boundary_merged, update_merged, extract)`. Three do not: `rebuild_toponyms_index` omits `update_merged` (defensible — toponyms are populated at extract time and not mutated later); `h3_stage` is per-namespace and tests **directory** existence rather than a file, which is why it was the worst of them; and **`index_namespace` uses `(final, ccode_merged, h3_merged, extract)`** — which has two problems. `ccode_merged` **is written by nothing**: it appears in exactly two places in the tree, this tuple and `staging_orchestrator:58`, both readers, because the ccode stage's output is `final/` (as this plan says in the incremental-add workflow). So that entry is dead, and it makes the chain *look* like it covers the ccode stage when it does not. Meanwhile it omits `boundary_merged` and `update_merged`, which **are** written — so for `osm`/`ohm` with no `final/`, `index_namespace` skips the enriched `boundary_merged/` and falls through to the raw `extract/`, and `--source-stage` cannot even be asked for those stages because they are not in its `choices`. A shared helper must therefore take the chain as a parameter, and `index_namespace`'s wants fixing on its own account, not just refactoring. ⚠️ **And this audit was itself incomplete, in an instructive direction (S5, 31 Aug): it looked at *resolvers* and never at *gates*.** Within the tile subsystem the two disagree. `generate_tiles._staged_namespace_source` (`:856`) is tolerant like the rest and would have streamed `gn`'s and `wd`'s `extract/` perfectly well — but `submit_tiles_slurm._eligible_buckets` is **strict**, requiring `final/` and otherwise bare-`continue`ing. The strictness sits *upstream* of the tolerance, so the bucket is never submitted and **the failure presents as an absence rather than an error**: no log line, no exception, 24 tilesets where 27 were expected. A seventh site with the opposite polarity to the other six, and the reason a "which resolver does it use" sweep could not have found it. The general form worth inheriting: **anything that SELECTS work deserves the same audit as anything that READS data.** |
 | 4.13 | ⚠️ **A partial newer stage is preferred over a complete older one, for the whole duration of a merge — and the fix is ~10 lines** (S3/S8, 31 Aug). `h3_merge.run_h3_merge` and `ccode_merge.run_ccode_merge` both `open("w")`ed in place and derived the parquet afterwards, with no `os.replace`, `.tmp` or rename. ⚠️ **Historical — 2.8 fixed this; those line numbers now land on the fix itself** (Auditor C3). Verified 1 Sep: `open("w")` count **0** in all four writers, each calling `atomic_staged_snapshot` ×3. Every consumer walking `final → h3_merged → boundary_merged → update_merged → extract` — `index_from_stage`, `generate_tiles`, `gazetteer_temporal_extent`, `hard_links_staged`, toponyms stage 1 — therefore prefers a zero-byte or half-written newer stage over a complete older one, with no error on either side, for as long as the merge runs. **Proposed fix: write `places.{jsonl,parquet}.tmp` and `os.replace()` into position when complete.** Rename is atomic within a filesystem, so a concurrent resolver sees either the old complete state or the new complete state and never a partial one — the existence-only preference becomes safe *by construction* rather than safe by every session remembering to serialise, and it protects every future rebuild rather than tonight's overlap. Sized at ~10 lines across two files — **and the pattern already exists in this repo**: `repair_staged_docs.py:247` does `tmp_jsonl.replace(jsonl_path)` for exactly this reason, so the fix is applying an in-house precedent rather than introducing one. **The strongest form of the argument, from S8 and stronger than it knew:** if anyone counters that the zero-byte window should be fixed **reader-side** (skip empty files, check completeness), that is not one edit — `_STAGED_SOURCE_PRIORITY` is defined **five** times, byte-identical, each with its own `_staged_namespace_source`: `index_from_stage:71`, `generate_tiles:145`, `aat_enrich:67`, `gazetteer_temporal_extent:54`, `hard_links_staged:42`. S8 found four and missed `aat_enrich`, which rather makes the point. Five edits across two packages that must stay in sync forever — and one of them, `clustering.harvest.hard_links_staged`, needs `LD_LIBRARY_PATH=$CONDA_PREFIX/lib` to import at all on the VM. ⚠️ **This argument originally said that module "cannot even be imported on the VM to test", which was wrong** — it is a missing export, not a platform limit (corrected 1 Sep). The conclusion stands on the remaining reasons; one of its supporting facts did not. Precisely the true-conclusion-false-premise shape recorded elsewhere in this plan. The **writer-side** fix is two edits, needs no coordination, and matches `repair_staged_docs.py:247`. So it is not merely the tidier option, it is the only one with a maintainable surface. (Hoisting the resolver into one shared module is also right and is deliberately **not** part of 4.13 — that is scope creep on a fix that has to be small enough to land mid-campaign. Its own row later.) ✅ **PROMOTED to step 2.8 (S9) by SG, 1 Sep** — landing before 2.7 rather than managed by serialisation. This row is retained for the reasoning; the work is 2.8. |
 | 4.12 | **"Published" does not mean "live" for the overlay** (S3/`indexing-7e`, 31 Aug). `publish_local` is an atomic same-filesystem `os.replace`, and its own docstring records that **the gateway's open descriptors against the previous inode stay valid until it re-opens**. So a successful overlay publish changes nothing any user sees until the gateway restarts — and restart ownership is a separate session's. A publish step that silently has no effect is worth naming, because the natural reading of "published" is that it is serving. Pair the publish with the restart, or say plainly in the record that the new overlay is on disk and not yet in use. |
-| 4.14 | ⚠️ **761 `clio` features whose stored `h3_cover` does not contain their own `repr_point`** (S9's probe; framing by S8, and the framing is the contribution). This is **not** the antimeridian defect — `hullX = 0` for all of them. ⚠️ **THAT
-EXCLUSION IS NOT YET SAFE TO RELY ON (flagged 2 Sep).** `hull` is an *ingestion
+| 4.14 | ⚠️ **761 `clio` features whose stored `h3_cover` does not contain their own `repr_point`** (S9's probe; framing by S8, and the framing is the contribution). ~~This is **not** the antimeridian defect — `hullX = 0` for all of them.~~
+❌ **STRUCK 2 Sep — THE EXCLUSION IS VOID, CONFIRMED BY S9 ITSELF.** `hull` is an *ingestion
 intermediate*: `staged_parquet.strip_hull` drops it from every parquet sidecar,
 so a probe reading anything downstream of `extract/` sees **no `hull` at all**
 and must report `hullX = 0` whether or not the defect is present. Measured 2 Sep: `hull` occurs **0 times in
@@ -3369,6 +3369,47 @@ staged source for that word. Revised outcome list: *field, from `extract` /
 *recomputed from the geom store* → **stands**; *field, from ES, any parquet,
 **or `final/places.jsonl`*** → **VOID**.
 
+✅ **ANSWERED BY S9 (`indexing-98`), 2 Sep — job 11105892, 7 s, read-only.**
+**Its probe read `clio/final/places.jsonl`, which carries no `hull` field at
+all** (0 of 15,690 — measured independently here before the question was put).
+**So `hullX = 0` could never have fired.** S9 confirms it had retracted that
+column at the time — *"ignore the hullX column entirely… it reads 0 everywhere
+including `un`, whose hull we have proved crosses"* — and that **its caveat was
+recorded in 4.14 as its opposite.** S9 asked for the correction rather than
+defending the row.
+
+**S9 regenerated the 761 and intersected them against the 588:**
+
+```
+in both              309     (41 per cent of the 761)
+selfEXCL only        452
+antimeridian only    279
+ids: /vast/ishi/diagnostics/clio_selfexcl_s9.txt
+     /vast/ishi/diagnostics/clio_antimeridian_hulls_20260902.txt
+```
+
+Overlap examples are `clio:es_spanish_emp_1_1572_1578_v1` and siblings — the
+Spanish Empire, Philippines to the Americas, crossing ±180 exactly as `un:usa`
+does. **The mechanism is present, not excluded.**
+
+🛑 **THE INTERSECTION REFUTES THE EXCLUSION; IT DOES NOT ESTABLISH THE
+MECHANISM — S9's caveat, and it corrects an overreach of mine.** I wrote that
+`clio` is in the recompute set *"precisely because its covers are hull-derived"*.
+**Not established.** `clio/final` carries `geom_ref`, `has_geom` and `geom_class`
+per geometry (verified here on `clio:sumerian_city-states_-3400_-3201`), so
+`cover_geometry_for` would have resolved the **geom-store polygon**, not the
+hull. **Two different faults share one signature:** a hull-derived cover, or
+correct polygon retrieval with **antimeridian handling applied to a polygon that
+genuinely crosses ±180** — and the Spanish Empire's does.
+
+**The decisive test is stored-vs-fresh on the 309**, which S9 has offered to run
+and which is cheap. Until it runs the row records *the exclusion is void*, and
+**not** *the hull defect explains `clio`*.
+
+ℹ️ **The 279 antimeridian-only ids are expected, not anomalous.** `selfEXCL`
+caught 8 of 247 on `un` — ~3 per cent against a namespace 96 per cent materially
+wrong. **It under-reports by design: it can confirm, never clear.**
+
 🛑 **THE ANTIMERIDIAN MECHANISM IS PRESENT IN `clio` AT SCALE — 588 FEATURES.
 MEASURED 2 Sep, ALL 15,690, NOT A SAMPLE.** This does not by itself overturn
 §4.14's exclusion, but it **removes the reading on which the exclusion would be
@@ -3385,10 +3426,12 @@ examples: clio:es_spanish_emp_1_1572_1578  232.63°   (and _v1, 1579_1581, 1582_
 ```
 
 The examples are self-corroborating: **the Spanish Empire spans the Pacific**, so
-its convex hull crosses the antimeridian by construction. This is the `un` defect
-exactly — and **`clio` is in the recompute set above precisely because its covers
-are hull-derived.** A hull-derived cover on a 232°-span hull covers the wrong half
-of the globe.
+its convex hull crosses the antimeridian by construction. This resembles the `un` defect —
+but ⚠️ **it is NOT established that `clio`'s covers are hull-derived** (S9's
+caveat, below): `clio/final` carries `geom_ref` per geometry, so
+`cover_geometry_for` could resolve the store polygon. A hull-derived cover on a
+232°-span hull would cover the wrong half of the globe; so, independently, would
+mishandled antimeridian wrapping of a polygon that genuinely crosses.
 
 ⚠️ **Stated as hypothesis, not finding, and it needs one Slurm job to settle.**
 588 crossing hulls and 761 `repr_point`-outside-`h3_cover` counter-examples are

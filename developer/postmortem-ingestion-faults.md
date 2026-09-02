@@ -133,6 +133,17 @@ downstream check can see it.
 > source you read.** The first catches a predicate that never matched; only the
 > second catches a field that was never there.
 >
+> **The measurement analogue of Class A, in S9's formulation — the class's
+> second face rather than a process note.** The pipeline fault is *a required
+> input is absent, something plausible is substituted, the stage reports
+> success.* The measurement fault is exactly: **an absent field, a false
+> predicate, a reported zero.** Four instances in one day from S9 alone —
+> `hull` read at the wrong stage, `geom_class` at the wrong nesting, `area_ft`
+> from both, and `hullX` recorded in §4.14 **as a finding when its author had
+> already retracted it.** That last is the most expensive form: a null
+> measurement that entered a document as a conclusion and steered triage away
+> from a live hypothesis for a day.
+>
 > **Third clause: parse, don't grep, when the question is structural.** An
 > eighth instance failed in the *opposite* direction from the other seven:
 > `grep -o hull` over `gn` returned **2,950**, which reads as "hull survived"
