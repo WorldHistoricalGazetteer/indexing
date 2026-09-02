@@ -1,7 +1,7 @@
 # CLAUDE.md — Agent Briefing for WHG Indexing Repository
 
 > **Repository:** `WorldHistoricalGazetteer/indexing`
-> **Last updated:** 31 August 2026
+> **Last updated:** 2 September 2026
 
 ---
 
@@ -33,7 +33,8 @@ Why these faults keep recurring, grouped into classes with the permanent code
 fix for each, is
 [`developer/postmortem-ingestion-faults.md`](developer/postmortem-ingestion-faults.md)
 — **read it before writing pipeline code**, not only after something breaks.
-Nine of the sixteen recorded faults are one fault: *a required input is absent,
+Nine of the thirteen originally-registered faults are one fault — eleven of
+sixteen once this campaign's are added: *a required input is absent,
 something plausible is substituted, and the stage reports success.*
 
 The ordered remediation is
@@ -65,7 +66,7 @@ The shortest version, if you read nothing else:
 ## Project Overview
 
 This repository powers the **World Historical Gazetteer (WHG)** search
-infrastructure — a system that indexes ~47 million place records from multiple
+infrastructure — a system that indexes ~51.2 million place records from multiple
 independent gazetteers into Elasticsearch, clusters co-referent records, and
 serves search/reconciliation queries via a FastAPI gateway.
 
@@ -115,9 +116,9 @@ from `/vast` flash. The same small-file pathology is why ES data lives on
 
 ```
 Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.x (CRC)
-                                                            ├── places   (~47M docs)
-                                                            ├── toponyms (~67M docs)
-                                                            └── clusters (~20M docs)
+                                                            ├── places   (51.2M docs)
+                                                            └── toponyms (72.7M docs)
+                                                     (clusters: RETIRED, see below)
 ```
 
 - **Gateway** (`gateway/`): FastAPI app on port 9200 (the only port open
@@ -252,7 +253,6 @@ for maintainability:
 | `_common.sh` | ~70 | Shared bootstrap: paths, `.env`, conda, `activate_environment()`, `es_curl()` |
 | `es.sh` | ~1400 | Core ES/Kibana/Gateway management, staging, forcemerge, case dispatcher + help |
 | `symphonym.sh` | ~1300 | Symphonym training pipeline (toponym rebuild, training data, model training, embeddings) |
-| `cluster.sh` | ~700 | Place clustering (snapshot exchange, Slurm/nohup execution, finalize) |
 | `ingest.sh` | ~480 | Authority ingestion, boundary extraction, tile generation, ccode augmentation |
 
 ### Production services (run on CRC VM)
@@ -295,7 +295,6 @@ jobs. The `htc` partition has four QOS tiers:
 | Command | Description |
 |---------|-------------|
 | `es -ingest [OPTIONS]` | Submit authority ingestion Slurm job (requires staging ES) |
-| `es -augment-ccodes [OPTIONS]` | Spatial country code assignment (runs against production, nohup) |
 | `es -forcemerge [INDEX]` | Purge deleted docs, iteratively merge segments |
 
 ### Symphonym pipeline
@@ -313,14 +312,18 @@ jobs. The `htc` partition has four QOS tiers:
 
 ### Clustering
 
-| Command | Description |
-|---------|-------------|
-| `es -cluster --full` | Full clustering run (nohup on VM) |
-| `es -cluster --full --slurm` | Snapshot prod → staging → Slurm job |
-| `es -cluster --incremental` | Incremental clustering (nohup on VM) |
-| `es -cluster --resume --slurm` | Resume crashed full run on Slurm |
-| `es -cluster --stats` | Show clustering statistics |
-| `es -cluster-finalize TIMESTAMP` | Restore cluster results to production (alias swap) |
+⚠️ **RETIRED — these commands no longer exist.** `-cluster`, `-cluster-finalize`
+and `-augment-ccodes` were removed from the dispatcher (`scripts/es.sh:1113`),
+and **`scripts/cluster.sh` is not in the repository.** Verified 2 Sep 2026:
+`ls scripts/*.sh` returns 21 files without it, and grepping the case labels
+returns nothing. What replaced them:
+
+* **ccode enrichment** → staged: `processing/ccode_enrichment.py` via
+  `processing/submit_ccode_slurm.py`.
+* **clustering** → the SQLite hard-link overlay built by
+  `processing/submit_hardlinks_slurm.py` and queried at search time, plus
+  client-side Union-Find in the browser. The `clusters` **index** is legacy
+  (see Key Indices) and `CLUSTERS_INDEX` is gone from `gateway/config.py`.
 
 ### Setup & maintenance
 
@@ -346,8 +349,8 @@ jobs. The `htc` partition has four QOS tiers:
 
 | Index | Schema | Content |
 |-------|--------|---------|
-| `places` | `schemas/places.json` | ~47M place records with nested toponyms, geometries, types, relations |
-| `toponyms` | `schemas/toponyms.json` | ~67M deduplicated toponym records with Symphonym embeddings and attestation lists |
+| `places` | `schemas/places.json` | **51,187,900** place records with nested toponyms, geometries, types, relations (measured 2 Sep 2026) |
+| `toponyms` | `schemas/toponyms.json` | **72,703,777** deduplicated toponym records with Symphonym embeddings and attestation lists (measured 2 Sep 2026) |
 | `clusters` | `schemas/clusters.json` | ⚠️ **LEGACY / being retired** — static offline cluster membership (`clusters_20260325`). Superseded by **client-side clustering**: the gateway ships hard-link edges + per-hit signal fuel and the browser (`clustering.js`) runs Union-Find at a user θ. See `developer/plan-outstanding-2026-07.md` §1. |
 | `types` | `schemas/types.json` | AAT place-type hierarchy with cross-vocabulary mappings, fclasses, materialized paths, multilingual labels/notes |
 
@@ -365,7 +368,7 @@ Field definitions are in `schemas/places.json`.
 |--------|------|
 | `app.py` | FastAPI application, lifespan (pre-warms Symphonym), health endpoint, phonetic search + embed endpoints, catch-all HTTP/WebSocket proxy |
 | `reingest.py` | `POST /api/registry/reingest` + `GET /api/registry/reingest/{job_id}` — admin-triggered Slurm submission of `scripts/reingest.sbatch <namespace>` via SSH from the Pitt VM to a CRC login node. No bearer auth (Pitt firewall whitelists DO IP). Concurrency guard via `squeue -n reingest-<ns>` — returns 409 with the existing job_id so Django can adopt. |
-| `config.py` | Loads `.env`; exports `ES_BACKEND` (localhost:9201), `KIBANA_BACKEND` (localhost:5601), index name patterns (`places_*`, `toponyms_*`, `clusters`), Symphonym model dir |
+| `config.py` | Loads `.env`; exports `ES_BACKEND` (localhost:9201), `KIBANA_BACKEND` (localhost:5601), index **aliases** (`places`, `toponyms` — not wildcards; `CLUSTERS_INDEX` is gone), Symphonym model dir |
 | `search.py` | `POST /api/search` and `GET /api/suggest` — the main search router |
 | `reconcile.py` | `POST /api/reconcile` — reconciliation search (same 3-step architecture as search) |
 | `es_helpers.py` | Shared ES query builders: `build_toponym_query`, `build_phonetic_knn`, `collect_place_ids`, `build_places_filter`, `build_toponym_lookup`, `build_suggest_query`; geometry extractors `extract_place_geoms`/`extract_repr_point` |
@@ -447,7 +450,7 @@ ES password is read from `{IX1_BASE}/es/config/elastic.password`.
 | Namespace | Source | Records | Type vocabulary |
 |-----------|--------|---------|-----------------|
 | `gn` | GeoNames | ~13M | Feature codes (e.g. `PPL`, `ADM1`); label = feature class (`P`, `A`, etc.) |
-| `osm` | OpenStreetMap | ~18M | OSM tag keys (`place`, `natural`, `water`, `waterway`, `historic`, `landuse`); identifier = tag value (e.g. `city`, `river`) |
+| `osm` | OpenStreetMap | **20.6M** | OSM tag keys (`place`, `natural`, `water`, `waterway`, `historic`, `landuse`); identifier = tag value (e.g. `city`, `river`) |
 | `wd` | Wikidata | ~11M | P31 Q-items (e.g. `Q515` = city) |
 | `tgn` | Getty TGN | ~3M | Currently generic `place`; should carry AAT type IDs |
 | `pl` | Pleiades | ~37K | Pleiades place type vocabulary (string labels like `settlement`, `fort`, `temple`) |
@@ -457,13 +460,13 @@ ES password is read from `{IX1_BASE}/es/config/elastic.password`.
 | `ukhc` | UK Historic Counties (Historic County Borders Project) | 92 | `historic-county` (polygon boundaries; `boundary=historic-county`; end 1974, Welsh counties start 1542, others open) |
 | `dp` | D-PLACE | ~2.6K | Language point data |
 | `iv` | Index Villaris | ~24K | Historical gazetteer |
-| `un` | ISO3166 countries | ~257 | Country entities |
-| `ohm` | OpenHistoricalMap | ~905K | Same tag schema as OSM; excellent temporal coverage (`start_date`/`end_date`) |
+| `un` | ISO3166 countries | **247** | Country entities |
+| `ohm` | OpenHistoricalMap | **945K** | Same tag schema as OSM; excellent temporal coverage (`start_date`/`end_date`) |
 | `chgis` | CHGIS (China Historical GIS) | ~81K | CHGIS feature-type names (`identifier`); AAT-mapped |
 | `tm` | Trismegistos | ~64K | Ancient-world place references |
 | `ofs` | Ottoman NFS Gazetteer (Kabadayı et al. 2022) | ~16.3K | ~16.3K mid-19thC populated places from Ottoman population registers (1830–1849) |
 | `clio` | Cliopatria (Seshat) | ~15.7K | Polities (`polity`); no AAT yet |
-| `whg` | Contributed WHG datasets (`authority=True`) | ~14.2K | Mixed LPF; 7 datasets live |
+| `whg` | Contributed WHG datasets (`authority=True`) | **228,918** | Mixed LPF. ⚠️ Was recorded here as ~14.2K / "7 datasets live" — a **16× understatement**, corrected 2 Sep 2026 against the live index |
 | `hgis` | HGIS de las Indias | ~14.1K | Spanish-American historical admin units |
 | `po` | PeriodO | ~9.0K | Periods with spatial coverage (`period`); geo-enriched |
 | `og` | Ottoman Gazetteer (ottgaz, Hanley/FSU) | ~6.3K | Ottoman admin units (eyalet/vilayet/sancak/kaza/nahiye) |
@@ -519,11 +522,6 @@ python -m phonetics.extraction.rebuild_toponyms_index     # full 5-step pipeline
 python -m phonetics.inference.update_es compute ...       # GPU inference → Parquet
 python -m phonetics.inference.update_es index ...         # DuckDB + embeddings → ES
 
-# Run clustering
-es -cluster --full --slurm          # full run via Slurm
-es -cluster --incremental           # incremental on VM
-es -cluster --stats                 # show statistics
-
 # Gateway
 python -m gateway                   # production
 uvicorn gateway.app:app --reload    # development
@@ -565,8 +563,9 @@ sbatch processing/es_staging.sbatch
     -H "Content-Type: application/json" -d '"'"'{"size":1}'"'"''
   ```
   Note: the gateway on port 9200 also requires auth; port 9201 is the direct
-  ES backend. Index names are dated (e.g. `places_20260317`,
-  `toponyms_20260317`). Use `_cat/indices` to discover current names.
+  ES backend. Index names are dated, and the current generation is
+  `*_postbarrier-20260502` behind the `places` / `toponyms` **aliases** — query
+  the alias, not a dated name (the example above uses a stale one). Use `_cat/indices` to discover current names.
 - **Python 3.11+** required (uses `str | None` union syntax, match statements).
 - Key dependencies: `elasticsearch`, `httpx`, `fastapi`, `uvicorn`, `pydantic`,
   `osmium`, `ijson`, `orjson`, `shapely`, `torch` (for Symphonym).
@@ -608,7 +607,8 @@ To cleanly re-ingest an authority (e.g. adding new OSM tag keys):
 3. Rebuild the toponyms index (stage 1: PanPhon) — this also cleans up
    orphaned attestations
 4. Recompute Symphonym embeddings (stage 2)
-5. Re-run clustering
+5. Rebuild the hard-link overlay (`processing/submit_hardlinks_slurm.py`) —
+   **not** `es -cluster`, which no longer exists
 
 ### Incremental single-namespace add (one authority, between full rebuilds)
 
