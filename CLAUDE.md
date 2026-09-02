@@ -9,23 +9,23 @@
 
 **[`developer/HANDOVER-2026-08-31-rebuild-audit.md`](developer/HANDOVER-2026-08-31-rebuild-audit.md)**
 
-⚠️ **CORRECTION 2 Sep — "correct in production" is false for two namespaces.
-Both now CENSUSED, not estimated:**
+✅ **FOUND AND FIXED 2 Sep — no live `h3_cover` defect remains.** For most of
+2 Sep production *was* serving hull-derived covers: `clio` 3,522 of 15,683
+(22.5%) and `whg` 1,746 of 2,565 (68.1%), **5,268 geometries**, written by
+`h3ccode-20260805T120000Z` — the run behind the live index — so unlike `un`'s
+they shipped. **79% of the damage was UNDER-covering**, i.e. `containment=fuzzy`
+silently omitting places that should have matched: a false negative nobody
+reports. **Remediated the same day** (§2.11): 5,268 `_bulk` updates, 0 errors,
+re-census **0 defective of 18,248 examined** — the whole frame, so no regression
+among the 12,980 already correct. Rollback retained at
+`/vast/ishi/elastic/logs/s9_rollback_geometries.json`.
 
-```
-clio   3,522 of 15,683 live h3_covers wrong  (22.5%)
-whg    1,746 of  2,565                       (68.1%)
-       5,268 geometries total
-un, nl, osm, ohm — live CORRECT
-```
-
-Their covers were written by `h3ccode-20260805T120000Z`, **the run behind the
-live index**, so unlike `un`'s they shipped. `h3_cover` feeds
-`containment=fuzzy`, so this is a **live wrong answer today**, not a staging
-defect — and **79% of the damage is UNDER-covering, meaning spatial scoping
-silently OMITS places that should match.** A false negative nobody reports.
-See `developer/plan-completion-2026-08-31.md`, Phase 3. **This paragraph's
-counts are still right; its "correct" is not.**
+⚠️ **Two things this did NOT fix**, both open in
+[`plan-completion-2026-08-31.md`](developer/plan-completion-2026-08-31.md):
+248 `whg` `point`-class geometries whose `geom_class` may be wrong (they now
+have correct covers *for their stored polygons*); and a **top-level
+`h3_cover`** that is stale, diverged from the nested truth, and read by nothing
+— **`geometries.h3_cover` is the real one.**
 
 The July/August re-ingestion is complete in production — 51.2 M
 places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
