@@ -523,6 +523,21 @@ These are not code faults, but they cost real time this campaign.
   document was the least maintained**, which is the asymmetry above at its
   limit: nothing prompts a re-read of a document whose whole purpose is to be
   stable.
+* **Answering the questions asked is not sweeping — and a reviewer is as
+  exposed to this as an author.** 2 Sep: the Auditor reviewed place#233 against
+  three named questions, answered all three correctly and materially, and did
+  not notice a stale *"the new z0–14 water source"* left over from before the
+  maxzoom decision — a line that **contradicted the acceptance criteria sitting
+  beside it**. Its own diagnosis, which generalises: *a reviewer answering
+  specific questions is in the same failure mode as a session updating the log
+  and not the alarm.* Both do the thing asked; neither re-reads the whole.
+  **The sweep is a separate pass from the answer**, and a short list of named
+  questions feels like the whole job precisely when it is not. The symmetry is
+  the evidence: in the same exchange the coordinator published a fallback
+  (*cap ocean at `-z9`*) that contradicted the issue's own central argument, and
+  it survived the question-answering pass and was caught only by the deliberate
+  sweep afterwards. **Two participants, both auditing for staleness, both
+  produced it in the document they were auditing.**
 * 🛑 **A correction that does not FOLLOW THE LINKS OUT of the document it
   corrects.** No other rule here covers it, because **sweeping a single document
   cannot find it** — both documents were individually correct and the defect
