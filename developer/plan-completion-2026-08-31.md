@@ -1537,6 +1537,66 @@ reading a 1.33 GB SQLite over NFS did exactly that.
 `/ix1` read throughput was measured at **~290 KB/s** during that window — slow,
 not hung. The fix was to `cp` the incumbent to `/vast` once and compare locally:
 the same job then finished in **2:21** against an hour of no progress.
+
+##### ✅ PUBLISHED — 2 September 2026. §2.3 complete
+
+**SG authorised the publish over a FAIL with a documented cause**, having been
+given the recommendation and the gate's verdict side by side. Confirmed directly
+in the session rather than acted on via relay: a peer session's message is not
+the owner's approval, and this was the least reversible action in the campaign.
+
+🛑 **The gate was NOT relaxed.** `compare_hardlink_overlays` is untouched and its
+**FAIL stands on record** as a verdict a human overrode with reasons. Changing a
+gate so it accepts the artefact in front of it is the move this campaign exists
+to prevent; the record should show an override, not an engineered PASS.
+
+```
+python -m processing.publish_hardlinks \
+    --run-id whg-idmap-20260831T071935Z \
+    --db-path /vast/ishi/hardlinks/hard_links_whg-idmap-20260831T071935Z-postmerge.sqlite \
+    --cutoff 2026-09-02T14:21:36.274562+00:00 --execute
+```
+
+**Verified in the window BEFORE the gateway restart** — `publish_local`'s
+`os.replace` leaves the gateway on the previous inode, so there is an interval in
+which the new file is in place and nothing is serving it. Use it:
+
+| check | result |
+|---|---:|
+| published total rows | **7,572,016** ✓ |
+| `gn` asserted rows | **1,111,147** ✓ |
+| new live inode | `64626` |
+| 6 Aug build preserved | inode `59781` → `.previous` ✓ |
+| `.incoming` temp | gone — clean atomic rename ✓ |
+
+Marker: `staged/runs/whg-idmap-20260831T071935Z.hardlink_ship.json`.
+
+**Rollback is one `mv`** — `hard_links.sqlite.previous` (inode 59781, the 6 Aug
+build) back over `hard_links.sqlite`, then restart. The live file was never
+modified in place, so this is a real rollback rather than a hoped-for one.
+
+⚠️ **The live-delta prune FAILED, and it is benign *here* but a latent defect.**
+
+```
+WARNING: live-delta prune failed: attempt to write a readonly database
+```
+
+`prune_live_delta_local` cannot write `/vast/ishi/hardlinks/hard_links_live.sqlite`
+— owned by `gazetteer`, the job runs as `stg135`. The code swallows this by
+design so a prune failure cannot block a completed publish. **Checked rather than
+assumed: the live delta holds 0 rows**, so nothing needed removing and there is
+no duplication risk — consistent with `attestation_input: 0` (the live-forwarding
+flow has never written anything).
+
+**It becomes a real defect the moment that flow activates**: a publish would then
+leave already-folded rows in the delta for the gateway to double-count, and the
+warning is easy to miss. Fix by running the prune as `gazetteer` (via the relay,
+as the restarts are) or by setting the file's group write bit. Tracked as a
+residual.
+
+**§2.3 is complete** — extract, geom merge, production re-index, registry push,
+overlay rebuild, gate, publish. `publish_hardlinks --execute` had never been run
+before today; it has now.
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
