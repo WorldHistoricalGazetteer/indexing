@@ -19,9 +19,22 @@ statement of what landed, what is left, and in what order — every line of it
 measured against the live indices and the deployed tilesets rather than against
 a manifest or a plan's own claim.
 
-⚠️ **Before retiling anything, read its §3.1.** The geom store holds **0** `un`
-geometries, so retiling `un` today would replace the country boundaries with
-points — exactly the failure above, repeated.
+⚠️ **Before retiling anything, read its §3.1.** ~~The geom store holds **0**
+`un` geometries, so retiling `un` today would replace the country boundaries
+with points.~~ ✅ **FIXED 31 Aug and re-verified 2 Sep — the store now holds all
+247 `un` geometries** (job 11074309; `index.sqlite` `un:` keys = 247 = the full
+`un` corpus; bounds delta 0.0 against the live index). **`un` is no longer a
+retile blocker.** The rule the warning encodes still stands, and §3.1 is still
+required reading: **a tile job that reports success is not evidence it read any
+geometry** — check the store's per-namespace key count before retiling a
+boundary layer, rather than trusting the job's exit status.
+
+Why these faults keep recurring, grouped into classes with the permanent code
+fix for each, is
+[`developer/postmortem-ingestion-faults.md`](developer/postmortem-ingestion-faults.md)
+— **read it before writing pipeline code**, not only after something breaks.
+Nine of the sixteen recorded faults are one fault: *a required input is absent,
+something plausible is substituted, and the stage reports success.*
 
 The ordered remediation is
 [`developer/plan-completion-2026-08-31.md`](developer/plan-completion-2026-08-31.md).
