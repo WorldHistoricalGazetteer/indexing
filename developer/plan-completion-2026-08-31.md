@@ -3323,6 +3323,36 @@ staged source for that word. Revised outcome list: *field, from `extract` /
 *recomputed from the geom store* → **stands**; *field, from ES, any parquet,
 **or `final/places.jsonl`*** → **VOID**.
 
+✅ **`clio` MEASURED DIRECTLY, 2 Sep — the question is now answerable, and the
+prediction that `clio` would be hull-less throughout is REFUTED:**
+
+```
+clio/extract      parquet=no    jsonl hull = 15,690
+clio/h3_merged    parquet=YES   jsonl hull = 15,690   <- hull SURVIVED
+clio/final        parquet=YES   jsonl hull = 0
+```
+
+`clio`'s `extract/` has **no parquet**, so `h3_merge` read the JSONL and `hull`
+carried through to `h3_merged/`. (15,690 = exactly the `clio` geom-store key
+count measured the same day — one hull per geometry, a clean cross-check.) It
+dies only at `final/`, where `ccode_merge` read the stripped parquet.
+
+**So the exclusion is genuinely live, and the outcome list collapses to a
+single answerable question for S9 — which file did the probe open?**
+
+* `clio/extract/places.jsonl` or `clio/h3_merged/places.jsonl` → `hullX` **could**
+  have been non-zero → **the measurement is real and the exclusion STANDS**;
+* `clio/final/`, any parquet, or the live index → **VOID, and the antimeridian
+  hypothesis is not excluded**;
+* recomputed from the geom store → **stands**, on any source.
+
+The general mechanism, worth carrying: **all four merge readers prefer the
+parquet** (`ccode_merge:68`, `h3_merge:100`, `boundary_merge:63`,
+`update_merge:94`), so **`hull` dies at the first stage whose source directory
+holds a parquet, and hull survival is namespace- and history-dependent rather
+than a property of the stage.** `clio` kept it to `h3_merged` only because its
+extract happened to be JSONL-only.
+
 ⚠️ **`ccode_merge`'s own comment is wrong** — it states "the canonical JSONL
 keeps hull and explicit nulls intact for downstream consumers". The nulls, yes;
 the hull, no, because the *source preference* silently defeats it. Harmless in
