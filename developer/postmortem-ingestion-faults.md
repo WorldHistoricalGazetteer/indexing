@@ -376,6 +376,26 @@ broken. These are worse than no check, because they are cited as evidence.
   whether the *object* still existed. For any remedy phrased as "drop X to save
   space", the reasoning is not the thing to review: **measure X.**
 
+  ⚠️ **Fourth form, and the one that propagates furthest: the SPECIFICATION.**
+  2 Sep, all three authored by the coordinator in #233 and all three caught by
+  someone else's measurement: `boost-cpp` named as a dependency **that cannot
+  install** (deprecated name; hard-fails the solve); `waterway=riverbank` named
+  as a size-pressure fallback **that saves nothing** (3 ways planet-wide);
+  `w/natural=coastline` naming a population **the control expects to be
+  complete** while the `w/` prefix silently excludes 187 relations. Same
+  signature every time: **the reasoning is sound and the object reference is
+  wrong.** A spec is the worst host for this because everything downstream
+  inherits it, and each inheritor reviews the reasoning — which is correct — and
+  not the object. **Operational rule: in a specification, every tag, package
+  name, path and filter expression is an UNVERIFIED CLAIM until something
+  measures it, and the ones that read as background detail are exactly the ones
+  nobody checks.**
+
+  ⚠️ **In one day this class appeared in an instrument, a remedy, a dependency
+  and a specification.** It is not a property of measurement — it is a property
+  of *reference*. Anywhere a name stands for a thing, the name can be checked
+  for sense and still not denote.
+
   ✅ **A third detection method, and the cheapest: write the claim out in full
   before believing it.** indexing-db caught the `check-refs` substitution not by
   habit or process but by drafting the sentence "the filter is verified" and
