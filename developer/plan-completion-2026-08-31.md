@@ -3713,8 +3713,15 @@ nl         4,363   100.000%     100%       final/places.parquet
 un           247    pass-thru   n/a        final/places.parquet
 ```
 
-✅ **Verified here, not accepted on report.** All four carry a **complete
-JSONL+parquet pair** in `final/` (`gn` 8.75 GB + 1.04 GB; `wd` 13.16 GB +
+✅ **Verified here, not accepted on report — and the row counts were counted
+independently, by a different method (`wc -l` over `final/places.jsonl`), and
+match S8's to the unit:**
+
+```
+un 247   nl 4,363   gn 13,454,817   wd 11,459,393
+```
+
+All four carry a **complete JSONL+parquet pair** in `final/` (`gn` 8.75 GB + 1.04 GB; `wd` 13.16 GB +
 1.71 GB; `nl` 23.3 MB + 6.8 MB; `un` 1.95 MB + 0.68 MB). Since
 `_STAGED_SOURCE_PRIORITY` walks `final → h3_merged → … → extract` on
 `.exists()`, **a present `final/places.parquet` is exactly what makes the
