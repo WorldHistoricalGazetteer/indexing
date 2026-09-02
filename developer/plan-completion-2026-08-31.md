@@ -3159,6 +3159,36 @@ TOTAL, not a delta.** The measured post-merge total is **26,460,645**. The
 which of the two it is; recorded here because assuming the wrong one would
 either mask a 13M-name loss or invent one.
 
+### ✅ `gn`'s h3 VERIFIED — 100% cover coverage, and the covers cannot be hull-derived
+
+`whg-h3-gn-h3` COMPLETED 00:19:18, exit 0. Census over the **whole** file, with
+denominators rather than a sample:
+
+```
+docs             13,454,817        == extract and update_merged; no doc lost
+geometries keys  13,454,817        exactly one geometry per document
+h3_cover keys    13,454,817        exactly one cover per document — 100.00%
+"hull": keys              0        <- no hull anywhere in the source
+```
+
+**The covers cannot be hull-derived, and this is structural rather than an
+appeal to the exit code.** `gn/update_merged/` holds a parquet, `h3_merge`
+prefers the parquet (`h3_merge:100`), and every parquet is hull-stripped — so
+`h3_stage` ran on hull-less input. Since `6ad2640` makes `cover_geometry_for`
+**raise** instead of falling back to the hull, there was no substitution
+available: the stage read the geom store or it died. It produced 13,454,817
+covers. **`gn` is therefore a stronger case than `nl`, whose source did still
+carry a hull to fall back on.**
+
+⚠️ **An instrument note that nearly cost a correct prediction.** A first pass
+with `grep -o hull` returned **2,950**, which reads as "hull survived" and would
+have refuted the above. The precise pattern `"hull":` returns **0** — the 2,950
+are **substring matches inside place names** (`gn` is global; names containing
+"hull" are ordinary). Note the direction: today's other instrument failures
+returned false **zeros**; this one returned a false **non-zero**. The class is
+*an instrument answering a narrower or wider question than the one asked*, and
+it is not only about zeros — **a match count is not a key count.**
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 3.1 Retile all 27 buckets  — **S5**
