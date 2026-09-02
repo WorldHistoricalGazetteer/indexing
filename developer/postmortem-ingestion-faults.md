@@ -95,6 +95,7 @@ downstream check can see it.
 > | `sacct -M htc -S 2026-09-01T20:00` | empty | the window was parsed in the **host's local time** against UTC-named run ids — off by four hours |
 > | `grep -o "\"toponym_id\"" places.jsonl` | `0` on **both** sides | quoting mangled through an ssh heredoc; **matched nothing**, and a zero on both sides reads as *"no change"* |
 > | `cardinality` agg on `dataset` over `whg:` | `0` | **there is no `dataset` field** — the schema has `dataset_id`, and a well-formed agg on an absent field is a legitimate, silent zero |
+> | `geo_distance` on `geometries.repr_point`, **not wrapped in `nested`** | `0` hits, **no error** | `geometries` is a **nested** field. The identical query wrapped in `nested` returns **1,149**. Verified 2 Sep against the live index |
 >
 > None errored. Each produced a well-formed, plausible, **wrong** answer of the
 > right type — which is the definition of this class, arrived at from the
@@ -154,6 +155,21 @@ downstream check can see it.
 > denominator (1,248) — **a 2× error in a figure headed for a production
 > remediation decision.** The rate was sound; the multiplication was not.
 > **A rate needs its denominator, and so does anything you multiply it by.**
+>
+> ⚠️ **The nested-field case is the most dangerous of the set and it is
+> LATENT, not historical.** Querying a `nested` field without a `nested`
+> wrapper is **not an error in Elasticsearch** — it matches nothing and returns
+> a clean `0`. Measured 2 Sep: `geo_distance` on `geometries.repr_point`
+> returned **0 hits with no error**, where the same query wrapped returned
+> **1,149**. ✅ **The gateway is clean** — `grep -rn "geo_distance" gateway/
+> processing/` returns **nothing**, so this is not a live defect. **It is a trap
+> for the next person to write an ad-hoc query or a new spatial feature**, and
+> it is the same shape as `geom_class` read at the document root when it is
+> nested per-geometry (S9, 4,363 `nl` records) and `h3_cover` assigned to the
+> document root by a docstring that was wrong for four months. **Three
+> instances, one cause: `geometries` is nested and it does not announce
+> itself.** Found incidentally by a session analysing an unrelated dataset,
+> which is how latent traps usually surface.
 >
 > **Third clause: parse, don't grep, when the question is structural.** An
 > eighth instance failed in the *opposite* direction from the other seven:
