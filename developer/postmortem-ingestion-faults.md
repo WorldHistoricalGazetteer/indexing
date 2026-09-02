@@ -533,39 +533,116 @@ These are not code faults, but they cost real time this campaign.
 
 ## Prioritised code changes for the next run
 
-Ordered by expected cost avoided, not by effort.
+Ordered by expected cost avoided, not by effort. **Every item carries a SITE and
+a DONE-CONDITION**, because this document outlives the sessions that wrote it and
+a conclusion without an acceptance criterion is a memoir, not a fix.
 
-1. **Audit every `except Exception: x = None` for whether its *consumers*
-   degrade silently — the use site must raise.** This is Fault 14's actual fix,
-   and `6ad2640` deliberately **kept** the import guard, so "ban the guard"
-   would not have prevented it. *(Corrected after audit: an earlier draft of
-   this list said "ban `except Exception` around imports", contradicting Class A
-   above and mis-citing both supporting faults. Fault 7 is an **uncaught**
-   `ImportError` — banning a catch is orthogonal to it, arguably its opposite.
-   The contradiction is left visible rather than quietly edited out, because it
-   is this document's own process finding happening inside this document on its
-   first day.)*
-2. **Every `INGESTION_ORDER` script must be import-tested** — Fault 7's real
-   fix, already done by `tests/test_authority_imports.py`.
-3. **Resolvers must test content, not existence** — closes Faults 6 and 15 and
-   the whole `.exists()` family. **Promoted above the memory fix**: Fault 15 is
-   the zero-byte-preferred-over-complete failure this campaign actually had to
-   fix, whereas Fault 16's measured cost avoided turned out to be ~nothing.
-4. **Stream or spill `update_merge._load_patches`** — an unbounded term keyed to
-   patch size that no estimator models. Justified by unboundedness, **not** by
-   the refuted OOM prediction.
-5. **Regenerate `final/` from `h3_merged/` whenever ccode is skipped** — Fault
-   12's real fix; currently `_mark_un_skipped` does it inline, which works but
-   leaves the misleading FAILED row.
-6. **Order-of-operations guard on re-runs** — Fault 8: a stage re-running
-   *after* the index was built from its output leaves the index stale with
-   nothing to see. Record which artefact version an index was built from.
-7. **Estimators record and invalidate on their inputs** — Fault 13, Fault 16.
-8. **Delete or consume the toponym vocabulary work** — Fault 10, ~5 h per run.
-9. **Hoist `_STAGED_SOURCE_PRIORITY`** — after 2.7, and it unblocks the
-   directory-swap fix for Class D's residual.
+**Already landed — listed so nobody re-does them:**
+
+* ✅ **Every `INGESTION_ORDER` script is import-tested** — Fault 7's real fix,
+  done by `tests/test_authority_imports.py`.
+* ✅ **`atomic_staged_snapshot`** — the four staged merges write to temps and
+  rename (parquet first). `554e43a` + `e37c93b`, 17/17.
+* ✅ **`cover_geometry_for` raises** instead of substituting the hull —
+  `6ad2640`. This is Fault 14's prevention.
+* ✅ **`publish_gate`** refuses a tileset the build never read geometry for —
+  `007a870`. **A heuristic over ambiguous geometry lost to a structural check:
+  recording *which tier produced the feature* is unambiguous where the geometry
+  is not.**
+
+**Outstanding:**
+
+1. **Audit the 156 `except Exception → None | pass` sites for whether their
+   *consumers* degrade silently — the use site must raise.**
+   *Site: 156 handlers repo-wide (AST-enumerated 2 Sep); densest are
+   `processing/helpers.py` (9), `processing/generate_tiles.py` (8),
+   `gateway/spatial.py` (7), `phonetics/extraction/rebuild_toponyms_index.py`
+   (6). Done when each is classified raise / degrade-deliberately / unreachable,
+   and every "degrade" has a comment saying what the caller sees.*
+   Fault 14's actual fix — `6ad2640` deliberately **kept** the import guard, so
+   "ban the guard" would not have prevented it.
+   <sub>*(Correction retained: an earlier draft said "ban `except Exception`
+   around imports", contradicting Class A and mis-citing both supporting faults.
+   Left visible because it is this document's own process finding happening
+   inside it on its first day.)*</sub>
+
+2. **Resolvers must test content, not existence.**
+   *Site: the six stage-resolver chains. Done when a stage with a zero-byte
+   `places.jsonl` is NOT preferred over a complete earlier stage — test it with
+   exactly that input.*
+   Closes Faults 6 and 15. Promoted above the memory fix because Fault 15 is the
+   zero-byte-preferred-over-complete failure this campaign actually had to fix.
+
+3. **Stream or spill `update_merge._load_patches`.**
+   *Site: `processing/update_merge.py:114`. Done when a `gn`-sized patch
+   (1.4 GB / 8.1 M rows) merges with peak RSS bounded independent of patch size
+   — measure it, do not assume it.*
+   An unbounded term keyed to patch size that no estimator models. Justified by
+   unboundedness, **not** by the refuted OOM prediction.
+
+4. **Regenerate `final/` from `h3_merged/` whenever ccode is skipped, and fire
+   the guard BEFORE submission.**
+   *Site: `processing.submit_ccode_slurm._mark_un_skipped` +
+   `ccode_enrichment:859`. Done when a skipped-ccode namespace ends with
+   `final/` newer than `h3_merged/` **and** leaves no FAILED row in `sacct`.*
+   Fault 12's real fix; the inline pass-through works but plants
+   `un ccode FAILED exit 1` for work that succeeded.
+
+5. **`reconcile_stage_status`'s default sweep must promote `update_merge`.**
+   *Site: `processing/staging_orchestrator.py`, `STAGE_ARTEFACTS`. Done when a
+   default reconcile promotes a namespace whose `update_merged/` artefact is
+   complete on disk — today only `--stage update_merge` does.*
+   Found by S8, 2 Sep. **This is the campaign's signature class inside the
+   reconciler built to catch it**: complete artefacts on disk, namespace left
+   deferred at the barrier.
+
+6. **Hoist `_STAGED_SOURCE_PRIORITY` — but it MUST take the chain as a
+   parameter.**
+   *Site: `index_from_stage`, `generate_tiles`, `aat_enrich`,
+   `gazetteer_temporal_extent`, `hard_links_staged`, `rebuild_toponyms_index`,
+   `h3_stage`, `index_namespace`. Done once no session is writing staged trees
+   (**not** "after 2.7" — that gate expires).*
+   🛑 **The six chains are NOT the same chain.** Four are byte-identical;
+   `rebuild_toponyms_index` **omits `update_merged`**; `h3_stage` tests a
+   **directory**; and `index_namespace` uses `(final, ccode_merged, h3_merged,
+   extract)` where **`ccode_merged` is written by nothing** and
+   `boundary_merged`/`update_merged` are omitted. **Writing one shared constant
+   would silently break `index_namespace` and `rebuild_toponyms_index`.** It
+   also unblocks the directory-swap fix for Class D's residual.
+
+7. **Estimators record the inputs they were keyed to, and invalidate when those
+   change.**
+   *Site: `estimate_wall_time_seconds` and
+   `staging_orchestrator.array_memory_gb:77`. Done when the
+   BNDA→geoBoundaries-class input change drops the stored medians
+   automatically, rather than a human noticing.*
+   Faults 13 and 16.
+
+8. **Order-of-operations guard on re-runs.** ⚠️ **Least specified item here — it
+   needs a design before it needs code.**
+   *Site: undetermined. Done when an index records which artefact version it was
+   built from, and a re-run of that artefact marks the index stale.*
+   Fault 8: a stage re-running *after* the index was built from its output
+   leaves the index stale with nothing to see.
+
+9. 🛑 **DECISION FIRST, then code: delete or consume the toponym vocabulary
+   work.** *This is SG's call, not an engineering one* — it is an either/or and
+   a successor cannot execute a disjunction.
+   *Site: stage 1 steps 3–4, `panphon_features` for 31.9 M records. Done when
+   either the stage is removed or a consumer exists.*
+   Fault 10: **~8 h of an ~11 h run that nothing reads.** ⚠️ 2.6 is deprecated
+   (no retrain planned), which makes "delete" the live default.
+
 10. **Every gate demonstrated to FAIL on known-bad AND to PASS on known-good**
-    before it is relied on. *Site: every new check. Done when both
-    demonstrations are recorded beside the check.* ⚠️ **The fail-half alone is
-    how a check that manufactures confidence gets adopted** — the tile span
-    assertion passed the fail-half and flagged six legitimate `un` countries.
+    before it is relied on.
+    *Site: every new check. Done when both demonstrations are recorded beside
+    the check.*
+    ⚠️ **The fail-half alone is how a check that manufactures confidence gets
+    adopted** — the tile span assertion passed the fail-half and flagged six
+    legitimate `un` countries.
+    🛑 **And this rule was already in the plan, correctly, on 31 August** —
+    *"a guard that cannot say PASS is as useless as one that cannot say FAIL"* —
+    **2,500 lines from the doctrine it should have governed. The document did
+    not lack the rule; it lacked the connection between the rule and its own
+    doctrine.** That is not a lesson the span failure had to teach; it is one
+    already present and never generalised.
