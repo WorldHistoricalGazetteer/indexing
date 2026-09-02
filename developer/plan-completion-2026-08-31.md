@@ -3540,7 +3540,75 @@ heading into when stored-vs-fresh was being reported by cardinality.
 undetermined mechanism, and the 248 `point`-class geometries carrying covers up
 to 1,230 cells.
 
-### 2.11 REMEDIATE THE LIVE `h3_cover` DEFECT — **S9 (`indexing-98`)** — 🛑 SG RULING, 2 Sep
+### ✅ 2.11 COMPLETE — 5,268 live documents remediated, VERIFIED INDEPENDENTLY
+
+**SG confirmed directly to S9 (who declined to act on my relay — correctly).
+Write executed, and verified here rather than relayed.**
+
+```
+frame            clio 15,683 + whg 2,565 = 18,248     recomputed 18,248, unresolved 0
+DEFECTIVE        clio 3,522 + whg 1,746 =  5,268      matched the census EXACTLY
+BULK             5,268 ok, 0 errors
+re-census        0 defective of 18,248 examined       <- whole frame, not just the 5,268
+rollback         5,268 docs -> /vast/ishi/elastic/logs/s9_rollback_geometries.json (31 MB, verified present)
+```
+
+✅ **The strongest available check, because the before and after came from
+different sources.** I recorded these three live myself **before** the write;
+the "correct" values came from S9's independent recompute. They now read as the
+recompute predicted, exactly:
+
+```
+id                                   was (my measurement)   correct (S9)   NOW
+clio:es_spanish_emp_1_1572_1578_v1          832                 469         469 ✅
+clio:es_spanish_emp_1_1579_1581_v2          863                 472         472 ✅
+clio:es_spanish_emp_1_1582_1587_v2          800                 631         631 ✅
+```
+
+✅ **No collateral damage from the whole-array rewrite** — the risk the
+re-census structurally cannot see, since a truncated `_mget` source would have
+silently gutted all 5,268. Each geometry still carries **9 fields**
+(`bounds`, `geom_class`, `geom_ref`, `geometry_index`, `h3_centroid`,
+`h3_cover`, `has_geom`, `repr_point`, `timespans`); S9's 400-doc spot-check
+against the rollback found **0 length changes, 0 lost fields, 0 non-`h3_cover`
+changes.**
+
+ℹ️ **The re-census covered the whole 18,248 frame, not only the patched 5,268**
+— so it also proves **no regression among the 12,980 that were already
+correct.** That is the denominator rule used offensively rather than
+defensively.
+
+⚠️ **`geom_class` remains OUT OF SCOPE and that row does not close.** The 248
+`point`-class geometries now have correct covers *for their stored polygons*;
+if the class is wrong it is still wrong. **5,268 fixed is not 248 explained.**
+
+### ⚠️ NEW ROW — a TOP-LEVEL `h3_cover` exists, is diverged, and is read by nothing
+
+**Found by S9 during its integrity check, investigated rather than reported, and
+verified here. It is PRE-EXISTING — not created by 2.11.**
+
+```
+id                                   top-level   old nested   new nested
+clio:es_spanish_emp_1_1572_1578_v1      838          832         469
+clio:es_spanish_emp_1_1579_1581_v2      845          863         472
+clio:es_spanish_emp_1_1582_1587_v2      868          800         631
+```
+
+**It matches neither the old cover nor the new one** — so it was **already
+diverged before the write**, and S9's payload only ever touched `geometries`.
+S9 also found it on 200/200 *untouched* documents.
+
+✅ **Nothing reads it — verified.** `clustering_payload.py:226` does
+`g.get("h3_cover")` while iterating `geometries`; `spatial.py:576`,
+`es_helpers.py:1187/1215` and `clustering_payload.py:95` all name
+`geometries.h3_cover`. **So the containment path is genuinely fixed.**
+
+🛑 **But it is a top-level field that looks authoritative, is stale, and is read
+by nothing — and it is exactly the shape of the docstring error corrected on 31
+Aug**, which told readers `h3_cover` was a top-level field. **Someone will
+eventually assume it means something.** Its own row, unresolved.
+
+### 2.11 spec (as dispatched) — **S9 (`indexing-98`)** — 🛑 SG RULING, 2 Sep
 
 **SG's decision, overruling S8's recommendation to defer: do it now.** This is
 the corpus-correctness class SG's standing ruling already places ahead of the
