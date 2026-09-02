@@ -1678,7 +1678,24 @@ resolves to a **2,539-byte `extract/places.parquet`** — a *valid* Parquet file
 with almost no rows, not an error — and `_count_staged_places` swallows the rest
 in `except Exception: continue`.
 
-### 2.6 Re-run toponyms stage 1 for `ipa` / `panphon_features`  — **S4**  ⚠️ AFTER 2.5
+### ⛔ 2.6 DEPRECATED — SG's ruling, 2 Sep: no retrain planned
+
+**Do not run.** `ipa` / `panphon_features` are **training-only artefacts** whose
+sole consumer is the next Symphonym training run, and **SG has confirmed no
+retrain is planned.** The columns are empty *by design* —
+`submit_batch9_slurm` has defaulted to `--training-namespaces _none_` since
+`ef31016` (2 May) — so this was never a defect to repair, and it blocked nothing.
+
+**If a retrain is ever scheduled, the three corrections below still apply** and
+are the reason this row is kept rather than deleted: it never timed out, it
+never touches Elasticsearch, and it must run **after** 2.5 or it builds the
+training vocabulary from a corpus missing `gn` and `wd` (~23 M of 51 M places)
+and reports success. It also needs `--for-retrain` explicitly and a **hand-set
+wall** (the estimator gives 03:40:24 for work exceeding 12 h — Fault 13).
+
+<details><summary>Original step, retained for the day a retrain is scheduled</summary>
+
+### 2.6 Re-run toponyms stage 1 for `ipa` / `panphon_features`  — ~~**S4**~~  ⚠️ AFTER 2.5
 
 ⚠️ **Three corrections, all measured by S4 on 31 Aug. The original text of this
 step was wrong in its cause, its hazard and its position.**
@@ -3789,6 +3806,44 @@ against a projected 95–110**, stop-line never approached.
 
 **➡️ S5 may now retile all 27 buckets. S3's re-harvest should find `gn:
 attempted=1,111,147` rather than 0. The overlay publish gate remains SG's.**
+
+### ⚠️ `/ix1` vs `/vast` for tile output — MEASURED, 2 Sep
+
+**SG's reasoning — "entire mbtiles files rather than many small ones" — is sound
+and true of the artefacts.** Verified: `_build_feature` → one `.geojsonl` per
+bucket → **tippecanoe** → one `.mbtiles` per bucket. **No
+`--temporary-directory` is passed**, so tippecanoe's heavy scratch goes to
+`$TMPDIR`, **not** the output volume. The existing store is 15 files, all
+`.mbtiles`, including a **737 GB** (sparse) `terrarium.mbtiles` — large-file
+I/O on `/ix1` is proven in production.
+
+🛑 **But sequential write throughput differs by 23×, measured on pitt:**
+
+```
+/vast/ishi   2 GB seq write   3.38 s   636 MB/s
+/ix1/ishi    2 GB seq write  78.69 s    27.3 MB/s     <- 23x slower
+```
+
+**And the CRC copy is NOT in the serving path** — the mbtiles are **rsync'd to
+the DigitalOcean tileserver** (`TILESERVER_HOST` / `TILESERVER_USER` /
+`remote_dir`), which serves them. **So `/ix1`'s slowness costs BUILD time only,
+never query latency.**
+
+⚠️ **Two measurement traps, both hit today:**
+
+* **`du` path matters.** `/ix1/ishi/tiles` = **658 G** (the sparse terrarium
+  file); `/ix1/ishi/data/tiles` = **28 G** (the WHG tiles). *Both figures are
+  real and they are different directories* — neither reading was wrong, and
+  the working figure for this decision is **28 G**.
+* **`df` on the bare mount point lies, differently per host.** On **pitt**,
+  `df -h /vast` returns the **VM's local root** (61 G); on a **compute node** it
+  returns the **cluster-wide** VAST filesystem (petabytes). Only
+  `df -h /vast/ishi` gives the **project quota** — 1.0 T, 204 G free. **Anyone
+  sizing this from the bare mount point concludes there is unlimited space on
+  the volume that has already caused a production outage by filling.** (S5)
+* **`/vast` headroom goes stale within hours during a campaign** — 275 G → 204 G
+  in a few hours today, ~71 G consumed, consistent with 2.7's `gn`+`wd` `final/`
+  outputs. **Re-measure at submit time.**
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
