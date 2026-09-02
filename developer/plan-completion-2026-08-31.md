@@ -3814,6 +3814,23 @@ with a sharper anchor (`grep -o '"hull"[^:]'` → **0** non-key uses). The real
 cause was the ungated `convex_hull` above. **A rule can be right and still be
 misapplied; the refutation came from better anchoring, not from the rule.**
 
+### ⚠️ 3.1 — S5 CANNOT derive an expected polygon count from `geom_class` (2 Sep)
+
+**Consequence of the `field-notes` correction, landing on S5's own row.** With
+`geom_class = point` carrying areal covers measured **248 of 248 defective in
+`whg`**, and `MultiPoint`→`point` invisible on the other side, **that predicate
+undercounts in exactly the namespace that is half the retile** (the 47 `whg-*`
+buckets). ✅ **So the expected polygon count must come from STORE KEYS — the
+9,849 counted independently by S5 and by me — decomposed by stored geometry
+type, not from the class field. Counted rather than classified**, which is the
+same property that made the hull bound sound.
+
+ℹ️ **But `geom_class` plays no part in tile RENDERING** — `_build_feature`
+resolves `geom_ref`/`has_geom` → store, then inline `hull`, then `repr_point`,
+and **never consults the class** (verified). So the correction changes what S5
+is entitled to **predict**, not what gets **drawn**. **Easy to conflate, and
+the distinction is the useful half.**
+
 ### 3.1 Retile all 27 buckets  — **S5**
 
 ```bash
