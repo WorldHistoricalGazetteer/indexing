@@ -77,7 +77,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S9** (session id ⚠️ **unrecorded** — see note below the map) | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
+| **S9** (`indexing-98`) | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
@@ -196,8 +196,8 @@ the campaign's critical path are the two that cannot be found in the map whose
 premise is that a successor finds their session in it.** Known for certain and
 recorded: **S8 = `indexing-c0`**, **coordinator = `indexing-5e`**, S3 =
 `indexing-7e` (and `indexing-c7` for its first session), Auditor =
-`indexing-13`. **S9's is still unknown** — candidates `indexing-98` /
-`indexing-78`. Not invented here; left blank until confirmed.
+`indexing-13`. **Now confirmed from the sessions' own statements rather than inferred:
+S9 = `indexing-98`, S5 = `indexing-78`.**
 
 ⚠️ **And a session's listed state is a statement about an instant, not about
 the session.** `indexing-c0` reads "idle" between jobs, which is
@@ -3207,6 +3207,47 @@ it is not only about zeros — **a match count is not a key count.**
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
+### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
+
+**Found by the Auditor, 2 Sep; verified here.** `generate_tiles._build_feature`
+resolves in four tiers: `geom_ref` → store; `has_geom` → synthesized key →
+store; **`hull` → rendered as Polygon/MultiPolygon** (`:1130`); `repr_point` →
+Point (`:1139`). Tiers 3 and 4 are both guarded by `not require_boundary`, and
+`require_boundary=False` is exactly the **per-namespace and per-WHG-dataset**
+buckets (`:1094`). **So for `clio` and every other per-namespace bucket, a
+geom-store miss degrades to the hull — up to 350.34° wide for the 588.**
+
+The tier is deliberate and documented for a real case (WHG-computed
+approximation polygons such as ottgaz admin hulls, deliberately kept out of the
+store). **The hazard is that it cannot distinguish that case from a store miss.**
+
+🛑 **S5's planned verification CANNOT SEE THIS.** A smeared feature **is** a
+polygon: `poly=` is non-zero, the tileset's polygon count is right, and `clio`
++2,986 still lands. **Both named deltas pass in the broken world** — a
+decorative check, and the exact failure this campaign exists to stop.
+
+✅ **The discriminator, to be run as a gate rather than left in messages:**
+**assert the maximum longitude span of each rendered feature — expect zero
+features above 180°.** Known-bad input to prove the gate fails first:
+`clio:es_spanish_emp_1_1572_1578`.
+
+💡 **This also explains the nine point-only layers better than we had.** *Which
+stage the tiler resolves to changes the failure mode:* `final/` carries **no
+hull**, so a store miss there yields **points** — which is what 7 August
+produced. `extract/` and `h3_merged/` JSONL **do** carry hull, so the same miss
+there yields **smears**. One fault, two signatures, selected by stage.
+
+⚠️ **"Crosses the antimeridian" names two different predicates — always say
+which.** The **588** were measured as **hull longitude SPAN > 180°**. The
+codebase's own test, `helpers._crosses_antimeridian` (`:836`), is **per-ring
+edge jumps > 180°** — *"the signature of a polygon straddling ±180 (e.g. US via
+the Aleutians)"*, whose docstring notes such geometries get a degenerate ~360°
+bbox and mis-fill. **A MultiPolygon with parts either side of the Pacific is
+True on the first and False on the second** — exactly what the plan measured for
+`un:usa` at L2553. **Different populations by construction.** S9 has been asked
+to run `_crosses_antimeridian` over the 309 store polygons, which discriminates
+its two candidate faults directly.
+
 ### 3.1 Retile all 27 buckets  — **S5**
 
 ```bash
@@ -3420,7 +3461,7 @@ right.
 clio docs examined         15,690
 geometries examined        15,690
 with a hull key            15,690     (every one — the source carries hull)
-hull lon-span > 180°          588     <- antimeridian-crossing
+hull lon-span > 180°          588     <- SPAN predicate (see 3.1 note)
 widest hull lon span       350.34°
 examples: clio:es_spanish_emp_1_1572_1578  232.63°   (and _v1, 1579_1581, 1582_1587 …)
 ```
