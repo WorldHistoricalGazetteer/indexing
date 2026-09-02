@@ -3323,6 +3323,46 @@ staged source for that word. Revised outcome list: *field, from `extract` /
 *recomputed from the geom store* → **stands**; *field, from ES, any parquet,
 **or `final/places.jsonl`*** → **VOID**.
 
+🛑 **THE ANTIMERIDIAN MECHANISM IS PRESENT IN `clio` AT SCALE — 588 FEATURES.
+MEASURED 2 Sep, ALL 15,690, NOT A SAMPLE.** This does not by itself overturn
+§4.14's exclusion, but it **removes the reading on which the exclusion would be
+safe regardless of provenance**, and it is a data-correctness finding in its own
+right.
+
+```
+clio docs examined         15,690
+geometries examined        15,690
+with a hull key            15,690     (every one — the source carries hull)
+hull lon-span > 180°          588     <- antimeridian-crossing
+widest hull lon span       350.34°
+examples: clio:es_spanish_emp_1_1572_1578  232.63°   (and _v1, 1579_1581, 1582_1587 …)
+```
+
+The examples are self-corroborating: **the Spanish Empire spans the Pacific**, so
+its convex hull crosses the antimeridian by construction. This is the `un` defect
+exactly — and **`clio` is in the recompute set above precisely because its covers
+are hull-derived.** A hull-derived cover on a 232°-span hull covers the wrong half
+of the globe.
+
+⚠️ **Stated as hypothesis, not finding, and it needs one Slurm job to settle.**
+588 crossing hulls and 761 `repr_point`-outside-`h3_cover` counter-examples are
+**the same order of magnitude**, in the same namespace, with a mechanism that
+would produce exactly that symptom. **They may be largely the same features.**
+Nothing here proves it — the intersection has not been computed, because `h3` is
+not importable on the VM (`shapely` 2.0.7 is; `h3` is not) and the test needs a
+compute node.
+
+**The decisive test, for whoever owns 4.14:** recompute `repr_point ∈ h3_cover`
+over all 15,690 `clio` features on a node with `h3`, and **intersect the failures
+with the 588**. Substantial overlap ⇒ the exclusion is wrong and the antimeridian
+mechanism explains the counter-examples. Disjoint ⇒ the exclusion stands on
+evidence and the 761 still have no explanation.
+
+**Either way §4.14's row stays open.** Even a surviving exclusion narrows the
+cause without closing it: the `repr_point`-within-geometry invariant that
+`gateway/spatial.py:11`/`:900` and `ccode_enrichment.py:518` document themselves
+as relying on is still contradicted 761 times.
+
 ✅ **`clio` MEASURED DIRECTLY, 2 Sep — the question is now answerable, and the
 prediction that `clio` would be hull-less throughout is REFUTED:**
 
