@@ -20,8 +20,17 @@
 
 Faults 1–13 were recorded individually, each with its own fix. The fixes were
 correct and the faults kept coming, because they were being treated as thirteen
-unrelated bugs. They are not. **Nine of them are the same fault**, and the
-recurrence is the finding.
+unrelated bugs. They are not. **Nine of the thirteen are the same fault**
+(1, 2, 3, 4, 6, 7, 9, 11, 12), and **that class is still recruiting: two more
+instances in this campaign alone**, for eleven of sixteen. The recurrence, not
+any individual fault, is the finding.
+
+> **Faults 14, 15 and 16 are assigned *here*, in this document.** They had no
+> numbers before it: this campaign's faults were described in detail across the
+> plan and never entered the register. Anyone grepping `Fault 15` will find only
+> this file until [`plan-temporal-model.md`](plan-temporal-model.md) §10 adopts
+> them. Saying so explicitly, because a document that diagnoses unresolvable
+> references should not quietly create three more.
 
 The register is also, as of today, **not enumerated anywhere in one place**.
 Faults 1–7 appear as an unnumbered list under one heading; 8–11 have their own
@@ -44,10 +53,14 @@ downstream check can see it.
 
 | # | Instance | The substitution |
 |---|----------|------------------|
-| 1–3 | `run_ingestion` asked the **live index** whether a namespace already had docs, on a compute node where `es is None` | With ES reachable it would have printed "Skipping wd: 11,455,754 places already exist" for every namespace and made the whole rebuild a **silent no-op**. The `AttributeError` was the *lucky* outcome. A bare `except Exception` in the success path then recorded **eleven correctly-staged namespaces as FAILED**. |
+| 1 | `run_ingestion` asked the **live index** whether a namespace already had docs, before every script, on a compute node where `es is None` | With ES reachable it would have printed "Skipping wd: 11,455,754 places already exist" for every namespace and made the whole rebuild a **silent no-op**. The `AttributeError` was the *lucky* outcome. |
+| 2 | The same call in the **success** path (`es.indices.refresh`), swallowed by a bare `except Exception` | `run_ingestion` returned False: **eleven namespaces staged every document correctly and were recorded FAILED.** |
+| 3 | A **third** live-index call in the same function, in the closing summary | Same substitution, third site. That one function contained three instances is why the class is worth naming rather than fixing case by case. |
 | 4 | `whg` has no local dump (it comes from the DO Django reconcile API) and was absent from `SELF_FETCHING` | "No data files found", **exit 0**. 228,918 documents would have gone missing behind a log line. |
 | 6 | `_is_namespace_snapshot_trigger` fell back to `script_id.endswith("-places")`; `un`'s script is `un-countries` | `un` staged its 247 BNDA polygons and **never had `extract` marked completed** — permanently short of the global barrier, absent from the index, and it is the authority the entire corpus prefilters against. |
 | 7 | `ukhc-places.py` raised `ImportError` on its own import line since `6fba141` | Nothing catches it: the module is only ever `python -m`'d, never imported, so no test ever loaded it. |
+| 9 | `/ix1/ishi/esinfo/es-staging.env` exported `SLURM_JOB_ID` — the **staging job's** id — and is sourced by any job needing staging ES | The consuming job's own id was **silently replaced by a valid-looking one**, so `/scratch/slurm-$SLURM_JOB_ID` addressed another job's scratch. A wrong value of the right type, which is the class's signature. |
+| 11 | Every Symphonym cache hit was written with a **null `doc_id`** | ~93% of embeddings **unjoinable, while every stage logged success**. Long-standing committed code, not an operational slip. |
 | 12 | `un` is marked `skipped` for ccode because it *supplies* country codes | `final/` is written **only** by `ccode_merge`, so skipping ccode skipped `un`'s `final/` regeneration. Its corrected `h3_cover` sat in `h3_merged` for three days while the index served a stale copy. |
 | 14 | **This campaign.** A hand-written sbatch omitted `export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:…"` → `sqlite3` `ImportError` → swallowed by `h3_stage`'s `except Exception: _GeomStoreReader = None` | `cover_geometry_for` fell to `select_h3_cover_geometry(geom, geom.get("hull"))` — **the convex hull instead of the real polygon.** `un`'s cover degraded 376 → 278 cells. Because `un` supplies `contained_in` regions, this **nullified the place#144 fix on its own**, and made the tier-1 ccode prefilter inert for every namespace downstream. |
 | 15 | Every consumer walks `final → h3_merged → … → extract` testing **`.exists()` only** | `open("w")` creates a **zero-byte** file that is *immediately preferred* over the complete earlier stage — no rows at all, silently, for as long as the merge runs. Hours, for `gn` and `wd`. |
@@ -93,7 +106,7 @@ cost. The request looks principled and is wrong.
   runs, which is predictive only while the *inputs* are unchanged. The
   BNDA→geoBoundaries move invalidated every stored ccode runtime at a stroke,
   and the stale median killed `clio` and `ohm` at a 01:20:00 wall with their
-  work unfinished.
+  work unfinished ([`plan-temporal-model.md:899`](plan-temporal-model.md)).
 * **Fault 16 — `update_merge`'s memory request.** `_load_patches` holds the
   **entire** patch file in memory as `dict[place_id → merged_patch]`, lists
   included, before a single document streams. That is a term keyed to **patch
@@ -106,6 +119,26 @@ cost. The request looks principled and is wrong.
   puts it at a 10.2 GiB floor **plus** a peak reaching 48 GiB. Both routes agree
   at the 96 G actually requested and **disagree at 64 G, where one says fits and
   the other says OOM after hours on a 13M-doc corpus.**
+
+> **MEASURED, 2 Sep — and it refutes both estimates, including the one in the
+> paragraph above.** `gn`'s `update_merge` completed in **00:07:30** with a peak
+> RSS of **23,617,000 K = 22.5 GiB** against the 96 G requested. The ratio route
+> predicted 62.5 GiB; the decomposition predicted ~58 GiB. **Both were ~3x
+> high.** 64 G — the request the decomposition argued would OOM — would have
+> been ample, and so would 32 G.
+>
+> The 10.2 GiB patch-dict measurement was sound; what neither route modelled is
+> that **`wd`'s 40.96 GiB was not dominated by any term that transfers to
+> `gn` at all.** `gn` has 139x the patch rows, and finished in **less than half**
+> `wd`'s 17:11 at **half** the peak. `wd`'s cost lived in something specific to
+> `wd` — most likely the Wikidata geoshapes in `geometries_to_replace`, which
+> are large polygon blobs.
+>
+> **The lesson is sharper than the original entry and cuts both ways:** a peak
+> measured on one namespace does not transfer to another without knowing *which
+> term produced it*, and this class misleads in the safe direction as readily as
+> the dangerous one. Over-asking cost only backfill priority here; the same
+> reasoning applied to a wall time would have killed the job.
 
 ### The permanent fixes
 
@@ -144,6 +177,14 @@ broken. These are worse than no check, because they are cited as evidence.
   patch landed. The name count is the only check that discriminates — which is
   why it is mandatory in 2.7 and why "counts match" was nearly accepted as
   sufficient.
+* **Fault 8 — an index built from a since-superseded artefact.** The register
+  calls it *"the worst fault of the campaign, because the obvious verification
+  cannot see it"*: `update_merge` re-ran for `gn`, `wd` and `nl` **after** those
+  namespaces had been indexed, so the index was serving pre-patch documents
+  while every artefact on disk was correct and every count agreed. **A check
+  comparing the index to the staged tree passes; a check comparing *versions*
+  is the only one that fails.** This is also the campaign's clearest argument
+  for Class D's incumbent-comparison rule.
 * **My own control failed and I disbelieved it.** A Denver probe returned the
   "wrong" answer and I inferred my test was broken; the test was correct and the
   defect was wider than my hypothesis. **A failing control means the test is
@@ -189,6 +230,21 @@ it.
 
 ---
 
+## Class F — work the pipeline performs and discards
+
+**Fault 10.** Stage 1's steps 3–4 compute IPA via Epitran and write
+`panphon_features` back for 31.9 M records — **~8 h of an ~11 h run — and
+nothing in the rebuild reads them.** Not a correctness fault, which is why it
+survived: every check it could fail, it passes. It is here because a taxonomy
+that only catches wrong answers will never catch this, and it is one of the
+largest single line-items in the run's wall-clock cost.
+
+**Permanent fix:** delete it, or give it a consumer. A stage with no reader is
+either dead code or a missing dependency, and the pipeline cannot tell you
+which — only a person can.
+
+---
+
 ## Class E — duplicated logic that drifts
 
 `_STAGED_SOURCE_PRIORITY` is defined **five times, byte-identical**, in
@@ -227,6 +283,14 @@ These are not code faults, but they cost real time this campaign.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
+* **A platform primitive that *declines* is not a busy signal.** Fault 5:
+  `_manifest_lock` used `fcntl.flock`, which needs a lock daemon `/vast` refuses
+  to provide under burst (`ENOLCK`). **Retrying harder did not help** — `ENOLCK`
+  is the daemon declining to serve, not another holder saying wait. The two are
+  indistinguishable if you read only "the lock call failed". Replaced with
+  `O_CREAT|O_EXCL` plus stale-breaking. Listed under process rather than a
+  defect class because the code reported the error correctly and the *reading*
+  of it was wrong.
 * **An artefact is unreliable if a known-broken run rewrote it** — provenance of
   the artefact, not its location. (Supersedes an over-general rule I had
   proposed, "use the submitter, don't hand-write": `update_merge` has no
@@ -244,16 +308,31 @@ These are not code faults, but they cost real time this campaign.
 
 Ordered by expected cost avoided, not by effort.
 
-1. **Ban `except Exception` around imports in pipeline stages.** Cause of the
-   most expensive fault of this campaign (14) and of Fault 7.
-2. **Stream or spill `update_merge._load_patches`** — removes the unbounded
+1. **Audit every `except Exception: x = None` for whether its *consumers*
+   degrade silently — the use site must raise.** This is Fault 14's actual fix,
+   and `6ad2640` deliberately **kept** the import guard, so "ban the guard"
+   would not have prevented it. *(Corrected after audit: an earlier draft of
+   this list said "ban `except Exception` around imports", contradicting Class A
+   above and mis-citing both supporting faults. Fault 7 is an **uncaught**
+   `ImportError` — banning a catch is orthogonal to it, arguably its opposite.
+   The contradiction is left visible rather than quietly edited out, because it
+   is this document's own process finding happening inside this document on its
+   first day.)*
+2. **Every `INGESTION_ORDER` script must be import-tested** — Fault 7's real
+   fix, already done by `tests/test_authority_imports.py`.
+3. **Stream or spill `update_merge._load_patches`** — removes the unbounded
    memory term (Fault 16) that no estimator models.
-3. **Resolvers must test content, not existence** — closes Faults 6 and 15 and
+4. **Resolvers must test content, not existence** — closes Faults 6 and 15 and
    the whole `.exists()` family.
-4. **Regenerate `final/` from `h3_merged/` whenever ccode is skipped** — Fault
+5. **Regenerate `final/` from `h3_merged/` whenever ccode is skipped** — Fault
    12's real fix; currently `_mark_un_skipped` does it inline, which works but
    leaves the misleading FAILED row.
-5. **Estimators record and invalidate on their inputs** — Fault 13, Fault 16.
-6. **Hoist `_STAGED_SOURCE_PRIORITY`** — after 2.7.
-7. **Every gate demonstrated to fail on a known-bad input** before it is relied
-   on to pass.
+6. **Order-of-operations guard on re-runs** — Fault 8: a stage re-running
+   *after* the index was built from its output leaves the index stale with
+   nothing to see. Record which artefact version an index was built from.
+7. **Estimators record and invalidate on their inputs** — Fault 13, Fault 16.
+8. **Delete or consume the toponym vocabulary work** — Fault 10, ~5 h per run.
+9. **Hoist `_STAGED_SOURCE_PRIORITY`** — after 2.7, and it unblocks the
+   directory-swap fix for Class D's residual.
+10. **Every gate demonstrated to fail on a known-bad input** before it is relied
+    on to pass.
