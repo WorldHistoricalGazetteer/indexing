@@ -4085,7 +4085,20 @@ demonstrably serving links from the new build rather than the 6 Aug file.
 `hard_links.sqlite.previous` back, then a restart. The file was never modified
 in place.
 
-### ⬜ RESIDUAL — live-delta prune cannot write (permission gap, currently harmless)
+### ✅ CLOSED 2 Sep — live-delta prune permission gap (was: prune cannot write)
+
+> ✅ **FIXED.** SG ran `chmod g+w /vast/ishi/hardlinks/hard_links_live.sqlite`
+> as `gazetteer`. Verified by the coordinator **against the failure mode, not
+> the permission bits**: `BEGIN IMMEDIATE` — the genuine write lock that
+> produced *"attempt to write a readonly database"* — is now **GRANTED** (rolled
+> straight back; the delta is unchanged at 0 rows / 6 schema objects).
+> `test -w` as `stg135` passes. SQLite can raise that error from an unwritable
+> journal directory as well as the file, so testing the write path rather than
+> the mode bits was the discriminating check.
+> ⚠️ Still true: if the gateway ever **recreates** the file it returns to `644`
+> under the default umask. The durable form is a `002` umask on the gateway
+> service — worth doing only if recreation starts happening (it has not since
+> 11 July).
 
 ```
 WARNING: live-delta prune failed: attempt to write a readonly database
