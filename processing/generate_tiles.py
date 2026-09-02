@@ -654,10 +654,11 @@ def push_mbtiles_to_tileserver(
 
     Set ``via_proxy=False`` explicitly to force direct mode.
 
-    Prefers rsync (with ``--partial --partial-dir=.tmp`` so an interrupted
-    transfer leaves the existing destination file intact and the partial
-    in a sidecar dir; the next run resumes), but falls back to ``scp -p``
-    if rsync isn't reachable (settings.TILESERVER_PROXY_RSYNC empty). On
+    Prefers rsync with ``--inplace`` — the incoming bytes are written
+    **into the existing destination file** rather than to a sidecar that is
+    renamed on completion. Falls back to ``scp -p`` if rsync isn't reachable
+    (settings.TILESERVER_PROXY_RSYNC empty), which is already effectively
+    in-place. On
     the Pitt VM rsync lives in the gazetteer/whg conda env and isn't on
     stg135's PATH, hence the absolute-path setting.
 
@@ -714,14 +715,31 @@ def push_mbtiles_to_tileserver(
     if via_proxy:
         if use_rsync:
             # Quote the rsync invocation since it's executed by the
-            # remote shell. ``--partial`` + ``--partial-dir=.tmp``: an
-            # interrupted transfer leaves the existing target file
-            # intact and parks the partial in ``<dest>/.tmp/<name>``;
-            # the next run resumes from there. ``--info=stats1``: one
-            # tidy summary line at the end (no progress noise that
-            # would flood Slurm logs).
+            # remote shell.
+            #
+            # ``--inplace`` (was ``--partial --partial-dir=.tmp``, changed
+            # 2 Sep 2026): write into the existing destination file instead
+            # of staging a copy that is renamed on completion. The old mode
+            # meant BOTH copies existed on disk for the duration of every
+            # push — and the tileserver volume is at 86% (41 G of 48 G, 30 G
+            # of that mbtiles), with the retile pushing 75 buckets from a
+            # PARALLEL Slurm array, so those transients compound. A previous
+            # push already hit 99%.
+            #
+            # ⚠️ The trade is real and deliberate: with ``--partial-dir`` an
+            # interrupted transfer left the served file intact; with
+            # ``--inplace`` it leaves a TORN mbtiles, and since
+            # tileserver-gl opens on demand that tileset serves errors until
+            # re-pushed. Recoverable — the file is still there to push over —
+            # which delete-then-write would not be. ⚠️ ``--inplace`` and
+            # ``--partial-dir`` are mutually exclusive: rsync exits with
+            # "--inplace cannot be used with --partial-dir", so this is a
+            # swap, never an addition.
+            #
+            # ``--info=stats1``: one tidy summary line at the end (no
+            # progress noise that would flood Slurm logs).
             remote_cmd = (
-                f"{proxy_rsync} -a --partial --partial-dir=.tmp "
+                f"{proxy_rsync} -a --inplace "
                 f"--info=stats1 {mbtiles_path} {target}"
             )
         else:
@@ -732,8 +750,11 @@ def push_mbtiles_to_tileserver(
         ]
     else:
         if use_rsync:
+            # ``--inplace`` for the same reason as the proxy path above —
+            # keep the two transfer modes identical, or a direct push and a
+            # proxied push have different disk and failure characteristics.
             cmd = [
-                "rsync", "-a", "--partial", "--partial-dir=.tmp",
+                "rsync", "-a", "--inplace",
                 "--info=stats1",
             ]
             if direct_ssh_e:
