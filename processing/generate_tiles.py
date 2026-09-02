@@ -45,6 +45,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import sys
 import shutil
 import subprocess
@@ -530,6 +531,101 @@ def _running_on_proxy(proxy_host: str) -> bool:
     if any(name == proxy_host.lower() for name in local_names):
         return True
     return False
+
+
+# Buckets where an inline ``hull`` is the INTENDED geometry rather than a
+# degraded fallback: WHG contributed datasets carry deliberate approximation
+# polygons (e.g. ottgaz admin hulls) with ``has_geom=False``, kept out of the
+# authoritative geom store on purpose. Everywhere else, a hull render means a
+# store miss that degraded to a polygon instead of to a point.
+_HULL_EXPECTED_PREFIXES: tuple[str, ...] = (_WHG_BUCKET_PREFIX,)
+
+
+def publish_gate(
+    bucket: str,
+    tier_counts: dict[str, int],
+    mbtiles: Path,
+) -> tuple[bool, list[str]]:
+    """Decide whether a freshly-built tileset may be pushed to the tileserver.
+
+    Returns ``(ok, reasons)``; ``reasons`` is empty when ok.
+
+    This exists because **a tile job that reports success is not evidence it
+    read any geometry**. On 7 August 2026 nine boundary layers were built
+    against a destroyed geom store, streamed ``poly=0`` for every bucket,
+    exited 0, and deployed as points. Every check in place at the time passed,
+    because each of them — job exit status, feature counts, a non-empty
+    tileset — is satisfied just as well by the broken world as the working one.
+
+    The three refusals below are chosen so that each has a **known-correct
+    answer** and can therefore actually fail:
+
+    1. **Total geom-store miss.** Docs that name a store entry, none of which
+       resolve. This is 7 August exactly. A genuinely point-only namespace
+       makes no attempt at all, so it cannot trip this.
+    2. **Unexpected hull rendering.** ``_build_staged_feature`` falls back to
+       the inline ``hull`` before it falls back to a point, so a store miss on
+       a hull-bearing doc yields a *polygon* — the convex hull of a multi-part
+       place, which for e.g. the Spanish Empire spans 232° of longitude and
+       renders as a band smeared across the Pacific. Deliberate approximation
+       polygons are expected only on ``whg-*`` buckets.
+    3. **An empty tileset.** Guards the steps downstream of feature building,
+       where ``tile-join`` is known to drop over-large tiles and still exit 0.
+
+    Deliberately NOT a longitude-span heuristic. Measured 2 Sep 2026: a naive
+    ``max(lon) - min(lon) > 180`` flags six *legitimate* ``un`` countries —
+    ``ata``, ``rus``, ``fji``, ``kir``, ``nzl``, ``usa`` — which are
+    circumpolar or genuinely cross the antimeridian, and it cannot be rescued
+    by wrapping, since normalising longitudes tightens the Spanish Empire hull
+    to ~140° and lets the real smear through. The tier is unambiguous where
+    the resulting geometry is not.
+    """
+    reasons: list[str] = []
+    attempts = tier_counts.get("store_attempt", 0)
+    hits = tier_counts.get("store_hit", 0)
+    hulls = tier_counts.get("hull", 0)
+
+    if attempts and not hits:
+        reasons.append(
+            f"geom store returned nothing for all {attempts:,} lookups "
+            f"(the 7 Aug failure: every feature would ship as a point)"
+        )
+    if hulls and not bucket.startswith(_HULL_EXPECTED_PREFIXES):
+        reasons.append(
+            f"{hulls:,} feature(s) rendered from the inline hull fallback, "
+            f"which is not expected for '{bucket}' — a store miss has "
+            f"degraded to convex hulls, not to points"
+        )
+
+    try:
+        with sqlite3.connect(f"file:{mbtiles}?mode=ro", uri=True) as con:
+            tiles = con.execute("SELECT COUNT(*) FROM tiles").fetchone()[0]
+        if not tiles:
+            reasons.append("built tileset contains 0 tiles")
+    except Exception as exc:                                   # noqa: BLE001
+        reasons.append(f"built tileset unreadable ({exc})")
+
+    return (not reasons), reasons
+
+
+def _log_gate(bucket: str, tier_counts: dict[str, int], ok: bool,
+              reasons: list[str]) -> None:
+    """Print the tier tally for every bucket, passing or failing.
+
+    Printed unconditionally: the tally is the evidence that the build read
+    real geometry, and it is worth as much in the log of a run that passed as
+    in one that did not.
+    """
+    print(
+        f"  gate {bucket}: store {tier_counts.get('store_hit', 0):,}"
+        f"/{tier_counts.get('store_attempt', 0):,}"
+        f"  hull {tier_counts.get('hull', 0):,}"
+        f"  point {tier_counts.get('point', 0):,}"
+        f"  → {'PASS' if ok else 'REFUSED'}",
+        flush=True,
+    )
+    for r in reasons:
+        print(f"    ✗ {r}", flush=True)
 
 
 def push_mbtiles_to_tileserver(
@@ -1084,8 +1180,28 @@ def _build_staged_feature(
     *,
     misc: bool = False,
     require_boundary: bool = True,
+    tier_counts: dict[str, int] | None = None,
 ) -> dict[str, Any] | None:
     """Build a tippecanoe-ready Feature from a staged place doc.
+
+    ``tier_counts``, when given, is incremented to record WHICH geometry
+    source produced each feature. The caller gates the tileserver push on
+    these counts, because the tier is the thing that actually distinguishes
+    a correct build from the two failures this pipeline has shipped:
+
+    * ``store_attempt`` / ``store_hit`` — docs that named a geom-store entry,
+      and those the store actually returned. ``attempt > 0, hit == 0`` is the
+      7 August failure exactly: every feature degraded to a point because the
+      store was unreadable, while the job reported success.
+    * ``hull`` — features rendered from the inline ``hull`` approximation.
+      Expected only where WHG computes one deliberately; anywhere else it
+      means a store miss silently degraded to a convex hull, which for a
+      multi-part place is a polygon smeared across the globe.
+    * ``point`` — features that fell back to ``repr_point``.
+
+    Counting the tier is strictly better than inspecting the finished
+    geometry: a longitude-span heuristic cannot tell Russia (legitimately
+    antimeridian-crossing) from a hull smear, but the tier is unambiguous.
 
     With ``require_boundary=True`` (fixed buckets) the doc must carry a
     ``boundary`` value and a full polygon retrievable from the geom store —
@@ -1114,10 +1230,17 @@ def _build_staged_feature(
     if not isinstance(geom_entry, dict):
         return None
 
+    def _bump(key: str) -> None:
+        if tier_counts is not None:
+            tier_counts[key] = tier_counts.get(key, 0) + 1
+
     full_geom: dict[str, Any] | None = None
     geom_ref = geom_entry.get("geom_ref")
     if isinstance(geom_ref, str) and geom_ref:
+        _bump("store_attempt")
         full_geom = reader.get(geom_ref)
+        if full_geom:
+            _bump("store_hit")
     elif geom_entry.get("has_geom"):
         # Authority scripts emit JSONL via ``write_staged_place_doc`` which
         # bypasses ``_augment_doc_for_stage`` — so ``geom_ref`` is absent on
@@ -1125,7 +1248,10 @@ def _build_staged_feature(
         # the canonical key (``"{place_id}_{idx}"``) when ``has_geom`` is set,
         # matching ``stage_writers._augment_doc_for_stage``.
         idx = geom_entry.get("geometry_index", 0)
+        _bump("store_attempt")
         full_geom = reader.get(f"{place_id}_{idx}")
+        if full_geom:
+            _bump("store_hit")
 
     if not full_geom and not require_boundary:
         # WHG-computed approximation polygons (e.g. ottgaz admin hulls) live in
@@ -1135,6 +1261,7 @@ def _build_staged_feature(
         hull = geom_entry.get("hull")
         if isinstance(hull, dict) and hull.get("type") in ("Polygon", "MultiPolygon"):
             full_geom = hull
+            _bump("hull")
 
     if not full_geom and not require_boundary:
         rp = geom_entry.get("repr_point")
@@ -1143,6 +1270,7 @@ def _build_staged_feature(
                 "type": "Point",
                 "coordinates": [rp["lon"], rp["lat"]],
             }
+            _bump("point")
 
     if not full_geom:
         return None
@@ -1482,6 +1610,7 @@ def _stream_bucket(
     geojsonl_path: Path,
     collect_coverage: bool = False,
     labels_path: Path | None = None,
+    tier_counts: dict[str, int] | None = None,
 ) -> tuple[dict[str, int], dict[str, int], list]:
     """Stream every contributing namespace's docs into one bucket output file.
 
@@ -1532,6 +1661,7 @@ def _stream_bucket(
                     doc, ns, reader,
                     misc=is_misc,
                     require_boundary=require_boundary,
+                    tier_counts=tier_counts,
                 )
                 if feature is None:
                     continue
@@ -1565,6 +1695,7 @@ def _stream_bucket_banded(
     *,
     out_dir: Path,
     emit_labels: bool = True,
+    tier_counts: dict[str, int] | None = None,
 ) -> tuple[dict[str, Path], dict[str, dict[str, int]], dict[str, Path]]:
     """Stream a bucket's features into ONE geojsonl per band.
 
@@ -1618,6 +1749,7 @@ def _stream_bucket_banded(
                 feature = _build_staged_feature(
                     doc, ns, reader,
                     misc=is_misc, require_boundary=require_boundary,
+                    tier_counts=tier_counts,
                 )
                 if feature is None:
                     continue
@@ -1883,6 +2015,9 @@ def generate_tiles_from_staged(
     bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
     bucket_coverage_geojsonl: dict[str, Path] = {}        # place#140 dissolved footprint
     bucket_uses_bands: dict[str, bool] = {}
+    # bucket → which geometry tier produced each feature; the publish gate's
+    # entire input. Populated by ``_build_staged_feature`` during streaming.
+    bucket_tiers: dict[str, dict[str, int]] = {}
 
     started = datetime.now(timezone.utc)
     try:
@@ -1892,8 +2027,10 @@ def generate_tiles_from_staged(
                 bucket_uses_bands[bucket] = True
                 print(f"\nStreaming bucket '{bucket}' (banded: {[b.name for b in bands]}) "
                       f"from {_bucket_contributors(bucket)} ...")
+                tiers = bucket_tiers.setdefault(bucket, {})
                 band_paths, band_counts, label_paths = _stream_bucket_banded(
                     bucket, reader, bands, out_dir=out_dir,
+                    tier_counts=tiers,
                 )
                 bucket_band_paths[bucket] = band_paths
                 bucket_label_paths[bucket] = label_paths
@@ -1927,10 +2064,12 @@ def generate_tiles_from_staged(
                 # the `!has label` filter — a map-appearance problem, not a
                 # data one, and the tileset is the slow half to produce.
                 labels_geojsonl = out_dir / f"{bucket}.labels.geojsonl"
+                tiers = bucket_tiers.setdefault(bucket, {})
                 written, geom_counts, cov_geoms = _stream_bucket(
                     bucket, reader, geojsonl_path=geojsonl_path,
                     collect_coverage=collect_cov,
                     labels_path=labels_geojsonl,
+                    tier_counts=tiers,
                 )
                 if not (labels_geojsonl.exists()
                         and labels_geojsonl.stat().st_size > 0):
@@ -1966,6 +2105,11 @@ def generate_tiles_from_staged(
     tilesets_generated: list[Path] = []
     bucket_failures: list[str] = []
     push_failures: list[str] = []
+    # bucket → why the publish gate refused it. A refused bucket is BUILT but
+    # deliberately not pushed: the .mbtiles stays on disk for inspection and
+    # the previously-deployed tileset keeps serving, which is the safe side to
+    # fail on when the alternative is publishing points over real boundaries.
+    gate_refusals: dict[str, list[str]] = {}
     if skip_tippecanoe:
         print("\n--skip-tippecanoe specified; GeoJSONL written but no .mbtiles produced.")
     else:
@@ -2016,7 +2160,13 @@ def generate_tiles_from_staged(
 
                 if band_mbtiles and tile_join(band_mbtiles, mbtiles, layer_name=bucket):
                     tilesets_generated.append(mbtiles)
-                    if deploy and not push_mbtiles_to_tileserver(mbtiles):
+                    gate_ok, gate_reasons = publish_gate(
+                        bucket, bucket_tiers.get(bucket, {}), mbtiles
+                    )
+                    _log_gate(bucket, bucket_tiers.get(bucket, {}), gate_ok, gate_reasons)
+                    if not gate_ok:
+                        gate_refusals[bucket] = gate_reasons
+                    elif deploy and not push_mbtiles_to_tileserver(mbtiles):
                         push_failures.append(bucket)
                 else:
                     bucket_failures.append(bucket)
@@ -2112,7 +2262,14 @@ def generate_tiles_from_staged(
                         # tileserver service restart is the user's manual step
                         # and gates on every bucket having pushed (see
                         # ``push_failures`` below).
-                        if deploy and not push_mbtiles_to_tileserver(mbtiles):
+                        gate_ok, gate_reasons = publish_gate(
+                            bucket, bucket_tiers.get(bucket, {}), mbtiles
+                        )
+                        _log_gate(bucket, bucket_tiers.get(bucket, {}),
+                                  gate_ok, gate_reasons)
+                        if not gate_ok:
+                            gate_refusals[bucket] = gate_reasons
+                        elif deploy and not push_mbtiles_to_tileserver(mbtiles):
                             push_failures.append(bucket)
                     else:
                         bucket_failures.append(bucket)
@@ -2132,7 +2289,12 @@ def generate_tiles_from_staged(
         return [b for b in selected if ns in _bucket_contributors(b)]
 
     def _ns_status(ns: str) -> str:
-        return "failed" if any(b in bucket_failures for b in _ns_buckets(ns)) else "completed"
+        # A gate refusal counts as a failure for the manifest. Recording it as
+        # "completed" would let the next run skip a bucket that was built but
+        # deliberately never published — the manifest asserting success for
+        # work that was withheld is the exact pattern this gate exists to stop.
+        bad = set(bucket_failures) | set(gate_refusals)
+        return "failed" if any(b in bad for b in _ns_buckets(ns)) else "completed"
 
     if manifest_path is not None and manifest_path.exists():
         for ns in contributing_namespaces:
@@ -2193,6 +2355,21 @@ def generate_tiles_from_staged(
         size_mb = p.stat().st_size / 1e6 if p.exists() else 0
         print(f"    {p.name}: {size_mb:.1f} MB")
 
+    if gate_refusals:
+        print(
+            f"\n🛑 PUBLISH GATE REFUSED {len(gate_refusals)} bucket(s) — "
+            f"built but NOT pushed:"
+        )
+        for b, why in gate_refusals.items():
+            print(f"  {b}:")
+            for r in why:
+                print(f"    ✗ {r}")
+        print(
+            "  The .mbtiles are on disk and the previously-deployed tilesets are\n"
+            "  untouched. Investigate before overriding; a refusal here means the\n"
+            "  build did not read the geometry it was supposed to."
+        )
+
     if deploy and tilesets_generated:
         if push_failures:
             print(
@@ -2209,7 +2386,7 @@ def generate_tiles_from_staged(
                 "Tileserver service restart is the user's separate, explicit step."
             )
 
-    return tilesets_generated
+    return tilesets_generated, gate_refusals
 
 
 def main():
@@ -2270,7 +2447,7 @@ def main():
             )
         )
 
-    produced = generate_tiles_from_staged(
+    produced, gate_refusals = generate_tiles_from_staged(
         buckets=args.bucket,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         deploy=args.deploy,
@@ -2287,6 +2464,17 @@ def main():
     if args.bucket and not produced:
         print(f"ERROR: no tileset produced for {', '.join(args.bucket)}",
               file=sys.stderr)
+        sys.exit(1)
+    # A gate refusal must also exit non-zero. The trailing tileserver config
+    # rewrite + restart is submitted ``afterok`` of every tile array, so
+    # exiting 0 here would let a run that withheld a bucket go on to register
+    # and restart as though it had published one.
+    if gate_refusals:
+        print(
+            f"ERROR: publish gate refused {len(gate_refusals)} bucket(s): "
+            f"{', '.join(sorted(gate_refusals))}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
