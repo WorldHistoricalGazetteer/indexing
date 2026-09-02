@@ -145,6 +145,16 @@ downstream check can see it.
 > measurement that entered a document as a conclusion and steered triage away
 > from a live hypothesis for a day.
 >
+> **The denominator rule is TWO-SIDED, and we had been applying one side.**
+> "0 defective" is meaningless without "of N examined" — that is the numerator's
+> N, and it was already doctrine. **The other side is the extrapolation's N:**
+> *"~1,565 affected"* is equally meaningless without the frame it multiplies.
+> Measured 2 Sep: a `whg` defect rate of 61% sampled from a frame of
+> `geom_ref` + multi-cell cover (2,565) was extrapolated against an area-shaped
+> denominator (1,248) — **a 2× error in a figure headed for a production
+> remediation decision.** The rate was sound; the multiplication was not.
+> **A rate needs its denominator, and so does anything you multiply it by.**
+>
 > **Third clause: parse, don't grep, when the question is structural.** An
 > eighth instance failed in the *opposite* direction from the other seven:
 > `grep -o hull` over `gn` returned **2,950**, which reads as "hull survived"

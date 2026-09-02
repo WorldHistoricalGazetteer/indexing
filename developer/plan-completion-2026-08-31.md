@@ -3364,11 +3364,35 @@ LIVE whg docs with an area geometry: 1,248   <- independent ES count, agrees exa
 478 MultiPolygons already recorded in S5's Check 1 derivation. `area + line` =
 2,320, still not 2,565.
 
-**So at S9's measured 61% rate the affected count is ≈761 features, not ≈1,565**
-— unless S9 sampled a frame wider than area geometries, in which case the *rate*
-applies to that frame and the extrapolation needs restating against it. **The
-rate is not in question; the frame it multiplies is.** S9 has been asked which
-frame it drew from.
+✅ **ANSWERED — S9's frame was `geom_ref` present AND `len(h3_cover) >= 2`, NOT
+area geometries. S9 has WITHDRAWN the ~1,565 figure rather than defend it.**
+
+**The frame was chosen deliberately and is not arbitrary:** S8 had shown
+`geom_class` is **absent for whole namespaces** (all 4,363 `nl` records), so
+keying a population on a classification field silently drops entire gazetteers.
+`geom_ref` + multi-cell cover keys off the *data* instead, selecting "features
+whose cover could possibly disagree with a stored polygon" — the genuinely
+testable population. **It is simply a different set from `geom_class == "area"`,
+and the rate was then extrapolated against an area-shaped denominator without
+checking the frames matched.**
+
+⚠️ **S9's caution does NOT undercut the 1,248 for `whg` specifically** — checked:
+`point 213,081 + area 1,248 + line 1,072 = 215,401`, **exactly** the geometry
+count, so `geom_class` is fully populated on `whg` with no absent values. The
+`nl`-shaped hazard is real and does not apply here. And the mismatch is a real
+set difference, not a counting artefact: S9's frame was 2,565 against
+`area + line` = 2,320, so it contains ~245 geometries that are neither.
+
+🔬 **Rather than reconcile the frames, S9 is REMOVING the need for one — `whg` is
+small enough to census.** Job **11105929** tests **every** candidate rather than
+200, broken down by `geom_class`: an exact affected count with **no rate, no
+confidence interval and no extrapolation to dispute**, plus the per-class split
+that would be needed to reconcile the frames anyway. It also exposes whether the
+defect rate differs between area and line geometries, **which the pooled 61%
+would hide.**
+
+**Until it lands: the `whg` COUNT reads *disputed, census in flight*; the `whg`
+RATE (122/200) stands independently of it.**
 
 🛑 **Nothing downstream should quote a `whg` affected-count until that is
 settled.** This is the campaign's own denominator rule biting on the campaign's
