@@ -4088,6 +4088,54 @@ holds no alias before deleting it.
 
 ## Phase 4 — tracked, not scheduled
 
+### 4.15 Split tile `work_dir` from `output_dir` — intermediates to node-local scratch
+
+**SG's refinement, 2 Sep. Sound, contained, and deliberately NOT sequenced ahead
+of S5's retile.**
+
+**The defect it fixes:** `generate_tiles` writes the `.geojsonl` intermediates
+**and** the finished `.mbtiles` to the same `out_dir` (`:1594`, `:1603`, `:1913`,
+`:1929` vs `:1776`). On `/ix1` at a measured **27.3 MB/s** every intermediate
+byte is written slowly and then read back slowly by tippecanoe — and on `/vast`
+they would instead consume headroom that is already at 204 G and falling.
+**Node-local scratch avoids both.**
+
+**The change:** thread a `work_dir` beside the existing `output_dir`, **defaulting
+to `output_dir`** so behaviour is unchanged unless set; point the four
+`.geojsonl` paths at it; leave `.mbtiles` on `output_dir`.
+`submit_tiles_slurm` already threads `--output-dir` (`:281`, `:507`), so
+`--work-dir` follows the identical path.
+
+✅ **The safe scratch idiom already exists in-repo and must be used:**
+`es_staging.sbatch:56` uses **`${SLURM_SCRATCH}`**, and `:89` carries the
+warning about reconstructing `/scratch/slurm-$SLURM_JOB_ID` — **that is Fault 9**
+(the staging info file exported the *staging job's* `SLURM_JOB_ID`, so a
+consuming job addressed another job's scratch). **Do not rebuild the path from
+a job id.**
+
+🛑 **Why it is NOT scheduled before the retile:**
+
+1. It is **a code change to a script about to be run**, which is this campaign's
+   most-repeated lesson.
+2. **Node-local scratch capacity is unverified.** A bucket whose `.geojsonl`
+   exceeds it fails in a **new** way, on the first retile since the geom-store
+   loss — trading a known slow path for an unknown failure mode.
+3. The benefit is **build wall-time on a Beta-gated deliverable with no
+   deadline**, against SG's standing ruling that correctness outranks it.
+4. The current path **demonstrably works** — it built the existing 28 G.
+
+✅ **Better sequencing: run the retile as-is, and let it produce the numbers this
+change needs.** Nobody currently knows the total `.geojsonl` volume for a
+74-bucket run (`alc.geojsonl` is 4.8 MB; `gn.mbtiles`/`wd.mbtiles` are 1.6/1.9
+GB, and GeoJSON typically runs several times its mbtiles). **Measure it, measure
+the scratch, then implement with real figures** — and per doctrine, the test
+must **FAIL on the pre-change code** before it is trusted.
+
+⚠️ **If S5's build turns out painfully slow, that is the evidence that promotes
+this from tracked to scheduled.**
+
+
+
 | | |
 |---|---|
 | 4.1 | **`og` geometry is at its sources' ceiling, not broken** — 251 of 6,260, because ofs attests only 1,123 of og's admin units and **no og doc carries a wd link at all**. Raising it is a reconciliation task (establish og↔wd links), not a pipeline fix. Its 3.9% ccode coverage follows from this and needs no separate work. **But the 249 hulls it does compute are not retrievable either** (4.2), so fixing the writer is the cheaper half and comes first: it makes the geometry og already has usable, before any effort goes into acquiring more. |
