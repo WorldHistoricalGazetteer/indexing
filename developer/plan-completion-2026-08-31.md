@@ -3049,6 +3049,34 @@ campaign spent days establishing you can trust. A later auditor either chases
 it or concludes `un` is untrustworthy. **A guard expected to fire belongs
 before submission, not after.**
 
+### ✅ `gn`'s name-count check, PRE-COMPUTED and cold-readable (2 Sep)
+
+Derived from the **patch**, before the merge produced anything, so it is
+independent of what the merge reports about itself. This is the check that
+discriminates: `update_merge` adds names to **existing** documents, so
+`count(before) == count(after)` holds whether or not the patch landed, and a
+document-count check cannot fail here even in principle.
+
+```
+gn/update_patch/places.update.jsonl     1.4 GB   8,125,650 rows
+  toponym entries  ("toponym_id")      16,907,445
+  relation entries ("relation_type")    1,831,130
+  rows carrying toponyms_to_add         7,686,422
+patch row shape: place_id + toponyms_to_add | relations_to_add | title
+```
+
+**Pass condition:** `update_merged` toponym count exceeds `extract`'s by a
+figure approaching **16,907,445**, and relations by approaching **1,831,130**.
+Both are *upper* bounds, not equalities — `_dedupe_toponyms` and
+`_dedupe_relations` drop patch entries already present on the document, and the
+patch never overwrites. **A delta of 0 is the failure mode this check exists to
+catch**, and is exactly what "counts match" would have reported as success.
+
+⚠️ Do not silently reconcile this against the "~26.7M GeoNames alt names"
+figure carried in project memory: **16.9M is what this patch contains**,
+measured. The two may differ legitimately (names already present in `extract`
+are not in the patch) or one may be wrong. Measure, do not assume they agree.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 3.1 Retile all 27 buckets  — **S5**
