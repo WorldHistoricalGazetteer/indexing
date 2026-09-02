@@ -2193,6 +2193,17 @@ live-correct now. Still to be brought current, because `final/` is what a future
 rebuild indexes from and a known-bad artefact left there is how this campaign's
 faults propagate. **A correctness chore, not a gate.**
 
+> ✅ **CLOSED 2 Sep — verified independently by the coordinator, read-only.**
+> The chore self-resolved: `_mark_un_skipped` ran the `ccode_merge`
+> pass-through inline during submission, regenerating `final/` from the
+> corrected `h3_merged/`. Measured across all 247 docs, not a probe:
+> place_id sets equal, **0 docs whose covers differ**, **88,169 cover cells on
+> each side**, **0 docs with an empty cover**; largest are `un:pyf` 2,782 /
+> `un:slb` 2,497 / `un:bhs` 2,054 — scattered archipelagos, the right shape.
+> `un`'s `final/` therefore carries the 376-cell cover, not the 278-cell one.
+> Recorded as *verified*, not *reported*: S8 stated it, and this is the
+> coordinator's own measurement of the artefact.
+
 **2. `wd` peak RSS — and it changes `gn`'s request.** Verified independently
 (`sacct -j 11103334`): **MaxRSS 42,953,084 K = 40.96 GiB against 48 G, 85% of the
 request.** `wd`'s patch is 93 MB so its dict was under a gigabyte — **essentially
@@ -2921,6 +2932,49 @@ this defect survived a PASS. So check all three properties:
    methods. **Sizing is therefore unaffected — `wd` remains the entire cost.**
 
 ---
+
+### ❌ COORDINATOR ERROR, 2 Sep — a false "S8 never woke", and the instrument that caused it
+
+Recorded because SG asked for what went wrong, and this one is mine.
+
+At 01:31 EDT I checked for overnight progress, found an empty `squeue`, ran
+`sacct -M htc -S 2026-09-01T20:00`, got nothing, and reported to SG that **"S8
+never woke"** and that I was taking over its row. **Both jobs it had run were
+real.** `sacct -S` parses in the *host's local* time; the jobs started
+18:53:02 **EDT**; my cutoff excluded them by construction. Worse, a job
+(`11105808_0 whg-ccode-nl-rerun`) launched at 01:33:42 — my `squeue` simply
+predated it. **S8 was mid-flight when I declared it idle.**
+
+**Every input was accurate and the conclusion was false.** "No jobs after
+20:00 EDT" was true; "no jobs" was not; I reported the second. The same
+substitution had already happened once: `squeue`-empty could not distinguish
+*not-started* from *finished*, and I read it as the former (the `nl` h3 was
+already COMPLETED). One layer down, `sacct -S` could not distinguish *nothing
+ran* from *my window was wrong by four hours*.
+
+**The generalisation, which is the campaign's own defect class turned on the
+observer:** *absence of evidence read as evidence of absence, because the
+instrument answered a narrower question than the one asked of it.* That is the
+hull fallback (no store → use hull), the existence-not-content resolvers (file
+present → stage done), and this, in one shape. **A tool that filters silently
+cannot report an empty result as "nothing happened".**
+
+**Fixes carried forward, not just noted:**
+* State the frame in the query — `sacct -S now-24hours`, or `-S` in UTC with
+  `TZ=UTC`, never a bare local wall-clock cutoff against UTC-named run ids.
+* Never infer a session's state from the scheduler alone. `squeue` describes an
+  instant; `sacct` describes a window; **neither describes a session.** Ask it.
+* **The collision guard was still right.** It cost nothing, it was the reason
+  S8 spoke up, and it is what kept two sessions off one staged tree. Firing a
+  cheap guard on a bad measurement is a good trade; acting on the bad
+  measurement without one is not.
+
+Handled: row returned to S8 intact, nothing started, tree untouched. The one
+side-effect — a `git fetch`/`merge --ff-only` of the shared clone from
+`6ad2640` to `cc451dc` minutes before `11105808` launched — was checked rather
+than assumed benign: the sole non-doc file is `processing/helpers.py`, and an
+**AST comparison with docstrings stripped shows the executable code is
+identical**, so the running job is behaviourally unaffected.
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
