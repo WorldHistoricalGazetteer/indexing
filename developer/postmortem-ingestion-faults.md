@@ -102,6 +102,40 @@ downstream check can see it.
 > the code needs: ask what the *broken* world would produce, and if it is the
 > same output, the check is decorative.
 >
+> **Seven instances are now recorded across two campaigns days, in two
+> sub-shapes** (the four below from 1 Sep, via the Auditor):
+>
+> * **A predicate that could never match** — `hullX = 0` for every namespace and
+>   `area_ft = 0` across 31, both reading keys absent from the source; `has_geom
+>   = None` for all 4,363 `nl` records, read at the document root when the field
+>   is nested per-geometry; `FRESH == STORED` at 110,802 cells, where the decoder
+>   `continue`d past every document so the identity held between a set and
+>   itself.
+> * **Addressing that could never resolve** — the three above. **This is the
+>   nastier half and it is newer to the record: a well-formed query against a
+>   non-existent field is not an error in ES, Slurm or bash. It is a valid empty
+>   result, shaped exactly like a true negative.** The predicate cases at least
+>   fail over data you control; these fail in the *addressing* layer, where
+>   scrutinising the logic does not help.
+>
+> **One fix covers all seven: every measurement reports what it EXAMINED, not
+> only what it found.** `cardinality(dataset) = 0` is a plausible answer; `0`
+> beside a matched `doc_count` of 228,918 is a visible contradiction. The gate's
+> `0/0` had no denominator on either side; the `sacct` empty set never echoed
+> the window it searched.
+>
+> **The tell, when no denominator is available: absence of variance where the
+> world has variance.** Thirty-one namespaces of differing character cannot all
+> score exactly 0; 4,363 records cannot all be `None`; two independently
+> computed cell sets do not agree to the digit. **The signal is not the value,
+> it is the missing noise.**
+>
+> ⚠️ **This has already invalidated a live inference.** Plan §4.14 excludes the
+> antimeridian defect for 761 `clio` counter-examples on the strength of
+> `hullX = 0` — but `staged_parquet.strip_hull` drops `hull` from every parquet
+> sidecar, so any probe downstream of `extract/` reports 0 regardless. The
+> exclusion is flagged pending confirmation of which source the probe read.
+>
 > **This class has a mirror in the operators, including me.** Diagnosing the
 > campaign, I twice reported "nothing happened" from an instrument that could
 > not support it: `squeue`-empty (a statement about an *instant*) read as
