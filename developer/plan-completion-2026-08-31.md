@@ -202,7 +202,7 @@ resources it does not model.
 | hazard | who collides | rule |
 |---|---|---|
 | **Production ES load** | S3 (delete-by-query + re-index of 229 k docs, plus the toponym augment) and S5 (corpus-wide streaming for tiles). ⚠️ **S4's 2.6 is NOT one of them** — corrected 31 Aug: it runs `--skip-es-index` and never consults ES, so it neither contends here nor needs a restart. The hold placed on S4 behind S3 was unnecessary, though harmless and correct on the plan's word at the time | **One heavy ES job at a time.** Heap saturation from heavy indexing has already taken faceted `/api/search` to 500s once, and `dense_vector` merges on the toponyms index are the known OOM driver. Restart ES after any of them. |
-| **Gateway restarts** | S1 (2.2 needs one to deploy the scope fix) and S2 (2.1 ends with one) | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
+| **Gateway restarts** | ~~S1 / S2~~ — **both closed; restart ownership is now S5's** (see §2.3's publish steps). Row retained for the rule, not the assignment. | **One restart owner.** Whichever finishes second performs the restart; the other says in its notes that its change is on disk but not yet loaded. A restart mid-test silently invalidates the other session's verification. |
 | **Staged manifest writes** | S2, S3, S4 all write `staged/<ns>` and the run manifest — **and so does S5's retile, which is not read-only** (S5, 31 Aug, verified). `generate_tiles_from_staged` calls `update_namespace_stage_status(manifest_path, ns, "tiles", …)` at `:1858` and `:2144` for **every contributing namespace** — all 27 on a full run — plus `write_stage_event` / `write_runtime_history_event`. Two sessions independently assumed "the retile is an output stage, therefore it only reads the corpus"; only reading the code settled it. **Scope of the write is the per-namespace `tiles` stage key and appended events only** — never `final/`, `h3_merged/`, `boundary_merged/`, `extract/` or any `places.parquet` — so a concurrent parquet *read* (the overlay harvest) is safe. Both writes are guarded on `manifest_path.exists()` and a non-empty `run_id`, so a retile invoked without them touches nothing | The `/vast` lock is `O_CREAT|O_EXCL` with **proceed-with-warning on timeout**, because `flock` returns `ENOLCK` there under fan-out. So two sessions *can* both proceed. ⚠️ **"Keep concurrent sessions on different namespaces" is no longer sufficient, and stopped being true on 31 Aug.** S8's 2.7 *writes* `final/` for `gn`/`wd`/`nl` while the overlay harvest *reads* those same trees — the first time two sessions have wanted the same namespaces rather than merely the same manifest. ⚠️ **UPDATED 1 Sep — 2.8 HAS LANDED (`554e43a` + `e37c93b`), so the zero-byte
 window described below is GONE.** All four writers publish via
 `atomic_staged_snapshot`. **Serialisation is now belt-and-braces rather than
@@ -1590,7 +1590,7 @@ to matter.
 |---|---|---|
 | `wd` | promoted from `/vast/ishi/staged_geomrebuild/wd` | **PASS** — 11,459,393 = 11,459,393, delta 0 |
 | `nl` | fresh extract (Slurm 11074353, 13 s) | **PASS** — 4,363 = 4,363, delta 0 |
-| `gn` | fresh extract (Slurm 11074352, 8 cpu / 64 G / 36 h) | ⏳ running at time of writing — 500,000 staged at 26 min, so ~12 h for the places pass **plus** the `geonames-toponyms` alt-names pass that follows it |
+| `gn` | fresh extract (Slurm 11074352, 8 cpu / 64 G / 36 h) | ✅ COMPLETED (was ⏳ at time of writing) — 500,000 staged at 26 min, so ~12 h for the places pass **plus** the `geonames-toponyms` alt-names pass that follows it |
 
 **To finish 2.5 — one command, and it does not need S4's session.** The verifier
 is parked on shared storage, so any session can run it:
@@ -1808,7 +1808,14 @@ nothing and asserts a fact about the world.
 
 ---
 
-### 2.8 Make the staged merges atomic — **S9**  ⚠️ RUNS BEFORE 2.7
+### 2.8 Make the staged merges atomic — **S9**  ✅ **LANDED**
+
+> ✅ **DONE — `554e43a` + `e37c93b` (17/17 tests), and `1179664`** for the
+> narrowness pin (a comment was the only thing holding it, and *a comment
+> cannot fail*). **The body below is written in the present tense as the
+> defect stood before the fix — read it as diagnosis, not as pending work.**
+> Its “must fail today” test and “nothing may be writing a staged tree while
+> this lands” precondition are both discharged.
 
 **SG's decision, 1 Sep: land this before 2.7 rather than manage the hazard by
 serialisation.** Promoted here from residual 4.13, where S8 and S3 independently
@@ -2184,7 +2191,7 @@ h3_merged  376 cells  SETS_EQUAL_TO_PROD=True   only_here=0  prod_only=0   all s
 final      278 cells  SETS_EQUAL_TO_PROD=False  only_here=263 prod_only=361 Denver/NYC/… FALSE
 ```
 
-⚠️ **`un`'s `final/` still holds the bad 278-cell cover**, because `ccode_merge`
+✅ **`un`'s `final/` HELD the bad 278-cell cover until 2 Sep — now corrected and verified (see the blockquote below).** ~~Still holds~~, because `ccode_merge`
 has not run for `un` — **the Fault-12 shape exactly: a chain stopping short of
 `final/`.** It does **not** block `nl`, and S8 checked why rather than assuming:
 `ccode_enrichment._load_un_records` calls `_iter_staged_docs(UN_NAMESPACE)`, which
@@ -2454,6 +2461,11 @@ sightings.
 
 ### 🛑 `nl` CHECK 3 FAILED — 99.66% vs 100%, and the cause is a MISSING STEP, not a degradation
 
+> ✅ **RESOLVED 2 Sep — historical, not a live blocker.** `nl` re-ran in full;
+> ccode is now **100.00%**, equal to the live index, all 15 territories
+> resolved. See *“2.7 — `nl` COMPLETE”* below. Read this section for the
+> diagnosis, not for the status.
+
 **S8's two-sided check earned its place on the smallest namespace, exactly as
 intended.** `nl`'s `final/` came out 4,348/4,363 coded against the live index's
 4,363/4,363 — 15 records that would lose their ccodes. Unlike `gn`'s undersea
@@ -2599,10 +2611,20 @@ useful: **an artefact is unreliable if a known-broken run rewrote it.** `un` and
 `nl` were rewritten; `osm`/`ohm` were not. **Provenance of the artefact, not its
 location.**
 
-**Recompute set: `un`, `nl`, `clio`, `whg`.** Unchanged throughout every revision,
+**Recompute set (defective covers): `un`, `nl`, `clio`, `whg`.** ⚠️ **This is
+not the same list as “the recompute list is `un` AND `nl`” ~25 lines below,
+and the two answer different questions.** *This* list is every namespace
+measured to carry a hull-derived cover. *That* one is the subset this
+campaign re-runs staged trees for — `clio` and `whg` are on this list and
+gate nothing, so they are not in 2.7's chain. Neither supersedes the other.
+Unchanged throughout every revision,
 because it rests on DIFFER results, which were always real.
 
 #### 🔴 `nl` MUST BE RE-RUN — its covers are hull-derived too, and its clearance was false
+
+> ✅ **DONE 2 Sep.** The re-run completed and its covers are polygon-derived,
+> confirmed by the three-way test (`samish` 103 vs hull's 119, `ngati-rehua`
+> 82 vs 74, `limuw` 55 matching the *fresh* set at equal cardinality).
 
 **S8 retracted its own clearance after the field-path correction, and the
 consequence is larger than the retraction.** Its `nl` artefact was cleared on the
