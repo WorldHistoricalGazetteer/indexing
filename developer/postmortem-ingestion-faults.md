@@ -347,6 +347,14 @@ broken. These are worse than no check, because they are cited as evidence.
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
   properly, a screenshot).
+  ✅ **A third detection method, and the cheapest: write the claim out in full
+  before believing it.** indexing-db caught the `check-refs` substitution not by
+  habit or process but by drafting the sentence "the filter is verified" and
+  finding it could not defend the word *verified* — `check-refs` proves a file
+  is not missing what it references, which is silent on whether the filter kept
+  what the planet holds. **The prose was the instrument.** A conclusion held as
+  a fragment ("check-refs clean → good") survives scrutiny that the same
+  conclusion written as a complete sentence does not.
   ✅ **The remedy it built is the runtime form of the both-directions rule, and
   should be copied.** Before trusting the guard, it invoked the guard with an
   impossible floor (999999 GB) and **required it to abort**, failing the job if
@@ -481,6 +489,25 @@ report success".
 **Permanent fix:** hoist to one module. Deliberately **withheld until 2.7
 lands** — it touches every consumer of the staged trees while those trees are
 being rewritten — but it should not be dropped once the campaign closes.
+
+**A second instance, and the fix shape worth generalising (2 Sep).** #233's
+water control reported `6,123 ways in / 6,721 areas out` — **a ratio above 1,
+which is structurally impossible** if a closed way either becomes one area or
+fails. The cause was two definitions of "is this a water feature": the counting
+script tested `natural=water`, the assembler tested every water tag it accepts.
+⚠️ **The tempting fix is to relabel the column. That is the wrong fix** — a
+label is a hand-maintained claim that two definitions agree, and it drifts the
+moment either side changes. indexing-db instead made the counter **import the
+assembler's own `classify()`**, so both sides count the same population *by
+construction*. Re-run: **ways 6,721/6,721 = 1.0000** (zero assembly failures)
+and **relations 911/911 multipolygon**, with the 20 non-multipolygon relations
+correctly producing nothing. The conclusion strengthened as a side-effect —
+from "relations are not being dropped" (true, but only decisive against a null
+of zero) to a **complete accounting** in which every input corresponds to
+exactly one output and nothing is left over in either direction.
+**Rule: when two tables must agree, share the predicate, don't document it.**
+And: *a ratio above 1 is not surprising, it is impossible* — read it as a
+definition mismatch, never as noise.
 
 **And it blocks a fix in Class D, which is the strongest argument for doing
 it.** `atomic_staged_snapshot` records a residual it cannot fix by any rename
