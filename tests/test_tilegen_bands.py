@@ -133,13 +133,19 @@ class TestRepoStyleFile(unittest.TestCase):
         if not DEFAULT_STYLE_PATH.exists():
             self.skipTest(f"{DEFAULT_STYLE_PATH} not present")
         bands = load_bands(DEFAULT_STYLE_PATH)
+        # Bucket names equal the authority namespace since 32a96fc
+        # ("rename admin buckets to align with authority namespaces").
+        # This assertion still named the pre-rename osm_admin/ohm_admin
+        # until 2 Sep 2026 — it skips when the sibling ../tileboss clone
+        # is absent (CI, CRC) and failed for anyone who had it, so it was
+        # repeatedly filed as environmental noise rather than read.
         self.assertEqual(
             set(bands),
-            {"osm_admin", "ohm_admin", "osm_misc", "po", "clio", "nl"},
+            {"osm", "ohm", "osm_misc", "po", "clio", "nl"},
         )
-        # osm_admin has 5 admin-level bands
-        self.assertEqual(len(bands["osm_admin"]), 5)
-        names = [b.name for b in bands["osm_admin"]]
+        # osm has 5 admin-level bands
+        self.assertEqual(len(bands["osm"]), 5)
+        names = [b.name for b in bands["osm"]]
         self.assertEqual(names,
                          ["continental", "country", "state", "district", "local"])
         # osm_misc has the 3 corrected bands (NOT water/forest/park)
