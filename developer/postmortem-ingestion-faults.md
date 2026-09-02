@@ -464,6 +464,21 @@ These are not code faults, but they cost real time this campaign.
   document was the least maintained**, which is the asymmetry above at its
   limit: nothing prompts a re-read of a document whose whole purpose is to be
   stable.
+* 🛑 **A correction that does not FOLLOW THE LINKS OUT of the document it
+  corrects.** No other rule here covers it, because **sweeping a single document
+  cannot find it** — both documents were individually correct and the defect
+  lived in the **edge between them.** Two instances, 2 Sep, one signature:
+  **the corrected document contained the pointer to its own uncorrected
+  source.** CLAUDE.md struck *"the geom store holds 0 `un` geometries"* and in
+  the same paragraph sent the reader to handover §3.1 as **required reading**,
+  where the original stood unmarked as a trap — with S5 the next session due to
+  act on it. And CLAUDE.md's geometry-flags entry cited `schemas/field-notes.md`
+  as the authority, where the defect predicate was presented as **complete**,
+  illustrated by the one example that hides its blind spot. **Standing fix,
+  beside "whoever resolves an alarm edits the alarm": whoever corrects a claim
+  greps for what that claim points AT, and for what points at IT — one grep in
+  each direction, at the moment of correction.** Both of today's instances would
+  have been caught by the outbound half alone.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.

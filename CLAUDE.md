@@ -703,7 +703,11 @@ the gitignored **`.env.local`**, never the tracked `.env`.
   resolved by members). Key "is it areal / usable as a `contained_in` scope
   region" off `geom_class == "area"`, NOT `has_geom` (a LineString is
   `has_geom:true` but not areal). `geom_class ∈ {area,line} AND NOT has_geom` is
-  a standing incomplete-ingestion defect predicate.
+  a standing incomplete-ingestion defect predicate — ⚠️ **incomplete in both
+  directions**: blind to `MultiPoint`→`point` (a never-written geometry leaves
+  no trace) and to its inverse, `geom_class = point` carrying an areal
+  `h3_cover` (**248 of 248 defective** in the `whg` census, and nobody's
+  check). See `schemas/field-notes.md`.
 - All coordinates are rounded to **6 decimal places** (~0.11 m) at ingestion
   time per RFC 7946, via `round_coordinates()` / `enrich_geometry()` in
   `processing/helpers.py`.  This mitigates storage bloat from pseudo-precision
