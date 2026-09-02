@@ -77,11 +77,11 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
+| **S9** (session id ⚠️ **unrecorded** — see note below the map) | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
-| **S8** | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
+| **S8** (`indexing-c0`) | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -188,6 +188,22 @@ the point is what a cold reader would take from the text. Read-only — no code,
 plan writes. Report to `indexing-5e`, which owns the document and makes the edits.
 
 ---
+
+⚠️ **S8 and S9's session ids were never written down** (found by the Auditor,
+2 Sep; verified — `grep` for any of them across this plan returns nothing).
+S1–S4 and both S3 sessions are attributed inline; **the two sessions carrying
+the campaign's critical path are the two that cannot be found in the map whose
+premise is that a successor finds their session in it.** Known for certain and
+recorded: **S8 = `indexing-c0`**, **coordinator = `indexing-5e`**, S3 =
+`indexing-7e` (and `indexing-c7` for its first session), Auditor =
+`indexing-13`. **S9's is still unknown** — candidates `indexing-98` /
+`indexing-78`. Not invented here; left blank until confirmed.
+
+⚠️ **And a session's listed state is a statement about an instant, not about
+the session.** `indexing-c0` reads "idle" between jobs, which is
+indistinguishable from stopped — that misreading produced a false "S8 never
+woke" from the coordinator this morning and a mis-identification from the
+Auditor this afternoon. **Ask the session; do not infer it from a listing.**
 
 ### Running sessions concurrently — read before starting more than one
 
