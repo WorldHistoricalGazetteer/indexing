@@ -81,7 +81,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ◐ **assigned by SG, 1 Sep** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
-| **S8** (`indexing-c0`) | 2.7 + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
+| **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -3702,6 +3702,86 @@ writes it. Namespaces are disjoint (`wd` vs `clio`/`whg`). Disk is not a
 constraint: the patch is a few MB against S8's ~20–25 GB, with 235 GB free.
 **The real risks are ES-side, not S8-side** — and `h3_cover` updates touch no
 `dense_vector`, so the HNSW-merge heap failure mode does not apply.
+
+### ✅ 2.7 COMPLETE (2 Sep) — all four namespaces have a real `final/`; S5 and S3 UNBLOCKED
+
+```
+ns    rows          ccodes      vs live    resolver
+gn    13,454,817    99.950%     ~99.94%    final/places.parquet
+wd    11,459,393    97.425%     ~97.3%     final/places.parquet
+nl         4,363   100.000%     100%       final/places.parquet
+un           247    pass-thru   n/a        final/places.parquet
+```
+
+✅ **Verified here, not accepted on report.** All four carry a **complete
+JSONL+parquet pair** in `final/` (`gn` 8.75 GB + 1.04 GB; `wd` 13.16 GB +
+1.71 GB; `nl` 23.3 MB + 6.8 MB; `un` 1.95 MB + 0.68 MB). Since
+`_STAGED_SOURCE_PRIORITY` walks `final → h3_merged → … → extract` on
+`.exists()`, **a present `final/places.parquet` is exactly what makes the
+resolver return it** — Check 1 is structurally satisfied for all four. `/vast`
+at **204 GB**, matching S8's figure.
+
+**Check 3 is two-sided — each residual EXPLAINED, not tolerated**, which is the
+half that matters:
+
+* `gn` **6,663 uncoded**, dominated by GeoNames **undersea** codes — SMU 1,371,
+  CNYU 680, BSNU 523, BNKU 486, RFU 404, RDGU 365 … seamounts, canyons, basins,
+  banks, reefs, ridges. **100% would have been a FAILURE** — it would mean
+  countries assigned to open ocean.
+* `wd` **295,049 uncoded**, top types Q23442 island 63,060, Q39594 cape 15,150,
+  Q34763 peninsula 9,619, Q11446/Q852190 ship/shipwreck 8,955 — coastal,
+  maritime and **vessels**, legitimately outside any country. Came in **slightly
+  above** live's 97.3%, consistent with the repaired tier-1 prefilter resolving
+  a few *more*.
+* `nl` **100%**, up from 99.66% — all 15 island territories resolved.
+
+**`update_merge`, the stage that had never run**, and two independent counts
+agreeing to the unit — S8's and mine, by different methods:
+
+```
+gn  docs 13,454,817 -> 13,454,817   toponyms 13,454,817 -> 26,460,645   relations 0 -> 1,831,130
+```
+
+**Relations are an exact equality** (1,831,130 offered, 1,831,130 present, zero
+loss — `extract` carried none). Toponyms +13,005,828 of 16,907,445 offered,
+**3,901,617 absorbed (23.1%)** by `_dedupe_toponyms`, because GeoNames repeats
+each record's primary name against `extract`'s clean 1:1.
+
+**Cover integrity, per namespace:** `gn` **census** (13,454,817 docs, `has_geom`
+False and `geom_class` point for **every one** — the hull mechanism is
+inapplicable *by measurement*); `wd` fresh-from-store n=400, **391 MATCH / 9
+DIFFER / 0 unresolvable**, and **152 of 152 informative matches (≥100 cells)
+agree**; `nl` three-way test; `un` 376 cells set-equal to prod at **both**
+stages.
+
+✅ **S8 did NOT use production as a reference for `wd`**, per the corroborator/
+reference distinction — its live provenance is unestablished, and agreement
+would have been as consistent with *both hull-derived* as with *both correct*.
+
+**Costs:** `update_merge` gn 7:30 / 22.5 GiB, wd 17:11 / 40.96 GiB · h3 gn
+19:18, wd 1:43:42 · ccode gn 1:03:20, wd 1:24:03. `/vast` 274 → 204 GB, **~70 GB
+against a projected 95–110**, stop-line never approached.
+
+### ⚠️ 2.7's three residuals — none blocking
+
+1. **Sub-cell polygons under-cover.** 9 of 400 `wd` area features, **all in the
+   1–9 cell band**: stored = 1 cell (centroid fallback), fresh = 2–3. E.g.
+   `wd:Q21515377`, a MultiPolygon of 0.0000021 deg² — ~200 m × 165 m, **smaller
+   than one r7 cell**. Same *direction* as the corpus-wide under-covering
+   finding, negligible in magnitude (~2.25% of `wd`'s area features).
+2. **`submit_ccode_slurm` plants a false `FAILED` row for `un`** — marks it
+   skipped, runs the pass-through inline, then submits a task
+   `ccode_enrichment:859` correctly refuses, leaving `11103929 FAILED exit 1` in
+   `sacct` **for work that succeeded.** A guard expected to fire belongs
+   *before* submission.
+3. **`reconcile_stage_status`'s default sweep silently skips `update_merge`.**
+   It is in `STAGE_ARTEFACTS` and the artefact existed with 13,454,817 records,
+   but **only `--stage update_merge` promotes it** — so a default reconcile
+   leaves `gn`/`wd` deferred at the h3 barrier **with complete artefacts on
+   disk.** This is the campaign's signature class in the reconciler itself.
+
+**➡️ S5 may now retile all 27 buckets. S3's re-harvest should find `gn:
+attempted=1,111,147` rather than 0. The overlay publish gate remains SG's.**
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
