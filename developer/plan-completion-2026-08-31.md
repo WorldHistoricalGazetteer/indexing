@@ -3210,6 +3210,63 @@ returned false **zeros**; this one returned a false **non-zero**. The class is
 *an instrument answering a narrower or wider question than the one asked*, and
 it is not only about zeros — **a match count is not a key count.**
 
+### 🛑🛑 PRODUCTION IS AFFECTED — the campaign's "staging-only" premise is FALSE for `clio` (2 Sep)
+
+**Found by S9; every element re-measured independently here before recording.**
+
+```
+LIVE  clio:es_spanish_emp_1_1572_1578_v1  cells=832   index=places_h3ccode-20260805t120000z
+LIVE  clio:es_spanish_emp_1_1579_1581_v2  cells=863   index=places_h3ccode-20260805t120000z
+STAGED h3_merged  ...1572_1578_v1  cells=832      <- live == staged, exactly
+STAGED h3_merged  ...1579_1581_v2  cells=863
+S9, whole intersection: 309 of 309 DIFFER from fresh-from-polygon; 0 MATCH
+correct counts: 469 / 472 / 631  ->  live covers are ~1.8x too many cells
+```
+
+**Production's `clio` covers are the hull-derived ones.** They span the Pacific.
+
+🛑 **This is a LIVE WRONG ANSWER, not a staging defect.** `gateway/spatial.py`
+reads `h3_cover` for `containment=fuzzy`, so **a fuzzy containment scoped to any
+of these polities is today answering from a cover roughly 1.8× too large.**
+
+**Why the reasoning that made us confident does not cover this — and the rule
+that replaces it.** The standing argument was that the live index was cut over
+5–6 Aug from `h3ccode-20260805T120000Z`, so a hull fallback in a **31 Aug** run
+is confined to `staged/`. True for `un`. **`clio`'s covers were not written by a
+post-cutover run** — staged mtimes, in UTC:
+
+```
+clio/extract    2026-07-31T15:38:10Z
+clio/h3_merged  2026-08-05T18:14:49Z   <- IS the h3ccode-20260805T120000Z run
+clio/final      2026-08-06T02:48:58Z
+```
+
+**That run is the live index.** So `clio`'s hull fallback happened *before* the
+cutover and shipped with it; `un`'s happened after and did not. ⚠️ **The
+"cutover date" argument protects only namespaces whose bad covers POSTDATE it —
+it is not a general clearance, and it was being used as one.**
+
+⚠️ **Corrects the framing of one entry above.** `clio` was called "the fourth
+namespace of the same fault", implying a single incident. It is **the same class
+in at least two separate occurrences, months apart, and the earlier one reached
+production.**
+
+**NOT established — do not read this as bounded:**
+
+* **`whg` has never been checked against live.** It is **78% defective in
+  staging** and is the obvious next candidate. **Highest-value outstanding
+  measurement in the campaign.**
+* **How many of `clio`'s 15,690 are affected in production** is unknown. The
+  309 all differ; an earlier uniform sample put staged `clio` at ~22%.
+* `nl` and `un` appear **fine in production** (`samish` live 103 == fresh;
+  `un:usa` live 376 == extract), so this is **not universal** — which is exactly
+  why per-namespace measurement replaces the date argument.
+
+ℹ️ Two secondary results: the degenerate-hull hypothesis is **dead** (stored
+hull type is `Polygon` for all 264 *and* all 45); and `clio` has **six** distinct
+h3 run_ids, so code-version-at-write-time is **not** structurally excluded the
+way staleness was.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
