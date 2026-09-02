@@ -336,6 +336,17 @@ broken. These are worse than no check, because they are cited as evidence.
   expected magnitude catches it, which is why indexing-db caught it: it printed
   the value, saw petabytes, and compared against the 226 GB both of us had been
   quoting all day.
+  **Third instance the same day, same shape, different tool:**
+  `queryRenderedFeatures()` returned **506 `osm-line-*` features at z10.00 while
+  nothing was being rendered** — it reports what is present in the loaded tiles
+  and does **not** respect layer zoom ranges. indexing-db nearly reported "lines
+  present at z10" on its word; only a screenshot showed the truth. Three
+  instruments in one day (`df`, `tile-join --version`, `queryRenderedFeatures`)
+  each returning a well-formed answer to a question that had not been asked.
+  **The common tell is that the answer was never checked against an expected
+  magnitude or an independent modality** — the escape in every case was a second
+  observation of a different kind (a remembered figure, an exit code read
+  properly, a screenshot).
   ✅ **The remedy it built is the runtime form of the both-directions rule, and
   should be copied.** Before trusting the guard, it invoked the guard with an
   impossible floor (999999 GB) and **required it to abort**, failing the job if
