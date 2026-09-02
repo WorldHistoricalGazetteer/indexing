@@ -1597,6 +1597,60 @@ residual.
 **§2.3 is complete** — extract, geom merge, production re-index, registry push,
 overlay rebuild, gate, publish. `publish_hardlinks --execute` had never been run
 before today; it has now.
+
+###### How `publish_hardlinks --execute` actually behaved (it had never been run)
+
+**It ran clean first time — no debugging, no retries, no flag-hunting, no path
+surprises.** ~~Expect to debug the publish path rather than run it.~~ **That
+warning is RETIRED.** It was well-founded when written (the step had never been
+executed) and it turned out to be wrong. `publish_hardlinks` is well-behaved:
+**dry-run is the default** and names all four destinations explicitly
+(`would_publish`, `to`, `would_prune`, `marker`), so every target is confirmable
+before committing, and `--execute` then did exactly what the dry-run said.
+Approach it as a normal command.
+
+⚠️ **But it never checks that `--db-path` was built by `--run-id`.** They are
+independent arguments: `publish()` ships whatever `--db-path` points at and
+stamps the marker with whatever `--run-id` says, validating only
+`db_path.exists()`. **A mismatched pair publishes one corpus while recording the
+provenance of another** — silently, with a plausible marker.
+
+This was live today. The build went to `…-postmerge.sqlite` (deliberately, to
+dodge the adoption trap), so `--db-path` was mandatory. Omitting it falls back to
+`IX1_BASE/hardlinks/hard_links_{run_id}.sqlite` — which had already been deleted,
+so the fallback would have raised `FileNotFoundError`, **loudly, which is the
+right failure**. Had it *not* been deleted, the default would have published the
+abandoned 248 MB partial from the wedged run under a clean run id's marker.
+**This campaign's signature fault — a plausible substitute for an absent input —
+sitting in the final step of the final row.** A `run_id` written inside the
+database and checked at publish would close it.
+
+⚠️ **Same shape: `--cutoff` must come from the log of the run that produced that
+database, and nothing checks that it does.** It is printed as `Live-delta prune
+cutoff (harvest start): …` at the head of the harvest log. A void cutoff
+(`2026-08-31T21:36:34`, from the abandoned build) was in hand and had to be
+consciously discarded for `2026-09-02T14:21:36.274562+00:00`.
+
+###### Three operational facts from this row that generalise
+
+* **The harvest sbatch runs FOUR sequential Python processes** —
+  `hard_links_staged`, `loc_links`, `contributor_replay`, then a `finalise_local`
+  heredoc. So *"the modules are already loaded, a mid-run `git pull` is safe"* is
+  **false** here: the later three import fresh from the clone. What actually makes
+  a pull safe is `git diff --name-only <clone HEAD>..origin/main` over the modules
+  the **remaining** phases import.
+* **`py-spy dump` hangs against a `D`-state process** (it needs ptrace), so the
+  recommended progress tool is unavailable in exactly the wedge case it is wanted
+  for. Use `/proc/<pid>/io` + `wchan` + `timeout 8 ls <mount>` instead.
+* **`/ix1` fell to ~290 KB/s today without being wedged.** A 1.33 GB comparison
+  that had shown no progress in an hour finished in **2:21** after one `cp` of the
+  incumbent to `/vast` and comparing locally. *Staging a read-heavy input* to
+  `/vast` is cheap and reversible; it is not the same as *writing output* there,
+  which is the thing S5 correctly refused on production-capacity grounds.
+
+`processing/compare_hardlink_overlays.py` is committed and validated (known-good,
+known-bad, sub-tolerance noise, and the `--allow-shrink` exemption). **It is
+reusable for any future overlay publish, not a one-off.**
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
