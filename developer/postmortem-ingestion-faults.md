@@ -391,6 +391,35 @@ broken. These are worse than no check, because they are cited as evidence.
   measures it, and the ones that read as background detail are exactly the ones
   nobody checks.**
 
+  ⚠️ **Conditionals are where unverified remedies hide.** indexing-db's own
+  diagnosis, ninety minutes after it recorded the remedy form above and called
+  it the hard one: it proposed re-running the filter with `r/natural=coastline`
+  to close the coastline-relation gap — which would have run cleanly, cost 23
+  minutes, produced a larger file and closed nothing, because osmcoastline keys
+  on the tag being **on the way**. It knew that; it wrote the ocean job. The
+  reason it slipped is the transferable part: **"if outcome 2, then re-filter"
+  arrived as contingency planning rather than as a claim, so it got the scrutiny
+  of an aside instead of the scrutiny of a decision.** A conditional remedy is
+  still a remedy; it is simply not being looked at yet.
+
+  🛑 **Re-reading a specification does NOT catch this, and proposing that as the
+  fix is the same error again.** The coordinator's response to the three spec
+  defects was to re-read every object reference in the issue. indexing-db's
+  correction: of the three, only **one** was caught by a control — `boost-cpp`
+  failed at a conda solve, `riverbank` fell out of a census run for another
+  purpose, and only the coastline row came from control 1. **Two of three were
+  visible only on contact with the system**, and re-reading cannot reach them.
+  **The remedy is to EXERCISE each object reference at spec-writing time with
+  the cheapest operation that would touch it** — a package name gets a dry-run
+  solve, a tag used as a lever gets counted, a filter expression gets run on a
+  small extract and reconciled. Not "check the names look right"; "make the
+  system answer for each name".
+  ⚠️ And doing so is not immune either: exercising the style respecification's
+  layer names an hour later, the coordinator probed for a layer `rivers`, got
+  ABSENT, and nearly reported a defect — the layer id is `river`, the
+  *source-layer* is `rivers`. **The verification instrument used the wrong
+  object while checking for wrong objects.**
+
   ⚠️ **In one day this class appeared in an instrument, a remedy, a dependency
   and a specification.** It is not a property of measurement — it is a property
   of *reference*. Anywhere a name stands for a thing, the name can be checked
