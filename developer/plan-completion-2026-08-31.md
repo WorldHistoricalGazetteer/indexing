@@ -79,9 +79,9 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
 | **S9** (`indexing-98`) | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
-| **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ◐ **assigned by SG, 1 Sep** |
+| **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ✅ **PURPOSE SERVED 2 Sep** — it gated 2.7's `gn`/`wd`, and 2.7 is complete. The causal chain was demonstrated end to end (`un` hull cover → tier 1 inert → islands dropped; fix it and all 15 `nl` territories resolve). Questions 1 and 4 CLOSED; **2 and 3 remain open but gate nothing and are now UNOWNED, not S9's** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
-| **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ◐ **RUNNING — SG ruled 1 Sep:** S8 takes the `un` recompute, and `update_merge` on **`wd` first**, then `gn` |
+| **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -3859,6 +3859,42 @@ never query latency.**
 * **`/vast` headroom goes stale within hours during a campaign** — 275 G → 204 G
   in a few hours today, ~71 G consumed, consistent with 2.7's `gn`+`wd` `final/`
   outputs. **Re-measure at submit time.**
+
+### 🛑 REVERT PATH FOR THE RETILE — record this before any session ends
+
+**S5 built to a FRESH directory, which is the entire revert story and was
+unrecorded until now:**
+
+```
+NEW build   /ix1/ishi/data/tiles-20260902-retile
+OLD (7 Aug) /ix1/ishi/data/tiles              <- INTACT, untouched
+revert      python -m processing.generate_tiles --redeploy-only --bucket <ns> \
+                --output-dir /ix1/ishi/data/tiles
+```
+
+⚠️ **One command per bucket restores the 7 August generation.** This is the only
+rollback for a deployed tileset, and it exists solely because S5 chose a fresh
+output directory rather than overwriting in place. **If S5's session ends, this
+path is how anyone else reverts** — it was in no document until now, which is
+precisely the failure this campaign has been dismantling.
+
+**Canary verified by the coordinator, independently of S5's report:**
+`ukhc.mbtiles` **1,740,800 B**, md5 **65b9a9d00734a812ae7f05f2271159ba** —
+**byte-identical** on CRC (`tiles-20260902-retile`) and on the tileserver
+(`/srv/tileserver/tiles/`) — and **serving: `ukhc.json` HTTP 200.**
+
+### ⬜ OPEN, UNOWNED — carry these past any session shutdown
+
+1. **45 of 309 `clio` features wrong by an undetermined mechanism.** Four
+   hypotheses eliminated (dateline polygon, `enrich_geometry` repair path,
+   simplification, staleness-by-shard-interleaving). All remediated regardless.
+2. **248 `whg` `point`-class geometries with covers up to 1,230 cells**, 100%
+   defective — **a second defect, not a hull leftover** (the convex hull of a
+   Point is a Point). Their covers are now correct *for their stored polygons*;
+   if `geom_class` is wrong it is still wrong.
+3. **§2.10 questions 2 and 3** — open, gating nothing.
+4. **`clio` +2,986** — an unsourced figure repeated at five sites, never
+   derived. S5's build will be its first derivation.
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
