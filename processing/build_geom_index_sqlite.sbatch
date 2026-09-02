@@ -31,7 +31,8 @@ conda activate whg
 
 cd "${SLURM_SUBMIT_DIR:-/vast/ishi/elastic}" || exit 1
 
-df -h /vast | tail -1
+df -h /vast/ishi | tail -1   # MUST be /vast/ishi (our 1T quota); bare /vast reports
+                             # the whole 3.9P VAST pool and is useless as a headroom signal
 
 echo "--- BUILD ---"
 python -u -m processing.build_geom_index_sqlite build --store-dir "$STORE_DIR" || exit 1
@@ -44,5 +45,6 @@ echo "--- STAT ---"
 python -u -m processing.build_geom_index_sqlite stat --store-dir "$STORE_DIR"
 
 ls -la --time-style=long-iso "${STORE_DIR}"/index.*
-df -h /vast | tail -1
+df -h /vast/ishi | tail -1   # MUST be /vast/ishi (our 1T quota); bare /vast reports
+                             # the whole 3.9P VAST pool and is useless as a headroom signal
 echo "Finished: $(date -Is)"
