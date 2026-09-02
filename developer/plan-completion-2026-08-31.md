@@ -2713,7 +2713,23 @@ after the 5–6 Aug cutover, and never shipped). **`clio` does not** — its
 `h3_merged` is `2026-08-05T18:14:49Z`, *is* the cutover run, and shipped. For
 every other namespace it is **unmeasured**.
 
-⚠️ **The failure mode is that the gate confirms the defect.** A `clio`-shaped
+✅ **THE SOUND FORMULATION (S8, 2 Sep) — this is the wording to use, and my
+caution above was over-broad.** **Production is a valid *corroborator* for any
+namespace, and a valid *reference* only where its provenance postdates the
+cutover. The gate that is always sound is FRESH-FROM-POLYGON.**
+
+S8's `un` gate was never production-as-ground-truth. It computed
+`fresh = compute_h3_fields(repr_point, geom_store_polygon)` as the **reference**
+and used prod only as the **corroborator** — so on a `clio`-shaped namespace the
+two would have **disagreed and the gate would have failed loudly**, which is the
+opposite of the failure mode below. Its soundness comes from computing the
+answer independently, not from where the comparison came from. Same for `nl`,
+whose primary evidence was the prod-independent three-way test (stored vs
+fresh-from-store vs hull-derived); production agreeing was a bonus, not the
+basis.
+
+⚠️ **The failure mode below is real but applies to the *reference* use, not the
+corroborator use. The failure mode is that the gate confirms the defect.** A `clio`-shaped
 namespace validated "against production" would have its **hull-derived cover
 certified as correct**. Before using production as a reference for any
 namespace, **establish that namespace's live-cover provenance first** — a cheap
@@ -3282,6 +3298,38 @@ production.**
 hull type is `Polygon` for all 264 *and* all 45); and `clio` has **six** distinct
 h3 run_ids, so code-version-at-write-time is **not** structurally excluded the
 way staleness was.
+
+### ✅ `gn` HAS NO POLYGONS — the hull mechanism is inapplicable to it by measurement
+
+**S8's census over all 13,454,817 `gn` documents; corroborated here on a
+2,000,000-document sample** (mine is a sample, S8's is the census — stated so the
+denominators are not conflated):
+
+```
+has_geom True        0            (S8: zero in the entire corpus)
+geom_class           point, all
+h3_cover size > 1    0            every cover is a single cell
+```
+
+**No polygons ⇒ no hull to substitute and no store lookup to fail.**
+
+⚠️ **This corrects an argument of mine.** I reasoned that `gn`'s covers cannot be
+hull-derived because its `update_merged` parquet is hull-stripped and
+`cover_geometry_for` now raises rather than falling back — so the stage "read the
+store or died". **Sound in form, but it describes a path never taken:** `gn`
+never needed the store at all. The conclusion holds; the reasoning was about a
+mechanism that could not have fired. **A correct conclusion reached through an
+inapplicable mechanism is still a defect in the reasoning** — the same standard
+applied to `clio` earlier today.
+
+🛑 **`wd` is where the caution actually bites**, and S8 has adjusted for it:
+`wd`'s h3 has not run, it **does** carry geometry (58,658 geoshapes,
+`patches_unmatched: 0`), and its live-cover provenance is **unestablished**. S8
+will use **fresh-from-store set comparison as the primary gate** and will not
+treat production as a reference. ✅ **And it has pre-committed to the right
+reading of a null result:** if prod and staged agree for `wd`, that is *equally*
+consistent with "both correct" and "both hull-derived", and it will say so
+rather than report agreement as a pass.
 
 ## Phase 3 — publication (Atlas, Beta-gated)
 
