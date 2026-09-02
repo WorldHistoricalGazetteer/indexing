@@ -9,16 +9,23 @@
 
 **[`developer/HANDOVER-2026-08-31-rebuild-audit.md`](developer/HANDOVER-2026-08-31-rebuild-audit.md)**
 
-⚠️ **CORRECTION 2 Sep — "correct in production" is now measurably false for at
-least one namespace.** `clio`'s live `h3_cover`s are hull-derived: 309 of 309
-tested DIFFER from a fresh-from-polygon recompute, at ~1.8× the correct cell
-count (`es_spanish_emp_1_1572_1578_v1`: live **832**, correct **469**). They
-were written by `h3ccode-20260805T120000Z` — **the run behind the live index** —
-so unlike `un`'s they shipped. `h3_cover` feeds `containment=fuzzy`, so this is
-a **live wrong answer** today, not a staging defect. `whg` (78% defective in
-staging) is **unchecked against production**. See
-`developer/plan-completion-2026-08-31.md`, Phase 3. **This paragraph's counts
-are still right; its "correct" is not.**
+⚠️ **CORRECTION 2 Sep — "correct in production" is false for two namespaces.
+Both now CENSUSED, not estimated:**
+
+```
+clio   3,522 of 15,683 live h3_covers wrong  (22.5%)
+whg    1,746 of  2,565                       (68.1%)
+       5,268 geometries total
+un, nl, osm, ohm — live CORRECT
+```
+
+Their covers were written by `h3ccode-20260805T120000Z`, **the run behind the
+live index**, so unlike `un`'s they shipped. `h3_cover` feeds
+`containment=fuzzy`, so this is a **live wrong answer today**, not a staging
+defect — and **79% of the damage is UNDER-covering, meaning spatial scoping
+silently OMITS places that should match.** A false negative nobody reports.
+See `developer/plan-completion-2026-08-31.md`, Phase 3. **This paragraph's
+counts are still right; its "correct" is not.**
 
 The July/August re-ingestion is complete in production — 51.2 M
 places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is

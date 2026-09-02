@@ -3484,6 +3484,62 @@ clio  ~2,980 of 15,683                            19%, n=200 uniform — still a
 un / nl / osm / ohm                               live correct
 ```
 
+### 🛑 FINAL PRODUCTION EXPOSURE — both namespaces CENSUSED, no estimates remain
+
+```
+clio    3,522 of 15,683 live-defective   (22.5%)   CENSUS, 15,683/15,683 found live
+whg     1,746 of  2,565 live-defective   (68.1%)   CENSUS, 2,565/2,565 found live
+TOTAL   5,268 geometries wrong in the live index
+
+un, nl                              live CORRECT — bad covers postdate the cutover
+osm, ohm                            live CORRECT — 30/30 each at >=400 cells
+kain_par, vob_*, pl, po, ukhc, hgis no defect found, 0/45 sampled each
+```
+
+Integrity: 8 slices merged with **zero duplicate keys**; 15,683 recomputed =
+exactly the frame. `clio`'s frame is **100% area**, which is why its denominator
+agreed with the independent live count of 15,690 all along — **the `whg`
+divergence was specific to `whg`**, which carries 1,072 line and 248 anomalous
+point geometries.
+
+⚠️ **The `clio` estimate was low by 542** — 19% (n=200) against a true **22.5%**,
+inside the 14–24% CI but above the point estimate. **Second time an estimate
+moved once censused, both in the same direction (understating).** Two for two is
+not a pattern, but it is twice.
+
+### 🛑 THE DAMAGE IS MOSTLY *UNDER*-COVERING — which is the silent failure, not the visible one
+
+```
+of the 3,522 defective clio covers:
+  live cover SMALLER than correct : 2,779   (79%)
+  live cover LARGER  than correct :   730   (21%)
+  same size, DIFFERENT SET        :    13
+```
+
+**This inverts the intuition the whole investigation was built on.** `un:usa`'s
+hull-derived cover was **1.74× too large**, and "hull-derived ⇒ too big" became
+the mental model. **At corpus scale 79% of the damage is the opposite.**
+
+**Why it matters for how this is described to anyone deciding remediation:**
+
+* an **over**-sized cover makes `containment=fuzzy` **over-inclusive** — it
+  returns places it should not, and **a user can see that**;
+* an **under**-sized cover makes it **miss places that should match** — a
+  **false negative in search**, and **users do not report the result they never
+  saw.**
+
+**So the live symptom is mostly invisible, and "wrong covers" understates it.
+The right description is: spatial scoping silently omits matching places.**
+
+✅ **The 13 same-size-different-set cases are the direct vindication of set
+comparison over cardinality** — a count-based test scores all 13 as MATCHES.
+**This is the `limuw` shape at corpus scale**, and it is the trap S8 caught S9
+heading into when stored-vs-fresh was being reported by cardinality.
+
+**Two open items, neither affecting remediation scope:** the 45 of 309 with an
+undetermined mechanism, and the 248 `point`-class geometries carrying covers up
+to 1,230 cells.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
