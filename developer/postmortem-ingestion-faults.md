@@ -100,7 +100,11 @@ downstream check can see it.
 ## Class B — estimators keyed to the wrong variable
 
 A resource request is derived from a model whose input no longer predicts the
-cost. The request looks principled and is wrong.
+cost. The request looks principled and is wrong. **It misleads in the safe
+direction as readily as the dangerous one** — Fault 13 under-provisioned and
+killed two jobs; Fault 16 over-provisioned by 3× from two independent routes
+that shared one bad anchor. A class defined only by under-provisioning would
+have caught one and missed the other.
 
 * **Fault 13 — inherited wall times.** `estimate_wall_time_seconds` medians past
   runs, which is predictive only while the *inputs* are unchanged. The
@@ -117,8 +121,9 @@ cost. The request looks principled and is wrong.
   rows). Scaling `wd`'s 40.96 GiB peak by corpus size — the published
   derivation — put `gn` at 62.5 GiB, "98% of 64 G, it fits"; the decomposition
   puts it at a 10.2 GiB floor **plus** a peak reaching 48 GiB. Both routes agree
-  at the 96 G actually requested and **disagree at 64 G, where one says fits and
-  the other says OOM after hours on a 13M-doc corpus.**
+  at the 96 G actually requested and disagree at 64 G — ~~where one says fits and
+  the other says OOM after hours on a 13M-doc corpus~~. **❌ Both were ~3× high:
+  measured 22.5 GiB (see below).**
 
 > **MEASURED, 2 Sep — and it refutes both estimates, including the one in the
 > paragraph above.** `gn`'s `update_merge` completed in **00:07:30** with a peak
@@ -143,8 +148,12 @@ cost. The request looks principled and is wrong.
 ### The permanent fixes
 
 1. **Stream or spill `_load_patches`.** A whole-file in-memory dict is unbounded
-   in a variable no caller reasons about. This is the concrete code change with
-   the best cost/benefit in this document.
+   in a variable no caller reasons about, and **the next namespace's patch is
+   not bounded by `gn`'s**. *(The superlative this entry used to carry — "the
+   best cost/benefit in this document" — was earned by an OOM prediction that
+   measurement refuted. The fix is still right; it is justified by
+   unboundedness alone, and it has been moved below the resolver fix in the
+   priority list accordingly.)*
 2. **An estimator must record the inputs its estimate was keyed to**, and
    invalidate itself when they change — the BNDA→geoBoundaries move should have
    dropped the stored medians automatically.
@@ -320,10 +329,13 @@ Ordered by expected cost avoided, not by effort.
    first day.)*
 2. **Every `INGESTION_ORDER` script must be import-tested** — Fault 7's real
    fix, already done by `tests/test_authority_imports.py`.
-3. **Stream or spill `update_merge._load_patches`** — removes the unbounded
-   memory term (Fault 16) that no estimator models.
-4. **Resolvers must test content, not existence** — closes Faults 6 and 15 and
-   the whole `.exists()` family.
+3. **Resolvers must test content, not existence** — closes Faults 6 and 15 and
+   the whole `.exists()` family. **Promoted above the memory fix**: Fault 15 is
+   the zero-byte-preferred-over-complete failure this campaign actually had to
+   fix, whereas Fault 16's measured cost avoided turned out to be ~nothing.
+4. **Stream or spill `update_merge._load_patches`** — an unbounded term keyed to
+   patch size that no estimator models. Justified by unboundedness, **not** by
+   the refuted OOM prediction.
 5. **Regenerate `final/` from `h3_merged/` whenever ccode is skipped** — Fault
    12's real fix; currently `_mark_un_skipped` does it inline, which works but
    leaves the misleading FAILED row.

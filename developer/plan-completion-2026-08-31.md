@@ -2228,13 +2228,30 @@ gn Arrow scaled  40.96 × (13,454,817 / 11,459,393) = 48.1 GiB
 of its limit, before any allowance for `gn`'s merged documents being larger than
 `wd`'s.
 
+> ❌ **REFUTED BY MEASUREMENT, 2 Sep. `gn` peaked at 23,617,000 K = 22.5 GiB in
+> 00:07:30.** 64 G was never at risk; 32 G would have done. The request was
+> harmless — Slurm wall/memory are ceilings, not reservations — but **every
+> claim in this section about what 64 G would have done is wrong**, and the
+> reasoning is corrected below rather than only in the post-mortem.
+
 ⚠️ **And the 200 k-sample extrapolation was ~3× optimistic** — it gave 1.07 KB/doc
 against a real ~3.6 KB/doc for merged documents. S8 had adjusted its own estimate
-upward for the sample being extract-shaped and *still* fell far short. **This is
-the entire justification for `wd`-first: a 64 G `gn` run would have OOM'd hours
-in, and no amount of extrapolation would have caught it.** My own "64 G covers a
-14.4 GB dict with headroom" was right about the dict and wrong about the total — I
-sized the component I had a number for.
+upward for the sample being extract-shaped and *still* fell far short. ~~**This is the entire justification for `wd`-first: a 64 G `gn` run would have
+OOM'd hours in, and no amount of extrapolation would have caught it.**~~ My own
+"64 G covers a 14.4 GB dict with headroom" was right about the dict and wrong
+about the total — I sized the component I had a number for.
+
+> ❌ **That struck sentence is now precisely backwards, and the inversion is the
+> lesson.** **Two** independent extrapolations were made — S8's ratio-scaling
+> (62.5 GiB) and my decomposition (~58 GiB) — and **both were ~3× wrong in the
+> safe direction** against a measured 22.5 GiB. Extrapolation was not
+> impossible; **both routes were anchored to `wd`, whose 40.96 GiB came from a
+> term that does not transfer to `gn` at all.** `gn` carries 139× the patch rows
+> and finished in **under half** `wd`'s 17:11 at **half** its peak — `wd`'s cost
+> lived in its Wikidata geoshapes (`geometries_to_replace`), which are large
+> polygon blobs. **The defect was the reference namespace, not the method.**
+> `wd`-first remains justified — it was the only way to learn this — but not by
+> the argument originally given for it.
 
 **3. `wd` artefacts: complete pair, no degradation.**
 `update_merged/places.jsonl` 10,338,890,657 + `places.parquet` 1,545,366,287, and
@@ -3050,7 +3067,11 @@ by row count (~48 GiB) — undetermined without measuring, so assume the worse:
 **Why this is recorded rather than dropped as a non-event:** the two routes
 agree at 96 G and *disagree at 64 G*. The ratio argument said 62.5 GiB — "98%
 of 64 G", i.e. it fits. The decomposition says a 10.2 GiB floor plus a peak
-reaching 48 GiB, i.e. **it would have OOMed after hours on a 13M-doc corpus.**
+reaching 48 GiB, i.e. ~~**it would have OOMed after hours on a 13M-doc
+corpus.**~~ ❌ **Measured 2 Sep: 22.5 GiB. Both routes ~3× high; 64 G would have
+been ample.** Kept visible because the *disagreement* between the routes was
+real and worth recording — it was the magnitudes that were wrong, in the safe
+direction, from a shared bad anchor.
 The decision was right; the published argument for it would mislead the next
 person to re-derive it. **Permanent fix: `_load_patches` should stream or spill
 — a whole-file in-memory dict is an unbounded term keyed to patch size, not
