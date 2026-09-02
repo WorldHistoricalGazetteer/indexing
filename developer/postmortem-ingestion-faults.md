@@ -347,6 +347,21 @@ broken. These are worse than no check, because they are cited as evidence.
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
   properly, a screenshot).
+  ⚠️ **And a DEPENDENCY can be aimed at the wrong object: `afterok:<job>` gates
+  on the job's exit status, not on the job's finding.** 2 Sep, #233: the
+  planet-scale ocean and inland jobs were chained `afterok` to the job that
+  verifies the water filter — correct in intent. That job's verification pass
+  completed cleanly (28 min, 145 M+ objects, results written to disk) and the
+  job then died at its *reporting* line on a `KeyError` from an unrelated
+  in-flight schema change. Exit non-zero, so the gate held — on the wrong
+  signal. Had the failure fallen the other way, a job that exits 0 while its
+  verification found nothing would have *released* the expensive stages.
+  **Gate on the artefact or the assertion, not on the process that was supposed
+  to produce it** — indexing-db's own phrasing, which is the entry: *a
+  dependency on a job is not a dependency on that job's finding.* Its second
+  guard, a runtime refusal reading the recorded relation count, is the correct
+  shape precisely because it reads the finding.
+
   ⚠️ **The class is not confined to instruments — a REMEDY can be aimed at the
   wrong object too, and that form is harder to catch because nothing measures
   it until it is used.** #233's size-pressure fallback said *"drop
