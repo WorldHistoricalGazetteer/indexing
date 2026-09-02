@@ -970,6 +970,12 @@ are both true and lead to different predictions** — say which you mean.
 > **The rebuilt overlay must come out within a few percent of `7,596,959` rows.
 > Below that, STOP — do not publish, investigate.**
 >
+> 🛑 **CORRECTED 2 Sep — read "within a few percent" literally, NOT as a floor.**
+> The expected post-2.7 total is **≈7,572,016** (7,596,959 − ~24,943 whg id-map
+> drop), which is **0.33% BELOW** 7,596,959 — correct, and *below the number*.
+> **A landing at ~7,596,959 would now be suspicious**, not reassuring. The
+> discriminating check is **`gn: attempted = 1,111,147`**, not the total.
+>
 > `publish_hardlinks` computes `row_count` from the *new* database and **never
 > opens the incumbent**, so nothing downstream will object. This is the only
 > check standing between a degraded harvest and the store the gateway reads on
@@ -1187,7 +1193,16 @@ the runbook requires; no stage was marked complete to satisfy it.
 
 **Next, and not to be skipped:** when the job completes, compare `row_count` and
 the per-namespace endpoint counts against the incumbent **before** any publish
-decision. The gate is ~7,596,959 rows; below that, stop. Expect the contributor
+decision. ~~The gate is ~7,596,959 rows; below that, stop.~~ 🛑 **CORRECTED
+2 Sep — that instruction would REJECT A CORRECT RESULT.** The gate is a
+**TARGET of ≈7,572,016**, not a floor: 7,596,959 is a **post-`update_merge`**
+figure (its asserting-source partition sums to exactly 7,596,959, `gn`'s
+1,111,147 included, built 6 Aug pre-accident), and the expected post-2.7 total
+is **7,596,959 − ~24,943** (the whg id-map drop — *the fix working*).
+**~7.57 M is SUCCESS; ~7,596,959 would now be SUSPICIOUS.** ⚠️ **And the total
+is the weaker check: the discriminating one is `gn: attempted = 1,111,147`,
+because a total can be right for compensating wrong reasons and a per-namespace
+count cannot.** Expect the contributor
 layer at ~2,038 rows rather than 26,981 — that fall is the id-map fix working.
 
 ##### ⛔ 2.5 did NOT unblock this step — `gn` needs `update_merge` first
