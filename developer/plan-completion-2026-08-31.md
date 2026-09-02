@@ -4060,6 +4060,57 @@ precisely the failure this campaign has been dismantling.
 4. **`clio` +2,986** — an unsourced figure repeated at five sites, never
    derived. S5's build will be its first derivation.
 
+### ✅ 2.3 COMPLETE — overlay PUBLISHED 2 Sep, gateway restarted, serving verified
+
+**SG authorised the publish knowing the gate said FAIL. S3 held for SG's own
+words rather than acting on a relay, and did NOT relax the gate** —
+`compare_hardlink_overlays` is untouched and its FAIL stands on record as **a
+verdict a human overrode with reasons, not a PASS anyone engineered.**
+
+```
+published total rows  7,572,016   (expected 7,572,016)
+gn asserted rows      1,111,147   (expected 1,111,147)
+new live inode 64626 · 6 Aug build preserved as hard_links.sqlite.previous (inode 59781)
+top sources: wd 3,968,404 · osm 2,295,659 · gn 1,111,147 · ohm 98,569 · iv 68,935
+```
+
+✅ **Verified live by the coordinator AFTER the gateway restart** (SG restarted
+directly): gateway PID 1865149, health `ok`, and a search returned **6
+hard-link edges spanning `wd`/`gn`/`osm`/`iv`**. **`gn` appearing in served
+edges is the meaningful signal** — its 1,111,147 assertions exist only because
+`update_merge` ran for the first time that morning, so the gateway is
+demonstrably serving links from the new build rather than the 6 Aug file.
+
+**Rollback is real rather than hoped-for:** one `mv` of
+`hard_links.sqlite.previous` back, then a restart. The file was never modified
+in place.
+
+### ⬜ RESIDUAL — live-delta prune cannot write (permission gap, currently harmless)
+
+```
+WARNING: live-delta prune failed: attempt to write a readonly database
+/vast/ishi/hardlinks/hard_links_live.sqlite   -rw-r--r--  gazetteer:ishi
+prune runs as stg135; both users are in group ishi; the DIRECTORY is drwxrwsr-x (setgid)
+```
+
+**Non-fatal by design** — the code swallows it so a prune failure cannot block a
+completed publish. ✅ **And S3 checked rather than assumed whether it mattered:
+the live delta holds 0 rows**, so there was nothing to prune and **no
+duplication risk** (consistent with `attestation_input: 0` — the live-forwarding
+flow has never written).
+
+⚠️ **It becomes real the moment that flow activates:** a future publish would
+leave already-folded rows in the delta for the gateway to **double-count**.
+
+**Fix — one command as `gazetteer` or root:**
+`chmod g+w /vast/ishi/hardlinks/hard_links_live.sqlite`
+Only the file lacks group write; the directory already has it.
+🛑 **Do NOT add `chmod` to `gaz_relay`'s allowlist** — that allowlist is a
+token→fixed-command security boundary whose own header notes *anyone in group
+`ishi` can drop a request*. Widening it for a permissions nit is the wrong
+trade. ⚠️ If the gateway ever recreates the file it may revert to `644`; the
+durable form is a `002` umask on the gateway service.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
