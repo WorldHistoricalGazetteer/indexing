@@ -50,7 +50,12 @@
 > Caught by S8. The rule below, from the person who wrote it into this document.
 >
 > **And its sharper form, from S4, 31 Aug: _a verification that has never been
-> run against a known-bad input isn't a verification._** Run each check first
+> run against a known-bad input isn't a verification._** ⚠️ **BOTH HALVES,
+> corrected 2 Sep: also run it where you know it should PASS.** A check that
+> cannot say FAIL is useless; **a check that cannot say PASS manufactures
+> confidence, which is worse.** The tile span assertion did both — it rejected
+> the known-bad hull at 232.63° **and** flagged six legitimate `un` countries,
+> and only the good-input half revealed it. Run each check first
 > where you know it should fail — against the pre-change state, the stale
 > artefact, the empty store — and confirm it says so. Two of this plan's own
 > checks were written without that and were wrong in opposite directions: §2.1
@@ -4165,8 +4170,12 @@ Preconditions and traps:
    because `tiler.service` held descriptors on the old inodes. **Restart the
    tileserver promptly after the push**, and watch the disk during it.
 
-**⚠️ FIRST — prove the verifier can fail, and do it before you deploy, because
-deploying destroys the evidence.** S4's point (31 Aug) is that Phase 3 looks like
+**⚠️ FIRST — prove the verifier can fail AND that it passes on known-good, and
+do it before you deploy, because deploying destroys the evidence.** 🛑 **Both
+halves are mandatory: the span assertion proposed here was withdrawn precisely
+because only the fail-half was demonstrated** — it rejected the known-bad hull
+correctly *and* flagged six legitimate `un` countries. **A check demonstrated
+only to fail is half-validated.** S4's point (31 Aug) is that Phase 3 looks like
 the hard case for "run the check against a known-bad input", since nobody keeps a
 poly-less tileset around to test with. But we have nine of them, they are on the
 live tileserver right now, and **the retile is what overwrites them**. So:

@@ -564,5 +564,8 @@ Ordered by expected cost avoided, not by effort.
 8. **Delete or consume the toponym vocabulary work** — Fault 10, ~5 h per run.
 9. **Hoist `_STAGED_SOURCE_PRIORITY`** — after 2.7, and it unblocks the
    directory-swap fix for Class D's residual.
-10. **Every gate demonstrated to fail on a known-bad input** before it is relied
-    on to pass.
+10. **Every gate demonstrated to FAIL on known-bad AND to PASS on known-good**
+    before it is relied on. *Site: every new check. Done when both
+    demonstrations are recorded beside the check.* ⚠️ **The fail-half alone is
+    how a check that manufactures confidence gets adopted** — the tile span
+    assertion passed the fail-half and flagged six legitimate `un` countries.
