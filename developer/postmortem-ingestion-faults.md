@@ -315,6 +315,36 @@ broken. These are worse than no check, because they are cited as evidence.
   defect was wider than my hypothesis. **A failing control means the test is
   wrong *or* the defect is bigger than you think** — and the second reading is
   the one that gets skipped.
+* **An instrument that measures the wrong object, and returns a real number
+  about it.** 2 Sep, found by indexing-db while building the `/vast` pre-flight
+  guard this campaign asked for: `df /vast` reports the **3.9 PB shared VAST
+  pool**; `df /vast/ishi` reports our **1 TB project quota**. Both print
+  `Mounted on /vast`, same filesystem string, same column layout — the only
+  difference is magnitude. A guard pointed at bare `/vast` compared
+  **3,364,958 G against a 160 GB floor**, passed cheerfully, and reported a
+  healthy free figure while protecting nothing. Audited the repo on that hint:
+  `build_geom_index_sqlite.sbatch` logged headroom from bare `/vast` at both
+  ends of the job (`d506837`) — informational rather than a guard, so nothing
+  failed silently, but anyone reading those lines to judge whether there was
+  room saw petabytes on a volume that shares 1 TB with production ES and has
+  hit flood-stage read-only before.
+  ⚠️ **This is distinct from the zero-returning instrument above and worth
+  separating.** That one is *broken* and returns nothing; this one *works
+  perfectly* and answers a different question than the one asked. No amount of
+  checking that the instrument "ran" or "returned data" can catch it — the
+  number is real, well-formed, and about the wrong object. Only knowing the
+  expected magnitude catches it, which is why indexing-db caught it: it printed
+  the value, saw petabytes, and compared against the 226 GB both of us had been
+  quoting all day.
+  ✅ **The remedy it built is the runtime form of the both-directions rule, and
+  should be copied.** Before trusting the guard, it invoked the guard with an
+  impossible floor (999999 GB) and **required it to abort**, failing the job if
+  it did not:
+  `[selftest] PASS: guard aborted on known-bad input, so it can fire.`
+  That is a check that proves it can fail, executed *at run time on the real
+  instrument*, not argued for in review. Every guard protecting something
+  expensive should carry one.
+
 * **A query that returns zero for everything, including the control.** Asked
   2 Sep whether the `osm` corpus held water polygons, I aggregated on
   `types.label` and got **0 for all seven tag keys — including `boundary`,
