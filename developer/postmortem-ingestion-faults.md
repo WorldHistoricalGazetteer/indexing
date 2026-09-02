@@ -479,6 +479,24 @@ These are not code faults, but they cost real time this campaign.
   greps for what that claim points AT, and for what points at IT — one grep in
   each direction, at the moment of correction.** Both of today's instances would
   have been caught by the outbound half alone.
+* 🛑 **A worked example chosen to be CLEAR rather than ADVERSARIAL — the text
+  is true, the example is honest, and together they mislead.** This is distinct
+  from a wrong claim and needs a different fix. `schemas/field-notes.md`
+  documented the `geom_class`/`has_geom` defect predicate and illustrated the
+  multi-variant collapse rule with **`MultiPolygon`→`area`** — **the one example
+  that hides the predicate's blind spot.** Every word was correct. A reader
+  checking the rule against the example comes away confident, and the
+  `MultiPoint`→`point` case that defeats it is never suggested. **Fix, and it is
+  a documentation habit rather than a code change: illustrate a predicate with
+  the case it FAILS, not the case it handles.** (S5's formulation.)
+* 🛑 **"Predicate = 0" means the predicate found nothing — NOT that there are no
+  defects**, and the difference is invisible once it is written down as a
+  cleared row. S5 carried *"place#145 rollout complete, predicate = 0"* as a
+  verified all-clear for two days. It was an all-clear **only within a scope
+  nobody had stated** — and the predicate was blind in two directions, one of
+  them 248-of-248 defective. **An instrument narrower than its reputation,
+  reporting success**: the same class as the rest of this document, applied to
+  a result that had already been accepted and filed.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
