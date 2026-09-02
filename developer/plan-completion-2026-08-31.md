@@ -3382,11 +3382,50 @@ Nothing here proves it — the intersection has not been computed, because `h3` 
 not importable on the VM (`shapely` 2.0.7 is; `h3` is not) and the test needs a
 compute node.
 
-**The decisive test, for whoever owns 4.14:** recompute `repr_point ∈ h3_cover`
-over all 15,690 `clio` features on a node with `h3`, and **intersect the failures
-with the 588**. Substantial overlap ⇒ the exclusion is wrong and the antimeridian
-mechanism explains the counter-examples. Disjoint ⇒ the exclusion stands on
-evidence and the 761 still have no explanation.
+**The 588 ids are written out** —
+`/vast/ishi/diagnostics/clio_antimeridian_hulls_20260902.txt` — so the
+intersection needs no recomputation by whoever holds the other list.
+
+**The prediction is DIRECTIONAL, which makes the test quantitative rather than a
+vague comparison.** A hull-derived cover over a >180° hull covers the *wrong half
+of the globe*, so a feature's own `repr_point` will **almost never** fall inside
+it. The mechanism therefore predicts **near-total containment in one direction**,
+not mere overlap:
+
+```
+of the 588 crossers, how many fail repr_point ∈ h3_cover?
+  ~588 of 588 fail   -> mechanism CONFIRMED as a cause; the exclusion is wrong
+  far fewer          -> mechanism present but NOT the cause; the exclusion survives
+residual = 761 - |588 ∩ failures|   <- the counter-examples still unexplained
+```
+
+If all 588 fail, **173 remain unexplained** — and 173, not 761, is the number
+that should carry forward as the open correctness question.
+
+**Cheapest route first, and it needs no compute node: ask S9 whether it still
+has the 761 ids.** If so this is a set intersection against the file above and
+nothing needs recomputing. The `h3` recompute is the fallback if that list is
+gone. *(Note the question has moved twice: "which file did the probe read?" →
+"field or recomputed?" → "do you still have the ids?" — each cheaper and more
+directly on the point than the last.)*
+
+**⭐ The best test is FREE, because `clio` is already in the recompute set.** Its
+covers are hull-derived, which is why it is queued — so **the fix for the 588 is
+already scheduled work**. After `clio`'s cover recompute, re-run the
+`repr_point ∈ h3_cover` census over all 15,690 and compare against 761:
+
+* **drops to ~173** → the 588 were the cause; the exclusion was wrong; the
+  residual is the real 4.14
+* **drops to ~0** → the whole row was the hull defect
+* **stays ~761** → the mechanism is present but is not the cause; the exclusion
+  stands and 4.14 is untouched
+
+Every outcome is informative, it adds no job, and it runs where `h3` imports
+anyway. **If it holds, 4.14 is not a separate residual at all — it is an
+instance of Fault 14 in a namespace already queued for the fix.**
+
+⚠️ **Keep the row open until that census actually runs.** "Already scheduled" is
+not "already verified" — which is this campaign's own lesson.
 
 **Either way §4.14's row stays open.** Even a surviving exclusion narrows the
 cause without closing it: the `repr_point`-within-geometry invariant that

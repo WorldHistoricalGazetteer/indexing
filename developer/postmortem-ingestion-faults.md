@@ -133,6 +133,24 @@ downstream check can see it.
 > source you read.** The first catches a predicate that never matched; only the
 > second catches a field that was never there.
 >
+> **Third clause: parse, don't grep, when the question is structural.** An
+> eighth instance failed in the *opposite* direction from the other seven:
+> `grep -o hull` over `gn` returned **2,950**, which reads as "hull survived"
+> and would have **refuted a correct structural prediction**; the precise
+> pattern `"hull":` returns **0**, the 2,950 being substring matches inside
+> place names. **A match count is not a key count.** This is the better
+> specimen of the class than any false zero, because a false zero makes you
+> miss a defect while a false non-zero makes you abandon a sound argument —
+> and **no denominator would have caught it**: `2,950 of 13,454,817 examined`
+> is well-formed and entirely misleading.
+>
+> **The rule now has three clauses, and it was corrected twice in one day, each
+> time by the first case the previous version failed on** — report the
+> denominator; confirm the field can exist in the source you read; parse rather
+> than grep for structure. That progression is worth noticing in itself: it is
+> the same discipline this document demands of gates, applied to the rule about
+> gates. **A rule adopted is not a rule verified.**
+>
 > **The tell, when no denominator is available: absence of variance where the
 > world has variance.** Thirty-one namespaces of differing character cannot all
 > score exactly 0; 4,363 records cannot all be `None`; two independently
