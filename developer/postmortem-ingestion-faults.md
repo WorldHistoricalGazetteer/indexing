@@ -546,6 +546,24 @@ These are not code faults, but they cost real time this campaign.
   into the instruction.** Every dispatch here carried *"if this reads as me
   expanding your remit, stop and check with SG directly"* — which is why the
   guard fired rather than being overridden by momentum.
+* 🛑 **A statement about what a WRITER does is not a statement about what a
+  READER sees — and a producer's docstring cannot answer a consumer's
+  question.** `publish_local`'s docstring says *"the gateway's open descriptors
+  against the previous inode stay valid until it re-opens"* — **true about
+  POSIX, and a false inference about this consumer.** It could not know whether
+  anyone held a descriptor, because that is not a fact about the writer. From
+  it, three sessions carried *"a publish is invisible until the gateway
+  restarts"* for hours, and a production gateway restart was requested on that
+  basis. **The consumer settles it:** `hard_link_expansion._connect_ro` opens
+  `file:{path}?mode=ro` **per invocation** (`:171`) and closes in a `finally`
+  (`:179`) — **no module-level connection, no caching** — and **no process on
+  the host holds the file open at all** (verified by scanning every
+  `/proc/*/fd`). The publish was live the instant `os.replace` completed.
+  ⚠️ **Third instance of this shape in one day**, each in different clothes:
+  reading **permission bits** instead of taking a write lock; counting
+  **documents** instead of the names a patch adds; reading a **writer's
+  guarantee** instead of the reader's behaviour. **The question is always "what
+  does the consumer actually do?", and it is always answerable by looking.**
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
