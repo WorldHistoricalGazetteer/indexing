@@ -317,8 +317,18 @@ broken. These are worse than no check, because they are cited as evidence.
 
 ### The permanent fixes
 
-1. **Every gate must be shown to FAIL on a known-bad input before it is
-   trusted.** This is now doctrine for the retile (prove the verifier fails on
+1. **Every gate must be shown to FAIL on known-bad AND to PASS on known-good.
+   Proving only the first half is how a check that manufactures confidence gets
+   adopted.** Measured 2 Sep: the proposed tile span assertion (`max(lon) −
+   min(lon) > 180`) **correctly rejected** the known-bad hull at 232.63° — and
+   **flagged six legitimate `un` countries** (`ata`/`rus`/`fji` 360.00, `usa`
+   358.93, `nzl` 355.47, `kir` 348.57), while normalising the wrap to fix that
+   **tightened the bad hull to ~140° and let the real smear through**. It failed
+   in **both** directions, and only the good-input half revealed it. **The
+   coordinator enforced the fail-half all day and omitted the pass-half**, which
+   is how it survived to be recommended. ⚠️ **A heuristic over ambiguous
+   geometry lost to a STRUCTURAL check — recording *which tier produced the
+   feature* (`007a870`) is unambiguous where the geometry is not.** This is now doctrine for the retile (prove the verifier fails on
    the preserved fixtures first) and should be doctrine everywhere.
 2. **Compare sets, not sizes**, wherever a collection is regenerated.
 3. **Verify against an independent measure — never the pipeline's own status.**

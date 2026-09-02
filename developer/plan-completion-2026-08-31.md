@@ -3881,10 +3881,38 @@ polygon: `poly=` is non-zero, the tileset's polygon count is right, and `clio`
 +2,986 still lands. **Both named deltas pass in the broken world** — a
 decorative check, and the exact failure this campaign exists to stop.
 
-✅ **The discriminator, to be run as a gate rather than left in messages:**
-**assert the maximum longitude span of each rendered feature — expect zero
-features above 180°.** Known-bad input to prove the gate fails first:
-`clio:es_spanish_emp_1_1572_1578`.
+❌ **WITHDRAWN 2 Sep — DO NOT REINSTATE. The span assertion fails in BOTH
+directions, which is worse than no check because it manufactures confidence.**
+
+~~assert the maximum longitude span of each rendered feature — expect zero
+features above 180°~~
+
+* **False positives, measured:** a naive `max(lon) − min(lon) > 180` flags **six
+  legitimate `un` countries** — `un:ata` 360.00, `un:rus` 360.00, `un:fji`
+  360.00, `un:usa` 358.93, `un:nzl` 355.47, `un:kir` 348.57 — all circumpolar or
+  genuinely antimeridian-crossing. **Verified independently here against
+  `un/final`: exactly those six, to the hundredth.**
+* **False negatives, and it cannot be rescued:** normalising the wrap **tightens
+  the Spanish Empire hull from 232.63° to ~140°**, letting the real smear
+  through.
+
+🛑 **My own error, and it is the sharper half.** I championed this as *"the only
+check on S5's row with a known-correct answer"* and told S5 to prove it **fails**
+on `clio:es_spanish_emp_1_1572_1578`. It does. **I never asked whether it fires
+on good input.** S5 did, and that is what killed it. **Proving a check fails on
+known-bad is only HALF the validation — the other half is proving it passes on
+known-good, and I enforced the first half all day while omitting the second.**
+
+✅ **Replaced by a STRUCTURAL gate — SG's own commit `007a870`,
+"refuse to publish a tileset the build didn't read geometry for".**
+`_build_staged_feature` now records **which tier** produced each feature, and
+`publish_gate` refuses the push when (1) the store was asked and returned
+nothing for every lookup — **7 August exactly**, (2) anything renders from the
+inline `hull` outside `whg-*`, or (3) the `.mbtiles` is empty or unreadable. A
+refusal **leaves the file on disk, leaves the deployed tileset serving, marks
+the namespace failed not completed, and exits non-zero so the `afterok` config
+rewrite cannot fire.** **The tier is unambiguous where the geometry is not** —
+which is why it succeeds where a geometric heuristic could not.
 
 💡 **This also explains the nine point-only layers better than we had.** *Which
 stage the tiler resolves to changes the failure mode:* `final/` carries **no
