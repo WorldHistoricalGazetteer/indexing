@@ -2110,6 +2110,11 @@ def generate_tiles_from_staged(
     # the previously-deployed tileset keeps serving, which is the safe side to
     # fail on when the alternative is publishing points over real boundaries.
     gate_refusals: dict[str, list[str]] = {}
+    # Buckets that produced no tileset because their source genuinely has no
+    # renderable geometry — NOT because anything went wrong. Tracked so the
+    # caller can tell "nothing to tile" from "the build broke": both end with
+    # zero tilesets, and conflating them fails a run over an empty dataset.
+    empty_buckets: list[str] = []
     if skip_tippecanoe:
         print("\n--skip-tippecanoe specified; GeoJSONL written but no .mbtiles produced.")
     else:
@@ -2282,6 +2287,10 @@ def generate_tiles_from_staged(
                     # the next attempt's Slurm budget.
                     if geojsonl.exists() and geojsonl.stat().st_size > 0:
                         bucket_failures.append(bucket)
+                    else:
+                        empty_buckets.append(bucket)
+                        print(f"  {bucket}: nothing to tile — source carries no "
+                              f"renderable geometry (not a failure)")
 
     # Distinguish per-namespace status: if any bucket the namespace contributes
     # to failed tippecanoe, mark its tiles stage failed; otherwise completed.
@@ -2386,7 +2395,7 @@ def generate_tiles_from_staged(
                 "Tileserver service restart is the user's separate, explicit step."
             )
 
-    return tilesets_generated, gate_refusals
+    return tilesets_generated, gate_refusals, empty_buckets
 
 
 def main():
@@ -2447,7 +2456,7 @@ def main():
             )
         )
 
-    produced, gate_refusals = generate_tiles_from_staged(
+    produced, gate_refusals, empty_buckets = generate_tiles_from_staged(
         buckets=args.bucket,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         deploy=args.deploy,
@@ -2462,9 +2471,21 @@ def main():
     # three tasks sharing node-local /tmp). Same silent-failure class as the
     # tile-join drop in place#160: the build must fail loudly or it ships.
     if args.bucket and not produced:
-        print(f"ERROR: no tileset produced for {', '.join(args.bucket)}",
-              file=sys.stderr)
-        sys.exit(1)
+        # "No tileset" has two causes and only one is a failure. A bucket whose
+        # source carries no renderable geometry has nothing to tile and must
+        # not fail the task — whg datasets with no geometry are legitimate, and
+        # the sidecar gains them over time (measured 2 Sep 2026: whg-1642 and
+        # whg-1644 hold 3 and 15 docs, all with geometries: 0, and were absent
+        # from the August generation for the same reason). Failing on them
+        # breaks any afterok chain built on the run, which is how two empty
+        # datasets blocked the 74-bucket retile.
+        unexplained = [b for b in args.bucket if b not in empty_buckets]
+        if unexplained:
+            print(f"ERROR: no tileset produced for {', '.join(unexplained)}",
+                  file=sys.stderr)
+            sys.exit(1)
+        print(f"Nothing to tile for {', '.join(args.bucket)} "
+              f"(no renderable geometry) — not a failure.")
     # A gate refusal must also exit non-zero. The trailing tileserver config
     # rewrite + restart is submitted ``afterok`` of every tile array, so
     # exiting 0 here would let a run that withheld a bucket go on to register
