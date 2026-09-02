@@ -1707,6 +1707,13 @@ with_ipa                  0
 with_panphon              0
 ```
 
+> ℹ️ **The total drifts; the check does not depend on it.** Measured 2 Sep the
+> live toponyms count is **72,703,777** — 225 above this 31 Aug baseline. That
+> is a day's drift, **not a discrepancy**, and a future re-run will get a third
+> number. The discriminating half is `with_ipa 0 / with_panphon 0`, which is
+> what makes this STATE 2 rather than STATE 1 or 3; do not read a moved total
+> as a problem.
+
 So the named check **does** discriminate here (72,703,552 vs 0 vs 0 reads "bad"),
 and it has now been watched failing against a known-bad input rather than assumed
 to work. The partial state was expected and did not occur: the 4 Aug rerun was

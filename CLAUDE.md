@@ -466,7 +466,7 @@ ES password is read from `{IX1_BASE}/es/config/elastic.password`.
 | `tm` | Trismegistos | ~64K | Ancient-world place references |
 | `ofs` | Ottoman NFS Gazetteer (Kabadayı et al. 2022) | ~16.3K | ~16.3K mid-19thC populated places from Ottoman population registers (1830–1849) |
 | `clio` | Cliopatria (Seshat) | ~15.7K | Polities (`polity`); no AAT yet |
-| `whg` | Contributed WHG datasets (`authority=True`) | **228,918** | Mixed LPF. ⚠️ Was recorded here as ~14.2K / "7 datasets live" — a **16× understatement**, corrected 2 Sep 2026 against the live index |
+| `whg` | Contributed WHG datasets (`authority=True`) | **228,918** across **48 datasets** (both measured live 2 Sep 2026; was recorded here as ~14.2K / "7 datasets live" — a **16× understatement**) | Mixed LPF. ⚠️ The dataset count is **not pipeline-derived** — a contributor publishing an `authority=True` public dataset moves it with no run. Refresh from the index, not from here: `cardinality` on `dataset_id` over a `whg:` prefix (there is **no** `dataset` field; the id is `whg:<dataset_id>:<src_id>`) |
 | `hgis` | HGIS de las Indias | ~14.1K | Spanish-American historical admin units |
 | `po` | PeriodO | ~9.0K | Periods with spatial coverage (`period`); geo-enriched |
 | `og` | Ottoman Gazetteer (ottgaz, Hanley/FSU) | ~6.3K | Ottoman admin units (eyalet/vilayet/sancak/kaza/nahiye) |
