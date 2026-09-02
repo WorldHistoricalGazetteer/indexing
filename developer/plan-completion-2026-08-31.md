@@ -2642,7 +2642,10 @@ currently in the geom store**. Two ways that could mislead — if the current co
 were itself wrong, every stored cover would have to be wrong *identically* to
 score MATCH (implausible, not impossible); and if a polygon were **replaced** in
 the store after its cover was computed, a DIFFER would be flagging **staleness**
-rather than hull substitution. Neither changes a verdict above.
+rather than hull substitution. ✅ **No longer hypothetical — see §4.14's 45
+residual `clio` features (job 11105903), where neither today's polygon nor
+today's stored hull reproduces the cover.** Remedy is unchanged either way;
+the *explanation* is not. Neither changes a verdict above.
 
 💡 **And the rule to carry forward is not the one I nearly recorded.** I redirected
 this pass to the live index arguing *"staged is an unreliable proxy"*. For
@@ -3530,7 +3533,37 @@ recurrence by making the fallback raise.**
 the load-bearing part.** (i) **45 of the 309 (15%) are wrong but not
 byte-identical** to a hull-derived cover — all are wrong so remediation is
 unaffected, but hull-derivation is established for 85% and **unexplained for the
-rest**. (ii) This measures the **309-feature intersection, not all 15,690**;
+rest**.
+
+> 🔬 **S9 tried to close the 45 and failed — job 11105903. Two named hypotheses
+> eliminated, a third proposed. "Unexplained" is now a stronger statement than
+> when first recorded, not a weaker one.**
+>
+> The Auditor's hypothesis was strong and predicted the exact shape of the
+> result: `enrich_geometry` can substitute the **envelope** for an invalid hull,
+> then `buffer(0)`, round to 6 dp and `make_valid` — so `entry['hull']` need not
+> equal `geom.convex_hull`, and test D **recomputed** the hull (because
+> `clio/final` carries none). The 45 might simply have been the repaired cases.
+>
+> ```
+> h3_merged docs carrying a hull dict : 309 of 309   premise CONFIRMED
+> final cover == h3_merged cover      : 309 of 309   checked, not assumed
+> recomputed convex_hull reproduces   : 264
+>   residual re-tested with STORED hull: 0 closed, 45 STILL unexplained
+> hull vertex counts: min 12, max 35  (threshold 5,000 — simplification CANNOT have fired)
+> ```
+>
+> **45 → 45.** Refuted, and simplification eliminated as a bonus.
+>
+> 💡 **The remaining candidate, and it generalises: the geom-store geometry
+> CHANGED AFTER the cover was written.** Neither today's polygon nor today's
+> stored hull reproduces those covers — which is exactly what staleness looks
+> like, and **this campaign rebuilt and re-merged that store repeatedly.** See
+> the DIFFER-scope caveat above: this is its **first concrete instance rather
+> than a hypothetical**. If right, a small share of DIFFERs corpus-wide are
+> **staleness, not hull substitution** — which changes the *explanation* for
+> some features and **not the remedy**, since recompute-from-current-polygon
+> fixes both. (ii) This measures the **309-feature intersection, not all 15,690**;
 C = 100% here does **not** license "100% of `clio` is wrong" — the sampled
 figure was 22%.
 
