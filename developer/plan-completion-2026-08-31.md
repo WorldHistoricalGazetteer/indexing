@@ -1438,6 +1438,105 @@ than JSONL and should be faster, but it will also have 1.1 M more rows to insert
   `squeue` state and the job's own log all failed to discriminate; frozen CPU time
   and byte-identical `/proc/<pid>/io` counters did.** *A job in state RUNNING is
   not evidence that it is running.*
+
+##### Re-harvest after 2.7 — COMPLETE. Both predictions exact; the gate's FAIL is one known cause
+
+**Slurm `htc` 11107043, COMPLETED in 01:48:23** (6 h wall, kept at the floor this
+time *because* the previous run measured 67 min — same decision procedure,
+better evidence). Built to
+`/vast/ishi/hardlinks/hard_links_whg-idmap-20260831T071935Z-postmerge.sqlite`.
+**Nothing published; the live overlay is still the 6 August build.**
+
+⚠️ **The adoption trap was live in this step's own path.** The *completed*
+1,137 MB build from the pre-2.7 run sat at exactly the path
+`submit_hardlinks_slurm` derives from this run id. A rerun would have opened it
+and `INSERT OR IGNORE`d on top, yielding a plausible total assembled from two
+different corpora. Hence the `-postmerge` suffix; the earlier build is kept as
+the pre-merge reference. **The trap is not only stale WAL files — a *successful*
+previous build at the same run id is the more dangerous form**, because it looks
+like exactly what you want.
+
+**Both predictions landed exactly.**
+
+```
+gn: attempted=1,111,147  inserted=1,111,147  rejected=0     (was 0)
+row_count = 7,572,016                                       (predicted 7,572,016)
+```
+
+Phase 1A `attempted 7,568,850 / inserted 7,568,849 / rejected 0` (one duplicate
+collapsed); LOC `1,132 / 1,129`; contributors `2,043 fetched / 2,038 inserted`.
+Every namespace reproduces the published overlay's **asserting-source** count
+exactly. **2.7 is therefore confirmed by an independent downstream route**, not
+only by its own report.
+
+###### The gate returns FAIL — and it is a tool limitation, not a data defect
+
+```
+TOTAL  7,596,959 -> 7,572,016   delta -24,943   (exactly the whg id-map drop)
+gn     5,092,751 -> 5,084,613   -0.2%    restored
+wd     7,516,092 -> 7,507,036   -0.1%    restored
+```
+
+Eight namespaces flagged — `bnf`, `cerl`, `gnd`, `gov`, `loc`, `tgn`, `viaf`,
+`wp`. **They are the counterpart endpoints of the dropped whg contributor
+edges**, proved rather than assumed:
+
+| ns | incumbent rows | of which **contributor** | dropped | predicted survivor | candidate |
+|---|---:|---:|---:|---:|---:|
+| `bnf` | 812 | **812** | 692 | 120 | **120** |
+| `gnd` | 1,275 | **1,275** | 1,130 | 145 | **145** |
+| `loc` | 1,450 | **1,450** | 1,312 | 138 | **138** |
+| `viaf` | 2,112 | **2,112** | 1,919 | 193 | **193** |
+| `tgn` | 581 | **581** | 496 | 85 | **85** |
+| `gov` / `wp` / `cerl` | 15 / 10 / 1 | **15 / 10 / 1** | 14 / 10 / 1 | 1 / 0 / 0 | **1 / 0 / 0** |
+
+**Each of those namespaces' entire presence in the overlay is contributor
+edges** — its total equals its contributor count exactly — so a 92% contributor
+drop takes 92% of the namespace with it. Every candidate figure is predicted to
+the unit. `gn` −8,138 and `wd` −9,056 are the same cascade, bounded by their
+8,312 and 9,245 contributor rows.
+
+⚠️ **Known limitation of `compare_hardlink_overlays`, stated rather than papered
+over:** `--allow-shrink NS` exempts the named namespace but cannot know that
+dropping a row also removes its **counterpart endpoint**. A future version should
+cascade the exemption. **The tool was deliberately NOT patched to convert this
+FAIL into a PASS** — altering a gate so it passes the artefact in front of you is
+the precise move this campaign exists to prevent.
+
+**Assessment (a recommendation, not a decision): the overlay is correct and
+publishable.** Total exactly right, `gn`/`wd` restored, every deviation traced to
+the intended whg fix with arithmetic that predicts each figure. **The gate
+nevertheless says FAIL, so this step stops here.** 🛑 **The publish is SG's alone.**
+
+###### For whoever publishes
+
+* cutoff **`2026-09-02T14:21:36.274562+00:00`** — the 31 Aug one is **void**;
+* `publish_hardlinks --execute` is still the one step in this row never executed;
+* ⚠️ **a publish is invisible until the gateway restarts** — `publish_local` is an
+  atomic `os.replace` and the gateway's open descriptors against the previous
+  inode stay valid until it re-opens. Restart ownership is S5's.
+
+###### ⚠️ Correction to the wedge diagnostic this session put into circulation
+
+Earlier I gave S5, S8 and 5e "**CPU time frozen across two samples**" as the test
+for a `hard`-mount NFS wedge. **That is incomplete and it produced a false alarm
+on my own gate job.** A purely I/O-bound process legitimately shows `00:00:00`
+CPU and state `D` while making real progress — `compare_hardlink_overlays`
+reading a 1.33 GB SQLite over NFS did exactly that.
+
+**The correct discriminator is that NO counter advances**, with
+`/proc/<pid>/io` `rchar`/`syscr` as the primary signal and CPU time secondary:
+
+| | genuine wedge (11091158) | slow but alive (11110966) |
+|---|---|---|
+| CPU time | frozen `00:08:30` | frozen `00:00:00` |
+| `rchar` / `syscr` | **frozen** | **advancing** (+4.3 MB/15 s) |
+| `wchan` | `folio_wait_bit` | `filemap_update_page` |
+| mount check | `/ix1` **timed out** | `/ix1` **OK** |
+
+`/ix1` read throughput was measured at **~290 KB/s** during that window — slow,
+not hung. The fix was to `cp` the incumbent to `/vast` once and compare locally:
+the same job then finished in **2:21** against an hour of no progress.
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
