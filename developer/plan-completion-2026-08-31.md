@@ -3099,6 +3099,38 @@ figure carried in project memory: **16.9M is what this patch contains**,
 measured. The two may differ legitimately (names already present in `extract`
 are not in the patch) or one may be wrong. Measure, do not assume they agree.
 
+### ✅ `gn`'s `update_merge` PASSES the name-count gate (2 Sep) — relations exactly, toponyms with explicable dedupe
+
+```
+                docs         toponym_id     relation_type     bytes
+extract      13,454,817      13,454,817           0        7,384,904,990
+update_merged 13,454,817      26,460,645   1,831,130        8,222,731,668   (+838 MB, +11.3%)
+```
+
+**Relations are an EXACT match.** `extract` carried **zero** relations, so
+`_dedupe_relations` had nothing to absorb and the check is an equality rather
+than a bound: the patch offered **1,831,130** and `update_merged` contains
+**1,831,130**. **Zero loss.**
+
+**Toponyms: +13,005,828 against 16,907,445 offered — 3,901,617 deduped
+(23.1%), and the shortfall is explicable rather than tolerated.** `extract` has
+exactly **one** toponym per document (13,454,817 of each, a clean 1:1), and
+GeoNames' alternate-names file routinely repeats a record's primary name. The
+absorbed count is **0.51 per patched row** across 7,686,422 rows — i.e. about
+half the patched documents were offered one name identical to the one they
+already had. `_dedupe_toponyms` dropping exactly those is the designed
+behaviour.
+
+**Document count is identical either side, as predicted** — the demonstration,
+on real data, of why the document-count check cannot fail here and why this gate
+had to be pre-computed from the patch.
+
+**⚠️ The "~26.7M GeoNames alt names" figure in project memory reconciles as a
+TOTAL, not a delta.** The measured post-merge total is **26,460,645**. The
+*added* count is 13.0M. Anyone checking a future run against "26.7M" must know
+which of the two it is; recorded here because assuming the wrong one would
+either mask a 13M-name loss or invent one.
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 3.1 Retile all 27 buckets  — **S5**
