@@ -4537,6 +4537,56 @@ holds no alias before deleting it.
 
 ---
 
+### ✅ HOW THE FIRST-EVER PUBLISH ACTUALLY WENT — and S3's closing knowledge
+
+**It ran CLEAN first time. No debugging, no retries, no flag-hunting, no path
+surprises.** ⚠️ **S3's own warning — *"expect to debug the publish path, not run
+it"* — is RETIRED as wrong**, on its own report. It was well-founded when made
+(the step had never run) and the outcome should not leave the next person
+over-cautious: `publish_hardlinks` **dry-runs by default** and names all four
+targets explicitly (`would_publish`, `to`, `would_prune`, `marker`), and
+`--execute` did exactly what the dry-run said. **Approach it as a normal
+command.** The only friction was a harness permission classifier, not the code.
+
+🛑 **RESIDUAL 1 — `publish_hardlinks` never checks `--db-path` was built by
+`--run-id`.** Verified in code: `:71` validates **only** `db_path.exists()`;
+`:91` stamps the marker with whatever `--run-id` says; `:127-128` falls back to
+`hard_links_{run_id}.sqlite`. **A mismatched pair publishes one corpus while
+recording another's provenance — silently, with a plausible marker.** S3 had to
+pass `--db-path` (to reach `…-postmerge.sqlite`), and the default would have
+published **an abandoned 248 MB partial from the wedged run** under a clean run
+id. It escaped only because that file had already been deleted, so the fallback
+raised `FileNotFoundError`. **This is the campaign's signature defect sitting in
+the last step of the last row.** Fix: stamp `run_id` inside the database and
+check it at publish.
+
+🛑 **RESIDUAL 2 — `--cutoff` has the same shape.** It must come from the log of
+the run that produced *that* database (`Live-delta prune cutoff (harvest start)`
+at the top of the harvest log) and **nothing stops you using another**. S3 was
+carrying a void one (`2026-08-31T21:36:34`) from the abandoned build and had to
+consciously discard it. **Two independent arguments that must agree, with
+nothing checking they do.**
+
+**Operational knowledge that would otherwise have closed with S3:**
+
+* ⚠️ **The harvest sbatch runs FOUR sequential Python processes**
+  (`hard_links_staged` → `loc_links` → `contributor_replay` → a `finalise_local`
+  heredoc), **not one.** So *"modules are already loaded, a pull is safe
+  mid-run"* is **FALSE** for this job — the later three import fresh. The real
+  test is `git diff --name-only <clone HEAD>..origin/main` over the modules the
+  **remaining** phases import.
+* **`py-spy dump` hangs against a `D`-state process** (it needs ptrace) — so the
+  recommended progress tool is unavailable in **exactly** the wedge case you
+  most want it. Use `/proc/<pid>/io` + `wchan` + a `timeout 8 ls` on the mount.
+* **`/ix1` read throughput fell to ~290 KB/s** without being wedged. A 1.33 GB
+  comparison that showed no progress in an hour finished in **2:21** after one
+  `cp` of the incumbent to `/vast` and comparing locally. **Staging a
+  read-heavy input to `/vast` is cheap and reversible** — not the same as
+  *writing* output there.
+* ✅ **`compare_hardlink_overlays` is committed and validated** against
+  known-good, known-bad, sub-tolerance noise and the `--allow-shrink`
+  exemption. **Reusable for any future overlay publish, not a one-off.**
+
 ## Phase 4 — tracked, not scheduled
 
 ### 4.15 Split tile `work_dir` from `output_dir` — intermediates to node-local scratch
