@@ -3988,6 +3988,67 @@ and **never consults the class** (verified). So the correction changes what S5
 is entitled to **predict**, not what gets **drawn**. **Easy to conflate, and
 the distinction is the useful half.**
 
+### 🛑 3.1's COMMAND DEPLOYS. IT DOES NOT BUILD. (found by S5 in a dry-run, 2 Sep — nothing submitted)
+
+**Verified here, all three parts:**
+
+```
+generate_tiles.py:2229   --no-deploy   dest='deploy', action='store_false', DEFAULT=True
+                         comment: "Deploy is ON by default — per-bucket auto-push
+                         to the tileserver as each .mbtiles completes"
+pushes fire at :2019 and :2115   `if deploy and not push_mbtiles_to_tileserver(mbtiles)`
+submit_tiles_slurm.py:318-321    writes: generate_tiles --run-id .. --manifest-path .. --bucket "$BUCKET"
+                                 NO --no-deploy
+grep -c deploy submit_tiles_slurm.py  ->  0     (zero deploy awareness, no passthrough)
+```
+
+**So §3.1's literal command — `python -m processing.submit_tiles_slurm --run-id
+h3ccode-20260805T120000Z` — pushes each `.mbtiles` to the LIVE tileserver as its
+bucket completes**, then the trailing job runs `update_tileserver_config
+--execute` (config rewrite + restart + verify).
+
+🛑 **The buckets go live ONE AT A TIME, as each finishes — so there is no moment
+at which the tilesets exist built-but-undeployed to be checked.** Therefore
+**both** of the following are **unachievable with the command the plan gives**:
+
+* §3.1's own precondition 3 — *"assert a non-zero polygon count per bucket
+  **before deploying**"*;
+* SG's standing constraint that **deploy is a separate decision from build**.
+
+`--no-restart` does **not** help: it suppresses only the trailing config rewrite;
+**the per-bucket pushes have already happened.**
+
+⚠️ **And it would overwrite the nine poly-less tilesets — the live counterparts
+of the preserved fixtures — before either check could run.** Those fixtures exist
+*because* that deploy destroys the evidence.
+
+**This is the campaign's signature fault in the plan itself: the prose says
+check-then-deploy, the command does deploy-while-building, and the gap survived
+because everyone read the command as doing what the paragraph around it said.**
+S5 found it in a `--dry-run` **before submitting**, which is the only reason it
+was found at all.
+
+**Options — SG's, not ours:**
+
+* **(a) Add a `--no-deploy` passthrough to `submit_tiles_slurm`** — one argparse
+  flag plus one conditional fragment on the `:321` line. Small, reusable, and it
+  makes §3.1's documented sequence actually performable. **S5's recommendation
+  and mine.**
+* **(b) Hand-roll an sbatch** calling `generate_tiles --no-deploy` per bucket —
+  touches no shared code, but **reimplements the tiering/array logic** and risks
+  divergence from the submitter. *(This campaign's own history is against
+  hand-rolled sbatch: it is how `un`'s cover was broken.)*
+* **(c) Proceed with auto-deploy** — contrary to SG's instruction and §3.1's own
+  gate.
+
+**S5 is HOLDING and has submitted nothing.** Its readiness is otherwise
+complete: **both FAIL demonstrations pass** — preserved fixtures decode to **0
+polygons** on 282 and 191 point-only features (proving the polygon check can
+fail *and* the fixtures are readable), and the span assertion **rejects
+`clio:es_spanish_emp_1_1572_1578` at exactly 232.63°**. Eligibility resolves to
+**75 buckets — 27 non-`whg` plus 48 `whg-*`** — with `gn` and `wd` both present,
+so **2.7 genuinely unblocked it.**
+
 ### 3.1 Retile all 27 buckets  — **S5**
 
 ```bash
