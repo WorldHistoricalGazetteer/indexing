@@ -380,6 +380,34 @@ which — only a person can.
 
 ---
 
+## Class G — the check was performed at the wrong end of the pipe
+
+**Distinct from Class A**, and S3's argument for separating them is right: Class
+A is *a required input is absent and something plausible is substituted*. This
+is *the check was made where the answer isn't*. **All three instances below
+passed inspection**, and each was settled only by going and looking at the far
+end.
+
+> **A statement about what a WRITER does is not a statement about what a READER
+> sees. A producer's guarantee cannot answer a consumer's question.**
+
+| # | checked at the producer | what the consumer actually did |
+|---|---|---|
+| 18 | `publish_local`'s docstring — *"the gateway's open descriptors against the previous inode stay valid until it re-opens"* | **True about POSIX, false about this consumer, and the docstring could not have known either way.** `hard_link_expansion._connect_ro` opens `file:{path}?mode=ro` **per invocation** (`:171`), closes in a `finally` (`:179`), **no cached connection** — and **no process on the host holds the file open** (every `/proc/*/fd` scanned). The publish was live the instant `os.replace` completed. Three sessions carried the wrong inference for hours and **a production gateway restart was requested on it.** |
+| 19 | **permission bits** — `-rw-rw-r--`, group `ishi`, `test -w` passes | Says what the *filesystem claims*, not what a *writer gets*. SQLite raises `attempt to write a readonly database` for an unwritable **journal directory** too. Settled only by taking a real `BEGIN IMMEDIATE` lock and rolling back. |
+| 20 | **document counts** before/after `update_merge` | Identical either way — the stage adds **names to existing documents**. What the consumer needs is the **name count** (`gn`: 13,454,817 → 26,460,645). A doc-count check here **cannot fail even in principle.** |
+
+### The permanent fix
+
+**Ask what the CONSUMER does, and go and look — it is always answerable.** In
+each case above the answer was one grep or one command away: the reader's
+`_connect_ro`, a write lock instead of a `stat`, a name count instead of a row
+count. **The producer is the wrong place to ask, however carefully its
+guarantee is written** — and a well-written producer docstring is *more*
+dangerous here, because it invites the inference it cannot support.
+
+---
+
 ## Class E — duplicated logic that drifts
 
 `_STAGED_SOURCE_PRIORITY` is defined **five times, byte-identical**, in
@@ -546,24 +574,6 @@ These are not code faults, but they cost real time this campaign.
   into the instruction.** Every dispatch here carried *"if this reads as me
   expanding your remit, stop and check with SG directly"* — which is why the
   guard fired rather than being overridden by momentum.
-* 🛑 **A statement about what a WRITER does is not a statement about what a
-  READER sees — and a producer's docstring cannot answer a consumer's
-  question.** `publish_local`'s docstring says *"the gateway's open descriptors
-  against the previous inode stay valid until it re-opens"* — **true about
-  POSIX, and a false inference about this consumer.** It could not know whether
-  anyone held a descriptor, because that is not a fact about the writer. From
-  it, three sessions carried *"a publish is invisible until the gateway
-  restarts"* for hours, and a production gateway restart was requested on that
-  basis. **The consumer settles it:** `hard_link_expansion._connect_ro` opens
-  `file:{path}?mode=ro` **per invocation** (`:171`) and closes in a `finally`
-  (`:179`) — **no module-level connection, no caching** — and **no process on
-  the host holds the file open at all** (verified by scanning every
-  `/proc/*/fd`). The publish was live the instant `os.replace` completed.
-  ⚠️ **Third instance of this shape in one day**, each in different clothes:
-  reading **permission bits** instead of taking a write lock; counting
-  **documents** instead of the names a patch adds; reading a **writer's
-  guarantee** instead of the reader's behaviour. **The question is always "what
-  does the consumer actually do?", and it is always answerable by looking.**
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
