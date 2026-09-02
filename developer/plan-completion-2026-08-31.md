@@ -2570,7 +2570,7 @@ cover spanning lon −179.99…179.94, *more* r4 cells than a fresh run (9,960 v
 it is the **hull** that crosses. `un-countries.py` computes the extract's cover
 inline from the real geometry, which is why `extract/` is correct.
 
-**Production is NOT affected, and S8 has now measured BOTH sides** — the live
+**Production is NOT affected** ⚠️ **— TRUE OF `un` ONLY; this reads as global and is false as such (see Phase 3, 2 Sep: `clio` 309/309 DIFFER in prod).** S8 measured BOTH sides — the live
 index holds the *correct* cover:
 
 ```
@@ -2699,11 +2699,27 @@ So this is not "confined to `staged/un` and what has read it" — that was my
 framing and it was too narrow. Any namespace h3'd through that submitter, on any
 node where `import sqlite3` failed, could carry a hull-derived cover.
 
-**Production remains unaffected as far as anyone has shown**, and the evidence for
-that got stronger: prod's `samish` is 103 and `ngati-rehua` 82, matching
-fresh-from-store, so **prod holds polygon-derived covers while the staged tree
-holds hull-derived ones**. That extends the validation gate — production is a
-known-good reference for more than `un:usa`.
+~~**Production remains unaffected as far as anyone has shown**~~ ❌ **FALSE —
+see the PRODUCTION IS AFFECTED entry in Phase 3 (2 Sep): `clio` is 309/309
+DIFFER in the live index.** The `nl` evidence below is still correct *for `nl`*:
+prod's `samish` is 103 and `ngati-rehua` 82, matching fresh-from-store.
+
+🛑 **THE VALIDATION GATE THIS SENTENCE ESTABLISHED IS NAMESPACE-CONDITIONAL AND
+WAS RECORDED AS GENERAL — sessions are working against it now.** ~~production is
+a known-good reference for more than `un:usa`~~. **Production is a known-good
+reference ONLY for a namespace whose live covers were written by a run that
+POSTDATES the hull-fallback fix.** `un` qualifies (its bad covers are 31 Aug,
+after the 5–6 Aug cutover, and never shipped). **`clio` does not** — its
+`h3_merged` is `2026-08-05T18:14:49Z`, *is* the cutover run, and shipped. For
+every other namespace it is **unmeasured**.
+
+⚠️ **The failure mode is that the gate confirms the defect.** A `clio`-shaped
+namespace validated "against production" would have its **hull-derived cover
+certified as correct**. Before using production as a reference for any
+namespace, **establish that namespace's live-cover provenance first** — a cheap
+triage pass is to ask which namespaces' live covers were written by
+`h3ccode-20260805T120000Z` versus a later run; the definitive test is a
+fresh-from-polygon recompute on a sample.
 
 ⚠️ **S8's discriminator was invalid and it is worth knowing why.** It compared
 *counts* against production, saw "three match, three differ in both directions",
