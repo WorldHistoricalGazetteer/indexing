@@ -3501,8 +3501,50 @@ Overlap examples are `clio:es_spanish_emp_1_1572_1578_v1` and siblings — the
 Spanish Empire, Philippines to the Americas, crossing ±180 exactly as `un:usa`
 does. **The mechanism is present, not excluded.**
 
-🛑 **THE INTERSECTION REFUTES THE EXCLUSION; IT DOES NOT ESTABLISH THE
-MECHANISM — S9's caveat, and it corrects an overreach of mine.** I wrote that
+✅ **MECHANISM SETTLED, 2 Sep — job 11105893, all 309, 0 no-verdict, read-only.
+`clio` IS `un`'s fault, and the recompute set is ONE FAULT IN FOUR NAMESPACES.**
+
+```
+A. _crosses_antimeridian(POLYGON)  [what compute_h3_fields keys off]:     0   (0%)
+B. hull lon-span > 180             [the 588 predicate]              :   309 (100%)
+   both A and B                                                     :     0
+C. stored != fresh_from_polygon    [the cover is WRONG]             :   309 (100%)
+D. stored == cover_from_HULL       [hull-derived — the un signature] :   264  (85%)
+```
+
+1. **`clio`'s covers are hull-derived** — 85% **byte-identical** to the cover
+   computed from the convex hull, the same test that established it for
+   `un:usa`. Same fault, same silent geom-store fallback, same three stacked
+   `except Exception` blocks.
+2. **"Antimeridian handling applied to a genuinely-crossing polygon" is RULED
+   OUT** — **0 of 309** polygons trip the codebase's predicate.
+3. **The two predicates are perfectly disjoint here** — 309/309 on hull-span,
+   0/309 on ring-jumps, zero overlap. This run is the demonstration that they
+   are not interchangeable.
+
+**So the recompute set stops being a list and becomes a class: `un`, `nl`,
+`clio`, `whg` are one fault, remedied the same way, and `6ad2640` prevents
+recurrence by making the fallback raise.**
+
+⚠️ **Two things S9 explicitly does NOT claim, preserved because the restraint is
+the load-bearing part.** (i) **45 of the 309 (15%) are wrong but not
+byte-identical** to a hull-derived cover — all are wrong so remediation is
+unaffected, but hull-derivation is established for 85% and **unexplained for the
+rest**. (ii) This measures the **309-feature intersection, not all 15,690**;
+C = 100% here does **not** license "100% of `clio` is wrong" — the sampled
+figure was 22%.
+
+ℹ️ **An epistemics note worth keeping.** I originally wrote that `clio` is in
+the recompute set *because its covers are hull-derived*; S9 challenged it on the
+ground that `clio/final` carries `geom_ref`, and I retracted. **The retraction
+was right and the claim was also true.** Field presence tells you what
+`cover_geometry_for` *would* do **with a working reader** — not what it did; `un`
+had `geom_ref` too. So the original claim was **unsupported when made** and is
+**now supported by measurement**. Both steps were correct: asserting it without
+evidence was wrong, and doubting it was right, and the measurement settled it.
+
+~~🛑 **THE INTERSECTION REFUTES THE EXCLUSION; IT DOES NOT ESTABLISH THE
+MECHANISM**~~ — superseded by the above; retained for the reasoning — S9's caveat, and it corrects an overreach of mine.** I wrote that
 `clio` is in the recompute set *"precisely because its covers are hull-derived"*.
 **Not established.** `clio/final` carries `geom_ref`, `has_geom` and `geom_class`
 per geometry (verified here on `clio:sumerian_city-states_-3400_-3201`), so
