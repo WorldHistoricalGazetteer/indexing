@@ -289,6 +289,24 @@ These are not code faults, but they cost real time this campaign.
   summarises is corrected.** (The Auditor's structural finding, adopted.)
   Corrections were reliably filed *adjacent to* the error, while the summary and
   gate positions that depended on them went stale — four separate instances.
+* **Corrections propagate inward for free and outward only if someone carries
+  them — so staleness concentrates in the most general document.** A finding
+  reaches the campaign plan in minutes, because whoever found it is already
+  writing there. It reaches the taxonomy one hop later, and the briefing every
+  session reads *before doing anything* only if a person deliberately walks it
+  out. **No session's remit covers the outer ring**, which is why the document
+  with the widest blast radius gets the least scrutiny. Measured on 2 Sep:
+  CLAUDE.md still documented `scripts/cluster.sh` (**not in the repository**)
+  and three `es` commands with **no dispatcher branches**, its corpus figures
+  were pre-rebuild in four places (`~47M` against a measured 51,187,900), and
+  `whg` was recorded at `~14.2K` against **228,918** — a 16× understatement of
+  the namespace this campaign had just re-ingested. The re-ingestion workflow
+  ended by instructing the reader to run a command that no longer exists.
+  **Standing fix: when a campaign closes a subsystem or corrects a measured
+  figure, its last act is to grep the *outer* ring for it** — CLAUDE.md, then
+  any handover — because the inner documents are already right. Two of the eight
+  findings would have been caught by grepping one number outward, and the
+  severe one by grepping `-cluster` outward when the branches were deleted.
 * **Cite `module.symbol`; treat `:NNN` as a hint.** Of 38 line-number citations
   checked, 26 survived, and **every survivor carried a symbol name**. Line
   numbers rot within a single campaign.
