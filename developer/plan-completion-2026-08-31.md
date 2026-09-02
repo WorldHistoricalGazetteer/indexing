@@ -3419,6 +3419,71 @@ run rewrote it — provenance, not location.**
 n=200 is the number to use**, and the CIs overlap at 63–68% so they are
 consistent rather than contradictory.
 
+### 🛑 `whg` CENSUSED — 1,746 of 2,565 live-defective. EXACT. And it corrects BOTH estimates
+
+```
+geom_class   tested  MATCH  DIFFER   rate   example (live/fresh)
+area           1,247    359     888    71%   whg:975:117   67/70
+line           1,070    460     610    57%   whg:1118:699  18/15
+point            248      0     248   100%   whg:12:1794    3/1
+TOTAL live-defective  1,746 of 2,565        2,565 of 2,565 docs found live
+```
+
+**No rate, no confidence interval, no extrapolation.** The frame question is
+also fully answered: S9's frame splits `point 248 / area 1,247 / line 1,070` —
+**the ~245 non-area/line geometries predicted from the arithmetic are 248
+points**, and `area` is 1,247 of the 1,248 measured here (one lacks a `geom_ref`
+or a multi-cell cover).
+
+🛑 **My denominator would have been the WORSE error, and in the more dangerous
+direction.** I argued 1,248 was the right frame and that ~761 followed. **An
+area-only frame reports 888 and misses 858 defective geometries** — the line and
+point classes entirely. Against a true 1,746 that is a **2.3× UNDER-count**,
+where S9's withdrawn ~1,565 was an under-estimate by only 181. **Understating a
+production exposure heading for a remediation decision is worse than
+overstating it.**
+
+✅ **So the lesson is NOT "use the area denominator". It is that neither of us
+should have multiplied.** S9's *frame choice* was right and its *extrapolation*
+was wrong — **separate things, and both are recorded.** The pooled 61% masked a
+71% area rate, and **only the census could reveal that.** That is the argument
+for censusing over reconciling frames, and it is now evidenced rather than
+argued.
+
+ℹ️ **Sampling check:** the census rate is 68% against the uniform sample's 61%
+(CI 54–68) — **exactly at the CI's upper edge.** Consistent, and a fair reminder
+that a point estimate at n=200 sits where it sits.
+
+### ⚠️ NEW ANOMALY — 248 `point`-class geometries carry polygon-sized covers, 100% defective
+
+**Flagged, not explained. Verified independently here — exactly 248 of `whg`'s
+213,081 point-class geometries have a multi-cell cover, matching S9's count.**
+
+```
+cover sizes among the 248:  2 cells (28) … 3 (47) … 63 (2) … 204 … 264 … 310 … 476 … 892 … 1,230
+all three sampled carry geom_ref = True
+```
+
+`compute_h3_fields` returns exactly `[centroid]` — **one cell** — for a Point.
+**A `point`-class geometry with a 1,230-cell cover was not computed from a
+point.** Whether the geometry changed class, the cover predates a class change,
+or `geom_class` is simply wrong for them is **not established and nobody should
+guess.** Small population, 100% consistent, which usually means one cause.
+
+⚠️ **Its own row, NOT folded into the hull-fallback story — it does not look
+like the same fault.** Compare the standing predicate in
+`schemas/field-notes.md`: `geom_class ∈ {area,line} AND NOT has_geom` is a known
+incomplete-ingestion defect. **This is its inverse** — `geom_class = point` with
+an areal cover — and is not currently anybody's check.
+
+**Revised production exposure:**
+
+```
+whg   1,746 of 2,565 geometries live-defective    EXACT (census)
+clio  ~2,980 of 15,683                            19%, n=200 uniform — still an ESTIMATE
+un / nl / osm / ohm                               live correct
+```
+
 ## Phase 3 — publication (Atlas, Beta-gated)
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
