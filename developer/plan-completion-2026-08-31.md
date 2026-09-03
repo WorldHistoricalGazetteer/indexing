@@ -88,7 +88,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
-| **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
+| **S6** (`whg3-74`) | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ✅ **DONE 3 Sep — LIVE ON PROD** (`whg3` main `8e0fe8f29`, dev `8f3af0191`). Verified on the live map, not just in the data: prod rows match dev **exactly**, incl. source-feature counts. Found and fixed a defect in *this* repo — see §3.2 |
 | **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
 
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
@@ -4630,11 +4630,47 @@ success is not evidence it read any geometry. Then re-run the audit's decode
 across all 27 deployed tilesets and confirm: polygons present where expected,
 `start_def`/`end_def` on every bucket, `label` on the banded ones.
 
-### 3.2 whg3 — the two-mode `setFilter`  — **S6**
+### ✅ 3.2 whg3 — the two-mode `setFilter` — **DONE 3 Sep, LIVE ON PROD**
 
-The last client-side piece of place#176 (*definitely* vs *possibly* alive), a few
-lines, spelled out in the issue. Pointless before 3.1, since the props it filters
-on only exist afterwards.
+The last client-side piece of place#176 (*definitely* vs *possibly* alive).
+
+**Verified on the live map at both dev and prod, with prod matching dev exactly**
+— including the source-feature counts in the loaded tiles, confirming prod
+serves the tilesets S5 pushed 2 Sep:
+
+```
+gazetteer  layer         off   possibly   definitely
+osm        fill  z6      760      760          0
+gn         circle z10   1509     1507          0        <- undated branch, for real
+nl         fill  z8      173      173          0
+tgn        circle z10    664      664          1
+```
+
+**place#164's defect is gone from production**: `osm`/`tgn`/`nl` do not blank in
+*possibly*. `gn` 1509→1507 exercises `['!',['has','start']]` against a ~92%
+undated corpus — two genuinely dated out-of-window features drop, the rest stay.
+Every row restores to its `off` value on a second Off, so the base filter is
+preserved rather than overwritten.
+
+⚠️ **The check logged, per layer per mode, whether the clause is actually
+present in `map.getFilter()`** — so the counts cannot be confused with an
+unwired filter, which is the one failure mode that would have looked like
+success. Committed as a repeatable, host-parameterised script.
+
+🛑 **IT FOUND A DEFECT IN THIS REPO — `generate_tiles.py`'s filter sketch gave
+*definitely* as CONTAINMENT** (`start_def <= fromYear AND end_def >= toYear`,
+alive throughout the window). The gateway's `es_helpers._temporal_filter` is
+interval **OVERLAP** in both modes and says so in its docstring; the deployed
+client mirror `atlas.js::temporalHitPasses` is overlap too. **The sketch also
+contradicted itself** — its *possibly* line was overlap. A client built to it
+would diverge from the result list on every partially-overlapping record, which
+is exactly what place#169 exists to close. Fixed `a9d71ed`; **the mode selects
+which BOUND is compared, never the SHAPE of the comparison.**
+
+**Deliberately out of scope, correctly** — both are place#176's riders, not the
+`setFilter`: the place#140 `coverage:1` footprints (which carry *no* temporal
+props, so filtering them would assert something false in either mode — the
+honest fix is the Regions status line) and the base-style boundary layers.
 
 ### 3.3 Delete the rollback index and the tile scratch  — **S7**
 
