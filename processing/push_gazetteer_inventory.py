@@ -142,6 +142,71 @@ _HARDLINK_SHIP_MARKER_TEMPLATE = "{runs_dir}/{run_id}.hardlink_ship.json"
 # ---------------------------------------------------------------------------
 
 
+def _assert_aggregates_fresh(namespace: str) -> None:
+    """Refuse a push whose aggregates are OLDER than the staged data they describe.
+
+    The existence checks above catch a missing aggregate. They do not catch a
+    STALE one, and a stale aggregate is worse than a missing one: it pushes a
+    ``record_count`` and ``temporal_extent`` that are published on the public
+    gazetteer page, so the failure is a user-visible wrong number rather than an
+    error someone sees.
+
+    This exists because the aggregates go stale silently. ``temporal_extent``
+    runs only in Batch 9 and ``h3_coverage`` only in the h3 stage, so a targeted
+    or incremental re-extract — a repair, a single-namespace add — updates the
+    staged tree and never re-runs either. Measured 3 Sep 2026: 18 namespaces had
+    their ``h3_coverage`` aggregate written on 5 Aug, deleted afterwards, and
+    never regenerated, because the run manifest correctly recorded the stage as
+    ``completed`` and nothing ever checked the artefact still existed.
+
+    ⚠️ Compares MTIME AGAINST MTIME, never against a run id. Run ids are UTC and
+    host mtimes are local; the two are hours apart by construction and comparing
+    them has already produced one false conclusion in this campaign.
+
+    ⚠️ Resolves the staged source through each module's OWN accessor rather than
+    rebuilding the path here. ``_staged_namespace_source`` walks
+    ``final -> h3_merged -> boundary_merged -> update_merged -> extract``; a
+    hand-rolled ``final/`` check would silently pass for any namespace that has
+    no ``final/`` — which is precisely the class this guard exists to catch.
+
+    Exemptions come from ``GLOBAL_COVERAGE_NAMESPACES`` / ``is_relations_only``
+    rather than being re-derived, so the guard cannot disagree with the writer
+    about which namespaces legitimately have no coverage file.
+    """
+    from processing.gazetteer_h3_coverage import _patch_path
+    from processing.gazetteer_temporal_extent import _staged_namespace_source
+
+    stale: list[str] = []
+
+    src = _staged_namespace_source(namespace)
+    agg = _temporal_extent_path(namespace)
+    if src is not None and Path(src).exists():
+        if Path(src).stat().st_mtime > agg.stat().st_mtime:
+            stale.append(
+                f"temporal_extent is older than {src} — "
+                f"rerun `python -m processing.gazetteer_temporal_extent "
+                f"--run-id <RUN_ID> --namespace {namespace}`"
+            )
+
+    if namespace not in GLOBAL_COVERAGE_NAMESPACES:
+        patch = _patch_path(namespace)
+        cov = _h3_coverage_path(namespace)
+        if patch.exists() and cov.exists():
+            if patch.stat().st_mtime > cov.stat().st_mtime:
+                stale.append(
+                    f"h3_coverage is older than {patch} — "
+                    f"rerun `python -m processing.gazetteer_h3_coverage "
+                    f"--run-id <RUN_ID> --namespace {namespace}`"
+                )
+
+    if stale:
+        raise RuntimeError(
+            f"Stale aggregate(s) for {namespace}; refusing to push a "
+            f"user-visible number computed from older data:\n  - "
+            + "\n  - ".join(stale)
+        )
+
+
 def _authority_meta(namespace: str) -> dict[str, Any]:
     """Look up name + citation + structured attribution for a namespace.
 
@@ -528,6 +593,7 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
             f"Missing temporal_extent aggregate for {namespace}: {_temporal_extent_path(namespace)}. "
             f"Run `python -m processing.gazetteer_temporal_extent --run-id <RUN_ID> --namespace {namespace}`."
         )
+    _assert_aggregates_fresh(namespace)
     meta = _authority_meta(namespace)
     start, end = _read_temporal_extent(namespace)
     entry = {

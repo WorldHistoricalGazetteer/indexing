@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -425,6 +426,51 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
               f"embeddings. Run the Symphonym backfill so they become fuzzy-searchable.")
 
 
+def _refresh_registry_aggregates(namespace: str) -> None:
+    """Regenerate this namespace's registry aggregates after an incremental add.
+
+    CLAUDE.md's incremental single-namespace workflow lists the aggregates as a
+    MANUAL step, which is the gap written down rather than closed. Both
+    generators are wired only into full-run paths — ``temporal_extent`` into
+    Batch 9, ``h3_coverage`` into the h3 stage — so a targeted add like this one
+    updates the staged tree and the live index while leaving the aggregates
+    describing the corpus as it was before. They then feed ``record_count`` and
+    ``temporal_extent`` onto the public gazetteer page, so the stale reading is
+    user-visible.
+
+    Best-effort by design: the index write has already succeeded and must not be
+    reported as failed because an aggregate could not be rebuilt. But it is
+    reported LOUDLY rather than swallowed — an unnoticed failure here is exactly
+    how 18 namespaces came to be pushing figures computed from data months old.
+    ``push_gazetteer_inventory`` refuses a stale aggregate independently, so a
+    failure here is caught again at push time rather than reaching the registry.
+    """
+    from processing.staging_contract import GLOBAL_COVERAGE_NAMESPACES, is_relations_only
+
+    if is_relations_only(namespace):
+        return
+
+    run_id = f"incr-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    jobs = [("processing.gazetteer_temporal_extent", True)]
+    # Global namespaces publish the sentinel and legitimately have no file.
+    jobs.append(("processing.gazetteer_h3_coverage",
+                 namespace not in GLOBAL_COVERAGE_NAMESPACES))
+
+    for module, applicable in jobs:
+        if not applicable:
+            continue
+        print(f"\nRefreshing {module.rsplit('.', 1)[-1]} for {namespace} ...")
+        rc = subprocess.call([sys.executable, "-m", module,
+                              "--run-id", run_id, "--namespace", namespace])
+        if rc != 0:
+            print(
+                f"⚠ {module} FAILED (exit {rc}) for {namespace}. The index write "
+                f"succeeded; the registry aggregate is now STALE. Rerun it before "
+                f"pushing the inventory — push_gazetteer_inventory will refuse it.",
+                file=sys.stderr,
+            )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -473,6 +519,9 @@ def main() -> None:
         es.indices.refresh(index=resolve_concrete_index(es, PLACES_ALIAS))
     if args.execute and not args.places_only:
         es.indices.refresh(index=resolve_concrete_index(es, TOPONYMS_ALIAS))
+    if args.execute and not args.toponyms_only:
+        _refresh_registry_aggregates(args.namespace)
+
     print("\nDone." + ("" if args.execute else "  (dry-run — no changes written)"))
 
 
