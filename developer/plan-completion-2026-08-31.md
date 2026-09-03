@@ -5123,6 +5123,73 @@ S9 can say which file it opened. It matters because it is not a data oddity but 
 
 ---
 
+## ⭐ 4.17 The mapping-versus-schema diff — 30 undeclared fields (Auditor, 3 Sep)
+
+**Question nobody had asked:** which fields does the `places` index actually
+*hold*, versus which does `schemas/places.json` *declare*?
+
+```
+live mapping fields              101
+declared in schemas/places.json   71
+UNDECLARED (accepted by dynamic)  30      5,891,998 field-instances
+declared but ABSENT from live      0      <- every declared field exists
+```
+
+`dynamic` defaults to **true** on this index, so any authority can add a field
+and nothing reports it. **Every undeclared field's doc count is exactly one
+authority's full document total** — `source` 2,991,143 = `tgn`; the six-field
+Ottoman block 16,296 each = `ofs`; `historical_county` 24,000 = `iv`;
+`display_color` 4,363 = `nl`; the 247s = `un`. No field is shared between
+authorities.
+
+🛑 **THIS IMMEDIATELY REFUTED THE RECOMMENDATION IT WAS TESTING.** Thread 2,
+reasoning from the single instance of top-level `h3_cover`, recommended
+`dynamic: strict` so re-introduction would fail loudly. **That would have broken
+production.** `geometries.boundary_source` is undeclared *and read by*
+`ccode_enrichment.py:208-210`:
+
+```python
+sources = {(g or {}).get("boundary_source") for g in (doc.get("geometries") or [])}
+(fallback if sources == {"bnda"} else primary).append(doc)
+```
+
+— the **primary/fallback tier split for `un` country polygons**, on the namespace
+the whole corpus prefilters through. A second real-reader group
+(`wikidata_qid`, `admin_unit`, `kaza`, `kaza_1848`, `liva_1848`) is consumed by
+`processing/interlink_ottgaz.py`. **A recommendation derived from one member of
+a class was wrong about the class**, and only the enumeration could show it.
+
+**Serving cost, measured:** no undeclared field reaches an API consumer.
+`/api/search` uses an explicit allow-list (`es_helpers.py:1219`); `/api/places`
+fetches `_source: True` so all 30 cross ES→gateway on every call and are then
+**discarded**, having no slot in `PlaceDetail`. Cost is storage plus per-request
+transfer and parse of fields thrown away — sharpest in `h3_cover`/`h3_centroid`,
+dynamically mapped as **`text`**, so H3 cell ids are analysed as prose in 1.31 M
+documents and never queried.
+
+### The remedy — declare first, tighten second
+
+1. **Declare and keep:** `geometries.boundary_source` and the ottgaz interlink
+   set. These are legitimate; the defect is the schema omission, not the field.
+2. **Delete:** root `h3_cover` / `h3_centroid` (§thread 2), and root `timespans`
+   (82,508 docs) — a duplicate of the nested path that nothing reads.
+3. **Decide:** ~18 authority-local fields (`source`, `area_km2`,
+   `historical_county`, `display_color`, `time_period`, `language_family`,
+   `description`, `continent`, `subregion`, `region`, `admin_level`, `divan`,
+   `nahiye`, `register_*`, `source_project`) — each one authority's own metadata,
+   read by nothing. Declare as intentional per-source extras, or drop at the
+   next re-extract.
+4. **Only then** consider strict mapping, and **per branch** — `geometries` and
+   the root have different populations and different readers.
+
+✅ **The durable fix is the check, not the cleanup: put a mapping-versus-schema
+diff in `audit_rebuild.py`.** One comparison, a denominator, and it converts a
+class currently found *by accident* — twice, sideways, while investigating
+something else — into a bounded standing check. Same argument as 4.9's store
+cross-check, applied to the schema.
+
+---
+
 ## Critical path
 
 ```
