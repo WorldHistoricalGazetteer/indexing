@@ -5223,18 +5223,43 @@ overlap declared `descriptions` (0 docs carry both). It belongs in declared
 derivable from data already present (geometry), so it alone has a positive
 argument for deletion rather than declaration.
 
-🛑 **SCOPE OF EVERY "NO CONSUMER" ABOVE.** Searched: `gateway/`, `processing/`,
-`clustering/`, `authorities/`, `tests/`, `testing/`, all `*.js` in this repo, and
-the Django registry payload (which carries only *dataset*-level fields — its
-`description` is the dataset's, not the place field's). **NOT searched: the
-whg3 frontend**, which is not checked out beside this repo. **Grep whg3 before
-deleting anything in B or D** — especially `display_color`, named exactly like
-something a map style would read.
+✅ **SCOPE OF EVERY "NO CONSUMER" ABOVE — now closed.** Searched: `gateway/`,
+`processing/`, `clustering/`, `authorities/`, `tests/`, `testing/`, all `*.js`
+in this repo, the Django registry payload (only *dataset*-level fields — its
+`description` is the dataset's, not the place field's), **and whg3
+(`/home/stephen/Documents/GitHub/whg3`, 3 Sep)**. Every Group D field returns
+**0 files** in whg3, `display_color` included — the one flagged as most likely
+to be read by a map style. `source` is confirmed consumer-free in **both**
+repositories.
+
+⚠️ **One false POSITIVE in that grep, worth recording as the mirror of today's
+false zeros.** `h3_cover` matched **18 whg3 files** — all of them `h3_coverage`,
+the *dataset-level* registry field, a different thing entirely. An unanchored
+pattern matched a substring of another field's name and would have **blocked a
+correct deletion**, where the day's other instrument failures waved wrong things
+through. Same remedy as the `"hull"[^:]` fix: anchor the pattern. The one genuine
+`h3_centroid` hit (`reconcile_helpers.py:472`) reads `g.get("h3_centroid")` while
+iterating `geometries` — **the nested field. The root-level delete stands.**
 
 **Suggested order:** 1 `source` (2.99 M, zero risk) · 2 declare Group A (closes
 the strict-mapping hazard) · 3 root `timespans` (migrate 202, then delete) ·
-4 `description` → `links` · 5 Group D after the whg3 grep · 6 `depictions` —
-populate it or drop it from the schema.
+4 `description` → `links` · 5 Group D (whg3 grep now done — clear) ·
+6 `depictions` — **reframed, see below**.
+
+⭐ **`depictions` is NOT an accidental declaration — it is aspirational, and
+dropping it would quietly close a product question.** It appears in 33 whg3
+files via `PROPERTY_FIELD_MAP` (`reconcile_helpers.py:281`), mapping
+`whg:lpf_feature` → `[… "descriptions", "depictions"]` — but those resolve
+against `ELASTIC_INDICES = "whg,pub,wdgn"`, the **legacy v3 indices**, not
+`places`. So it is not a consumer of `places.depictions`. What it establishes is
+that **`depictions` and `descriptions` are part of the LPF feature contract WHG
+already serves from v3**, and our new corpus cannot serve it because no
+authority populates it. **The decision is therefore "should the new index carry
+this LPF property?", not "why is this field empty?"** — a product question for
+SG. The same applies more gently to `descriptions`: declared, in the LPF
+contract, populated for **0.05%** of the corpus (26,867 docs).
+⚠️ Note also that whg3 reconciliation still reads **v3** for these properties
+while everything else moves to the new corpus.
 
 ✅ **The durable fix is the check, not the cleanup: put a mapping-versus-schema
 diff in `audit_rebuild.py`.** One comparison, a denominator, and it converts a
