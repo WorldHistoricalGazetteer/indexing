@@ -26,7 +26,14 @@ import osmium
 
 
 def classify(tags: dict) -> str | None:
-    """Return the tile layer this object belongs to, or None to skip."""
+    """Return the tile layer this object belongs to, or None to skip.
+
+    ``ice`` is named to match whg-ne-basic's existing source-layer, as
+    ``ocean``/``lakes``/``rivers`` are, so repointing the style stays a
+    ``source`` change with ``source-layer`` untouched on all five layers.
+    """
+    if tags.get("natural") == "glacier" or tags.get("landuse") == "glacier":
+        return "ice"
     if tags.get("natural") == "water":
         return "lakes"
     if "water" in tags:

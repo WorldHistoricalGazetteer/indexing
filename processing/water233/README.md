@@ -90,9 +90,55 @@ OK.
    post-build check.
 
 
-## Result — built 3 September 2026
+## Result — rebuilt 3 September 2026 with `ice`
 
-`water.mbtiles` **1.30 GB**, z0–10, 1,030,437 tiles, worst tile **454.4 KB**
+`water.mbtiles` **1.35 GB**, z0–10, 1,095,985 tiles, worst tile **481.6 KB**
+(at z2 — 18 KB under tippecanoe's 500 KB ceiling, so z2 is the tile that
+breaches first if anything more is added).
+
+    name    whg-water
+    layers  ice, lakes, ocean, rivers
+    sha256  45206dd2e3acd09e5b6364bc2397546be604ddc2fddf6cc6108e84fca4f37ad5
+
+| layer | features |
+|---|---:|
+| ocean | 57,413 |
+| lakes | 22,432,127 |
+| rivers | 712,884 |
+| ice | 115,142 |
+
+### The ice gate
+
+`ice` was added because `ocean` draws **above** `ice` in the style. Today both
+come from the same NE tileset so the order is invisible; repointing `ocean` to
+OSM at z10 while `ice` stayed at NE z7 would cut slivers into the coarse ice
+front — this issue's own defect, relocated to Antarctica.
+
+⚠️ It could only ship if OSM's ice was **at least as complete as NE's**,
+otherwise four layers improve while the fifth silently loses coverage.
+Measured before tiling:
+
+| | features | area below 60°S |
+|---|---:|---:|
+| OSM `natural=glacier` | 821 | 1,555,966 km² |
+| NE ice shelves | 159 | 1,543,477 km² |
+
+Ratio **1.008** — and globally OSM adds 4,169,545 km² of glacier, so Greenland
+and the alpine glaciers are gained too.
+
+⚠️ The glacier-only tags-filter also returned **258 `natural=water` features**
+as referenced-object bycatch. Those are already in `lakes.geojsonl`, so
+emitting them in `ice` would have duplicated 258 polygons invisibly. Filter
+the assembled output to `layer == "ice"`.
+
+### Superseded first build
+
+The three-layer build (1.30 GB, 1,030,437 tiles) passed its gate and was sound;
+it was superseded by scope, not fault. The ocean was **not** rebuilt for ice —
+osmcoastline works from `natural=coastline` and is unaffected by glacier tags.
+
+<!-- superseded numbers retained below for reference -->
+`water.mbtiles` (first build) **1.30 GB**, z0–10, 1,030,437 tiles, worst tile **454.4 KB**
 (under tippecanoe's 500 KB ceiling, so no tile is at risk of being silently
 skipped by `tile-join`).
 

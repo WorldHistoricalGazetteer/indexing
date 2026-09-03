@@ -90,6 +90,16 @@ def layers_in(buf):
     return out
 
 PROBES = [
+    # Ice probes first: the layer added in the revised scope, and the one
+    # whose absence the earlier probe set could not have detected.
+    # ⚠️ NOT lon=180.0: x = (lon+180)/360*n gives exactly n at the
+    # antimeridian, which is out of range (valid 0..n-1), so every zoom
+    # returned NO TILE and looked like missing ice. Probe bug, not data gap.
+    ("Ross Ice Shelf",          -175.0, -81.5, [4, 6, 8]),
+    ("Ross, east side",          170.0, -78.0, [4, 6, 8]),
+    ("Filchner-Ronne Ice Shelf",  -60.0, -79.0, [4, 6, 8]),
+    ("Greenland interior",       -42.0,  72.0, [6, 8, 10]),
+    ("Alps (Aletsch)",             8.05, 46.50, [8, 10]),
     ("Neum  (control-3 viewport)", 17.62, 42.92, [8, 9, 10]),
     ("open Pacific",             -140.0,  0.0,  [4, 8, 10]),
     ("Amazon basin",              -60.0, -3.0,  [8, 10]),
@@ -114,13 +124,13 @@ for label, lon, lat, zooms in PROBES:
 print("  layers observed across all probed tiles:")
 for k, v in sorted(seen_total.items()):
     print(f"    {k:8s} {v:8,} features")
-declared = {"ocean", "lakes", "rivers"}
+declared = {"ocean", "lakes", "rivers", "ice"}
 missing = declared - set(seen_total)
 print()
 if missing:
     print(f"  *** DECLARED BUT NEVER OBSERVED: {sorted(missing)}")
     print(f"  *** Present in metadata, absent from every probed tile.")
     sys.exit(3)
-print("  All three declared layers were observed carrying real features.")
+print(f"  All {len(declared)} declared layers were observed carrying real features.")
 PY
 echo "=== DONE $(date -Is) ==="
