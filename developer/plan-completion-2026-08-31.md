@@ -128,11 +128,41 @@ instrument rather than the corpus. §4.17 warned of exactly this and it still
 happened to a reader who had just read the warning — put it beside *"documentation
 does not prevent this and only the control does."*
 
-**◐ Remaining packages — NOT yet verified here, awaiting S5's close-out with
-denominators:** corpus-wide `h3_coverage` (how many namespaces of how many
-expected), the 40,465-doc backfill's re-census, 4.20's four items A/B/C/D, whether
-4.19 was reached at all, and — the one that matters most — **anything S5 was given
-and did not finish.**
+**S5's close-out received 3 Sep**, marked **V** (measured independently after the
+fact) or **R** (a job reported it, not separately confirmed) throughout — the
+distinction this campaign exists to enforce, and S5 applied it unprompted.
+
+| package | outcome |
+|---|---|
+| **8 · field deletions** | ✅ **V.** Migrated `description` → `links` as `seeAlso` (2,057 docs) **before** deleting anything. Deleted `description` 2,057 · `source` 2,991,143 · `h3_cover`+`h3_centroid` 1,310,192. **4,303,392 modified, 0 errors**, all `_bulk` (never `_update_by_query` — the index carries `default_pipeline: extract_namespace`). Control: `tgn` still exactly 2,991,143, proving `source` was *reconstructible*, not lost. Rollback for the h3 pair at `/vast/ishi/s5-dryrun/rollback_h3_cover_h3_centroid.json`; none needed for `source` (derivable from `namespace`) or `description` (migrated first). **Coordinator's independent count agrees to the digit.** |
+| **h3_coverage** | ✅ **V, and the denominator is not 27.** Of 27 namespaces, **7 are exempt** (`GLOBAL_COVERAGE_NAMESPACES` + `loc`), so **21 require a real file**. Before 3, after **21/21, 0 missing**. Regenerated cell counts compared against the 5 Aug manifest: **match 18, differs 0, missing 0**. |
+| **40,465 backfill** | ✅ **V** on its own frame: 40,465 written, 0 errors; re-census **0 actionable of 105,299**; frame moved 145,764 → 105,299, difference **exactly 40,465**; parent held at 986,065. Rollback `/vast/ishi/s5-dryrun/rollback40k.json`. |
+| **4.20 fall-through** | ✅ `6d853ab` (fallback counter + rate-limited logging on all three bare `except: pass`; GeometryCollection recursion over all member types; `h3_stage` comment), `8ee43aa` (`H3ResMismatchError`, compacting within each resolution), `37aa15d` (ladder to r0, coordinator's). |
+| **4.19 field-notes** | ✅ **DONE, not queued** — `bd843e5`. All four `_TBD_` sections written to their separate dispositions; `clusters.json` closed as won't-document; `types.json` scoped against the type-system skill so the two cannot drift. `geometries[].bounds` resolved to `[minLon, minLat, maxLon, maxLat]`. |
+| **ice deploy** | ✅ **V** on the tileserver after transfer: sha256 `45206dd2e3acd09e5b6364bc2397546be604ddc2fddf6cc6108e84fca4f37ad5`, 1,445,879,808 bytes, four layers serving, ice at Ross and Greenland. |
+
+⚠️ **`po:p0s2rwkrjbs` went 1 → 233 cells, NOT the ~1,483 predicted, and the
+shortfall is correct.** `_polyfill_adaptive` yields 1,572 at r2; compaction
+returns 233 across r0/r1/r2; `uncompact(233 → r2)` returns **exactly** the 1,572
+set. Lossless — the coordinator's prediction was a **pre-compaction** figure
+compared against a **post-compaction** result. Two numbers describing the same
+set at different stages of the same pipeline is not a discrepancy, and would have
+been recorded as one had S5 not checked the round trip.
+
+🛑 **THE ONE CLAIM S5 REFUSES TO CERTIFY, AND IT IS THE ONE THE COORDINATOR
+ANNOUNCED AS SETTLED.** The coordinator reported to SG that *"the corpus is now
+fallback-free."* **It is not established.** The post-backfill census returned
+`{uncoverable: 1}`; package 7 fixed that geometry and `fallbacks: none` is **V**
+for it individually — but **the full-frame census was never re-run after the
+ladder landed**. So: one known fallback, fixed and individually verified;
+**corpus-wide is INFERRED.** S5 flagged this itself, unprompted, against its own
+interest, and named it as the place the two accounts were most likely to differ.
+
+⚠️ **This is Class A wearing the campaign's own clothes.** Every ingredient of a
+correct conclusion was present — the defect found, the fix shipped, the instance
+verified — and the *generalisation* from one verified instance to a whole corpus
+was made by the coordinator, in prose, to SG. **Closing it needs one full-frame
+census re-run, not an argument.**
 
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
 concurrency rules below before running them at the same time. Only S2 gates S5.
