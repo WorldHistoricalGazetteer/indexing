@@ -5232,6 +5232,35 @@ in this repo, the Django registry payload (only *dataset*-level fields — its
 to be read by a map style. `source` is confirmed consumer-free in **both**
 repositories.
 
+🛑 **AND A SCOPE FACT NOBODY HAD: `whg3` QUERIES THE `places` INDEX DIRECTLY,
+not only through the gateway.** `placetypes/es_tree.py:71` and
+`placetypes/mapping_utils.py:170,310,779,817` issue their own ES queries against
+it. Every "no consumer" audit that reasons *"whg3 goes through the gateway, so
+the gateway's allow-list bounds what whg3 can see"* is therefore **unsound**.
+Checked (whg3-74, 3 Sep): the field names those queries reference are `aat_id`,
+`term`, `path`, `description`, `count`, `types`, `types.identifier`, `label`,
+`depth`, `source_id`, `note`, `is_place_type`, `osm_tags`, `ohm_tags`, `wd_qids`,
+`fclasses`, `in_wiki`, `confidence`, `aat_term` — **none on the deletion list**
+(note `source_id` ≠ `source`). The conclusion holds; the reasoning that would
+have supported it without checking does not.
+
+⚠️ **Searching Python alone is not searching whg3.** A second, broader sweep
+(all `*.py`, `*.js`, `*.html`, `*.json`, `*.yml`, `*.css`, excluding
+`node_modules/`, `venv/` and the generated `static/webpack/` bundles) found
+`admin_level` **read** at `atlas.js:754` and `:2106` — occurrences a
+Python-only pass reports as zero. **Both are DEAD READS**:
+`heroMap._emitBoundarySelection` (`heroMap.js:627-635`) emits `boundary`, not
+`admin_level`, and `areaSearchRouter.js` never sets the key, so the property is
+always `undefined` at both sites. ⚠️ This says nothing about the **tile** prop of
+the same name, which is a separate question from the index field.
+`continent` and `subregion` appear as prose and as UN M49 spreadsheet column
+headers respectively — text, not field reads.
+
+⚠️ **One coupling worth knowing before anyone reshapes `/api/places`:**
+`views_entity.py:226` reads `crc_place.get("timespans")` — the **gateway's own
+response shape**, not the index field. Deleting root `timespans` from the index
+does not touch it; changing the gateway's response would.
+
 ⚠️ **One false POSITIVE in that grep, worth recording as the mirror of today's
 false zeros.** `h3_cover` matched **18 whg3 files** — all of them `h3_coverage`,
 the *dataset-level* registry field, a different thing entirely. An unanchored
