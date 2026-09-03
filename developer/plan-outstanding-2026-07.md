@@ -55,12 +55,22 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 
 ### whg3 — carried forward from S6's close-out (3 Sep)
 
-S6 (`whg3-74`) completed §3.2. ⚠️ **It was NOT closed** — SG closed place#176 as
-completed, opened **place#234** for its two riders, and set S6 working on them.
+✅ **THE whg3 SIDE OF THE CAMPAIGN IS COMPLETE (3 Sep).** §3.2 done; **place#176
+CLOSED**; **place#234 CLOSED** — both riders live on production and verified
+there (`main` `ac9542a35`). The Regions status line makes a statement the map
+previously could not ("this source has nothing in this period"), and the
+"as at year Y" lock needed **no new predicate**: a locked year is the degenerate
+window `[Y, Y]`, and because both modes are interval-OVERLAP tests that already
+means "alive at Y". ⚠️ Had the containment reading been real, `[Y,Y]` would have
+been incoherent in *definitely* and the lock would have needed a special case —
+the overlap choice paid for itself.
 
-✅ **The two riders are now place#234 and OWNED — do not treat them as
-unassigned.** Item 1 (Regions status line) is in progress; item 2 ("as at year
-Y") is scoped in the issue but not started.
+🛑 **ONE #176-ADJACENT ITEM REMAINS AND IT IS OURS, NOT whg3's: the registry
+`temporal_extent` RE-PUSH.** place#176 §2 required `doc_temporal_range` to be
+fixed *before* pushing, or the collapsed extents would be written into the
+registry and the Atlas Gazetteers Date Range filter would inherit the defect.
+✅ **That gate is met** — `c5c209c`, 7 Aug. **So the re-push is unblocked and
+outstanding.** Recompute + push; no retile needed.
 
 🛑 **The real risk in item 1 is filter composition, not counting** (S6's own
 flag): it touches the base-style boundary layers via `heroMap.showBoundaries`,

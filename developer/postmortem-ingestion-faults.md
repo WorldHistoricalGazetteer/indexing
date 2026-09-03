@@ -608,6 +608,31 @@ broken. These are worse than no check, because they are cited as evidence.
   form "drop X", measure what is currently in X.** Not that X exists, not that
   the routing to X is correct — the occupancy.
 
+  ⭐ **THE SYNTHESIS, and it is the day's most general lesson: SOURCE
+  correctness, ARTEFACT correctness and SEMANTIC correctness are three separate
+  questions, and each caught something the other two missed.** 3 Sep, whg3, one
+  change:
+  * **Source** was correct — it built clean, every test passed, every number was
+    right.
+  * **Artefact** was wrong — the import silently bundled a second copy of a
+    separate webpack entry, 396 KB → 496 KB, evaluating another module's
+    prototype patches and CSS twice in production. Caught only by diffing the
+    built bundle against the committed one.
+  * **Semantics** were checked separately and independently: a clause-presence
+    log per layer per mode (an unwired filter and an everything-admitting filter
+    are indistinguishable by count), and a human looking at the map (a plausible
+    count says nothing about *which* features survived).
+  **No one of the three implies the others**, and the obvious test for a change
+  always sits in only one of them. ✅ **Ask all three: does the code say the
+  right thing, does the thing it produces match, and does the result mean what
+  it should?**
+  ⚠️ **Corollary — investigate a discontinuity before reporting it.** The same
+  session saw a 30-year step drop 131 regions to 47 and looked before writing it
+  up, *because a cliff is what a broken filter looks like*. It was real: OHM
+  carries German territories whose attested spans begin around 1300. **"The
+  filter is doing history, not arithmetic"** — but that could only be said after
+  checking.
+
   ✅ **A SEMANTIC check the numbers cannot make: DO THE SURVIVORS LOOK LIKE THE
   ANSWER?** 3 Sep, whg3: a temporal filter reported "205 of 2665" boundaries
   surviving a 1500–1600 window — a plausible count, and **equally consistent
