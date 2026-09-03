@@ -55,10 +55,25 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 
 ### whg3 — carried forward from S6's close-out (3 Sep)
 
-S6 (`whg3-74`) completed §3.2 and was closed. These are the items it left that
-exist on no other list. **None is urgent; none was touched.**
+S6 (`whg3-74`) completed §3.2. ⚠️ **It was NOT closed** — SG closed place#176 as
+completed, opened **place#234** for its two riders, and set S6 working on them.
 
-**Unblocked and small, both riders of place#176:**
+✅ **The two riders are now place#234 and OWNED — do not treat them as
+unassigned.** Item 1 (Regions status line) is in progress; item 2 ("as at year
+Y") is scoped in the issue but not started.
+
+🛑 **The real risk in item 1 is filter composition, not counting** (S6's own
+flag): it touches the base-style boundary layers via `heroMap.showBoundaries`,
+which keep their own `_originalFilters` registry — **a different mechanism from
+the `registerTemporalLayer` registry §3.2 added** for the dynamic gazetteer
+layers. The two paths compose filters differently, so a temporal clause and an
+active boundary-tier `valueFilter` can overwrite each other. Not a matter of
+pointing the existing filter at more layers.
+
+The remaining items below exist on no other list. **None is urgent; none was
+touched.**
+
+**The riders, for reference — now place#234:**
 * **Regions status line** — distinguish *"no boundaries at this level"* from
   *"this source has nothing in this period"*. ✅ The building block already
   exists: `heroMap.countBoundaryFeatures(source, boundaryValues)` counts via
