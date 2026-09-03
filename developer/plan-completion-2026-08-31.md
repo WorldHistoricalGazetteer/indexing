@@ -89,7 +89,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
-| **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
+| **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
 
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
 concurrency rules below before running them at the same time. Only S2 gates S5.
@@ -4571,11 +4571,49 @@ on only exist afterwards.
 
 ### 3.3 Delete the rollback index and the tile scratch  — **S7**
 
-Once 3.1 is verified: `places_temporal-20260731t160000z` (23 GB),
-`/vast/ishi/tiles-verify` (17 GB), `/ix1/ishi/data/tiles/_step0` (2.7 GB), and the
-stale `*.geojsonl` in `/ix1/ishi/data/tiles` (~20 GB, including `osm_admin.*` from
-the May 2025 pre-rename era). Confirm a SUCCESS snapshot exists and the index
-holds no alias before deleting it.
+✅ **3.1 IS NOW COMPLETE AND INDEPENDENTLY VERIFIED (3 Sep)** — 73 tilesets
+pushed, 0 gate refusals, the nine formerly poly-less layers confirmed serving
+real MVT geometry from tile coordinates computed independently of S5's own
+samples. So this step's stated precondition is met.
+
+🛑 **BUT S7 MUST STILL WAIT. Do not start. Two new hazards post-date this
+step's original scope, and one of them is a live job.**
+
+**HAZARD 1 — `/ix1` has an active writer.** `indexing-db` is building the OSM
+water import in `/ix1/ishi/water233-20260902T220703Z`, with an ocean rebuild
+in flight and an expected peak around **250 GB**. Nothing in `/ix1` is safe to
+inventory-and-delete while that runs.
+
+**HAZARD 2 — there are now TWO tile generations and BOTH must survive.**
+`/ix1/ishi/data/tiles-20260902-retile` is the generation deployed 3 Sep;
+`/ix1/ishi/data/tiles` is the August rollback and is the **only** way back if
+the new tilesets prove unstable. ⚠️ The original scope was written when only
+one generation existed. **Neither directory's `.mbtiles` may be deleted** —
+only the scratch *inside* them.
+
+**Revised targets, split by volume — the `/vast` half is the valuable half:**
+
+| target | vol | size | notes |
+|---|---|---|---|
+| `places_temporal-20260731t160000z` | `/vast` | 23 GB | ⚠️ confirm a SUCCESS snapshot exists **and** the index holds no alias first |
+| `/vast/ishi/tiles-verify` | `/vast` | 17 GB | |
+| `/ix1/ishi/data/tiles/_step0` | `/ix1` | 2.7 GB | scratch only — **not** the sibling `.mbtiles` |
+| stale `*.geojsonl` in `/ix1/ishi/data/tiles` | `/ix1` | ~20 GB | incl. `osm_admin.*` from the May 2025 pre-rename era |
+
+**The `/vast` items are worth ~40 GB and are independent of `indexing-db`'s
+work**, which touches only `/ix1`. `/vast` is the constrained volume — 226 GB
+free of 1 TB, **shared with production Elasticsearch**, whose low watermark
+trips at 153.6 GB free and whose flood stage at **51.2 GB free turns every
+index read-only**. `/ix1` has 1,824 GB free of 5 TB and no ES on it, so the
+`/ix1` half is housekeeping with no urgency behind it.
+
+⚠️ **When released, stat `/vast/ishi`, never bare `/vast`** — the latter reports
+the 3.9 PB shared pool and is useless as a headroom signal (fixed in
+`build_geom_index_sqlite.sbatch`, `d506837`).
+
+**Release condition:** `indexing-db` reports its `/ix1` footprint settled, and
+SG is satisfied the 3 Sep tilesets are stable enough to release the August
+rollback. Until both, S7 waits.
 
 ---
 
