@@ -673,6 +673,33 @@ def select_h3_cover_geometry(geom_entry: dict | None, fallback_geom: dict | None
     return fallback_geom
 
 
+def _member_point_cells(geojson_geom: dict) -> set:
+    """Return the set of H3 cells containing the geometry's member points.
+
+    One cell per member point at ``H3_CENTROID_RESOLUTION``, deduplicated —
+    members sharing a cell contribute it once. Walks arbitrary coordinate
+    nesting so it is correct for MultiPoint regardless of how the source
+    nested it.
+
+    Verified against the live corpus before use (dry run, 3 Sep 2026, 779
+    extent-bearing MultiPoints, 0 geom-store misses): 340 carry more members
+    than their stored single-cell cover and 439 genuinely occupy one cell.
+    Notably `wd` contributed only 45 of those 340 — 188 wd MultiPoints span
+    a non-zero distance but sit inside one r7 cell (~2.4 km), so their
+    one-cell cover was already correct and rewriting them would be a no-op.
+    """
+    cells, stack = set(), [geojson_geom.get("coordinates")]
+    while stack:
+        c = stack.pop()
+        if c is None or isinstance(c, (int, float)):
+            continue
+        if c and isinstance(c[0], (int, float)):
+            cells.add(_h3.latlng_to_cell(c[1], c[0], H3_CENTROID_RESOLUTION))
+            continue
+        stack.extend(c)
+    return cells
+
+
 def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | None, list[str]]:
     """
     Compute ``h3_centroid`` and ``h3_cover`` for a place.
@@ -724,6 +751,43 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
     geom_type = geojson_geom.get("type", "")
     if geom_type == "Point":
         return centroid_cell, [centroid_cell]
+
+    # ── MultiPoint: ONE CELL PER MEMBER POINT ──────────────────────────
+    # Without this branch a MultiPoint fell through to the centroid-only
+    # fallback at the end, so every one carried a SINGLE-cell cover however
+    # far apart its members were — the Silk Roads corridor (32 points across
+    # 46° of Asia) was represented by one cell. Since ``h3_cover`` drives
+    # ``containment=fuzzy``, such a place was unfindable from a scope over
+    # anywhere but that one cell.
+    #
+    # Deliberately NOT the convex hull. The hull of scattered points is a
+    # solid swathe the place never occupies — hull-covering the Silk Roads
+    # claims 46° of Asia the corridor never touches, which is the
+    # over-coverage 2.11 correctly removed. Member cells cover where the
+    # place IS and nowhere else.
+    #
+    # Deliberately NOT compacted: compaction only merges complete sets of
+    # seven sibling cells, which scattered members never form, so it would
+    # be a no-op that could only ever broaden the cover.
+    #
+    # ``geom_class`` stays "point" — these must remain findable WITHIN a
+    # scope while never being usable to DEFINE one, since the hull of
+    # scattered contributed points is not a boundary. Cover size and
+    # geom_class are independent fields and that independence is the design.
+    #
+    # ⚠️ This makes the representation faithful; it does not make a sparse
+    # MultiPoint dense. `whg:1361:9` "Danube" holds exactly two members —
+    # the Black Forest source and the Black Sea mouth — so it gains a
+    # 2-cell cover and is still NOT returned by a scope over Austria.
+    # That is a data limitation, not a cover one; fixing it would mean
+    # synthesising intermediate points, which this pipeline never does.
+    if geom_type == "MultiPoint":
+        try:
+            cells = _member_point_cells(geojson_geom)
+            if cells:
+                return centroid_cell, sorted(cells)
+        except Exception:
+            pass
 
     # ── Cover for polygon/multipolygon: polyfill + compact ─────────────
     if geom_type in ("Polygon", "MultiPolygon"):
