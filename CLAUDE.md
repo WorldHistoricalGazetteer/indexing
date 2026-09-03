@@ -20,12 +20,30 @@ re-census **0 defective of 18,248 examined** — the whole frame, so no regressi
 among the 12,980 already correct. Rollback retained at
 `/vast/ishi/elastic/logs/s9_rollback_geometries.json`.
 
-⚠️ **Two things this did NOT fix**, both open in
-[`plan-completion-2026-08-31.md`](developer/plan-completion-2026-08-31.md):
-248 `whg` `point`-class geometries whose `geom_class` may be wrong (they now
-have correct covers *for their stored polygons*); and a **top-level
-`h3_cover`** that is stale, diverged from the nested truth, and read by nothing
-— **`geometries.h3_cover` is the real one.**
+✅ **The 248 `whg` `point`-class geometries are CLOSED** (audited 3 Sep):
+**0 of 213,081** point-class `whg` geometries carry a cover of more than one
+cell, with two positive controls whose answers were known in advance. And
+`geom_class` was never wrong — `helpers.py:1053` folds `Point` **and**
+`MultiPoint` → `"point"` deliberately, and a MultiPoint genuinely is not areal.
+
+🛑 **But the audit found the MIRROR defect, which is live and worse.** All
+**7,529** `whg` point-class geometries with a stored geometry are MultiPoints,
+and **every one has a single-cell `h3_cover` — including the 546 with real
+extent.** `whg:1381:18` (Silk Roads corridor) spans **46.27° of longitude** and
+is covered by **one cell**; `whg:1361:9` (Danube) spans 21.59° and is covered by
+one cell **at its eastern mouth**. Since `h3_cover` drives `containment=fuzzy`,
+**a fuzzy scope over Austria, Hungary or Germany does not return the Danube** —
+a recall failure invisible to any count, because the field is present and
+populated. Mechanism: `select_h3_cover_geometry` returns non-polygonal geometry
+unchanged, so a MultiPoint never reaches the areal path.
+⚠️ Plausibly a **side-effect of 2.11**, which was correct by its specification —
+it replaced hull-derived covers with covers computed from the stored geometry,
+and for a MultiPoint that is one cell. The pre-remediation hull may have had
+*better* recall than the "correct" cover that replaced it. The 31 MB rollback
+would settle cause vs. pre-existing.
+
+⚠️ **Still open:** a **top-level `h3_cover`** that is stale, diverged from the
+nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
 
 The July/August re-ingestion is complete in production — 51.2 M
 places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
@@ -706,8 +724,14 @@ the gitignored **`.env.local`**, never the tracked `.env`.
   a standing incomplete-ingestion defect predicate — ⚠️ **incomplete in both
   directions**: blind to `MultiPoint`→`point` (a never-written geometry leaves
   no trace) and to its inverse, `geom_class = point` carrying an areal
-  `h3_cover` (**248 of 248 defective** in the `whg` census, and nobody's
-  check). See `schemas/field-notes.md`.
+  `h3_cover` — ⚠️ ~~248 of 248 defective~~ **now 0 of 213,081, closed 3 Sep**.
+  The live problem is the opposite one and the predicate is blind to it too:
+  **a MultiPoint with real extent carrying a ONE-CELL cover** (546 of `whg`'s
+  7,529 stored MultiPoints, up to 46° of span), which silently fails
+  `containment=fuzzy` recall. **`h3_cover` size is independent of `geom_class`
+  and neither field constrains the other** — that independence is the point of
+  the separation, and it is also where both defects hide. See
+  `schemas/field-notes.md`.
 - All coordinates are rounded to **6 decimal places** (~0.11 m) at ingestion
   time per RFC 7946, via `round_coordinates()` / `enrich_geometry()` in
   `processing/helpers.py`.  This mitigates storage bloat from pseudo-precision
