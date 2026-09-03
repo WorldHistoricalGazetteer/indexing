@@ -20,6 +20,16 @@
 #
 # Tippecanoe temp goes to node-local NVMe: it is heavy RANDOM I/O and /ix1 is
 # NFS, which is the one access pattern that volume is bad at.
+#
+# ⚠️ NO --no-tile-size-limit. It is tempting here (the ocean is enormous) and
+# it is a trap in THIS repo specifically: oversize tiles are silently skipped
+# by tile-join, which is the documented root cause of place#160. A tileset
+# built with oversize tiles looks complete, joins without error, and is
+# missing content. Let --coalesce-densest-as-needed and
+# --drop-densest-as-needed shed features to fit instead: dropping small lakes
+# at low zoom is correct cartography, whereas a silently skipped tile is a
+# hole. The ocean itself is pre-split by osmcoastline --max-points=1000, so
+# no single ocean feature should approach the limit.
 
 set -eo pipefail
 source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
@@ -62,7 +72,6 @@ tippecanoe \
     --drop-densest-as-needed \
     --simplification=4 \
     --detect-shared-borders \
-    --no-tile-size-limit \
     --temporary-directory="${TMPDIR_TP}" \
     --force \
     "${INPUTS[@]}"
@@ -89,6 +98,25 @@ for l in vl:
     print(f"    {l.get('id'):10s} minzoom={l.get('minzoom')} maxzoom={l.get('maxzoom')}")
 n = con.execute("SELECT COUNT(*) FROM tiles").fetchone()[0]
 print(f"  tiles: {n:,}")
+
+# Measure the largest tile rather than assume none is oversize. 500 KB is
+# tippecanoe's default per-tile ceiling and the threshold at which tile-join
+# silently skips a tile (place#160). Reported per zoom so a single fat zoom
+# level is visible rather than averaged away.
+print("  largest tile per zoom:")
+rows = con.execute(
+    "SELECT zoom_level, COUNT(*), MAX(LENGTH(tile_data)), SUM(LENGTH(tile_data)) "
+    "FROM tiles GROUP BY zoom_level ORDER BY zoom_level").fetchall()
+worst = 0
+for z, cnt, mx, tot in rows:
+    worst = max(worst, mx)
+    flag = "  <-- OVER 500 KB" if mx > 500 * 1024 else ""
+    print(f"    z{z:<3} tiles={cnt:>8,}  max={mx/1024:9.1f} KB  "
+          f"total={tot/1048576:8.1f} MB{flag}")
+print(f"  worst tile overall: {worst/1024:.1f} KB")
+if worst > 500 * 1024:
+    print("  *** at least one tile exceeds 500 KB: tile-join would SKIP it")
+    print("  *** silently (place#160). Investigate before any deploy.")
 if md.get("minzoom") != "0" or md.get("maxzoom") != "10":
     print("  *** metadata is NOT z0-10 -- does not match osm.mbtiles ***"); sys.exit(3)
 print("  OK: metadata reads z0-10")
