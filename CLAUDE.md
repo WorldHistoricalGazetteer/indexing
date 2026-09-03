@@ -81,7 +81,33 @@ it — `h3_stage.py:125` (the staged pipeline that runs on **every** re-ingest),
 `helpers.py:1131`. It currently returns any non-`Polygon`/`MultiPolygon`/
 `GeometryCollection` geometry **unchanged**, so a MultiPoint never reaches the
 areal path. **A backfill without this fix is undone by the next re-ingest.**
-Order: fix the function, then backfill the **481** (248 `whg` + 233 `wd`).
+Order: fix the function, then backfill.
+
+⚠️ **481 IS A FLOOR, NOT THE POPULATION** (S5, 3 Sep — independent reproduction
+from ES `bounds`+`h3_cover`, a different instrument from the rollback method).
+**779 reproduces exactly** (whg 546 · wd 233, of 8,699 MultiPoints; the other
+7,920 are degenerate single-point). But **all 779 currently carry a cover of ≤ 1
+cell**, so *extent-bearing* and *flattened* are the same set today, and the
+actionable count is entirely "which of the 779 deserve more than one cell".
+
+**481 was derived from 2.11's rollback — i.e. from features that demonstrably
+HAD a larger cover and lost it. By construction it is blind to any feature that
+never had a correct cover to lose**, which includes part of the 298 and
+potentially all of `wd`.
+
+🛑 **Span is the wrong predicate and no span cut can produce the answer.** H3
+here is **r7** (~2.4 km ≈ 0.02°), and position matters as much as extent:
+a MultiPoint spanning *less* than a cell still needs 2+ cells if its members
+straddle a boundary, and one spanning *more* can sit centrally within one. Only
+**165** `whg` geometries have span > 0.02° against 248 shrunk by 2.11, so ~83 of
+the 248 are sub-cell-span yet were previously polyfilled to several cells —
+exactly the straddling case, and it will recur among the 298.
+
+✅ **The settling computation is the fix's own:** compute member cells for all
+779 and take `len(member_cells) > len(stored_cover)`. No threshold to argue, a
+known-correct answer per feature, and free to run as a dry pass because it is
+the same work the backfill performs. Needs the geom store, so a Slurm job rather
+than a query.
 
 ⚠️ **Still open:** a **top-level `h3_cover`** that is stale, diverged from the
 nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
