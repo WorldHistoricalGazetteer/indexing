@@ -36,6 +36,7 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 | §1 ~391 | Discovery scope filter (gateway) | **NOT DONE** — no `dataset_status`/`dataset_id`/scope filter in gateway; schema fields exist, query-side unwired |
 | §1 ~463 | `--calibrate` weight fit | **SHIPPED** (17 Jul) — contributor-positives fit (name 0.31 / spatial 0.39, θ_query 0.22; 1,067 positives) written to tracked params, live on next gateway restart; re-run for fine-tuning |
 | §1 ~492 | `clustering.js` full scorer | ⚠️ **CORRECTED 3 Sep — the abstraction was NOT un-built; it was built and shipped, and has zero consumers.** `clustering-embed.js` (the Workbench half) was committed **2026-07-12 as `2623e6ca5`** — *five days BEFORE* the 17 Jul audit line saying it "remains" — and is on `main`, i.e. in production. But its only export `attachSelfEmbeddings` **is imported by nothing**: not a webpack entry, not dynamically imported, and a sweep of every `.js`/`.html`/`.py` for the module name, the export name and plausible aliases hits only the file's own first line. `clustering.js` is imported once, by `atlas.js`, for the Atlas path only. **The remaining work is WIRING the Workbench clustering path to call it, not writing it.** As recorded, someone would go and rebuild a thing already in their repo — the same failure as the `generate_tiles` filter comment: prose outliving the code it describes. |
+| — | **whg3 items recorded 3 Sep at S6 close-out** | see the block below the table |
 | §2 ~770 | `aat_enrich` backfill (parent) | effectively **DONE except GB1900** — every child done; parent open only for 789 |
 | §2 ~789 | GB1900 types | **NOT DONE** — no native type; VLM idea not built |
 | §2 ~822 | Hierarchy propagation Pass 4 | **WON'T DO** (struck through) |
@@ -50,6 +51,52 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 > Interlock: 391 (scope filter) → 954 (scope-leakage test) → 920 (pending submissions) are
 > one chain — the gateway scope filter was never built, so the dependent test can't exist
 > and pending submissions stay out of scope.
+
+
+### whg3 — carried forward from S6's close-out (3 Sep)
+
+S6 (`whg3-74`) completed §3.2 and was closed. These are the items it left that
+exist on no other list. **None is urgent; none was touched.**
+
+**Unblocked and small, both riders of place#176:**
+* **Regions status line** — distinguish *"no boundaries at this level"* from
+  *"this source has nothing in this period"*. ✅ The building block already
+  exists: `heroMap.countBoundaryFeatures(source, boundaryValues)` counts via
+  `querySourceFeatures` — deliberately **not** `queryRenderedFeatures`, because
+  layer filters apply at tile-parse time so a count taken straight after
+  `setFilter` still describes the previous tier. Counting once with and once
+  without the exported `temporalFilterClause` yields exactly the two numbers the
+  status line needs. This is also the honest fix for the z0–7 footprint
+  limitation: `coverage:1` features carry no temporal props, and filtering them
+  would assert something false in either mode.
+* **"As at year Y" lock** (§5.1.3) — `temporalFilterClause(mode, Y, Y)` plus the
+  UI affordance. Purely client-side, no dependency.
+
+**Latent defects, unrecorded elsewhere:**
+* ⚠️ `atlas.js:754` and `:2106` read `detail.admin_level` / `item.admin_level`
+  and **both are always `undefined`** — `heroMap._emitBoundarySelection` emits
+  `boundary`, and `areaSearchRouter` never sets the key. So `selectedRegions`
+  entries carry `admin_level: undefined` throughout and anything later filtering
+  or labelling by it silently gets nothing.
+* Bundle URLs carry the cache-busting param **twice**
+  (`atlas.bundle.js?v=…&v=…`): `base_webpack.html:111` re-injects CDN-fallback
+  scripts and appends `v={{ asset_version }}` to a `src` that already has one
+  from `atlas.html:604/608`. Same value both times, so cosmetic — but it doubles
+  the cache key and reads as a bug in a stack trace.
+
+🛑 **A cross-repo divergence that will surface as a user-visible disagreement:**
+whg3 **reconciliation still reads the LEGACY v3 indices** for some LPF
+properties. `PROPERTY_FIELD_MAP` (`reconcile_helpers.py:281`) maps
+`whg:lpf_feature` → `[… "descriptions", "depictions"]`, and that map is consumed
+against `ELASTIC_INDICES = "whg,pub,wdgn"` — **not** `places`. Everything else is
+moving to the new corpus. Expect *"why does this field disagree with the
+Atlas?"*. Recorded nowhere else.
+
+⚠️ **And whg3 queries the `places` index DIRECTLY** (`placetypes/es_tree.py:71`,
+`placetypes/mapping_utils.py:170,310,779,817`), not only through the gateway —
+so any "no consumer" audit that reasons from the gateway's response allow-list
+is unsound. Checked at the time: none of those queries touches a field on the
+4.17 deletion list (`source_id` ≠ `source`).
 
 ## ★ Earlier handoff (last worked: 14 Jul 2026 — ccode / UN BNDA session)
 
