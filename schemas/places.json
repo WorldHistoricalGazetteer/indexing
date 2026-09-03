@@ -326,6 +326,51 @@
             }
           }
         }
+      },
+      "admin_level": {
+        "type": "integer"
+      },
+      "area_km2": {
+        "type": "float"
+      },
+      "continent": {
+        "type": "keyword"
+      },
+      "display_color": {
+        "type": "keyword"
+      },
+      "divan": {
+        "type": "keyword"
+      },
+      "historical_county": {
+        "type": "keyword"
+      },
+      "language_family": {
+        "type": "keyword"
+      },
+      "nahiye": {
+        "type": "keyword"
+      },
+      "region": {
+        "type": "keyword"
+      },
+      "register_no": {
+        "type": "keyword"
+      },
+      "register_type": {
+        "type": "keyword"
+      },
+      "register_year": {
+        "type": "integer"
+      },
+      "source_project": {
+        "type": "keyword"
+      },
+      "subregion": {
+        "type": "keyword"
+      },
+      "time_period": {
+        "type": "integer"
       }
     }
   }

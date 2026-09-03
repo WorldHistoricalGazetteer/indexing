@@ -68,7 +68,16 @@ def process_territory(feature, namespace='nl'):
 
 
     if area: place_doc['area_km2'] = round(area, 2)
-    if 'description' in props: place_doc['description'] = props['description']
+    # Native Land's "description" property is a URL to the territory's listing
+    # page, not prose — measured 3 Sep 2026: all 2,057 live values are
+    # `https://native-land.ca/listings/territories/...`. It was written to an
+    # undeclared root `description`, which is NOT the declared `descriptions`
+    # nested field and never overlapped it. A URL to an external page is a
+    # `seeAlso` link by the schema's own definition, so it goes to the declared
+    # `links` field instead of inventing a root string field for it.
+    if 'description' in props:
+        place_doc.setdefault('links', []).append(
+            {'type': 'seeAlso', 'identifier': props['description']})
     if 'color' in props: place_doc['display_color'] = props['color']
 
     return place_doc
