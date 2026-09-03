@@ -35,7 +35,7 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 |---|---|---|
 | §1 ~391 | Discovery scope filter (gateway) | **NOT DONE** — no `dataset_status`/`dataset_id`/scope filter in gateway; schema fields exist, query-side unwired |
 | §1 ~463 | `--calibrate` weight fit | **SHIPPED** (17 Jul) — contributor-positives fit (name 0.31 / spatial 0.39, θ_query 0.22; 1,067 positives) written to tracked params, live on next gateway restart; re-run for fine-tuning |
-| §1 ~492 | `clustering.js` full scorer | ⚠️ **CORRECTED 3 Sep — the abstraction was NOT un-built; it was built and shipped, and has zero consumers.** `clustering-embed.js` (the Workbench half) was committed **2026-07-12 as `2623e6ca5`** — *five days BEFORE* the 17 Jul audit line saying it "remains" — and is on `main`, i.e. in production. But its only export `attachSelfEmbeddings` **is imported by nothing**: not a webpack entry, not dynamically imported, and a sweep of every `.js`/`.html`/`.py` for the module name, the export name and plausible aliases hits only the file's own first line. `clustering.js` is imported once, by `atlas.js`, for the Atlas path only. **The remaining work is WIRING the Workbench clustering path to call it, not writing it.** As recorded, someone would go and rebuild a thing already in their repo — the same failure as the `generate_tiles` filter comment: prose outliving the code it describes. |
+| §1 ~492 | `clustering.js` full scorer | ⚠️ **CORRECTED 3 Sep — the abstraction was NOT un-built; it was built and shipped, and has zero consumers.** `clustering-embed.js` (the Workbench half) was committed **2026-07-12 as `2623e6ca5`** — *five days BEFORE* the 17 Jul audit line saying it "remains" — and is on `main`, i.e. in production. But its only export `attachSelfEmbeddings` **is imported by nothing**: not a webpack entry, not dynamically imported, and a sweep of every `.js`/`.html`/`.py` for the module name, the export name and plausible aliases hits only the file's own first line. `clustering.js` is imported once, by `atlas.js`, for the Atlas path only. **The remaining work is a CONSUMING UI, not the abstraction.** ✅ And it was left inert **deliberately** — `2623e6ca5`'s own message: *"Inert until a Workbench clustering view imports it (that UI is separate Workbench-roadmap work); this is the ready primitive + the abstraction."* So nothing was orphaned; the UI was explicitly scoped out. ⚠️ **The DETAIL sections of this document were right all along** — see the Phase 3 checkbox, "Workbench self-embed primitive DONE", and the note that importing it "is separate Workbench-roadmap UI work". **Only this summary row inverted it**, which is the summary-versus-detail divergence: a reader consulting the table would rebuild a module the same document records as shipped three sections later. |
 | — | **whg3 items recorded 3 Sep at S6 close-out** | see the block below the table |
 | §2 ~770 | `aat_enrich` backfill (parent) | effectively **DONE except GB1900** — every child done; parent open only for 789 |
 | §2 ~789 | GB1900 types | **NOT DONE** — no native type; VLM idea not built |
@@ -473,6 +473,14 @@ already-built features**, and (4) polish/ops/docs.
     server never sees, so embedding the public candidates too is ~free and avoids
     the payload). `clustering.js` is agnostic — it consumes int8 vectors from
     either source.
+    🛑 **THIS IS DESIGN, NOT CURRENT STATE — corrected 3 Sep.** Map-your-Data
+    today does **neither** half. It embeds its own units locally
+    (`reconciliation.js:8057`) and sends the vector **UP** as `query_vector` for
+    phonetic KNN; `/api/reconcile` **ships no embeddings back at all**, so there
+    is nothing for the client to self-embed *against*. The self-embed-candidates
+    path described here **does not exist** — it is place#219's territory and is
+    deferred (it needs gateway fuel). Read this bullet as the intended
+    architecture, not as a description of what runs.
   - *Consistency:* the worker must run the same Symphonym build + int8 quantisation
     as ingestion (the `hf/` export) so Atlas and Workbench score alike.
     Reconciliation determinism is no longer required (recon is flat), so minor
