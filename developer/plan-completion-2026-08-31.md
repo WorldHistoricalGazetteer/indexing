@@ -5809,6 +5809,43 @@ catches it again at push time.
 (`osm`, `ohm`, `wd`, `gn`, `po`, `tgn`) take the `"global"` sentinel and `loc` is
 relations-only — so the target was ~20, not 27.
 
+🛑 **THE CAUSE — and "the generators were wired only into full-run paths" is the
+CONSEQUENCE, not the cause.** That is why the gap never *self-healed*; it is not
+why the files went missing. Evidence (S5, 3 Sep):
+
+* The **5 Aug manifest records a real `aggregate_path` AND a real cell count for
+  every one of the 18** — `clio` 448,748, `ukhc` 13,436, `gb` 6,393,
+  `kain_par` 5,985 — at exactly the path that was later found empty.
+* `gazetteer_h3_coverage` raises on a missing patch, validates the payload,
+  writes atomically, and marks `completed` **only after**. There is no path to
+  "completed without a file".
+* The `temporal_extent` files **survive because they were written on 7 Aug —
+  after the loss.**
+* Regenerating produced **match=18, differs=0** against the recorded counts.
+
+**So the stage ran correctly, wrote correct files, and something OUTSIDE the
+pipeline deleted them between 5 and 7 August.** Nothing in `processing/` or
+`scripts/` contains an `unlink`, `rmtree` or `rm` touching `_aggregates`.
+⚠️ **Recorded as "deleted by something outside the pipeline; mechanism
+unestablished"** — a manual cleanup is the obvious candidate and was not proven,
+and an inferred `rm` is not a finding.
+
+⭐ **THE PART THAT IS CERTAIN IS THE USEFUL ONE: the manifest was ACCURATE, and
+its accuracy is what made the loss permanent.** `h3_coverage` re-runs only
+inside a stage gated on `completed`, so **a truthful success record prevented
+recovery for a month.** Not a lying stage — a correct record, a deleted
+artefact, and no existence check. **That is why the guard had to check the
+artefact rather than the status.**
+
+✅ **PACKAGE 5 — REGISTRY RE-PUSH DONE.** 27 namespaces, prod + dev, 0 failures,
+after a clean 27/27 dry run. `gn` `[0, 2026]`, `wd` `[-10000, 2126]`, `nl`
+`[2026, 2026]` and `un` `[2025, 2025]` **gained a temporal extent the registry
+never had**; `ukhc` recomputed **identical** at `[1542, 1974]` (place#204 changed
+names, not dates); nothing else moved. All 27 `record_count`s verified against
+the live index before pushing. ⚠️ **The landed values were NOT independently
+confirmed** — `/api/registry/inventory` returns 403 "Bot access denied"
+unauthenticated, so that step rests on the tool's own report.
+
 ### Remedy as originally specified — the guard first
 
 1. ⭐ **Make the aggregate guards test FRESHNESS.** Compare each aggregate's
