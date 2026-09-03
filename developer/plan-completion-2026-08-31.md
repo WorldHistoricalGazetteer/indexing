@@ -214,12 +214,36 @@ deployed. **None of these blocks anything; all are unowned.**
 * **The `h3_coverage` deletion mechanism is unestablished.** Files provably written 5 Aug, provably absent, and nothing in the repo deletes them. Manual cleanup is plausible and unproven — **do not record it as established.**
 
 **Code committed but never executed:**
-* **Package 6 half 2** — the incremental aggregate refresh in `index_namespace` compiles and its guard is unit-tested both directions, but **no incremental add has run since**, so the wiring has never executed once.
+* ✅ **Package 6 half 2 — CLOSED 3 Sep (SG), not fixed and not abandoned.** The
+  incremental aggregate refresh in `index_namespace` compiles and its guard is
+  unit-tested both directions; the wiring has never executed only because no
+  incremental add has run since. **It runs on the next one, a loud failure and
+  `push_gazetteer_inventory`'s independent refusal both catch it, and there is
+  nothing to schedule.** SG's reasoning generalises and is worth keeping: *"what
+  we don't want is an enormous pile of issues like this left open, obscuring more
+  important work."* **An item that will announce itself when it matters does not
+  need to occupy a list.**
 * **`tilejson` hook (`93eefb9`)** — built, never applied to any bucket; the ice rebuild fixed the leak at source.
 
 **Latent, noticed in passing:**
 * ⚠️ **`backfill_admin_levels.slurm:81` invokes `python -m authorities.un-geoscheme-boundaries`** — a **hyphenated module name**, which `-m` cannot normally import. Noticed while deleting a stale duplicate, never chased. **Possible latent break in that script.**
-* **Latitude-blind estimator** (`_H3_HEX_AREA_DEG2`, 27× under-prediction) — deliberately unbundled, still outstanding.
+* ✅ **Latitude-blind estimator — FIXED 3 Sep (`65c3306`), and the real defect
+  was far larger than its name.** 🛑 **`_H3_HEX_AREA_DEG2` was ~108× wrong AT THE
+  EQUATOR**, where it was supposedly correct: every entry had been divided by 111
+  (km per degree) instead of 111² (km² per degree²). Measured, not derived — a
+  4°×4° box at the equator yields **1,025 cells at r5** where the table predicted
+  **7.3**. So `_pick_polyfill_resolution` left r7 only above **450 deg²** instead
+  of **~4.2 deg²**; everything in that window started too fine, overflowed the
+  cap, and leaned on the ladder to recover.
+  ⚠️ **The error was uniform across all nine resolutions, which is exactly why it
+  survived** — any check comparing resolutions against each other reproduces it
+  perfectly. Only a comparison against a *real polyfill* could see it, which is
+  the same lesson as every other finding this campaign made.
+  The latitude term is fixed too (counts scale with cos of the bbox centre:
+  1,025 → 114 from 0° to 80°, estimate 782 → 109), and **both copies now derive
+  the area from `h3` itself instead of transcribing it**, so `helpers.py` and
+  `gateway/spatial.py` cannot drift. Verified by mutation — the units error fails
+  36 assertions, the latitude term alone 10.
 * **`whg` polygon-typed-hull parsed check** — proposed, superseded when the type filter bounded the population, never run.
 * **Superseded artefacts left in place**: `ukhc/final/places.parquet.stale`, `places.jsonl.bak`, `extract/places.jsonl.pre204`. The rename-in-place hazard was flagged; nobody moved them.
 
