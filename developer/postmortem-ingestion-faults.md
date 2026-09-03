@@ -733,6 +733,67 @@ broken. These are worse than no check, because they are cited as evidence.
   vocabulary"*. It was read, and the trap was hit anyway. The reflex remedy —
   "document the field better" — was already in place and did not work.
 
+* **The instrument was RIGHT and the QUESTION was too narrow** — measured
+  3 Sep 2026, and the hardest form in this class because nothing about the
+  measurement was wrong.
+
+  Before repointing both basemap styles from Natural Earth to the new OSM-derived
+  `water` tileset, ocean coverage was compared at z2: **OSM 0.590 against NE
+  0.616**. Close, slightly conservative, no ocean lost. It was offered as
+  evidence the repoint was safe, it was accepted, and **both styles shipped on
+  it** (`eb0c90f`, `a3bf5fa`).
+
+  The measurement was correct. The repoint was not. `water`'s ocean layer renders
+  as **axis-aligned rectangular blocks at z3 and a staircase at z5** — global,
+  not local: the northern Gulf coast and Britain/Ireland alike. It reached a user
+  as *"jagged and bad"*.
+
+  ⚠️ **The coverage check passed while the geometry was blocky, because area is
+  insensitive to shape.** A coastline and a row of rectangles enclosing the same
+  area score identically. The instrument was sound for the question it was asked
+  — *does OSM lose ocean?* — and worthless for the one nobody asked — *is the
+  ocean the right shape?*
+
+  ⚠️ **This is the mirror image of every other entry in this class, and it is
+  worse.** Elsewhere the instrument was wrong: `types.label` always returned
+  `"osm"`, the span assertion flagged six legitimate countries, the filter could
+  never match. Those are findable — the instrument misbehaves on a control. Here
+  **no control would have caught it**, because the instrument never
+  misbehaved. It answered its question correctly every time. Only the *question*
+  was too narrow, and a question's narrowness is invisible to any test of the
+  instrument.
+
+  Two independent measures agreed, after the fact, that the artefact was broken —
+  vertex counts and tile byte sizes, both **non-monotonic in zoom** where NE's are
+  monotonic:
+
+  ```
+  NW Europe    z0    z1    z2     z3     z4     z5     z6
+    vertices  2020  3391  5509   1917  11767   7479  37108   ← z3, z5 troughs
+    bytes     326K  349K  493K    40K    95K    28K    91K   ← same troughs
+    NE verts   682  1391  2435   4054   5937   7868   9534   ← monotonic
+  ```
+
+  Every tile returns **HTTP 200**. Nothing is missing; the tiles are simply thin.
+  This is why no availability check, no checksum, and no size-of-file gate could
+  see it either. ⚠️ **z2 is 493 KB against tippecanoe's 500 KB ceiling** — an
+  artefact whose largest tile sits 1.4% under the limit was built under pressure
+  from it, and the drop-as-needed family does its work silently. Same signature
+  as the `tile-join` oversize skip behind place#160.
+
+  **The remedy is not a better measure.** It is a question asked of the measure
+  before the measure is trusted: **what would a BROKEN world produce that this
+  measure scores identically?** For an area comparison the answer is immediate —
+  any shape at all. That question is the discriminate-don't-just-be-independent
+  rule turned on the *question* rather than on the instrument, and it is the only
+  form of it that would have fired here.
+
+  ⚠️ **Scalar summaries of spatial data are the standing trap**: area, count,
+  bounding box, and centroid are each invariant under deformations that destroy
+  the thing being checked. A shape check must compare *shape* — vertex counts per
+  zoom, Hausdorff distance to a reference, or a rendered pixel diff. Coverage
+  fraction is not a shape check and must never again be accepted as one.
+
 ### The permanent fixes
 
 1. **Every check must be shown to FAIL on known-bad AND to PASS on known-good —
