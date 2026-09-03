@@ -356,6 +356,25 @@ broken. These are worse than no check, because they are cited as evidence.
   entire class turned against itself — so the expected magnitude must be
   *sourced*, not felt.
 
+  ⚠️ **Third instance the same day, and the worst host: a GUARD.** `if rc >= 2
+  then FATAL`, applied to `osmcoastline`, whose codes are a **vocabulary, not a
+  scale** — 0 ok / 1 warnings / **2 = errors found in the INPUT data** / 3 =
+  program failure. rc=2 is the normal outcome for a planet coastline and the
+  entire reason the tool has error tables; the run had completed cleanly after
+  2h36m, logging `All done` two lines above the script's own `FATAL`, with
+  MaxRSS 10 GB against 64 GB requested. **Two independent signals were
+  inconsistent with failure and the exit code was the only one consulted.**
+  ⚠️ **Note the asymmetry that let it through.** Every other instance in this
+  document is a check that PASSES when it should fail. This one FAILED when it
+  should have passed — the safe direction — and that is exactly why the constant
+  behind it was never questioned: **a guard that errs toward stopping feels
+  harmless to get wrong, so safety in one direction buys inattention.** The cost
+  lands as discarded work rather than as a bad artefact shipped, which is
+  cheaper but not free.
+  ✅ The check should have been `rc == 3`, or better an assertion about the
+  database contents — **the finding rather than the process**, the same
+  correction as the `afterok` dependency above.
+
   **The common tell is that the answer was never checked against an expected
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
