@@ -5373,6 +5373,59 @@ cross-check, applied to the schema.
 
 ---
 
+## ✅ 4.18 The `tgn` nested-toponym gap — NOT a defect (Auditor, 3 Sep)
+
+**Recorded so the 57.3% is not rediscovered and re-alarmed. The number looks
+like a defect; only the discovery test shows it is not.**
+
+```
+tgn docs                     2,991,143
+  with nested toponyms       1,713,460   (57.3%)
+  with NONE                  1,277,683   (42.7%)   partition closes exactly
+```
+
+Against `gn` 99.999% and `pl` 99.99%, that is a four-order-of-magnitude outlier.
+**It is a storage curiosity, not a search defect**, and the decisive fact is that
+**the nested array is off the name-search path in both directions**:
+`/api/search`'s `source_fields` (`es_helpers.py:1219`) does not include
+`toponyms`; discovery queries the **toponyms index** and collects `place_id`s
+from `attestations`; enrichment (`build_toponym_lookup:1247`) reads that index
+too. Establishing this **before** measuring anything else is what decided the
+question.
+
+**Findability, tested directly rather than inferred — 300 per group, each place
+checked individually against the toponyms index:**
+
+```
+group                        sampled  attested  mean attesting docs
+tgn WITHOUT nested toponyms      300  300 100%         1.27
+tgn WITH nested toponyms         300  300 100%         1.01
+gn  (control)                    300  300 100%         2.26
+pl  (control)                    300  300 100%         1.94
+```
+
+**The no-nested group has MORE name variants in the searched index than the
+with-nested group** — the opposite of a coverage gap.
+
+**Nor is there temporal loss.** The nested array's only consumer that could bite
+is the doubly-nested `toponyms.timespans` filter (`es_helpers:1002`); coverage is
+`tgn` 0.1%, **`gn` 0.0%**, `pl` 91.9%, `ohm` 31.7%. Nested toponym timespans are
+a `pl`/`ohm` feature and neither large gazetteer carries them.
+
+**Cause is per-record, not structural**: `tgn-places.py:293-300` writes
+`"toponyms": toponyms` unconditionally, so an empty array means the
+toponym-building loop yielded nothing while the title came from the
+preferred-term branch above it. ⚠️ **Why 42.7% of Getty concepts yield no
+toponym rows is unestablished** — it needs the source RDF, and it does not
+affect findability. A data-provenance question, not a pipeline one.
+
+*(The same block, line 297, is the writer of §4.17's 2,991,143-document
+duplicate `source` field.)*
+
+**Verdict: no remediation. Do not schedule it.**
+
+---
+
 ## Critical path
 
 ```

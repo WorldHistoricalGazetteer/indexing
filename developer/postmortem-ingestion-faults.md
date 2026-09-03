@@ -375,6 +375,26 @@ broken. These are worse than no check, because they are cited as evidence.
   database contents — **the finding rather than the process**, the same
   correction as the `afterok` dependency above.
 
+  🛑 **AN AGGREGATION BUCKET CAP IS A FILTER YOU DID NOT WRITE — and this one
+  is the most dangerous form, because it returns a plausible, specific number
+  that FITS THE HYPOTHESIS UNDER TEST.** 3 Sep: asked whether `tgn` places
+  lacking nested toponyms are findable, a `terms` aggregation on `attestations`
+  with `size: 2000` and `include: "tgn:.*"` reported **"243 of 300 attested, 57
+  NOT attested"** — 19% of a three-million-record authority unfindable. **It was
+  false.** The matching toponym docs attest far more than 2,000 distinct places,
+  so the sampled ids simply fell outside the returned buckets. Re-run per id via
+  `_msearch`: **300 of 300.**
+  ⚠️ Every other instrument failure in this document produced a *zero* or an
+  *absurdity* — recognisable as broken. This produced a **credible finding in
+  the shape the investigator was looking for**, which is the one an analyst
+  confirms rather than questions. It was caught only by spot-checking three ids
+  directly (`tgn:8712571` → `'Umm Al Houl'`, `tgn:8713127` → `'Atrianorum
+  Paludes'`, `tgn:8722625` → `'Messa'`), i.e. by a second modality on a result
+  that already agreed with expectation.
+  ✅ **Rule: an aggregation is a sampling frame, and its `size` is the frame's
+  edge. Never use a capped aggregation to establish ABSENCE** — use it to find
+  candidates, then confirm each one with a direct query.
+
   **The common tell is that the answer was never checked against an expected
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
