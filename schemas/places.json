@@ -108,6 +108,9 @@
           "source": {
             "type": "keyword"
           },
+          "boundary_source": {
+            "type": "keyword"
+          },
           "approximation": {
             "type": "keyword"
           },
@@ -275,6 +278,21 @@
       },
       "indexed_at": {
         "type": "date"
+      },
+      "kaza": {
+        "type": "keyword"
+      },
+      "kaza_1848": {
+        "type": "keyword"
+      },
+      "liva_1848": {
+        "type": "keyword"
+      },
+      "admin_unit": {
+        "type": "keyword"
+      },
+      "wikidata_qid": {
+        "type": "keyword"
       }
     }
   }

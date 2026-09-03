@@ -295,7 +295,15 @@ def index_tgn(zip_path):
             "title": title,
             "toponyms": toponyms,
             "geometries": [],
-            "source": "tgn",
+            # NOTE: no root-level "source" here. It duplicated "namespace"
+            # exactly — same value, same document — and was undeclared in
+            # schemas/places.json, so 2,991,143 field-instances were accepted
+            # only because `dynamic` defaults to true. Removed 3 Sep 2026.
+            # ⚠️ Do NOT "restore" this by pattern-matching `"source":` across
+            # authorities/: FOUR other writes are geometry-level provenance
+            # that must stay (alcedo-places.py:389 and :398, ottgaz-places.py,
+            # hgis-places.py), and six more in processing/ are Painless
+            # `"script": {"source": ...}` bodies, not fields at all.
             "namespace": "tgn",
             "types": type_entries,
         }
