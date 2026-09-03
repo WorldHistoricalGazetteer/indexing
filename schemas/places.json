@@ -293,6 +293,39 @@
       },
       "wikidata_qid": {
         "type": "keyword"
+      },
+      "timespans": {
+        "type": "nested",
+        "properties": {
+          "start": {
+            "type": "object",
+            "properties": {
+              "in": {
+                "type": "long"
+              },
+              "earliest": {
+                "type": "long"
+              },
+              "latest": {
+                "type": "long"
+              }
+            }
+          },
+          "end": {
+            "type": "object",
+            "properties": {
+              "in": {
+                "type": "long"
+              },
+              "earliest": {
+                "type": "long"
+              },
+              "latest": {
+                "type": "long"
+              }
+            }
+          }
+        }
       }
     }
   }
