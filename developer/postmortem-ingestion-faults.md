@@ -390,6 +390,21 @@ broken. These are worse than no check, because they are cited as evidence.
   than an unchecked guess. ✅ **Ask the verifier to find the defect, not to
   confirm the file.**
 
+  🛑 **CORRECT IN THE SOURCE, WRONG IN THE ARTEFACT — the build step is a
+  transform nobody reviews.** 3 Sep, whg3: a change imported two helpers from
+  `whg_maplibre.js`. The source was right, it built clean and the tests passed
+  — but `whg_maplibre` is **its own webpack entry**, so importing it pulled a
+  **second copy into `atlas.bundle.js`: 396 KB → 496 KB, +25%**, with the
+  maplibregl prototype patches and CSS evaluated twice. **Nothing failed. It
+  would have shipped.** Caught only by diffing the built bundle's size against
+  the committed one. Fixed with a pure side-effect-free module both paths
+  import; the bundle returned to 397 KB, i.e. **+1.7 KB of actual new code**.
+  ⚠️ Neither review nor tests can see this: both read the *source*, and the
+  defect exists only in the *output*. It is the build-time sibling of transport
+  corruption below — same shape, different stage. ✅ **Diff the artefact, not
+  just the diff.** For a bundled front end that means the built size; for a
+  staged tree it means the row count; for a generated payload it means `wc -l`.
+
   🛑 **TRANSPORT CORRUPTION — the payload that arrives is not the payload you
   wrote.** Two instances in one bulk operation, 3 Sep, both caught before any
   write:
