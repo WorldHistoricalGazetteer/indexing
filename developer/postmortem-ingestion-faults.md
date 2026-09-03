@@ -51,6 +51,44 @@ plausible, or does nothing, and **reports success**. Every instance is silent by
 construction: the substitute is a valid value of the right type, so no
 downstream check can see it.
 
+⚠️ **THE READER-SIDE TWIN: PRESENCE STANDING IN FOR CONTENT.** Class A is a
+*writer* substituting a plausible value. Its mirror is a *reader* — human or
+code — taking the existence of a container as evidence of what it holds.
+Collected 3 Sep 2026, all found within one day, and they are one fault:
+
+| the container | what its existence implied | what was true |
+|---|---|---|
+| `/vast/ishi/tiles-verify/` | a verification corpus lives here | emptied; the name outlived the contents |
+| 8 of 29 band fixtures | 29 test inputs | **21** — eight are 0 bytes, all `e3b0c44298fc…` |
+| `h3_cover` in the `places` mapping | the field is populated | **0 documents**; ES drops values, never mappings |
+| `depictions`, declared and mapped | a live field | **0 documents** — a dead declaration |
+| `/api/registry/inventory` | a readable registry | **write-only**; `405` on `GET` |
+| a `final/` left by a previous run | this run produced it | the *previous* run's, silently adopted |
+
+**Each is a true statement about the container and a false one about the
+content**, which is why none of them trips a check: the directory exists, the
+file exists, the field is in the mapping, the endpoint answers. ⚠️ **An empty
+container named for its former contents is WORSE than no container**, because
+the next reader reads the name and infers loss — or worse, uses it and gets a
+silent no-op that looks exactly like a passing run.
+
+**The remedy is to count the CONTENT, never the container**, and to prefer a
+measure that cannot be satisfied by an empty one:
+
+* count **distinct hashes**, not files — 29 files with 22 distinct hashes is how
+  the eight empties surfaced, and no file count could have shown it
+* count **documents**, not mapping entries
+* assert **`st_dev`** as well as content hash when comparing across filesystems —
+  a bind mount or symlink defeats the hash with **both hashes correct**, so the
+  device id answers a question the hash structurally cannot
+* let the command **enforce** the precondition rather than asserting it first:
+  `rmdir` fails on a non-empty directory where `rm -rf` succeeds regardless, so
+  the safe form is the one that cannot proceed if the belief is wrong
+
+⚠️ **That last rule is the general one and it is cheap everywhere.** Prefer the
+operation whose failure mode is a refusal over the operation whose failure mode
+is a silent success — it converts a belief into a precondition at no cost.
+
 | # | Instance | The substitution |
 |---|----------|------------------|
 | 1 | `run_ingestion` asked the **live index** whether a namespace already had docs, before every script, on a compute node where `es is None` | With ES reachable it would have printed "Skipping wd: 11,455,754 places already exist" for every namespace and made the whole rebuild a **silent no-op**. The `AttributeError` was the *lucky* outcome. |
