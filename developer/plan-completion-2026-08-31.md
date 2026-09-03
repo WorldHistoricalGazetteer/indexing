@@ -89,7 +89,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ✅ **DONE 2-3 Sep — 73 tilesets pushed, 0 gate refusals across the corpus.** 2.7's gate was met (S8, 2 Sep). Every polygon-bearing bucket passed `store N/N hull 0 point 0`; the two point-only gazetteers passed `store 0/0`; 2 buckets legitimately empty (`whg-1642`, `whg-1644`). **Independently verified** by the coordinator from tile coordinates computed off each tileset's own bounds, not S5's samples. See §3.1 |
 | **S6** (`whg3-74`) | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ✅ **DONE 3 Sep — LIVE ON PROD** (`whg3` main `8e0fe8f29`, dev `8f3af0191`). Verified on the live map, not just in the data: prod rows match dev **exactly**, incl. source-feature counts. Found and fixed a defect in *this* repo — see §3.2 |
-| **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
+| **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised TWICE on 3 Sep — re-read §3.3; the reproducer protocol is dropped and `tiles-verify` is not what it was described as.**  ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
 
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
 concurrency rules below before running them at the same time. Only S2 gates S5.
@@ -4717,6 +4717,15 @@ in flight and an expected peak around **250 GB**. Nothing in `/ix1` is safe to
 inventory-and-delete while that runs.
 
 **HAZARD 2 — there are now TWO tile generations and BOTH must survive.**
+⚠️ **And the August directory is more than a rollback: it holds the ONLY
+build-side copy of `gn_capitals.mbtiles`** (3,121,152 bytes, **dated 5 May**),
+which is deployed and referenced twice in the live `config.json`. ✅ **It was NOT
+"silently skipped by the retile"** — it predates the August generation as well as
+September's and has never been in either run's scope. That is a weaker and more
+comfortable finding than a §3.1 gap: nothing dropped it. ⚠️ **Worth asking
+separately why a May-era tileset is still serving** — a question about the bucket
+list, not about the retile. The "scratch only, never the `.mbtiles`" rule
+protects it either way.
 `/ix1/ishi/data/tiles-20260902-retile` is the generation deployed 3 Sep;
 `/ix1/ishi/data/tiles` is the August rollback and is the **only** way back if
 the new tilesets prove unstable. ⚠️ The original scope was written when only
@@ -4732,33 +4741,58 @@ only the scratch *inside* them.
 | `/ix1/ishi/data/tiles/_step0` | `/ix1` | 2.7 GB | scratch only — **not** the sibling `.mbtiles` |
 | stale `*.geojsonl` in `/ix1/ishi/data/tiles` | `/ix1` | ~20 GB | incl. `osm_admin.*` from the May 2025 pre-rename era |
 
-🛑 **`tiles-verify` IS THE ONLY KNOWN-BAD ARTEFACT SET IN EXISTENCE.** Those
-17 GB are the poly-less tilesets from the 7 August run, preserved deliberately
-so that a verifier can be **proved to fail** on them. This campaign's own
-doctrine is that every gate must be shown to FAIL on known-bad as well as pass
-on known-good — and **deleting these fixtures makes that permanently unprovable
-for every future verifier**, to reclaim 17 GB on a volume with 226 GB free and
-a low watermark at 153.6 GB. That is not urgent space.
+🛑 **CORRECTED 3 Sep — `tiles-verify` IS NOT A KNOWN-BAD CORPUS. IT CONTAINS NO
+DEFECTIVE ARTEFACT AT ALL, AND THE PROTOCOL BELOW GUARDED A PREMISE RATHER THAN
+A FACT.** Audited with a dependency-free MVT wire-format parser, validated on a
+known-bad/known-good control pair before use:
 
-✅ **Required before any deletion here: extract a minimal reproducer** — likely
-a few MB, one bucket's poly-less tileset plus its manifest — and delete only
-the bulk. If that reproducer does not exist, `tiles-verify` stays.
+```
+CONTROLS (answers known in advance)
+  /ix1/ishi/data/tiles/clio.mbtiles          6.0 MB   10,587 tiles  poly=0    <- known-BAD, deployed 7 Aug
+  .../tiles-20260902-retile/clio.mbtiles  2,507.0 MB  311,953 tiles poly=60   <- known-GOOD, 2 Sep
+```
 
-**The agreed protocol (S7, 3 Sep), recorded here so it does not close with the
-session that devised it:**
+**All nine layers this campaign describes as having shipped poly-less carry
+polygons in `tiles-verify`** — `clio` poly=60, `kain_par` 12,485, `hgis` 524,
+`po` 60, `ukhc` 111, `un` 60, `vob_lgd` 1,706, `vob_rd` 684, `vob_rc` 159,
+`vob_cty` 171. Of its 22 poly-less entries, **not one is a defect**: `alc`,
+`chgis`, `dgsd`, `dp`, `gb`, `gn`, `iv`, `ofs`, `og`, `tgn`, `tm` are all
+legitimately point-only, `pl` is correctly line-bearing, and ten are zero-tile
+`ohm.*` band files.
 
-1. Extract one poly-less bucket's tileset plus its manifest from `tiles-verify`.
-2. Run the verifier against it and **require it to FAIL**.
-3. Run the same verifier against a **known-good tileset from the 3 Sep
-   generation** and **require it to PASS**.
-4. Report both results to the coordinator. **Only then** propose deleting the
-   bulk — the deletion is not S7's to make on its own reading.
+⚠️ **Its composition settles what it is: 38 `.mbtiles` + 10 `.mbtiles-journal`
++ 29 `.geojsonl` + 4 `.py`.** The ten journals are interrupted SQLite writes and
+correspond **exactly** to the ten zero-tile files; `ukhc.base.mbtiles` has no
+`tiles` table at all. **This is an ABANDONED WORKING AREA from that night**, not
+a preserved corpus — consistent with `arealchk.py` (an ES query deciding which
+buckets needed a labelled rebuild) and `finalchk.py` (a QA harness cross-checking
+the logs' `poly=`/`point=` against the built files).
 
-⚠️ **Step 3 is not optional padding.** A check that fails on everything is as
-useless as one that passes on everything, and a reproducer validated only by
-step 2 cannot tell those apart. This is the campaign's both-directions rule
-applied to the fixture that exists to enforce it. **A reproducer nobody has
-tested in both directions is a comment.**
+🛑 **So the dangerous reading was the correct one: we believed we held a
+falsification corpus and we do not.** A verifier "proved to fail" on these would
+in fact have been handed fifteen tilesets full of polygons — **a check that
+would have looked tested and was not.**
+
+✅ **THE REAL KNOWN-BAD FIXTURE EXISTS AND IS 6 MB, NOT 17 GB:**
+**`/ix1/ishi/data/tiles/clio.mbtiles` — `poly=0 point=107`, the actual deployed
+August artefact.** Preserve *that*. It is already protected by the "scratch only,
+never the `.mbtiles`" rule.
+
+✅ **AND THE ONE REAL REASON TO KEEP PART OF `tiles-verify` IS ALREADY IN THIS
+PLAN, IN PHASE 1**: its **29 `.geojsonl` band files** are *"the cheap fixtures
+for exercising the tile builder before Phase 3"*. **That justification survives —
+and it is 29 files, not 17 GB.** It is also a different claim from the one §3.3
+was making.
+
+**Disposition: the extract-a-reproducer protocol is DROPPED.** Keep the
+`.geojsonl` fixtures; the 38 mbtiles, 10 journals and 4 scripts are releasable.
+
+⚠️ **ONE OPEN QUESTION, measured but unexplained.** `tiles-verify`'s `clio` has
+**311,953 tiles — identical to the 2 Sep good build** — while the deployed
+7 August `clio` had 10,587. **A structurally complete `clio` existed on disk that
+night.** Whether it was built before the bad deploy and something else shipped,
+or built after as an abandoned repair, cannot be told from mtimes (01:25–02:27).
+Flagged as an open question, not a conclusion.
 
 **Remaining reclaim is therefore ~17 GB on `/vast` (gated as above) and ~23 GB
 on `/ix1`** — the 23 GB row is already freed and is *inside* the 226 GB figure,
