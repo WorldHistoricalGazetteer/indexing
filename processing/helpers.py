@@ -23,7 +23,9 @@ from pyproj import Transformer, CRS
 from typing import Iterable
 import json
 import logging
+import math
 from collections import Counter
+from functools import lru_cache
 
 try:
     import h3 as _h3
@@ -947,15 +949,72 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
     return centroid_cell, [centroid_cell]
 
 
-# Average H3 cell area in degrees² at each resolution (equator-equivalent).
-# Used by ``_polyfill_adaptive`` to pick a starting resolution that won't
-# overflow ``H3_POLYFILL_MAX_CELLS``: a continent-scale polygon (~1000 deg²)
-# would generate ~22 000 cells at r7 (over cap → wasted work) but only ~450
-# at r5 — so we start at r5 directly instead of trying r7 first.
-_H3_HEX_AREA_DEG2 = {
-    0: 38000.0, 1: 5400.0, 2: 770.0, 3: 110.0,
-    4: 16.0, 5: 2.2, 6: 0.31, 7: 0.045, 8: 0.0064,
+# Mean great-circle km per degree of latitude (WGS84). One degree of LONGITUDE
+# is this times cos(latitude), which is the whole reason the estimate below
+# needs a latitude.
+_KM_PER_DEGREE = 111.19492664455873
+
+# ⚠️ There used to be a hard-coded ``_H3_HEX_AREA_DEG2`` table here. Every entry
+# was **~108× too large**, because the areas had been divided by 111 (km per
+# degree) rather than 111² (km² per degree²) — a units error, uniform across all
+# nine resolutions. Measured 3 Sep 2026: for r5 the table said 2.2 where the true
+# equator value is 0.0205, and 252.904 km² ÷ 111.19 = 2.274, which is where 2.2
+# came from.
+#
+# Effect: the estimate under-predicted cell counts by ~108×, so
+# ``_pick_polyfill_resolution`` left r7 only above **450 deg²** (a 21°×21°
+# polygon) when it should do so above **~4.2 deg²** (2°×2°). Everything in
+# between started at r7, overflowed the cap, and relied on the ladder in
+# ``compute_h3_fields`` to recover — which is why this cost wasted work rather
+# than wrong answers.
+#
+# The table is now DERIVED FROM ``h3`` ITSELF rather than transcribed, so the
+# same class of error cannot recur. The literal fallback below is used only when
+# h3 is unavailable, in which case polyfill returns nothing anyway.
+_H3_HEX_AREA_DEG2_FALLBACK = {
+    0: 352.4, 1: 49.32, 2: 7.020, 3: 1.002,
+    4: 0.1432, 5: 0.02045, 6: 0.002922, 7: 0.0004174, 8: 5.963e-05,
 }
+
+
+@lru_cache(maxsize=32)
+def _h3_cell_area_deg2_equator(res: int) -> float:
+    """Mean H3 cell area at ``res`` in degrees², at the equator.
+
+    Derived from ``h3.average_hexagon_area`` rather than transcribed — see the
+    note above. Falls back to a literal only when h3 is missing.
+    """
+    if not _H3_AVAILABLE:
+        return _H3_HEX_AREA_DEG2_FALLBACK.get(res, 0.0004174)
+    try:
+        return _h3.average_hexagon_area(res, unit="km^2") / (_KM_PER_DEGREE ** 2)
+    except Exception:                                          # noqa: BLE001
+        return _H3_HEX_AREA_DEG2_FALLBACK.get(res, 0.0004174)
+
+
+def estimate_polyfill_cells(bbox_area_deg2: float, centre_lat_deg: float,
+                            res: int) -> float:
+    """Estimated cell count for a bbox of ``bbox_area_deg2`` centred at
+    ``centre_lat_deg``, filled at ``res``.
+
+    A degree of longitude is ``cos(latitude)`` shorter than a degree of latitude,
+    so a fixed-area H3 cell spans MORE degrees² near the poles — and a bounding
+    box of a given degrees² covers correspondingly LESS ground. The cell count
+    therefore scales with ``cos(latitude)``, and omitting it over-predicts at
+    high latitude.
+
+    ⚠️ Verified against real polyfills of a 4°×4° box at r5 (3 Sep 2026):
+    1,025 cells at the equator falling to 114 at 80°N, against this estimate's
+    782 → 109. It runs slightly LOW, which is the tolerable direction: an
+    under-estimate picks too fine a resolution and the ladder in
+    ``compute_h3_fields`` recovers, whereas an over-estimate picks too coarse
+    and **nothing recovers the lost detail**.
+    """
+    # Clamp so a polar bbox cannot drive the estimate to zero and pick r7 for
+    # something enormous.
+    cos_lat = max(math.cos(math.radians(max(-89.9, min(89.9, centre_lat_deg)))), 0.02)
+    area = _h3_cell_area_deg2_equator(res)
+    return bbox_area_deg2 * cos_lat / max(area, 1e-12)
 
 
 def _bbox_area_deg2(geojson_geom: dict) -> float:
@@ -985,12 +1044,44 @@ def _bbox_area_deg2(geojson_geom: dict) -> float:
     return max(0.0, (max(lons) - min(lons)) * (max(lats) - min(lats)))
 
 
-def _pick_polyfill_resolution(bbox_area_deg2: float) -> int:
+def _bbox_centre_lat(geojson_geom: dict) -> float:
+    """Latitude of the geometry's bounding-box centre, or 0.0 if unknown.
+
+    0.0 is the *conservative* default here: cos(0) = 1 maximises the estimated
+    cell count, so an unknown latitude picks a coarser resolution rather than
+    silently assuming a polar geometry is tiny.
+    """
+    if not isinstance(geojson_geom, dict):
+        return 0.0
+    lats: list[float] = []
+
+    def _walk(node):
+        if isinstance(node, list):
+            if (node and isinstance(node[0], (int, float)) and len(node) >= 2
+                    and isinstance(node[1], (int, float))):
+                lats.append(float(node[1]))
+            else:
+                for child in node:
+                    _walk(child)
+
+    _walk(geojson_geom.get("coordinates"))
+    if not lats:
+        return 0.0
+    return (max(lats) + min(lats)) / 2.0
+
+
+def _pick_polyfill_resolution(bbox_area_deg2: float,
+                              centre_lat_deg: float = 0.0) -> int:
     """Return the highest H3 resolution whose estimated cell count for a
-    polygon of ``bbox_area_deg2`` won't exceed ``H3_POLYFILL_MAX_CELLS``."""
+    polygon of ``bbox_area_deg2`` centred at ``centre_lat_deg`` won't exceed
+    ``H3_POLYFILL_MAX_CELLS``.
+
+    ``centre_lat_deg`` defaults to 0.0 (equator) so existing single-argument
+    callers keep working and get the *conservative* answer — see
+    :func:`_bbox_centre_lat`.
+    """
     for res in (H3_CENTROID_RESOLUTION, 5, 3):
-        hex_area = _H3_HEX_AREA_DEG2.get(res, 0.045)
-        if bbox_area_deg2 / max(hex_area, 1e-12) <= H3_POLYFILL_MAX_CELLS:
+        if estimate_polyfill_cells(bbox_area_deg2, centre_lat_deg, res) <= H3_POLYFILL_MAX_CELLS:
             return res
     return 3  # always at least try r3 as a last resort
 
@@ -1152,7 +1243,7 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
         return set()
 
     bbox_area = _bbox_area_deg2(geojson_geom)
-    start_res = _pick_polyfill_resolution(bbox_area)
+    start_res = _pick_polyfill_resolution(bbox_area, _bbox_centre_lat(geojson_geom))
 
     # Bound ``h3shape_to_cells`` cost on hyper-detailed boundaries by simplifying
     # away sub-resolution vertices first. Gated on vertex count so small geoms
@@ -1204,11 +1295,14 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
     # and can never exceed the cap, so with the ladder complete THIS FUNCTION
     # CAN NO LONGER RETURN AN EMPTY COVER FOR A VALID POLYGON.
     #
-    # ⚠️ Note ``_pick_polyfill_resolution``'s estimate is *equator-equivalent*
-    # (``_H3_HEX_AREA_DEG2``) and so is systematically optimistic at high
-    # latitude — it under-predicted that polygon by 27×. The ladder makes that
-    # a performance matter rather than a correctness one; do not rely on the
-    # estimate to keep the first candidate inside the cap.
+    # ⚠️ ``_pick_polyfill_resolution``'s estimate is a STARTING GUESS, not a
+    # guarantee: do not rely on it to keep the first candidate inside the cap.
+    # It was badly wrong until 3 Sep 2026 (a units error made it under-predict
+    # by ~108×, so it began at r7 for anything under 450 deg²); it is now
+    # derived from h3 and latitude-aware, and verified against real polyfills
+    # across 0-80° latitude. It still runs slightly low by design — an
+    # under-estimate is recovered by this ladder, an over-estimate would pick
+    # too coarse a resolution and nothing would recover the lost detail.
     candidates: list[int] = []
     for res in (start_res, 5, 3, 2, 1, 0):
         if res not in candidates:

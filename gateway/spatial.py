@@ -29,6 +29,7 @@ import json
 import logging
 import math
 import threading
+from functools import lru_cache
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
@@ -63,9 +64,17 @@ except Exception:  # pragma: no cover
 # geometry). Mirrors processing.helpers to keep the gateway import-light.
 H3_POLYFILL_MAX_CELLS = 10_000
 H3_CENTROID_RESOLUTION = 7
-_H3_HEX_AREA_DEG2 = {
-    0: 38000.0, 1: 5400.0, 2: 770.0, 3: 110.0,
-    4: 16.0, 5: 2.2, 6: 0.31, 7: 0.045, 8: 0.0064,
+# ⚠️ A hard-coded ``_H3_HEX_AREA_DEG2`` table stood here and in
+# ``processing.helpers``. Every entry was **~108× too large** — the areas had
+# been divided by 111 (km per degree) instead of 111² (km² per degree²). Both
+# copies now DERIVE the value from ``h3`` itself, so the two cannot drift and
+# the transcription error cannot recur. This file keeps its own copy of the
+# logic deliberately (see the note above about staying import-light); what it
+# no longer keeps is its own copy of the *numbers*.
+_KM_PER_DEGREE = 111.19492664455873
+_H3_HEX_AREA_DEG2_FALLBACK = {
+    0: 352.4, 1: 49.32, 2: 7.020, 3: 1.002,
+    4: 0.1432, 5: 0.02045, 6: 0.002922, 7: 0.0004174, 8: 5.963e-05,
 }
 _ES_H3_TERMS_CAP = 4000
 _REGION_CACHE_MAX = 128
@@ -102,9 +111,28 @@ def get_geom_reader():
 # H3 helpers
 # ---------------------------------------------------------------------------
 
-def _pick_polyfill_resolution(bbox_area_deg2: float) -> int:
+@lru_cache(maxsize=32)
+def _h3_cell_area_deg2_equator(res: int) -> float:
+    """Mean H3 cell area at ``res`` in degrees², at the equator, from h3."""
+    if not _H3_AVAILABLE:
+        return _H3_HEX_AREA_DEG2_FALLBACK.get(res, 0.0004174)
+    try:
+        return _h3.average_hexagon_area(res, unit="km^2") / (_KM_PER_DEGREE ** 2)
+    except Exception:                                          # noqa: BLE001
+        return _H3_HEX_AREA_DEG2_FALLBACK.get(res, 0.0004174)
+
+
+def _estimate_polyfill_cells(bbox_area_deg2: float, centre_lat_deg: float,
+                             res: int) -> float:
+    """Estimated cell count — scales with cos(latitude); see processing.helpers."""
+    cos_lat = max(math.cos(math.radians(max(-89.9, min(89.9, centre_lat_deg)))), 0.02)
+    return bbox_area_deg2 * cos_lat / max(_h3_cell_area_deg2_equator(res), 1e-12)
+
+
+def _pick_polyfill_resolution(bbox_area_deg2: float,
+                              centre_lat_deg: float = 0.0) -> int:
     for res in (H3_CENTROID_RESOLUTION, 5, 3):
-        if bbox_area_deg2 / max(_H3_HEX_AREA_DEG2.get(res, 0.045), 1e-12) <= H3_POLYFILL_MAX_CELLS:
+        if _estimate_polyfill_cells(bbox_area_deg2, centre_lat_deg, res) <= H3_POLYFILL_MAX_CELLS:
             return res
     return 3
 
@@ -117,7 +145,8 @@ def _polyfill(geom) -> set[str]:
     except Exception:
         return set()
     minx, miny, maxx, maxy = geom.bounds
-    start = _pick_polyfill_resolution(max(0.0, (maxx - minx) * (maxy - miny)))
+    start = _pick_polyfill_resolution(
+        max(0.0, (maxx - minx) * (maxy - miny)), (miny + maxy) / 2.0)
     tried: list[int] = []
     for res in (start, 5, 3):
         if res in tried:
