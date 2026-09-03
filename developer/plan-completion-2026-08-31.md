@@ -4178,8 +4178,34 @@ precisely the failure this campaign has been dismantling.
    Point is a Point). Their covers are now correct *for their stored polygons*;
    if `geom_class` is wrong it is still wrong.
 3. **§2.10 questions 2 and 3** — open, gating nothing.
-4. **`clio` +2,986** — an unsourced figure repeated at five sites, never
-   derived. S5's build will be its first derivation.
+4. ~~**`clio` +2,986**~~ — 🛑 **REFUTED 3 Sep, not merely unsourced. Strike it
+   wherever it is quoted.** Direct census of the live index:
+
+   ```
+   clio docs                       15,690
+   clio geometries (nested)        15,690    exactly one per doc
+     geom_class = area             15,690    100% — no point or line bucket exists
+     has_geom = true               15,690    100% retrievable
+     geom_ref present              15,690    100%
+   ```
+
+   **Every `clio` document has exactly one areal, store-backed geometry, so the
+   polygon count a retile should produce is 15,690** — reproducing the geom-store
+   key count from two prior independent measurements (this week's, and the 9 Aug
+   handover's *"clio verified at 15,690 entries / 15,690 distinct keys"*). Three
+   sources, one number. The nested agg partitioned into a single `area` bucket
+   with no remainder; a missing nested wrapper would have returned 0 for
+   everything, including the control.
+
+   ⚠️ **The other circulating figure, `13,907`, differs from 15,690 by 1,783 —
+   11.4% of the layer — and is NOT reconciled.** The two may be measuring
+   different things: 15,690 is the **index/store input**, `13,907` is presumably
+   a **built-tileset output**, and tippecanoe legitimately drops and merges
+   features. But that is exactly the input-versus-output difference this
+   campaign insists must be **asserted rather than assumed**. Whoever next
+   touches the `clio` tileset should reconcile them explicitly — it is the same
+   shape as the `poly=` assertion already on S5's row, and 11.4% is too large to
+   wave through as simplification.
 
 ### ✅ 2.3 COMPLETE — overlay PUBLISHED 2 Sep, gateway restarted, serving verified
 
