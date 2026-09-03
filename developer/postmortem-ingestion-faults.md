@@ -776,10 +776,48 @@ broken. These are worse than no check, because they are cited as evidence.
 
   Every tile returns **HTTP 200**. Nothing is missing; the tiles are simply thin.
   This is why no availability check, no checksum, and no size-of-file gate could
-  see it either. ⚠️ **z2 is 493 KB against tippecanoe's 500 KB ceiling** — an
-  artefact whose largest tile sits 1.4% under the limit was built under pressure
-  from it, and the drop-as-needed family does its work silently. Same signature
-  as the `tile-join` oversize skip behind place#160.
+  see it either.
+
+  ⚠️ **A SECOND INSTANCE OF THIS CLASS OCCURRED WHILE DIAGNOSING THE FIRST, IN
+  BOTH DIRECTIONS, AND THE STRUCTURAL RECORD SETTLED IT.** The coordinator noted
+  z2 = 493 KB, 1.4% under tippecanoe's 500 KB cap, and offered "built under
+  pressure from the ceiling" as the lead. A second reader refuted it by measuring
+  tiles at 1,485 KB — *"nearly 3× over, so no limit was in force"* — and
+  concluded the build used `--no-tile-size-limit`.
+
+  **Both were wrong, for opposite reasons, and neither needed to be argued.**
+  Tiles are served gzipped at ~3× (`content-encoding: gzip`, measured); the
+  refutation compared **uncompressed** bytes against a cap that tippecanoe
+  documents as the maximum **compressed** tile size. Under the correct
+  comparison no tile exceeds it. But the original lead was no better: *all tiles
+  under a cap* is merely **consistent with** a cap, not evidence of one, and a
+  single sample landing near a round number is a coincidence, not a constraint —
+  a second sample landed on 500 KB **exactly**, which should have discredited the
+  reading rather than confirming it.
+
+  **The dispute was ended in one query by reading the invocation the build
+  recorded in its own `metadata.generator_options`:**
+
+  ```
+  tippecanoe v2.78.0 --coalesce-densest-as-needed --drop-densest-as-needed
+                     --simplification=4 --detect-shared-borders -z10
+  ```
+
+  No `--no-tile-size-limit` and no raised `-M`, so the default cap **was** in
+  force; and both feature-dropping flags **are** present. ⚠️
+  **`--coalesce-densest-as-needed` merges adjacent features, and at
+  `--simplification=4` (4× tippecanoe's default) a merged, aggressively
+  simplified coastline degenerates toward its bounding box** — a mechanism for
+  axis-aligned rectangular blocks, named by the artefact rather than inferred
+  from its size.
+
+  ⚠️ **This is the structural-beats-historical rule in a new substrate.** Two
+  readers spent a round trip inferring a build's configuration from the size of
+  its output, while the configuration was **stored verbatim inside the output**.
+  A generated artefact that records its own invocation should be *read*, never
+  reasoned about — and the coordinator reached a true conclusion by an argument
+  that did not support it, which is the harder error to notice because the
+  conclusion survives review.
 
   **The remedy is not a better measure.** It is a question asked of the measure
   before the measure is trusted: **what would a BROKEN world produce that this
