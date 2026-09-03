@@ -453,6 +453,22 @@ broken. These are worse than no check, because they are cited as evidence.
   form "drop X", measure what is currently in X.** Not that X exists, not that
   the routing to X is correct — the occupancy.
 
+  ✅ **The gold standard of the second-modality defence, for once observed
+  rather than argued: EXACT AGREEMENT ON A LARGE NUMBER FROM AN UNRELATED
+  IMPLEMENTATION.** 3 Sep, #233 — a pyosmium script testing
+  `nodes[0].ref == nodes[-1].ref` on tagged ways counted **799,618** closed
+  `natural=coastline` ways in the planet; `osmcoastline`, C++ libosmium doing
+  ring assembly for an entirely different purpose, independently reported
+  **"799618 from a single closed way"** in the filtered file. Neither knows about
+  the other. One coincidence validates two things at once: **the counting
+  instrument** that produced every denominator in the campaign's filter control,
+  and **the completeness of the derived input** — had the filter dropped tagged
+  coastline ways, the second number would be smaller than the first.
+  ⚠️ It could not have been arranged deliberately; it fell out of reading a
+  progress log to check whether a job had stalled. **Third instance of the
+  adjacency heuristic paying** — after `riverbank` from a census run for another
+  purpose and `ice` from a list being checked for another reason.
+
   ✅ **A fourth detection method, empirically the most productive here: when you
   touch something, look at what is next to it.** indexing-db's own accounting —
   two of its four catches came this way rather than from systematic
