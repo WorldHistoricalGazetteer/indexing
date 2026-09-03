@@ -81,7 +81,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
-| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
+| **S4** | 2.5 | Restore the `gn`/`wd`/`nl` staged trees. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). ⚠️ **2.6 REMOVED from this plan 3 Sep (SG)** — it is Symphonym-retrain preparation, not re-ingestion completion, and SG will run it on returning to Symphonym. Moved to Phase 4; **its two override warnings moved with it** |
 | **S9** (`indexing-98`) | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` called in `update_merge`, `boundary_merge`, `h3_merge` and `ccode_merge` (×3 each; `open("w")` count **0** in all four — verified 1 Sep); parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **Auditor** | document audit (not a plan step) | **Read the plan COLD and find every claim superseded by a later one that is not marked as such.** Read-only: no code, no plan writes — reports findings to `indexing-5e`, which makes the edits. Assigned by SG, 1 Sep. | ◐ **running** (`indexing-13`) — reading at a pinned SHA; batching findings highest-risk first |
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ✅ **PURPOSE SERVED 2 Sep** — it gated 2.7's `gn`/`wd`, and 2.7 is complete. The causal chain was demonstrated end to end (`un` hull cover → tier 1 inert → islands dropped; fix it and all 15 `nl` territories resolve). Questions 1 and 4 CLOSED; **2 and 3 remain open but gate nothing and are now UNOWNED, not S9's** |
@@ -302,7 +302,7 @@ fresh as the last session that remembered to tick one.
 | **S1** | none | — |
 | **S2** | none | — |
 | **S3** | none | — |
-| **S4** | **2.5 complete before 2.6 starts** — `gn`, `wd` and `nl` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` **13,454,817**, `wd` 11,459,393, `nl` 4,363 staged docs — measured, not the stale "~11.6 M" this table used to carry |
+| **S4** | ✅ **2.5 satisfied** — `gn`, `wd` and `nl` staged trees restored and counted against the live index. (2.6 has left this plan — see Phase 4) | `gn` **13,454,817**, `wd` 11,459,393, `nl` 4,363 staged docs — measured, not the stale "~11.6 M" this table used to carry |
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
 | **S5** | ⚠️ **2.5 COMPLETE — a hard gate, not an either/or (SG, 31 Aug).** Verify with the pipeline's **own** resolver, not `ls`: a stub is a valid file of the right name. `gn` **13,454,817**, `wd` **11,459,393**, `nl` **4,363** staged docs, each delta 0 against the live index | all three PASS |
 | **S5** | ❌ **WITHDRAWN — does not work.** `TILE_ES_DOC_NAMESPACES=gn,wd` was offered here as an escape hatch; `submit_tiles_slurm` **never consults it** (§3.1), so it cannot make an ineligible bucket eligible. Kept struck so nobody re-offers it. **Costs a ~24.5 M-document scan of production ES** and leaves the staged trees still wrong for the next consumer. Use only if the Beta genuinely cannot wait for `gn`'s extract | not the default |
@@ -1970,7 +1970,20 @@ wall** (the estimator gives 03:40:24 for work exceeding 12 h — Fault 13).
 
 <details><summary>Original step, retained for the day a retrain is scheduled</summary>
 
-### 2.6 Re-run toponyms stage 1 for `ipa` / `panphon_features`  — ~~**S4**~~  ⚠️ AFTER 2.5
+### ⬜ 4.22 Re-run toponyms stage 1 for `ipa` / `panphon_features` — **UNSCHEDULED**
+
+🛑 **REMOVED FROM PHASE 2 ON 3 Sep (SG): "I'll do that when I return to
+Symphonym in due course."** It was never re-ingestion completion — `ipa` and
+`panphon_features` are **training-only artefacts** whose sole consumer is the
+next Symphonym training run, and they are empty **by design**
+(`--training-namespaces _none_`, deliberate since `ef31016`, 2 May), not by
+failure. **Nothing reads them today.** Retained in full below because the two
+override warnings are the whole value of this entry — whoever runs it will hit
+both.
+
+⚠️ Its input (2.5) is complete, so it is unblocked whenever it is wanted.
+
+*(Formerly §2.6 — ~~**S4**~~ ⚠️ AFTER 2.5)*
 
 ⚠️ **Three corrections, all measured by S4 on 31 Aug. The original text of this
 step was wrong in its cause, its hazard and its position.**
@@ -4822,6 +4835,12 @@ nothing checking they do.**
 
 ## Phase 4 — tracked, not scheduled
 
+⚠️ **§4.22 (toponyms stage 1 / `ipa` + `panphon_features`) is filed here but its
+text still sits physically in Phase 2**, where it was written as §2.6 — moved by
+heading rather than by cut-and-paste, deliberately: this file was corrupted once
+today by a slice operation and the content is worth more than its position.
+**Search `4.22`.**
+
 ### 4.15 Split tile `work_dir` from `output_dir` — intermediates to node-local scratch
 
 **SG's refinement, 2 Sep. Sound, contained, and deliberately NOT sequenced ahead
@@ -5934,7 +5953,7 @@ push because it was not theirs — the right call, and worth recording as the no
 | **S1** `indexing-81` | 1.1, 1.2 (`f94b8b8`); 2.2 verified on prod (`4286a0f`, `177ba72`); 2.4 with a test (`0c2819c`) | Nothing outstanding. Three follow-ups nobody had written down — see below |
 | **S2** `indexing-ab` | 2.1: `un` 247/247 in the store, 0 bounds mismatch; the refuse-to-stage guard + the counters that were tracked and never printed (`b05d5b0`, `6a632a1`) | ✅ **RESOLVED, not open** — `staged/un` was given a `final/` (Slurm 11075438). Reads as live outstanding work otherwise (Auditor F7). `staging-parked/` is a deletion queue with a README, inert |
 | **S3** `indexing-c7` | 2.3 live and verified on prod: `whg:1052:8` resolves, 0 dangling of 1,935 endpoints; id map; `adc7345`, `42b6e4a`, `1f5aa50` | The overlay rebuild, gated and documented (`d10ef97`, `344c66b`) — **but its publish path has never been executed** |
-| **S4** `indexing-2f` | 2.5 two-thirds: `wd` 11,459,393 and `nl` 4,363 restored, both delta 0; the staged census; the parked verifier (`adff6dc`, `dc40957`) | `gn` extracting; 2.6 unstarted. Both finishable without an S4 session |
+| **S4** `indexing-2f` | 2.5 two-thirds: `wd` 11,459,393 and `nl` 4,363 restored, both delta 0; the staged census; the parked verifier (`adff6dc`, `dc40957`) | ✅ 2.5 completed; **2.6 removed from this plan 3 Sep (SG) and refiled as §4.22 — Symphonym-retrain preparation, unscheduled** |
 
 ### What was only in their heads, and is not any more
 
