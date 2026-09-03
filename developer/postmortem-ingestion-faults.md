@@ -1007,6 +1007,25 @@ broken. These are worse than no check, because they are cited as evidence.
 
 ---
 
+⚠️ **CHANGING A SHARED DEPENDENCY MID-MEASUREMENT SILENTLY INVALIDATES SOMEONE
+ELSE'S RUN — and the coordinator did it 3 Sep after promising not to.** A
+production style was reverted on the tileserver while a second session was
+running a cold-load harness against it. That session's next result landed on a
+style that had lost a layer between runs, and it **nearly recorded a false
+pass** — the change moved the artefact under a measurement already in flight.
+
+⚠️ **This is worse than an ordinary race because the invalidation is invisible
+FROM THE RESULT.** A harness reports what it observed; nothing in its output says
+the subject changed underneath it. The only defence is the announcement, and the
+coordinator had explicitly offered one (*"I will tell you before it lands so your
+harness runs are not measuring a moving target"*) and then did not send it. **The
+promise was the control, and skipping it removed the only mechanism that could
+have caught the problem.**
+
+**Rule:** a shared artefact under active measurement is frozen until the measurer
+says otherwise. Announce before, not after — an announcement afterwards tells
+someone their last N results are void, which is strictly worse than waiting.
+
 ## ⭐ Class H — a TRUTHFUL status record that prevents recovery
 
 ⚠️ **AN OPEN QUESTION IS A STATUS RECORD TOO, AND IT DECAYS THE SAME WAY.**
