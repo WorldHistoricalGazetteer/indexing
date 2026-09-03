@@ -903,33 +903,54 @@ broken. These are worse than no check, because they are cited as evidence.
   again, so `idle` never fires and the loading overlay waits for ever. **Warm, the
   sources resolve from cache instantly and nothing is noticed.**
 
-  🛑 **CORRECTED 3 Sep, BY THE AUTHOR, AFTER THIS ENTRY WAS WRITTEN.** The
-  cold-cache numbers originally recorded here (*"cold, the page never paints,
-  while the unfixed build paints in 4.8 s"*) **do not establish what they were
-  offered for.** Re-run across more configurations, the harness fails on
-  **unchanged production code** too:
+  🛑 **THIS ENTRY WAS REVISED THREE TIMES IN ONE DAY, AND THE THIRD REVISION
+  REVERSES THE SECOND. THE HARNESS WAS RIGHT ALL ALONG.**
+
+  Revision 2 recorded that the cold-cache harness "could not discriminate",
+  because it failed on unchanged production code:
 
   ```
   allowlist (dev)   areas=whg-enhanced   never paints  — terrarium-local unloaded
   allowlist (dev)   areas=whg-context    never paints  — terrarium-local unloaded
   reverted (PROD)   areas=whg-context    never paints  — terrarium-local unloaded   <- UNCHANGED CODE
-  reverted (PROD)   areas=whg-enhanced   paints at 4,794 ms
+  reverted (PROD)   areas=whg-enhanced   paints at 3,845 ms
   ```
 
-  Headless Chromium never resolves `terrarium-local`, a `raster-dem` terrain
-  source identical in both styles with a TileJSON 200, with or without
-  `--use-gl=angle --use-angle=swiftshader`. **The single passing row passed
-  because the basemap swap happens to unblock it — nothing to do with the code
-  under test.** The prod failure was real and observed in real Chrome, and
-  after-`load` source addition remains a genuine mechanism; but the cold-cache
-  table is not evidence for it.
+  ⚠️ **Those failures were not spurious. They were correct reports of a real,
+  live production defect that unchanged code genuinely has** — `terrarium.mbtiles`
+  had an **empty `metadata` table**, so tileserver-gl defaulted its format to
+  `pbf`, advertised `.../{z}/{x}/{y}.pbf`, and served genuine PNG bytes as
+  `application/x-protobuf`. MapLibre fetched them (200s in the network log),
+  handed them to the image decoder, could not decode them, and the `raster-dem`
+  source never completed — so `map.loaded()` stayed false, `idle` never fired,
+  and a loading overlay that waits on `idle` never cleared. **Five styles consume
+  that source with a visible layer.** The one passing row passed because a basemap
+  swap happens to unblock it.
 
-  🛑 **Each verification made the next one weaker.** The first dev load populated
-  the cache; every subsequent reload tested a system that had already been given
-  the thing whose absence was the defect. Five passes did not accumulate
-  confidence — **they accumulated contamination.** A single cold-cache run had
-  strictly more evidential value than all five together, and the five could never
-  have produced a failure no matter how many were run.
+  🛑 **THE REAL FAULT WAS REVISING THE INSTRUMENT'S CREDIBILITY INSTEAD OF
+  INVESTIGATING WHAT IT REPORTED.** Having just been burned by a warm cache that
+  was **too permissive**, the author over-corrected into distrusting a tool that
+  looked **too strict** — when it was simply accurate. The coordinator accepted
+  that reasoning and wrote it up as doctrine within the hour.
+
+  ⚠️ **"A tool that fails everything looks rigorous" is a real trap and it was
+  the WRONG diagnosis here.** Both readings — *the instrument is broken* and
+  *everything is broken* — predict the same table. Nothing in the pattern of
+  results separates them; **only opening the artefact does.** One `curl` of the
+  TileJSON, or one look at the `metadata` table, settles it in seconds, and it
+  was available at every stage. Instead the credibility of the measurement was
+  adjusted to fit a prior about how measurements go wrong.
+
+  **The rule that survives all three revisions:** when an instrument reports
+  something you did not expect, the cheapest next move is almost never to
+  re-assess the instrument — it is to **look directly at the thing it is
+  reporting on**. Re-assessing the instrument is unfalsifiable from the results
+  alone, and it is *especially* tempting right after a genuine instrument failure,
+  which is exactly when it is most likely to be wrong.
+
+  ℹ️ **Operational corollary, which survives intact:** a headless browser harness
+  cannot resolve this source at all — but that was a *symptom* of the defect, not
+  a limitation of headless testing.
 
   ⚠️ **A plausible mechanism already in the author's notes nearly absorbed the
   evidence.** The prod failure was first attributed to the browser window being
@@ -939,27 +960,12 @@ broken. These are worse than no check, because they are cited as evidence.
   you already believe in is the most dangerous explanation available**, because it
   is the one that costs nothing to accept and closes the investigation.
 
-  🛑 **AND THE SECOND TRAP IS SHARPER THAN THE FIRST, BECAUSE IT DRESSED ITSELF AS
-  THE REMEDY FOR IT.** Having been caught by a warm cache that **could not fail**,
-  the author reached for a cold harness that **could not discriminate** — and
-  trusted it precisely because it had produced one discriminating-looking result.
-
-  ⚠️ **A TOOL THAT FAILS EVERYTHING LOOKS RIGOROUS.** Three of four rows failing
-  reads as a demanding test; it is the signature of an instrument whose output is
-  independent of its input, exactly like the gate that passes everything, and it
-  is *more* persuasive because severity is mistaken for stringency. **The passing
-  row was the anomaly and deserved the scrutiny.** It got none, because attention
-  went to the failures — which is the warm-cache error wearing the opposite face.
-
-  **Rule:** in a mostly-failing result set, audit the PASS. In a mostly-passing
-  one, audit the FAIL. The minority row is where the instrument reveals itself,
-  whichever direction it lies in — and a control run against *unchanged* code is
-  what separates the two, since an instrument that fails known-good is broken no
-  matter how convincing its failures on known-bad.
-
-  ℹ️ **Operational corollary, worth its own line:** a headless browser harness
-  **cannot test a style carrying a `raster-dem` terrain source at all**. Anyone
-  automating Atlas rendering checks needs that before they trust a red result.
+  ✅ **THE MINORITY-ROW RULE STILL HOLDS, AND IT POINTED THE RIGHT WAY.** In a
+  mostly-failing result set, audit the **PASS**; in a mostly-passing one, audit the
+  **FAIL**. The minority row is where the truth sits, whichever direction it lies
+  in. Here three rows failed and one passed — and **the passing row was indeed the
+  anomaly**: it passed only because a basemap swap masked the defect. Auditing it
+  would have found the bug. The rule was sound; it was stated and then not applied.
 
   **The remedy is the CURATIVE form, not a better test.** Declaring the sources in
   the *initial style* — server-side, in the style JSON — means they are resolved as
