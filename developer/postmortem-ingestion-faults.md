@@ -475,6 +475,21 @@ broken. These are worse than no check, because they are cited as evidence.
   whether the *object* still existed. For any remedy phrased as "drop X to save
   space", the reasoning is not the thing to review: **measure X.**
 
+  🛑 **ONE WRONG IDEA REACHED THREE ARTEFACTS IN ONE DAY — code comment,
+  product copy, and nearly the implementation.** The temporal *definitely* mode
+  is an interval **OVERLAP** test. Asserted as **CONTAINMENT** ("alive
+  *throughout* the window") in: (a) `generate_tiles.py`'s filter sketch, which
+  also contradicted its own *possibly* line — fixed `a9d71ed`; (b) the Atlas
+  *definitely* tooltip, **facing users**, describing a stricter filter than the
+  one that runs — fixed in whg3; and (c) it would have reached the shipped
+  client had whg3-74 followed the sketch instead of the gateway. ✅ A fourth was
+  searched for and **not** found (`gateway/*.py`, `CLAUDE.md`,
+  `generate_tiles.py`): `places.py:210`'s "attested alive throughout" correctly
+  describes the *core interval*, not the filter. **A misconception does not stay
+  in one artefact — when you correct one, grep for its siblings in code
+  comments, user-facing copy and docs, because each was written by someone
+  reading the last.**
+
   ⚠️ **Fourth form, and the one that propagates furthest: the SPECIFICATION.**
   2 Sep, all three authored by the coordinator in #233 and all three caught by
   someone else's measurement: `boost-cpp` named as a dependency **that cannot
@@ -592,6 +607,19 @@ broken. These are worse than no check, because they are cited as evidence.
   ✅ **The check that would have caught it is one line: for any lever of the
   form "drop X", measure what is currently in X.** Not that X exists, not that
   the routing to X is correct — the occupancy.
+
+  ✅ **A SEMANTIC check the numbers cannot make: DO THE SURVIVORS LOOK LIKE THE
+  ANSWER?** 3 Sep, whg3: a temporal filter reported "205 of 2665" boundaries
+  surviving a 1500–1600 window — a plausible count, and **equally consistent
+  with a correct filter and a badly wrong one.** Looking at the map in a real
+  browser, the survivors were *Grafschaft Delmenhorst*, *Grafschaft Ravensberg*,
+  *Herrschaft Ruppin*, *Amt Jüterbog*: **period-appropriate territories, not an
+  arbitrary 205.** The count establishes that *something* was excluded; **the
+  surviving names establish that the right things were kept**, and no arithmetic
+  can supply that. ⚠️ It required a human-driven browser — the automated harness
+  produced the counts and could not have produced this. **For any filter over a
+  domain with recognisable content, ask whether the survivors are the ones a
+  person who knows the domain would expect.**
 
   ✅ **The gold standard of the second-modality defence, for once observed
   rather than argued: EXACT AGREEMENT ON A LARGE NUMBER FROM AN UNRELATED
