@@ -923,6 +923,33 @@ broken. These are worse than no check, because they are cited as evidence.
 
 ## ⭐ Class H — a TRUTHFUL status record that prevents recovery
 
+⚠️ **AN OPEN QUESTION IS A STATUS RECORD TOO, AND IT DECAYS THE SAME WAY.**
+Measured 3 Sep 2026: `developer/plan-completion-2026-08-31.md` carried *"ONE OPEN
+QUESTION, measured but unexplained"* about a complete `clio` tileset existing
+beside the poly-less one that shipped on 7 August. **The campaign the plan belongs
+to had already explained it** — the geom store was destroyed that day, so a good
+build at 01:32 and a poly-less build at 12:36 is the known timeline, and SG
+confirmed it had been examined weeks earlier and was part of what *triggered* the
+campaign.
+
+**Two sessions independently rediscovered it and both reported it upward as a new
+and uncomfortable finding.** Neither checked the existing record first. Nothing in
+the plan was false; the question was genuinely open *when written*, and it stayed
+open to every later reader after it stopped being open in fact.
+
+**The rule, derived by the session that hit it:** *when a measurement implies a
+dated event, grep the handovers and postmortems for that date BEFORE writing it
+up, and report it as "confirms X" when X is already recorded.* A confirming
+measurement and a disturbing one are the same bytes; only the record tells them
+apart, and reporting the second when it is the first spends a reviewer's attention
+on alarm instead of on corroboration.
+
+⚠️ **And close a question WHERE IT WAS ASKED.** Answering it in a session
+transcript, a commit message, or a different document leaves the original prompt
+live and the next reader re-opens it. This is *"corrections do not follow links"*
+applied to questions rather than to facts.
+
+
 **Every other class in this document is a status that LIES. This one is a status
 that told the truth about an event which later stopped holding — and the
 truthfulness is what made the damage permanent.**
