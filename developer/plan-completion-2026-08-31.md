@@ -149,20 +149,55 @@ compared against a **post-compaction** result. Two numbers describing the same
 set at different stages of the same pipeline is not a discrepancy, and would have
 been recorded as one had S5 not checked the round trip.
 
-🛑 **THE ONE CLAIM S5 REFUSES TO CERTIFY, AND IT IS THE ONE THE COORDINATOR
-ANNOUNCED AS SETTLED.** The coordinator reported to SG that *"the corpus is now
-fallback-free."* **It is not established.** The post-backfill census returned
-`{uncoverable: 1}`; package 7 fixed that geometry and `fallbacks: none` is **V**
-for it individually — but **the full-frame census was never re-run after the
-ladder landed**. So: one known fallback, fixed and individually verified;
-**corpus-wide is INFERRED.** S5 flagged this itself, unprompted, against its own
-interest, and named it as the place the two accounts were most likely to differ.
+✅ **CORPUS FALLBACK-FREE — VERIFIED 3 Sep, NOT INFERRED. Job `11115902`, 16-way
+array, all shards COMPLETED, 20m37s.**
 
-⚠️ **This is Class A wearing the campaign's own clothes.** Every ingredient of a
-correct conclusion was present — the defect found, the fix shipped, the instance
-verified — and the *generalisation* from one verified instance to a whole corpus
-was made by the coordinator, in prose, to SG. **Closing it needs one full-frame
-census re-run, not an argument.**
+```
+EXAMINED         11,768,864
+DENOMINATOR      11,768,864 geom-store keys   <- cross-checked against SELECT COUNT(*) FROM geom
+STORE MISSES     0
+TOTAL FALLBACKS  0 of 11,768,864
+BY REASON        none
+```
+
+**Frame is every key in the geom store** — every geometry with real geometry
+behind it — not the 105,299 backfill frame. The denominator was confirmed against
+the store's own row count, so **the zero has a number under it that came from
+somewhere other than the loop that produced it.**
+
+✅ **And the zero is READABLE because the instrument was shown able to say
+otherwise**, which is the half this campaign kept skipping:
+
+```
+injected an uncoverable geometry -> counter registered {uncoverable:Sphere: 1}
+po:p0s2rwkrjbs_0   233 cells (expected 233)  OK
+whg:1381:18_0       32 cells (expected  32)  OK
+counter reset -> {} before the census began
+```
+
+So it is **not** one of the four silent zeros from predicates that could never
+match. First real use of `6d853ab`'s counters; all three formerly-bare
+`except: pass` paths reported nothing across 11.7 M geometries.
+
+🛑 **RETAINED, because the sequence is the lesson: THE CLAIM WAS TRUE AND THE
+COORDINATOR HAD NO RIGHT TO IT.** It was reported to SG as *"the corpus is now
+fallback-free"* on the strength of **one** verified instance — the post-backfill
+census returned `{uncoverable: 1}`, package 7 fixed that geometry, and its
+`fallbacks: none` was generalised, in prose, to 11.7 M documents. S5 flagged that
+unprompted and against its own close-out; the claim was withdrawn, then re-earned
+by measurement. **A conclusion being correct does not retrospectively license the
+reasoning that reached it** — see *"true conclusion, false reason"*. What closed
+it was a census with a denominator and a control, not an argument.
+
+⚠️ **A SECOND INSTANCE OF THE SAME SHAPE INSIDE THIS RUN, self-reported.** S5
+estimated ~4 hours from "no shard has reached its first 20,000 checkpoint at
+7 minutes"; it took **20 minutes** at ~9,500/s aggregate. The checkpoint lines had
+simply not flushed. **A rate was inferred from the absence of an output line** —
+the same error as reading a stalled log as a stalled job, and S5 had warned the
+coordinator about exactly that in its `CPUTime` note an hour earlier. **Absence of
+a progress line is not evidence of absence of progress.** (Cancelling `11115874`
+remained right — single-threaded, 12 h wall, no liveness check — but the stated
+justification was unsound.)
 
 ### S5 residuals — UNOWNED, named by S5 itself, 3 Sep
 
@@ -172,7 +207,7 @@ handover said *"the retile is deferred"* while broken tilesets had already
 deployed. **None of these blocks anything; all are unowned.**
 
 **Claims that rest on argument rather than measurement:**
-* 🛑 **Corpus-wide fallback-free — INFERRED** (above). One full-frame census closes it.
+* ✅ **Corpus-wide fallback-free — CLOSED, verified** (above): 0 of 11,768,864, job `11115902`, positive control fired.
 * **Package 7 check 3** — the count of 1,020 r3 geometries was settled *by reading the loop*, not measured.
 * 🛑 **Registry push 27/27 is `R` and CANNOT BE MADE `V` THROUGH THAT ENDPOINT — it is write-only.** Chased to the end 3 Sep: unauthenticated it returns **403 Bot access denied** (a bot filter, refusing before it looks at credentials); with a browser User-Agent and the `.env.local` token as `Bearer` it returns **405 `Method "GET" not allowed`**. `push_gazetteer_inventory.py:749` sends `Bearer`, and the endpoint **accepts writes and refuses reads**. ⚠️ **So "did the push land?" is structurally unanswerable from the API side** — not a gap in S5's diligence but a property of the interface: a writer with no read-back can never confirm its own effect, and every push to it is permanently `R`. Verification needs the Django side (registry table) or a read endpoint that does not yet exist. **This is Class G — the check can only be performed at the wrong end of the pipe.**
 * **§3.1's longitude-span assertion never ran against the built tilesets.** It was proved to reject the known-bad hull, then the retile was verified by gate tier counts and decode instead. **It exists as a specification, not as something that ran** — and §4.17's own doctrine is that a check must be shown to pass on known-good too.
