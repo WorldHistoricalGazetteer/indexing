@@ -86,9 +86,20 @@ def cover_geometry_for(geom: dict, place_id: str, geometry_index, reader) -> dic
                 f"geom store lookup failed for {key} (has_geom=True): {exc}"
             ) from exc
         # Accept GeometryCollections (which carry "geometries", not
-        # "coordinates") — antimeridian-spanning features are stored that way and
-        # compute_h3_fields handles them. Rejecting them here would silently drop
-        # back to the hull/centroid cover for those large features.
+        # "coordinates") — antimeridian-spanning features are stored that way.
+        # Rejecting them here would silently drop back to the hull/centroid
+        # cover for those large features.
+        #
+        # ⚠️ This comment used to say flatly that "compute_h3_fields handles
+        # them". That was true of POLYGON-BEARING collections and false of the
+        # rest, and being stated without the qualifier is why nobody checked:
+        # the branch filtered members to Polygon/MultiPolygon and did not
+        # recurse, so a collection of lines collapsed to one cell and a
+        # collection whose only member was another collection got ZERO cells
+        # and no fuzzy containment at all. Fixed Sep 2026 — `_cover_cells` now
+        # recurses and covers every member type — but the general lesson is
+        # the comment, not the code: a true-but-narrower-than-stated claim
+        # reads as a guarantee and stops the next person looking.
         if isinstance(gj, dict) and gj.get("type") and (gj.get("coordinates") or gj.get("geometries")):
             return gj
 

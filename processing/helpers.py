@@ -22,6 +22,8 @@ from shapely.validation import make_valid as shapely_make_valid
 from pyproj import Transformer, CRS
 from typing import Iterable
 import json
+import logging
+from collections import Counter
 
 try:
     import h3 as _h3
@@ -673,6 +675,99 @@ def select_h3_cover_geometry(geom_entry: dict | None, fallback_geom: dict | None
     return fallback_geom
 
 
+#: Why ``compute_h3_fields`` fell back to a centroid-only cover, and how often.
+#: Keyed ``"{reason}:{geom_type}"``. **Print this at the end of any pipeline
+#: run that computes covers** — a non-zero count means geometries are being
+#: indexed with an ``h3_cover`` that does not describe them, and `h3_cover`
+#: drives ``containment=fuzzy``, so those places are unfindable by scope.
+#:
+#: This exists because every path to that fallback used to be silent, three of
+#: them behind bare ``except Exception: pass``. Both defects found by audit in
+#: Sep 2026 — MultiPoint flattening (779 features) and the GeometryCollection
+#: branch dropping non-polygon members — would have announced themselves here
+#: on the first run, with no audit at all.
+H3_COVER_FALLBACKS: Counter = Counter()
+
+#: Log the first N occurrences of each distinct reason, then count silently.
+#: The corpus is ~51 M places; an unbounded log would be its own outage.
+_H3_FALLBACK_LOG_LIMIT = 5
+
+_h3_log = logging.getLogger(__name__)
+
+
+def _h3_fallback(reason: str, geom_type: str | None,
+                 exc: BaseException | None = None) -> None:
+    """Record — and, for the first few, announce — a centroid-only fallback."""
+    key = f"{reason}:{geom_type or 'None'}"
+    H3_COVER_FALLBACKS[key] += 1
+    n = H3_COVER_FALLBACKS[key]
+    if n > _H3_FALLBACK_LOG_LIMIT:
+        return
+    detail = f" ({type(exc).__name__}: {exc})" if exc is not None else ""
+    tail = "  [further occurrences counted silently]" if n == _H3_FALLBACK_LOG_LIMIT else ""
+    _h3_log.warning(
+        "h3_cover fell back to centroid-only: %s geometry, reason=%s%s%s",
+        geom_type or "unknown", reason, detail, tail,
+    )
+
+
+def _cover_cells(geojson_geom: dict) -> set | None:
+    """Cells covering ``geojson_geom``, or ``None`` when it cannot be covered.
+
+    Deliberately never falls back to a centroid: that decision belongs to
+    ``compute_h3_fields``, and keeping it there is what lets the fallback be
+    counted instead of silently taken here.
+
+    ``GeometryCollection`` **recurses**, so a collection whose members are
+    themselves collections is handled, and covers every member type rather
+    than only polygonal ones. The previous implementation filtered members to
+    ``("Polygon","MultiPolygon")`` and did not recurse, so
+    ``wd:Q11512408`` "Meiji Dori" — a collection containing one collection —
+    got **zero** cells and no fuzzy containment at all, while
+    ``wd:Q1289367`` "Lemboulas" (MultiLineString + Point, ~50 km) collapsed
+    to a single cell.
+    """
+    gt = geojson_geom.get("type")
+
+    if gt in ("Point", "MultiPoint"):
+        # A Point is handled here as well as short-circuited by the caller,
+        # because as a COLLECTION MEMBER it must contribute its own cell.
+        # Returning None for it would both drop that cell and log a spurious
+        # fallback warning — `wd:Q1289367` "Lemboulas" is exactly
+        # GeometryCollection[MultiLineString, Point], so a check that warned
+        # on it would be crying wolf on correct data.
+        return _member_point_cells(geojson_geom) or None
+
+    if gt in ("Polygon", "MultiPolygon"):
+        cells = _polyfill_adaptive(geojson_geom)
+        return set(_h3.compact_cells(cells)) if cells else None
+
+    if gt in ("LineString", "MultiLineString"):
+        # ~500 m buffer in degrees (≈ 0.005°) so a line has an area to fill.
+        buffered = shape(geojson_geom).buffer(0.005)
+        buf_geojson = json.loads(json.dumps(buffered.__geo_interface__))
+        cells = _polyfill_adaptive(buf_geojson)
+        return set(_h3.compact_cells(cells)) if cells else None
+
+    if gt == "GeometryCollection":
+        out: set = set()
+        for member in geojson_geom.get("geometries") or []:
+            if not isinstance(member, dict):
+                continue
+            try:
+                sub = _cover_cells(member)          # recurses
+            except Exception as exc:                # noqa: BLE001
+                _h3_fallback("member_exception", member.get("type"), exc)
+                continue
+            if sub:
+                out.update(sub)
+            else:
+                _h3_fallback("member_uncoverable", member.get("type"))
+        return out or None
+
+    return None
+
+
 def _member_point_cells(geojson_geom: dict) -> set:
     """Return the set of H3 cells containing the geometry's member points.
 
@@ -789,50 +884,28 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
         except Exception:
             pass
 
-    # ── Cover for polygon/multipolygon: polyfill + compact ─────────────
-    if geom_type in ("Polygon", "MultiPolygon"):
-        try:
-            cells = _polyfill_adaptive(geojson_geom)
-            if cells:
-                cover = list(_h3.compact_cells(cells))
-                return centroid_cell, cover if cover else [centroid_cell]
-        except Exception:
-            pass
-
-    # ── LineString: buffer to a small polygon, then polyfill ───────────
-    if geom_type in ("LineString", "MultiLineString"):
-        try:
-            geom_shp = shape(geojson_geom)
-            # ~500 m buffer in degrees (≈ 0.005°)
-            buffered = geom_shp.buffer(0.005)
-            buf_geojson = json.loads(json.dumps(buffered.__geo_interface__))
-            cells = _polyfill_adaptive(buf_geojson)
-            if cells:
-                cover = list(_h3.compact_cells(cells))
-                return centroid_cell, cover if cover else [centroid_cell]
-        except Exception:
-            pass
-
-    # ── GeometryCollection: polyfill the union of its polygonal members ─
-    # (e.g. antimeridian-split polygons, or the M49 continent overlays).
-    if geom_type == "GeometryCollection":
-        try:
-            polys = [
-                g for g in (geojson_geom.get("geometries") or [])
-                if isinstance(g, dict) and g.get("type") in ("Polygon", "MultiPolygon")
-            ]
-            if polys:
-                from shapely.ops import unary_union
-                merged = unary_union([shape(p) for p in polys])
-                merged_geojson = json.loads(json.dumps(merged.__geo_interface__))
-                cells = _polyfill_adaptive(merged_geojson)
-                if cells:
-                    cover = list(_h3.compact_cells(cells))
-                    return centroid_cell, cover if cover else [centroid_cell]
-        except Exception:
-            pass
+    # ── Cover every other geometry type via one audited path ───────────
+    # Polygon/MultiPolygon polyfill+compact, Line/MultiLine buffer+polyfill,
+    # MultiPoint member cells, GeometryCollection recursion. `_cover_cells`
+    # returns None rather than a centroid, so every fallback below is counted.
+    try:
+        cells = _cover_cells(geojson_geom)
+    except Exception as exc:                        # noqa: BLE001
+        # Was `except Exception: pass` in three separate branches. A polyfill
+        # that raised produced a one-cell cover indistinguishable from a place
+        # that genuinely occupies one cell.
+        _h3_fallback("exception", geom_type, exc)
+    else:
+        if cells:
+            # Sorted, not `list(set)`: `compact_cells` returns a set, so the
+            # previous ordering varied between runs on identical input.
+            return centroid_cell, sorted(cells)
+        _h3_fallback("uncoverable", geom_type)
 
     # ── Fallback: centroid only ─────────────────────────────────────────
+    # Reaching here means the cover does NOT describe the geometry. It is a
+    # correct answer only for a Point (returned earlier); for anything else
+    # it is the defect this counter exists to surface.
     return centroid_cell, [centroid_cell]
 
 
