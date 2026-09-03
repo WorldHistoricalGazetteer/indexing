@@ -759,6 +759,48 @@ broken. These are worse than no check, because they are cited as evidence.
 
 ---
 
+## ⭐ Class H — a TRUTHFUL status record that prevents recovery
+
+**Every other class in this document is a status that LIES. This one is a status
+that told the truth about an event which later stopped holding — and the
+truthfulness is what made the damage permanent.**
+
+3 Sep, established by S5 while closing §4.21. Eighteen namespaces were found
+with no `h3_coverage` aggregate. The obvious reading — *"the stage never ran for
+them"* — is wrong, and so was the coordinator's first record of it (*"the
+generators are wired only into full-run paths"*, which explains why the gap
+never **self-healed**, not why the files went missing):
+
+* the 5 Aug manifest carries a real `aggregate_path` **and a real cell count**
+  for all eighteen (`clio` 448,748, `ukhc` 13,436, `gb` 6,393, `kain_par` 5,985),
+  at exactly the path later found empty;
+* `gazetteer_h3_coverage` validates, writes atomically, and marks `completed`
+  **only after** — there is no path to "completed without a file";
+* the `temporal_extent` siblings survive **because they were written two days
+  later, after the loss**;
+* regeneration reproduced the recorded counts **18 of 18, differs 0**.
+
+**The stage ran correctly and wrote correct files. Something outside the
+pipeline deleted them.** ⚠️ Recorded as *mechanism unestablished* — nothing in
+`processing/` or `scripts/` unlinks `_aggregates`, a manual cleanup is the
+obvious candidate, and an inferred `rm` is not a finding.
+
+🛑 **THE MECHANISM THAT MATTERS: the stage re-runs only inside a step gated on
+`completed`. So an ACCURATE success record blocked recovery for a month.** A
+lying status gets caught the moment someone checks the thing it describes. A
+*truthful* status about a since-deleted artefact is checked, believed, and
+skipped — indefinitely. **Accuracy at write time is not durability.**
+
+✅ **REMEDY, and it is why §4.21's guard is shaped as it is: GATE ON THE
+ARTEFACT, NOT ON THE STATUS.** A completion record answers *"did this run?"*; the
+question that matters at read time is *"is the output there, and is it newer than
+its input?"* Those diverge silently, and only the second is worth acting on.
+⚠️ Related but distinct from Class A: there the input was absent and something
+plausible was substituted. Here the output was absent and **the record of its
+creation was correct.**
+
+---
+
 ## Class D — publication that is not atomic, and never compares
 
 * **The staged merges wrote in place.** `h3_merge.run_h3_merge` and
