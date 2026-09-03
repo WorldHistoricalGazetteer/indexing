@@ -593,7 +593,7 @@ from a Slurm task rather than hand-rolling scp.
 ---
 
 **Superseded — the retile is done.** The tilesets were built and verified at
-`/vast/ishi/tiles-verify/` (27 buckets; `osm` 966 MB, `ohm` 702 MB, `wd` 1.84 GB). What remains is
+~~`/vast/ishi/tiles-verify/`~~ **→ `/ix1/ishi/data/tile-band-fixtures/` (moved 3 Sep 2026)** (27 buckets; `osm` 966 MB, `ohm` 702 MB, `wd` 1.84 GB). ⚠️ **Only the 29 band `.geojsonl` survive; the 38 `.mbtiles`, 10 journals and 4 scripts were released. And 8 of the 29 are ZERO BYTES** — the fixture set is **21 files with content**. What remains is
 publication only:
 
 1. deploy the tilesets to the tileserver, **and**

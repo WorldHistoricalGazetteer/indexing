@@ -254,7 +254,7 @@ polygon with geoBoundaries HPSC where it has one.
 |---|---:|---|
 | `/ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` | **57 GB** | SG asked for this "as soon as practical"; the name's deadline is **today** |
 | `/vast/ishi/geom_rebuild/staging` + `staging_pending` | 22 GB | redundant since the merge |
-| `/vast/ishi/tiles-verify` | 17 GB | 7 Aug scratch incl. the ohm band `.geojsonl` |
+| ~~`/vast/ishi/tiles-verify`~~ **`/ix1/ishi/data/tile-band-fixtures`** | ~~17 GB~~ **8.87 GB** | **Moved 3 Sep 2026.** The 29 band `.geojsonl` only — the 38 `.mbtiles`, 10 journals and 4 scripts were released (9.2 GB). ⚠️ **8 of the 29 are zero bytes**, so 21 files carry content |
 | `/ix1/ishi/data/tiles/_step0` | 2.7 GB | place#160 diagnostic; keep until 3.1 verifies, then delete |
 | stale `*.geojsonl` in `/ix1/ishi/data/tiles` | ~20 GB | incl. `osm_admin.*` from the May 2025 pre-rename era |
 | `places_temporal-20260731t160000z` | 23 GB | the rollback index; retire once 3.1 is verified |

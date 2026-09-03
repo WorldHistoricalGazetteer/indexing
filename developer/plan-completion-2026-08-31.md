@@ -415,7 +415,7 @@ fresh as the last session that remembered to tick one.
 | 1.1 | ✅ **done 31 Aug.** `rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` (**57 GB**) — SG-approved. It is unreadable (index truncated to 2 rows, shards keyless), so it is insurance in name only | `crc-quota` group `ishi`: ix1 **3.24 TB → 3.18 TB**. Confirmed unreadable before deleting rather than trusting the README: `index.sqlite` held 2 rows, `index.json` 145 bytes naming only `un:fra_0` / `un:esp_0` |
 | 1.2 | ✅ **done 31 Aug.** `rm -rf /vast/ishi/geom_rebuild/staging /vast/ishi/geom_rebuild/staging_pending` (**22 GB**) — redundant since the 9 Aug merge. ⚠️ **Read the path twice.** These are under `geom_rebuild/`. `GEOM_STORE_STAGING_DIR` is `/vast/ishi/geom/staging` — a *different* directory, and it is S2's live input while 2.1 runs. Deleting that one mid-run destroys the extract | vast **759.5 GB → 737.8 GB**; live store still **11,758,768** rows with per-namespace counts unmoved. "Redundant" was **measured, not assumed**: 1,373 keys sampled across all 82 small staging index files resolve in `index.sqlite`, 0 missing, plus the leading keys of the two large `osm`/`ohm` files. `/vast/ishi/geom/staging` untouched (still held S2's `ukhc_counties.*` at the time) |
 
-**Do NOT yet delete** `/vast/ishi/tiles-verify` (17 GB) or
+~~**Do NOT yet delete** `/vast/ishi/tiles-verify` (17 GB)~~ ✅ **RESOLVED 3 Sep — 9.2 GB released, the 29 band `.geojsonl` moved to `/ix1/ishi/data/tile-band-fixtures/`.** Or
 `/ix1/ishi/data/tiles/_step0` (2.7 GB) — the `ohm` band `.geojsonl` files in them
 are the cheap fixtures for exercising the tile builder before Phase 3. They go in
 step 3.3 (Auditor F21 — this read 3.5, which does not exist; 3.3 already lists both).
@@ -4834,7 +4834,7 @@ only the scratch *inside* them.
 | target | vol | size | status / notes |
 |---|---|---|---|
 | `places_temporal-20260731t160000z` | `/vast` | 23 GB | ✅ **ALREADY DELETED 2 Sep** by S7 on SG's approval — `{"acknowledged":true}`, target 404, both aliases re-verified intact, data dir gone. **Do not re-run its precondition; a DELETE here now issues against a 404.** |
-| `/vast/ishi/tiles-verify` | `/vast` | 17 GB | 🛑 **NOT a free deletion — see below. A minimal known-bad reproducer must be extracted FIRST.** |
+| ~~`/vast/ishi/tiles-verify`~~ | ~~`/vast`~~ | ~~17 GB~~ | ✅ **DONE 3 Sep — 9.2 GB released; the 29 band `.geojsonl` (8.87 GB) moved to `/ix1/ishi/data/tile-band-fixtures/`.** The known-bad-reproducer premise was false: `tiles-verify` contained no defective artefact. |
 | `/ix1/ishi/data/tiles/_step0` | `/ix1` | 2.7 GB | scratch only — **not** the sibling `.mbtiles` |
 | stale `*.geojsonl` in `/ix1/ishi/data/tiles` | `/ix1` | ~20 GB | incl. `osm_admin.*` from the May 2025 pre-rename era |
 
@@ -4883,6 +4883,45 @@ was making.
 
 **Disposition: the extract-a-reproducer protocol is DROPPED.** Keep the
 `.geojsonl` fixtures; the 38 mbtiles, 10 journals and 4 scripts are releasable.
+
+✅ **EXECUTED 3 Sep — and both halves landed with their denominators.**
+
+```
+/vast/ishi/tiles-verify        81 files examined, 18,082,186,467 B
+  released  38 .mbtiles + 10 journals + 4 .py = 52 of 81   9,210,792,227 B
+  moved     29 .geojsonl -> /ix1/ishi/data/tile-band-fixtures/  8,871,390,144 B
+/vast free  241.1 -> 250.3 -> 259.1 GB   (+18.0 GB across the two steps)
+```
+
+Move done as **copy → verify → delete on Slurm**, never `mv` (cross-filesystem,
+so `mv` is a copy-then-unlink that will unlink after a short write). Jobs 11115881
+(copy+verify, deleting nothing by design) and 11115885, which **re-hashed both
+sides from scratch rather than trusting the first job's report** and gated the
+`rm` behind every check. sha256 sets identical, totals identical to the byte.
+
+⚠️ **The verification was itself verified, in both the ways that matter here.** A
+mutation of one character in the destination hash file made the comparison fail,
+so the `diff` discriminates rather than passing blindly; and `stat` gave
+**st_dev 50 (`/vast`) against 91 (`/ix1`)**, proving the two hash passes read two
+real copies on two filesystems rather than the same file twice through different
+paths — **the failure a same-name comparison cannot see.**
+
+🛑 **8 OF THE 29 PRESERVED FIXTURES ARE ZERO BYTES**, all carrying
+`e3b0c44298fc…` — the sha256 of the empty string, which is why 29 files have only
+**22 distinct hashes**. They are `ohm.continental.labels`, `ohm.state.labels`,
+`osm.continental`, `osm.continental.labels`, `osm.country.labels`,
+`osm.district.labels`, `osm.state.labels`, `osm_misc.broad-regional.labels`.
+
+**So the fixture set is 21 files with content, not 29.** The empties line up
+with the ten zero-tile `ohm.*` mbtiles from the same night: **the same bands
+produced nothing twice, once as `.geojsonl` and once as tiles.**
+
+⚠️ **This campaign's signature failure — an absent input read as nothing to do —
+was sitting INSIDE the fixtures being kept in order to test for it.** A future
+session reaching for `osm.continental` as a test input gets a silent no-op that
+looks exactly like a passing run. Recorded in the destination `README.md` as well
+as here, because a fixture's emptiness must be discoverable at the fixture, not
+only in a plan.
 
 ✅ **CLOSED 3 Sep — built BEFORE, and it is NOT an anomaly.** `tiles-verify`'s
 `clio` has **311,953 tiles, identical to the 2 Sep good build** at all eleven
