@@ -1120,17 +1120,33 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
           "timespans":  [...],         # passed through if provided
         }
 
-    Additionally, to derive the **top-level** ``h3_centroid`` / ``h3_cover``
-    place fields, call ``compute_h3_fields()`` using the ``repr_point`` from
-    the returned entry::
+    Additionally, derive ``h3_centroid`` / ``h3_cover`` by calling
+    ``compute_h3_fields()`` with the ``repr_point`` from the returned entry, and
+    set them **ON THAT ENTRY** — they are per-geometry fields inside
+    ``geometries[]``, never on the place document root::
 
         geom_entry = enrich_geometry(geom, geom_key=f"{place_id}_0")
         if geom_entry and geom_entry.get("repr_point"):
             rp = geom_entry["repr_point"]
             h3_geom = select_h3_cover_geometry(geom_entry, geom)
             h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], h3_geom)
-            doc["h3_centroid"] = h3c
-            doc["h3_cover"] = h3cover
+            geom_entry["h3_centroid"] = h3c
+            geom_entry["h3_cover"] = h3cover
+
+    .. warning::
+
+        This docstring previously told you to write ``doc["h3_centroid"]`` and
+        ``doc["h3_cover"]`` on the document ROOT. Do not. Seven authority
+        scripts plus the update-patch path followed it, so **1,310,192 live
+        documents carry a top-level ``h3_cover``** that ``schemas/places.json``
+        does not declare (it is dynamically mapped as ``text``, so H3 cell ids
+        are analysed as prose), that **no reader anywhere consumes** — every
+        reader in ``gateway/``, ``processing/`` and ``clustering/`` takes the
+        nested field — and that has diverged from the nested truth in **3,999
+        of 4,000** sampled ``clio`` docs, because the root was written once at
+        ingest while the nested one has been recomputed by every H3 stage
+        since. See ``compute_h3_fields`` for the same correction.
+        **``geometries[].h3_cover`` is the real one.**
 
     Coordinates are rounded **before** validation so that any self-intersections
     introduced by rounding are caught and repaired.
