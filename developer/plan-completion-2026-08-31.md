@@ -164,6 +164,30 @@ verified — and the *generalisation* from one verified instance to a whole corp
 was made by the coordinator, in prose, to SG. **Closing it needs one full-frame
 census re-run, not an argument.**
 
+### S5 residuals — UNOWNED, named by S5 itself, 3 Sep
+
+⚠️ **S5 volunteered every one of these.** A session that names what it did not
+finish is doing the single thing the 9 August handover failed to do — that
+handover said *"the retile is deferred"* while broken tilesets had already
+deployed. **None of these blocks anything; all are unowned.**
+
+**Claims that rest on argument rather than measurement:**
+* 🛑 **Corpus-wide fallback-free — INFERRED** (above). One full-frame census closes it.
+* **Package 7 check 3** — the count of 1,020 r3 geometries was settled *by reading the loop*, not measured.
+* **Registry push 27/27 prod+dev is `R`, not `V`** — `whgazetteer.org/api/registry/inventory` returns **403 Bot access denied** unauthenticated, so S5 could not confirm its own push.
+* **§3.1's longitude-span assertion never ran against the built tilesets.** It was proved to reject the known-bad hull, then the retile was verified by gate tier counts and decode instead. **It exists as a specification, not as something that ran** — and §4.17's own doctrine is that a check must be shown to pass on known-good too.
+* **The `h3_coverage` deletion mechanism is unestablished.** Files provably written 5 Aug, provably absent, and nothing in the repo deletes them. Manual cleanup is plausible and unproven — **do not record it as established.**
+
+**Code committed but never executed:**
+* **Package 6 half 2** — the incremental aggregate refresh in `index_namespace` compiles and its guard is unit-tested both directions, but **no incremental add has run since**, so the wiring has never executed once.
+* **`tilejson` hook (`93eefb9`)** — built, never applied to any bucket; the ice rebuild fixed the leak at source.
+
+**Latent, noticed in passing:**
+* ⚠️ **`backfill_admin_levels.slurm:81` invokes `python -m authorities.un-geoscheme-boundaries`** — a **hyphenated module name**, which `-m` cannot normally import. Noticed while deleting a stale duplicate, never chased. **Possible latent break in that script.**
+* **Latitude-blind estimator** (`_H3_HEX_AREA_DEG2`, 27× under-prediction) — deliberately unbundled, still outstanding.
+* **`whg` polygon-typed-hull parsed check** — proposed, superseded when the type filter bounded the population, never run.
+* **Superseded artefacts left in place**: `ukhc/final/places.parquet.stale`, `places.jsonl.bak`, `extract/places.jsonl.pre204`. The rename-in-place hazard was flagged; nobody moved them.
+
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
 concurrency rules below before running them at the same time. Only S2 gates S5.
 S5 → S6 → S7 is strict.
