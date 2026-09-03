@@ -1068,6 +1068,51 @@ broken. These are worse than no check, because they are cited as evidence.
   history. **State the cache state of every measurement, or the number is
   unreadable.**
 
+* **A FALSIFIER THAT CANNOT DECIDE THE QUESTION IS WORSE THAN NONE, BECAUSE IT
+  WILL BE ACTED ON** — 3 Sep 2026, and the coordinator wrote this one.
+
+  Handing a colleague a specific, cheap falsifier is good practice and was done
+  deliberately: *"at z6.89 the sea should come from `natural_earth` and NOT
+  request `water` ocean tiles. If your tile log shows any, revert."* ⚠️ **It is
+  undecidable.** `ice`, `river` and `lakes` remain on the `water` tileset at every
+  zoom by design, so `water@z6` tiles are fetched regardless of where the ocean
+  handover sits — **and a tile request cannot report which source-layer inside it
+  is drawn.** Both the correct and the broken world produce `water` requests at
+  z6.89.
+
+  🛑 **The failure was pre-authorised.** The instruction attached to it was
+  "revert without discussion", so a colleague reading the log literally would have
+  reverted a correct change, and the coordinator would have complied — **the
+  authority granted to the falsifier was inherited by its false alarm.** Six to
+  twelve such requests appeared on every run.
+
+  ✅ **The decidable form asks the renderer, not the network.**
+  `queryRenderedFeatures` per layer at a fixed sea point reports which layer is
+  actually painting:
+
+  ```
+  z6     ocean_ne 1   ocean 0        z8     ocean_ne 0   ocean 2
+  z6.89  ocean_ne 1   ocean 0        z8.5   ocean_ne 0   ocean 2
+  z7.5   ocean_ne 1   ocean 0
+  ```
+
+  Never both, never neither, switching exactly at the intended zoom. **The rule:
+  a falsifier must be stated over the quantity the defect is defined in.** The
+  defect was defined in *which layer paints*; the test was written over *which
+  file is fetched*. Those differ by an entire layer of indirection, and no amount
+  of care in reading the log recovers the difference.
+
+  ⚠️ **AND THE SAME RUN EXPOSED THE INSTRUMENT'S OWN BLIND SPOT — a confident
+  zero.** The harness derived tile counts from
+  `performance.getEntriesByType('resource')`, which records only fetches made by
+  the **page** context. **MapLibre loads vector tiles in web workers, so they
+  never appear there at all.** Every run all day had therefore printed
+  `boundary: 0` — including in the evidence attached to a closed issue — for
+  sources that were loading perfectly. It could see raster tilesets and nothing
+  else. **A check that answers, and answers about nothing**: same family as a
+  200-with-an-empty-body, and it survived because zero is a plausible reading of
+  "hidden layers fetch no tiles", which was also true.
+
 ### The permanent fixes
 
 1. **Every check must be shown to FAIL on known-bad AND to PASS on known-good —
