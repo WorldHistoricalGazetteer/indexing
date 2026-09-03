@@ -420,6 +420,25 @@ broken. These are worse than no check, because they are cited as evidence.
   *source-layer* is `rivers`. **The verification instrument used the wrong
   object while checking for wrong objects.**
 
+  ⚠️ **A LIST is the easiest host of all, because the items validate each other
+  by association.** #233's respecification named five style layers to repoint at
+  the new water source. Four exist in it; the fifth, `ice`, is Antarctic ice
+  shelves, whose OSM equivalent (`natural=glacier`) is deliberately outside a
+  water-scoped filter. **Executing that list literally would delete a working
+  layer under the description of an improvement — and would look like a
+  successful edit, because the other four would render correctly.** Every item
+  passed the plausible test (`ice` *is* a frozen-at-z7 water-ish layer on the
+  `natural_earth` source — true, and the wrong question); none was checked
+  against what the replacement actually contains.
+
+  ✅ **A fourth detection method, empirically the most productive here: when you
+  touch something, look at what is next to it.** indexing-db's own accounting —
+  two of its four catches came this way rather than from systematic
+  verification. `riverbank` fell out of a census run for a different purpose;
+  `ice` fell out because it was adjacent in a list it was checking for another
+  reason. Adjacency finds what a checklist cannot, because a checklist only
+  contains the references someone already thought to write down.
+
   ⚠️ **In one day this class appeared in an instrument, a remedy, a dependency
   and a specification.** It is not a property of measurement — it is a property
   of *reference*. Anywhere a name stands for a thing, the name can be checked
