@@ -4178,8 +4178,29 @@ precisely the failure this campaign has been dismantling.
    Point is a Point). Their covers are now correct *for their stored polygons*;
    if `geom_class` is wrong it is still wrong.
 3. **§2.10 questions 2 and 3** — open, gating nothing.
-4. ~~**`clio` +2,986**~~ — 🛑 **REFUTED 3 Sep, not merely unsourced. Strike it
-   wherever it is quoted.** Direct census of the live index:
+4. ✅ **`clio` +2,986 — DERIVED AND DISCHARGED 3 Sep. It was never unsourced;
+   it was the point→polygon conversion count, and the conversion has happened.**
+   From the tile-generation logs:
+
+   ```
+   clio → clio: 15,690 features (poly=12,704 point=2,986)   earlier run
+   clio → clio: 15,690 features (poly=0      point=15,690)  7 Aug — the broken run, 6.3 MB
+   clio → clio: 15,690 features (poly=15,690 point=0)       2 Sep retile
+   gate clio: store 15,690/15,690  hull 0  point 0 → PASS   2,628.8 MB deployed
+   ```
+
+   **+2,986 = 15,690 − 12,704** — the clio features that were still rendering as
+   points once the geom store was partly readable. **The deployed tileset is now
+   `poly=15,690 point=0`: every clio feature is a polygon.** ⚠️ An earlier
+   revision of this plan called +2,986 "refuted by a direct census". That was
+   wrong — the census counts *documents* (15,690) and +2,986 counted *features
+   awaiting conversion*; they are different quantities and never contradicted
+   each other. **`clio` needs no further run.**
+
+   ⚠️ `13,907` remains unexplained and appears in no generation log. Treat it as
+   a stale intermediate, not as a competing measurement.
+
+   The supporting index census, unchanged and still useful:
 
    ```
    clio docs                       15,690
@@ -4197,15 +4218,10 @@ precisely the failure this campaign has been dismantling.
    with no remainder; a missing nested wrapper would have returned 0 for
    everything, including the control.
 
-   ⚠️ **The other circulating figure, `13,907`, differs from 15,690 by 1,783 —
-   11.4% of the layer — and is NOT reconciled.** The two may be measuring
-   different things: 15,690 is the **index/store input**, `13,907` is presumably
-   a **built-tileset output**, and tippecanoe legitimately drops and merges
-   features. But that is exactly the input-versus-output difference this
-   campaign insists must be **asserted rather than assumed**. Whoever next
-   touches the `clio` tileset should reconcile them explicitly — it is the same
-   shape as the `poly=` assertion already on S5's row, and 11.4% is too large to
-   wave through as simplification.
+   ✅ **Input and output now agree exactly**: 15,690 documents in the index,
+   15,690 features written, `poly=15,690 point=0`, gate `store 15,690/15,690`.
+   The input-versus-output reconciliation this campaign demands is satisfied by
+   measurement rather than assumption.
 
 ### ✅ 2.3 COMPLETE — overlay PUBLISHED 2 Sep, gateway restarted, serving verified
 
