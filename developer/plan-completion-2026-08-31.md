@@ -5775,7 +5775,41 @@ it only ran when invoked by hand — leaving namespaces silently un-enriched."*
 That fault was fixed by wiring it in. **This one is its sibling: wired in, but
 only on a path that partial runs do not take.**
 
-### Remedy — the guard first
+### ✅ DONE 3 Sep — `a58fe29`. Both halves: detect AND prevent.
+
+**GUARD (`push_gazetteer_inventory._assert_aggregates_fresh`)** — refuses when
+either aggregate is older than the staged data it describes. Three properties
+worth preserving:
+* **mtime against mtime, never against a run id** — run ids are UTC, host mtimes
+  local, and that four-hour gap has already produced one false conclusion here.
+* **Resolves the staged source through each module's OWN accessor**
+  (`_staged_namespace_source`, `_patch_path`) rather than rebuilding the path. A
+  hand-rolled `final/` check would silently pass for any namespace with no
+  `final/` — **exactly the class the guard exists to catch.**
+* **Exemptions read `GLOBAL_COVERAGE_NAMESPACES` / `is_relations_only`** rather
+  than being re-derived, so the guard cannot disagree with the writer about
+  which namespaces legitimately have no coverage file.
+
+✅ **MEASURED BEFORE ENFORCING, as SG required: the guard refuses 0 of 27 today —
+and would have refused 18 before the morning's regeneration.** Enforcing blocks
+nothing.
+
+**INCREMENTAL PATH (`index_namespace`)** — both generators now run after a
+successful `--execute`. They were wired only into full-run paths
+(`temporal_extent` into Batch 9, `h3_coverage` into the h3 stage), so a targeted
+add updated the staged tree and the live index **while leaving the aggregates
+describing the corpus as it was before**. Best-effort but **loud**: an index
+write that has already succeeded must not be reported as failed because an
+aggregate could not be rebuilt — but a silent failure here is precisely how 18
+namespaces came to publish figures computed from months-old data, and the guard
+catches it again at push time.
+
+✅ **The h3_coverage gap is closed: 23 aggregates now present, up from 5.**
+⚠️ Seven namespaces legitimately have none — `GLOBAL_COVERAGE_NAMESPACES`
+(`osm`, `ohm`, `wd`, `gn`, `po`, `tgn`) take the `"global"` sentinel and `loc` is
+relations-only — so the target was ~20, not 27.
+
+### Remedy as originally specified — the guard first
 
 1. ⭐ **Make the aggregate guards test FRESHNESS.** Compare each aggregate's
    mtime against the staged source the pipeline's own resolver would select, and
