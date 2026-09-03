@@ -26,6 +26,31 @@ import sys
 # the difference between recording a understood exception and switching a
 # control off: an exception that cannot expire is an exception nobody will
 # revisit, and this row is on the ocean.
+# ⚠️ TODO before the next planet edition (raised by indexing-5e, deliberately
+# NOT applied while the pipeline that depends on this file was running):
+# THIS WAIVER PINS A CORRECT INVARIANT BUT NOT THE LOAD-BEARING ONE.
+#
+# `planet == 187` is INCIDENTAL. It counts other people's tagging mistakes,
+# and it will drift on any new planet edition for reasons that have nothing
+# to do with whether our coastline input is complete. On the next edition
+# this refuses, and someone re-derives the entire argument because strangers
+# fixed or made three more mistakes.
+#
+# The invariant that actually carries the conclusion is the one jobs
+# 11111936/11111940 measured:
+#
+#     every coastline-TAGGED member way of those relations is present in
+#     the filtered file        (587 of 587 today; N of N in general)
+#
+# That is what makes the gap inert. It is checkable without reference to
+# 187, it survives an edition change, and it still fails loudly if the
+# filter ever starts dropping tagged ways -- i.e. it refuses for the right
+# reason and stays quiet for the right reason. Keep 187 as a recorded note,
+# not as a condition.
+#
+# Applying this needs the member-way presence figures to be produced as a
+# durable artefact by job 14 rather than only printed to its log, which is
+# why it is a change of shape and not a one-line edit.
 WAIVERS = {
     ("natural=coastline", "relation"): {
         "planet": 187,
