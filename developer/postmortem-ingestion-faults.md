@@ -1113,6 +1113,36 @@ the data was correct and on screen. **A correct measurement read carelessly is
 indistinguishable in its output from a measurement never taken**, and reviewing
 one's own command is not the same as re-reading one's own conclusion.
 
+⚠️ **THE PROPAGATION ASYMMETRY RAN BACKWARDS, AND THE OUTWARD HABIT CANNOT
+CATCH IT.** The standing rule in this file is that corrections travel *inward*
+for free and *outward* only when carried, which makes `CLAUDE.md` reliably the
+stalest document. Measured 3 Sep 2026: **the exact inverse happened.**
+
+The closure of the 248 `whg` point-class covers (0 of 213,081, area-class control
+at 1,247 of 1,248) was written into **`CLAUDE.md`** in `5424ee4` and **never came
+back into the plan it corrects.** The plan went on asserting *"Verified
+independently here — exactly 248 … have a multi-cell cover"*, **in the present
+tense, under a 🛑 heading reading "100% defective"** — while recording the
+post-remediation split correctly ninety lines below. **The 🛑 sat on the stale
+half**, and `grep "0 of 213,081"` over the plan returned nothing.
+
+🛑 **Why the outward rule missed it: the finding was recorded in the OUTER ring
+first**, because the coordinator happened to be editing `CLAUDE.md` when the
+audit reported. Nothing in "grep the outer ring when you correct something"
+fires when the outer ring is where you already are — **the inner document is
+then the one that goes stale, and the habit is pointing the wrong way.**
+
+**The symmetric form is the one that actually holds: grep every document that
+states the claim, in BOTH directions — not the ones downstream of you.** Direction
+of travel is a property of where the editor is sitting, not of the documents, so
+any rule phrased in terms of inner and outer will fail half the time.
+
+⚠️ **Related, same batch: a HEADING is a status claim about everything beneath
+it.** A list titled `⬜ OPEN, UNOWNED` accumulated three ✅ CLOSED items as they
+were resolved one at a time. Per-item marks cannot repair it — a reader scanning
+for open work sees the heading and the item count. **Headings go stale silently
+because nobody re-reads a heading they wrote.**
+
 ## ⭐ Class H — a TRUTHFUL status record that prevents recovery
 
 ⚠️ **AN OPEN QUESTION IS A STATUS RECORD TOO, AND IT DECAYS THE SAME WAY.**

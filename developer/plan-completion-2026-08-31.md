@@ -2058,7 +2058,11 @@ retrain is planned.** The columns are empty *by design* —
 `submit_batch9_slurm` has defaulted to `--training-namespaces _none_` since
 `ef31016` (2 May) — so this was never a defect to repair, and it blocked nothing.
 
-**If a retrain is ever scheduled, the three corrections below still apply** and
+**If a retrain is ever scheduled, the three corrections below still apply** —
+these are corrected *misconceptions*, distinct from the **two override warnings**
+referred to further down (`--for-retrain` and the hand-set wall), which are flags
+a runner must actively set. Three of one, two of the other; both counts are
+right, and they were read as contradictory once. They
 are the reason this row is kept rather than deleted: it never timed out, it
 never touches Elasticsearch, and it must run **after** 2.5 or it builds the
 training vocabulary from a corpus missing `gn` and `wd` (~23 M of 51 M places)
@@ -3910,11 +3914,22 @@ byte-level mechanism is unknown but which were fixed anyway (a question about
 bytes, not correctness); **these 248** are a distinct ingestion/classification
 defect; the **top-level `h3_cover`** is a schema artefact unrelated to either.
 
-**Flagged, not explained. Verified independently here — exactly 248 of `whg`'s
-213,081 point-class geometries have a multi-cell cover, matching S9's count.**
+✅ **CLOSED 3 Sep — 0 of 213,081. THE FIGURES BELOW ARE THE PRE-2.11 STATE
+(Auditor, 3 Sep).** Re-measured with an area-class control at **1,247 of 1,248**,
+proving the predicate fires: **0 of 213,081** `whg` point-class geometries now
+carry a cover of more than one cell. The census's own named example
+`whg:12:1794` reads `cover=1` where the table below records 3.
+
+🛑 **The paragraph below said "Verified independently here", in the present
+tense, under a 🛑 heading calling them 100% defective — and it was the stale
+half of a document that ALSO records the closure ninety lines further down**
+(see the 546/248/298 split at §2.11's audit). The 🛑 was on the wrong half.
+
+~~**Flagged, not explained. Verified independently here — exactly 248 of `whg`'s
+213,081 point-class geometries have a multi-cell cover, matching S9's count.**~~
 
 ```
-cover sizes among the 248:  2 cells (28) … 3 (47) … 63 (2) … 204 … 264 … 310 … 476 … 892 … 1,230
+PRE-2.11 cover sizes among the 248:  2 cells (28) … 3 (47) … 63 (2) … 204 … 264 … 310 … 476 … 892 … 1,230
 all three sampled carry geom_ref = True
 ```
 
@@ -4297,15 +4312,29 @@ precisely the failure this campaign has been dismantling.
 **byte-identical** on CRC (`tiles-20260902-retile`) and on the tileserver
 (`/srv/tileserver/tiles/`) — and **serving: `ukhc.json` HTTP 200.**
 
-### ⬜ OPEN, UNOWNED — carry these past any session shutdown
+### RESIDUALS — open and closed, carry past any session shutdown
+
+⚠️ **Retitled 3 Sep: three of the four items below are ✅ CLOSED.** It read
+`⬜ OPEN, UNOWNED`, so a reader scanning for open work saw four numbered
+items under a heading asserting all of them were outstanding. **A heading is
+a status claim about everything beneath it** and goes stale as its items are
+resolved one at a time — which no per-item ✅ can fix.
 
 1. **45 of 309 `clio` features wrong by an undetermined mechanism.** Four
    hypotheses eliminated (dateline polygon, `enrich_geometry` repair path,
    simplification, staleness-by-shard-interleaving). All remediated regardless.
-2. **248 `whg` `point`-class geometries with covers up to 1,230 cells**, 100%
-   defective — **a second defect, not a hull leftover** (the convex hull of a
-   Point is a Point). Their covers are now correct *for their stored polygons*;
-   if `geom_class` is wrong it is still wrong.
+2. ✅ **CLOSED — 248 `whg` `point`-class geometries: now 0 of 213,081**
+   (audited 3 Sep, area-class control 1,247 of 1,248 proving the predicate
+   fires). It was a real second defect, not a hull leftover — the convex hull of
+   a Point is a Point — and it is remediated.
+   ⚠️ **And its trailing clause was itself a stale question this file answers:**
+   *"if `geom_class` is wrong it is still wrong."* **`geom_class` was never
+   wrong.** `helpers.py:1053` folds `Point` **and** `MultiPoint` → `"point"`
+   **deliberately** (the fold is recorded at §2.11), and a MultiPoint genuinely
+   is not areal, so `point` is the correct *shape* answer. **That is precisely
+   why these could hold polygon-sized covers while being correctly classified —
+   `h3_cover` size and `geom_class` are independent by design.** Nothing to
+   re-derive.
 3. ✅ **§2.10 questions 2 and 3 — BOTH ANSWERED, and the answers were already
    in this document (Auditor, 3 Sep).** Q2: `ccode_enrichment._load_un_records`
    calls `_iter_staged_docs(UN_NAMESPACE)`, which reads **`h3_merged`, not
