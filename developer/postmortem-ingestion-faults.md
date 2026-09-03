@@ -343,6 +343,19 @@ broken. These are worse than no check, because they are cited as evidence.
   present at z10" on its word; only a screenshot showed the truth. Three
   instruments in one day (`df`, `tile-join --version`, `queryRenderedFeatures`)
   each returning a well-formed answer to a question that had not been asked.
+  🛑 **And the expected-magnitude defence can itself be corrupted: an INVENTED
+  expected magnitude is worse than none, because it confers false confidence in
+  both directions.** 3 Sep, indexing-db, retracting its own sentence: it wrote
+  that 8 initially-unclosed coastline nodes were "the planet coastline's
+  ordinary background state" with no baseline run, no reference figure and no
+  source — *"supplying calibration I did not have, in a sentence whose job was
+  to make a result feel unremarkable, which is precisely the move that makes an
+  anomaly slide past."* The defensible form states the observation and declines
+  the calibration: **8 were initially unclosed, all 8 resolved, 0 remain;
+  whether 8 is typical is unknown.** ⚠️ This is the primary defence of this
+  entire class turned against itself — so the expected magnitude must be
+  *sourced*, not felt.
+
   **The common tell is that the answer was never checked against an expected
   magnitude or an independent modality** — the escape in every case was a second
   observation of a different kind (a remembered figure, an exit code read
@@ -469,8 +482,13 @@ broken. These are worse than no check, because they are cited as evidence.
   adjacency heuristic paying** — after `riverbank` from a census run for another
   purpose and `ice` from a list being checked for another reason.
 
-  ✅ **A fourth detection method, empirically the most productive here: when you
-  touch something, look at what is next to it.** indexing-db's own accounting —
+  ✅ **A fourth detection method, empirically the most productive here — and
+  narrower than "look around more", which would cost unbounded time: WHEN YOU GO
+  TO A LOG OR A TABLE FOR ONE NUMBER, READ THE WHOLE BLOCK IT SITS IN RATHER THAN
+  GREPPING THE LINE OUT.** All four instances share that precondition — output
+  there was already a reason to read, in a format dense enough that neighbouring
+  facts were in view. The 799,618 cross-check was found by tailing 25 lines
+  instead of grepping for `Create polygons`. indexing-db's own accounting —
   two of its four catches came this way rather than from systematic
   verification. `riverbank` fell out of a census run for a different purpose;
   `ice` fell out because it was adjacent in a list it was checking for another
