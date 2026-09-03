@@ -5286,10 +5286,33 @@ through. Same remedy as the `"hull"[^:]` fix: anchor the pattern. The one genuin
 `h3_centroid` hit (`reconcile_helpers.py:472`) reads `g.get("h3_centroid")` while
 iterating `geometries` — **the nested field. The root-level delete stands.**
 
-**Suggested order:** 1 `source` (2.99 M, zero risk) · 2 declare Group A (closes
-the strict-mapping hazard) · 3 root `timespans` (migrate 202, then delete) ·
-4 `description` → `links` · 5 Group D (whg3 grep now done — clear) ·
-6 `depictions` — **reframed, see below**.
+### ⚠️ EVERY deletion needs a WRITER fix first, or the next re-extract restores it
+
+SG, 3 Sep: *"Does your plan include fixing the various ingestion scripts to
+prevent any attempt to repopulate the dropped fields?"* It did not, and it must.
+
+| field | writer to fix | fix shape |
+|---|---|---|
+| root `source` 2,991,143 | **`authorities/tgn-places.py:298`** — the ONLY writer | delete one line, then drop from index |
+| root `h3_cover` / `h3_centroid` | 7 authority scripts + `update_merge.py:244` / `apply_update_patch.py:92` | ✅ prescribing docstring already fixed (`5a02753`); remove the writes, then drop |
+| root `timespans` 82,508 | writer TBD | **migrate the 202 sole-source docs FIRST**, then writer, then drop |
+| `description` → `links` 2,057 | `nl` + `whg` writers | content migration, not a schema change |
+| Group D (12 fields) | one authority each | declare-as-intentional **or** remove the write |
+
+⚠️ **`source` has a trap a grep-and-delete would hit.**
+`authorities/alcedo-places.py:389` writes `geometries[].source` — legitimate
+hgis provenance on a geometry entry, a **different field that must stay**. Root
+vs nested again: fix `tgn-places.py:298` **by line, not by pattern**.
+
+⚠️ **An earlier note said root `source` was written by "~24 authority scripts".
+Wrong, and contradicted by its own evidence** — the doc count 2,991,143 is
+*exactly* `tgn`'s document total, so no second writer is possible.
+
+**Suggested order:** 1 `source` (2.99 M, zero risk, ONE LINE) · 2 declare Group A
+(closes the strict-mapping hazard) · 3 root `timespans` (migrate 202, then
+writer, then delete) · 4 `description` → `links` · 5 Group D (whg3 grep done —
+clear) · 6 ✅ **`depictions` — KEEP (SG, 3 Sep).** The LPF-contract question is
+answered; the declaration stays.
 
 ⭐ **`depictions` is NOT an accidental declaration — it is aspirational, and
 dropping it would quietly close a product question.** It appears in 33 whg3
