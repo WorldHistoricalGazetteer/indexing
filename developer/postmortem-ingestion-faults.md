@@ -863,8 +863,28 @@ broken. These are worse than no check, because they are cited as evidence.
   ⚠️ **The mechanism and the reason it tested clean are the same fact.** Adding
   vector sources *after* the map's `load` event makes `map.loaded()` return false
   again, so `idle` never fires and the loading overlay waits for ever. **Warm, the
-  sources resolve from cache instantly and nothing is noticed.** Cold, the page
-  never paints at all — while the *unfixed* build paints in 4.8 s.
+  sources resolve from cache instantly and nothing is noticed.**
+
+  🛑 **CORRECTED 3 Sep, BY THE AUTHOR, AFTER THIS ENTRY WAS WRITTEN.** The
+  cold-cache numbers originally recorded here (*"cold, the page never paints,
+  while the unfixed build paints in 4.8 s"*) **do not establish what they were
+  offered for.** Re-run across more configurations, the harness fails on
+  **unchanged production code** too:
+
+  ```
+  allowlist (dev)   areas=whg-enhanced   never paints  — terrarium-local unloaded
+  allowlist (dev)   areas=whg-context    never paints  — terrarium-local unloaded
+  reverted (PROD)   areas=whg-context    never paints  — terrarium-local unloaded   <- UNCHANGED CODE
+  reverted (PROD)   areas=whg-enhanced   paints at 4,794 ms
+  ```
+
+  Headless Chromium never resolves `terrarium-local`, a `raster-dem` terrain
+  source identical in both styles with a TileJSON 200, with or without
+  `--use-gl=angle --use-angle=swiftshader`. **The single passing row passed
+  because the basemap swap happens to unblock it — nothing to do with the code
+  under test.** The prod failure was real and observed in real Chrome, and
+  after-`load` source addition remains a genuine mechanism; but the cold-cache
+  table is not evidence for it.
 
   🛑 **Each verification made the next one weaker.** The first dev load populated
   the cache; every subsequent reload tested a system that had already been given
@@ -876,10 +896,32 @@ broken. These are worse than no check, because they are cited as evidence.
   ⚠️ **A plausible mechanism already in the author's notes nearly absorbed the
   evidence.** The prod failure was first attributed to the browser window being
   moved mid-load — a real MapLibre hazard, previously recorded. It was withdrawn
-  only when a cold-cache control showed the reverted build renders fine unfocused
-  while the fix does not render at all. **A hazard you already believe in is the
-  most dangerous explanation available**, because it is the one that costs nothing
-  to accept and closes the investigation.
+  on the strength of the cold-cache control, which is now known not to
+  discriminate; the withdrawal was right, its stated reason was not. **A hazard
+  you already believe in is the most dangerous explanation available**, because it
+  is the one that costs nothing to accept and closes the investigation.
+
+  🛑 **AND THE SECOND TRAP IS SHARPER THAN THE FIRST, BECAUSE IT DRESSED ITSELF AS
+  THE REMEDY FOR IT.** Having been caught by a warm cache that **could not fail**,
+  the author reached for a cold harness that **could not discriminate** — and
+  trusted it precisely because it had produced one discriminating-looking result.
+
+  ⚠️ **A TOOL THAT FAILS EVERYTHING LOOKS RIGOROUS.** Three of four rows failing
+  reads as a demanding test; it is the signature of an instrument whose output is
+  independent of its input, exactly like the gate that passes everything, and it
+  is *more* persuasive because severity is mistaken for stringency. **The passing
+  row was the anomaly and deserved the scrutiny.** It got none, because attention
+  went to the failures — which is the warm-cache error wearing the opposite face.
+
+  **Rule:** in a mostly-failing result set, audit the PASS. In a mostly-passing
+  one, audit the FAIL. The minority row is where the instrument reveals itself,
+  whichever direction it lies in — and a control run against *unchanged* code is
+  what separates the two, since an instrument that fails known-good is broken no
+  matter how convincing its failures on known-bad.
+
+  ℹ️ **Operational corollary, worth its own line:** a headless browser harness
+  **cannot test a style carrying a `raster-dem` terrain source at all**. Anyone
+  automating Atlas rendering checks needs that before they trust a red result.
 
   **The remedy is the CURATIVE form, not a better test.** Declaring the sources in
   the *initial style* — server-side, in the style JSON — means they are resolved as
