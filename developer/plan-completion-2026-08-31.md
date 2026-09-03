@@ -5271,14 +5271,33 @@ The value is literally the namespace string in the same document:
 `{"namespace": "tgn", "source": "tgn", "place_id": "tgn:8330053"}`. Written by
 ~24 authority scripts. **The largest undeclared field in the index carries no
 information at all** — biggest win, zero risk, no migration.
-🛑 **Root `h3_cover` / `h3_centroid`, 1,310,192 each — THE LARGEST REMAINING
-ITEM IN 4.17, NOT DONE.** ⚠️ It was written here as a footnote rather than a
-numbered step, so package 2 correctly did not touch it — **a specification
-defect in this plan, not an omission by the executor.** The prescribing
-docstring is fixed (`5a02753`); **the writes are not** — 7 authority scripts
-plus `update_merge.py:244` and `apply_update_patch.py:92`. Needs its own pass,
-on the pattern package 2 established: fix the writers, declare or drop in the
-schema, leave the live values to the next rebuild.
+✅ **Root `h3_cover` / `h3_centroid` — WRITERS FIXED 3 Sep, `3159016`.** Twelve
+call sites, not the nine this plan had counted: **9 authority scripts**
+(`cliopatria`, `dplace`, `indexvillaris`, `ottnfs`, `pleiades`,
+`un-geoscheme-boundaries`, `gb1900`, `ottgaz`, `wikidata-geoshapes`) plus the
+update-patch path. Each now assigns to the **geometry entry already in scope**
+rather than the document root. Verified here: the only surviving matches are
+geometry-level — `apply_update_patch.py:102/104` (`geoms[0].setdefault`),
+`update_merge.py:255/257` (`replacements[0].setdefault`) and
+`fix_point_derived_fields.py:109/111` (a per-geometry patch dict) — plus the
+warning text in `helpers.py`'s docstring.
+
+⚠️ **This plan carried it as "NOT DONE" for some hours after it was fixed.** The
+completion lived in the commit and nowhere a reader of §4.17 would look — the
+third stale status marker found today, and the same shape as §3.1's.
+
+### ✅ 4.17's writer and schema work is COMPLETE
+
+All six ordered items plus the h3 writers are done: `1e982d1` (root `source`
+removed, Group A declared) · `c66caa3` (root `timespans` declared) · `c9970aa`
+(`description` → `links`, 15 Group D fields declared) · `3159016` (h3 writers).
+**All schema diffs purely additive; zero deletions.**
+
+🛑 **What remains is INDEX-SIDE ONLY and is SG's separate call at the next
+rebuild** — the live values of root `source` (2,991,143 docs) and root
+`h3_cover`/`h3_centroid` (1,310,192 each) are still present. **The writers can
+no longer recreate them**, so a rebuild produces the right shape without any
+mass update. There is no urgency: nothing reads any of them.
 ⚠️ **Root `timespans` 82,508 is NOT a clean delete.** `_collapse_timespans`
 (`places.py:250`) reads only nested paths and those are populated — but **202 of
 the 82,508 have root timespans and NO nested timespans anywhere** (e.g.
