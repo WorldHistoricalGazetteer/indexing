@@ -5132,8 +5132,16 @@ S9 can say which file it opened. It matters because it is not a data oddity but 
 live mapping fields              101
 declared in schemas/places.json   71
 UNDECLARED (accepted by dynamic)  30      5,891,998 field-instances
-declared but ABSENT from live      0      <- every declared field exists
+declared but ABSENT from live      0      <- every declared field exists IN THE MAPPING
 ```
+
+⚠️ **That last line proves mapping-completeness ONLY — it says nothing about
+whether any document carries the field.** Tested separately: **`depictions` is
+declared, mapped, and holds 0 documents** — a genuine dead declaration the diff
+could not see. (`descriptions` holds 26,867 and is fine; `exists` does not match
+nested containers, which produced seven false zeros before the queries were
+corrected against `types.identifier` 51,014,923 and `toponyms.label` 49,848,837
+as controls.)
 
 `dynamic` defaults to **true** on this index, so any authority can add a field
 and nothing reports it. **Every undeclared field's doc count is exactly one
@@ -5181,6 +5189,52 @@ documents and never queried.
    next re-extract.
 4. **Only then** consider strict mapping, and **per branch** — `geometries` and
    the root have different populations and different readers.
+
+### Triage of the 30 (Auditor, 3 Sep) — ordered by value and risk
+
+**A · DECLARE AND KEEP — real consumers; the defect is the omission**
+`geometries.boundary_source` 247 (`ccode_enrichment:208`, production `un` tier
+split) · `kaza` / `liva_1848` / `kaza_1848` / `admin_unit` / `wikidata_qid`
+(`interlink_ottgaz:89/:106/:155/:218`).
+
+**B · DUPLICATES → DELETE**
+⭐ **`source` — 2,991,143 docs and a PURE DUPLICATE of declared `namespace`.**
+The value is literally the namespace string in the same document:
+`{"namespace": "tgn", "source": "tgn", "place_id": "tgn:8330053"}`. Written by
+~24 authority scripts. **The largest undeclared field in the index carries no
+information at all** — biggest win, zero risk, no migration.
+Root `h3_cover` / `h3_centroid` 1,310,192 each — unchanged from thread 2.
+⚠️ **Root `timespans` 82,508 is NOT a clean delete.** `_collapse_timespans`
+(`places.py:250`) reads only nested paths and those are populated — but **202 of
+the 82,508 have root timespans and NO nested timespans anywhere** (e.g.
+`dgsd:10020`). Deleting the field destroys the only temporal data those places
+have. **99.75% duplicate, 0.25% sole-source: migrate the 202 first.**
+
+**C · MISFILED CONTENT** — `description` 2,057 (`nl`, `whg`) holds a **URL**
+(`https://native-land.ca/listings/territories/...`), not prose, and does **not**
+overlap declared `descriptions` (0 docs carry both). It belongs in declared
+`links`. A content fix, not a schema one.
+
+**D · AUTHORITY-LOCAL, NO CONSUMER FOUND** — 12 fields, ~78 k docs:
+`area_km2` 30,729 · `historical_county` 24,000 · `register_no`/`register_type`/
+`register_year`/`source_project` 16,296 each · `nahiye` 5,606 · `display_color`
+4,363 · `divan` 2,994 · `region` 2,599 · `language_family` 2,490 · `time_period`
+1,830 · `continent` / `admin_level` 247 · `subregion` 240. Only `area_km2` is
+derivable from data already present (geometry), so it alone has a positive
+argument for deletion rather than declaration.
+
+🛑 **SCOPE OF EVERY "NO CONSUMER" ABOVE.** Searched: `gateway/`, `processing/`,
+`clustering/`, `authorities/`, `tests/`, `testing/`, all `*.js` in this repo, and
+the Django registry payload (which carries only *dataset*-level fields — its
+`description` is the dataset's, not the place field's). **NOT searched: the
+whg3 frontend**, which is not checked out beside this repo. **Grep whg3 before
+deleting anything in B or D** — especially `display_color`, named exactly like
+something a map style would read.
+
+**Suggested order:** 1 `source` (2.99 M, zero risk) · 2 declare Group A (closes
+the strict-mapping hazard) · 3 root `timespans` (migrate 202, then delete) ·
+4 `description` → `links` · 5 Group D after the whg3 grep · 6 `depictions` —
+populate it or drop it from the schema.
 
 ✅ **The durable fix is the check, not the cleanup: put a mapping-versus-schema
 diff in `audit_rebuild.py`.** One comparison, a denominator, and it converts a
