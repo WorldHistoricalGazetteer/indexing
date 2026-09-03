@@ -41,6 +41,22 @@ those cleanly**:
 * **298 — NOT a defect, no action.** Absent from the rollback, so untouched by
   2.11, and a 1-cell cover is *correct* for them: the widest spans **0.02°**
   (~2 km), inside one cell at the resolutions in use.
+* **233 `wd` — pre-existing, marginal.** The corpus-wide sweep (3 Sep) found
+  MultiPoints in only **two** of 27 namespaces: `whg` 7,529 and `wd` 1,170,
+  **all other 25 exactly zero** (namespace agg summing to 51,187,900, the live
+  total, so the zeros are real and not missing data). Of `wd`'s 1,170, 233 have
+  real extent — but the **widest spans 0.09° (~10 km)** against `whg`'s 46.27°,
+  and `h3_centroid` is r7 (~1.2 km/cell), so `wd`'s worst case is under-covered
+  by ~8 cells where `whg`'s is under-covered by four orders of magnitude more.
+  `wd` was never in 2.11's rollback, so these were always 1-cell: **not caused,
+  and worth including only because the fix is the same code path.**
+
+⚠️ **Why 25 namespaces are clean — a zero with a mechanism.** `enrich_geometry`
+sets `has_geom=true` only when a non-bare-`Point` geometry reaches the store, so
+"point-class **with** storage" *is* the MultiPoint set by construction. An
+authority emitting one coordinate per place produces bare `Point`s and never
+enters this population. Only contributed LPF (`whg`) and Wikidata's multiple
+coordinate statements (`wd`) emit multi-coordinate point features.
 
 Mechanism: `select_h3_cover_geometry` returns non-polygonal geometry unchanged,
 so a MultiPoint never reaches the areal path and `compute_h3_fields` yields the
