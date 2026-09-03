@@ -65,12 +65,34 @@ means "alive at Y". ⚠️ Had the containment reading been real, `[Y,Y]` would 
 been incoherent in *definitely* and the lock would have needed a special case —
 the overlap choice paid for itself.
 
-🛑 **ONE #176-ADJACENT ITEM REMAINS AND IT IS OURS, NOT whg3's: the registry
-`temporal_extent` RE-PUSH.** place#176 §2 required `doc_temporal_range` to be
-fixed *before* pushing, or the collapsed extents would be written into the
-registry and the Atlas Gazetteers Date Range filter would inherit the defect.
-✅ **That gate is met** — `c5c209c`, 7 Aug. **So the re-push is unblocked and
-outstanding.** Recompute + push; no retile needed.
+◐ **ONE #176-ADJACENT ITEM REMAINS AND IT IS OURS, NOT whg3's: the registry
+`temporal_extent` RE-PUSH — actioned 3 Sep (SG), assigned to S5.**
+
+🛑 **place#176 §2's WARNING IS ALREADY DISCHARGED AND READS AS LIVE.** It says
+*"fix `doc_temporal_range` before pushing, or it writes the collapsed extents
+into the registry."* **That was resolved by SEPARATING the two functions, not by
+changing the registry's.** `c5c209c`: *"`doc_temporal_range` keeps its pooled
+reading and its registry consumer — for 'which period does this gazetteer
+describe?' `osm` SHOULD read as contemporary rather than as unbounded."* The
+tile/filter path moved to `doc_temporal_bounds`; the registry deliberately did
+not. **Anyone reading #176 cold will try to "fix" a reading that is correct.**
+
+**Measured 3 Sep — the aggregates are semantically fine and the real question is
+freshness, not correctness:**
+
+```
+23 aggregates on /vast/ishi/staged/_aggregates/, most 2026-08-07 11:xx
+   (c5c209c landed 15:11 the same day — and its diff against that file is
+    +18/-4, ALL DOCSTRING, so a recompute changes no numbers by itself)
+osm  [191, 2028]  record_count 20,622,228     <- NOT collapsed to [2026, 2026]
+ohm  [-10000, 2050]                           clio [-3400, 2024]
+```
+
+⚠️ **What has moved is the CORPUS, not the code.** `gn`/`wd`/`nl` got a real
+`final/` on 2 Sep (2.7), so their 7 Aug aggregates were computed from whatever
+they resolved to then. **Recompute where the staged tree is newer than the
+aggregate, then push.** ⚠️ `record_count` goes to the registry too — a stale one
+is a user-visible wrong number on the gazetteer page.
 
 🛑 **The real risk in item 1 is filter composition, not counting** (S6's own
 flag): it touches the base-style boundary layers via `heroMap.showBoundaries`,
