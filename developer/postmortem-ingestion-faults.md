@@ -390,6 +390,23 @@ broken. These are worse than no check, because they are cited as evidence.
   than an unchecked guess. ✅ **Ask the verifier to find the defect, not to
   confirm the file.**
 
+  🛑 **VERIFYING THROUGH A DIFFERENT CODE PATH THAN THE ONE THAT SHIPS — and
+  the two disagreed exactly on the case the check existed to detect.** 3 Sep: a
+  40k backfill's harness called the inner `_cover_cells` instead of the shipped
+  wrapper `compute_h3_fields`. They differ on **one** input class — an
+  uncoverable polygon, where the inner returns `None` and the wrapper returns
+  the centroid cell — which is precisely the edge the safety check was watching.
+  A genuinely **unchanged** geometry therefore scored as a **shrink to zero**,
+  tripping the hard stop. ⚠️ **The same substitution silently zeroed the fallback
+  counter**, so the run also reported "no fallbacks" where ~1 was predicted:
+  **one cause, two failures, both flattering.**
+  ✅ Two rules worth keeping: **"run it through the shipped path" is
+  load-bearing, not stylistic** — a wrapper exists because it does something,
+  and that something is usually the edge case; and **a stop condition that fires
+  is worth believing until you have EXPLAINED it.** The operator re-ran the
+  harness rather than reasoning past the alarm, which is what made the
+  distinction visible.
+
   🛑 **CORRECT IN THE SOURCE, WRONG IN THE ARTEFACT — the build step is a
   transform nobody reviews.** 3 Sep, whg3: a change imported two helpers from
   `whg_maplibre.js`. The source was right, it built clean and the tests passed

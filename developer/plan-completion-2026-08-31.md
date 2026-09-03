@@ -5610,7 +5610,54 @@ measured: across 145,764 geometries the new fallback logging fired **6 times** �
 spot is 6, not thousands.** ✅ *Item 1 earning its keep within hours, in a job
 aimed at something else.*
 
-### Arising from the census — NOT yet actioned
+### ✅ ARISING FROM THE CENSUS — ALL DONE 3 Sep
+
+**`H3ResMismatchError` fixed (`8ee43aa`).** Root cause is sharper than "mixed
+resolutions": `_polyfill_adaptive` fills each member of a dateline-crossing
+MultiPolygon **independently**, and `_polyfill_one_polygon` picks its resolution
+from *that part's own bounding box* — so a multipolygon whose parts differ
+greatly in size (a colonial empire; a country with distant islands) *necessarily*
+yields a mixed-resolution union. Fixed by compacting **within** each resolution
+rather than normalising, because `field-notes` documents `h3_cover` as a
+compacted **multi-resolution** set: flattening would explode the count going
+finer or lose precision going coarser. Exception reproduced first, then a
+mixed-size MultiPolygon confirmed **1 → 112 cells**.
+
+**Backfill complete — 40,465 documents, 0 errors, 9 seconds.** Rollback retained
+at `/vast/ishi/s5-dryrun/rollback40k.json`. The 7 severe `clio` folded into the
+same pass and all seven landed on their predicted counts
+(168/467/501/517/498/349/344).
+
+```
+PARENT (geom_class=area AND has_geom)   986,065 geometries
+KEPT   (stored h3_cover <= 1)           145,764   <- the census figure, exactly
+ACTIONABLE re-derived                    40,465   vs 40,429 = 0.09% drift
+WOULD SHRINK                                  0
+frame after                             105,299   = 145,764 - 40,465 exactly
+re-run predicate                     0 actionable of 105,299
+fallback counter                          6 -> 1
+```
+
+⚠️ **986,065 geometries against the earlier 973,978 is GEOMETRIES vs DOCUMENTS**,
+not drift — and two `vob_lgd` docs carry three actionable geometries each, which
+is also why 40,465 writes touched 40,461 distinct documents.
+
+🛑 **THE STOP CONDITION FIRED — on the harness, not the data, and it nearly cost
+the run.** The first pass reported `WOULD SHRINK: 1` (`po:p0s2rwkrjbs`, stored 1
+→ computed 0). Cause: **it called the inner `_cover_cells` instead of the shipped
+`compute_h3_fields`.** The two disagree *precisely on the uncoverable case* —
+`_cover_cells` returns `None`, `compute_h3_fields` returns the centroid cell —
+so a geometry that was genuinely **unchanged** scored as a shrink to zero. ⚠️
+**The same error silently zeroed the fallback counter**, which is why the first
+run reported "no fallbacks" where the prediction was ~1. **One cause, two
+failures, both in the flattering direction.** Corrected and re-run rather than
+reasoned past.
+
+🛑 **ONE GENUINE DEFECT REMAINS AND IS NOW THE ONLY FALLBACK IN THE CORPUS:**
+`po:p0s2rwkrjbs`, a real ~16°-wide MultiPolygon that **polyfills to nothing**
+(`uncoverable`). It is *unchanged* rather than *wrong*, so it sat outside this
+package's predicate by construction — the blind spot, with one member. Worth its
+own look.
 
 1. **Fix the 7 `clio`** — trivial volume, and the British Empire at one cell is
    the worst cover in the corpus after the Silk Roads.
