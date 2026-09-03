@@ -1,0 +1,237 @@
+Subject: Re: Follow up from Incheon - World Historical Gazetteer (technical assessment of sample data)
+
+Dear Dr. Kim, Dr. Choi, and colleagues at Team Yeokji,
+
+Thank you very much for sharing the sample datasets, and for the clear
+introduction to Team Yeokji (역지사지) and the two databases. I have now done a
+full technical inspection of the three shapefiles, building on Palak's initial
+observations. The short version: this is high-quality, well-structured material
+that is a very good fit for WHG, and the path to ingestion is clear. Below is
+what we found in the files themselves, followed by the specific questions we
+need to resolve before a first ingestion, and the likely technical route.
+
+===================================================================
+1. WHAT WE RECEIVED
+===================================================================
+A single ZIP (whg_sampledata_20260716) containing three ESRI shapefiles, each
+complete with .shp/.dbf/.prj/.shx/.cpg and ArcGIS .shp.xml metadata:
+
+  (a) kr_admin_1864_lv2_pg  - 335 POLYGON features: level-2 administrative
+      districts (군현 / counties) of Joseon.
+  (b) kr_admin_1864_lv2_pt  - 344 POINT (PointZ) features: 335 county seats
+      (읍치, eupchi) + 9 provincial governor's offices (감영, level-1).
+  (c) kr_placename_ddy_all_pt - 989 POINT features: place names and map symbols
+      transcribed from the Daedongyeojido (大東輿地圖). We understand this is a
+      sample from the full 15,529-point database.
+
+===================================================================
+2. WHG'S INDEPENDENT TECHNICAL ASSESSMENT
+===================================================================
+
+PROJECTION (important - please confirm)
+  All three layers are in EPSG:5179 (Korea 2000 / Unified Coordinate System,
+  Transverse Mercator, central meridian 127.5, GRS80), NOT geographic WGS84.
+  We verified this reprojects correctly: coordinates fall across the whole
+  Korean peninsula (approx. 124.5-132.3 E, 33.1-42.9 N). WHG stores geometry
+  as WGS84 lon/lat (RFC 7946), so we will reproject 5179 -> 4326 on ingest and
+  round to 6 decimal places. No action needed from you, but please confirm
+  5179 is indeed the intended CRS (the .prj is unambiguous, so we are
+  confident, but it is worth a one-line confirmation).
+
+ENCODING (good news)
+  The .cpg files declare UTF-8 and all Hangul and Hanja decode cleanly - e.g.
+  안동 / andong, 五峰山 / 문학산. This is better than the usual CP949 situation
+  with Korean shapefiles and removes a whole class of risk.
+
+ATTRIBUTE SCHEMA (as found)
+  Admin layers (pg and pt share a schema; pg additionally has area_m2):
+    OBJECTID, hisgeo_id, feature_cd, admid_grp, admid_gis, adm_level,
+    base_year, time_begin, time_end, [area_m2], comment, src_gis, check_db,
+    nm_kor, nm_eng, nm_engmr
+  Placename layer:
+    OBJECTID, hisgeo_id, feature_cd, gis_symbol, nm_kor, nm_chn, nm_eng,
+    nm_engmr, loc_rank, loc_memo, loc_addr, src, check_db
+
+  Names / scripts:
+    - nm_kor  = Hangul (primary title)
+    - nm_chn  = Hanja / Chinese characters (placename layer only, 988/989
+                populated; the admin layers have NO Hanja field)
+    - nm_eng  = romanization (Revised Romanization style, e.g. "cheongdo")
+    - nm_engmr = McCune-Reischauer romanization (e.g. "ch'ongdo")
+    Two romanization schemes plus Hangul (and Hanja for placenames) is exactly
+    the multi-script name variation WHG is built to track.
+
+  Feature types:
+    - Admin polygons: feature_cd is uniformly 행정구역 (administrative district),
+      adm_level "lv2".
+    - Admin points: 읍치 (county seat, 335) and 감영 (provincial office, 9).
+    - Placenames: a rich 25-category vocabulary - 산 mountain (253), 고개 pass,
+      도서 island, 하천 river, 촌락 village, 고산성 old fortress, 역참 post
+      station, 봉수 beacon-fire, 읍치 seat, 나루 ferry, 능침 royal tomb, 창고
+      granary, 사찰 temple, etc. This maps well to WHG's type system (we would
+      build a Korean-feature -> Getty AAT crosswalk, as we did for CHGIS).
+
+  Identifiers:
+    - hisgeo_id is POPULATED and unique in the placename layer (989/989 distinct,
+      e.g. "경기_광주_오봉산(조선)" = province_county_name(dynasty)), but is
+      "<reserved>" (i.e. NOT yet assigned) in BOTH admin layers. This is the one
+      real gap for the admin data - see the questions below.
+    - admid_grp is populated and unique in both admin layers (335 / 344 distinct)
+      and is the reliable join key between polygons and points (see below).
+
+TEMPORAL
+  - Admin layers: genuine per-feature temporal fields. time_begin ranges
+    1392-1823 and time_end 1859-1914 (distinct end years include 1866, 1895,
+    1896, 1906, 1914 - clearly reflecting the 1895 reforms and 1914 colonial
+    redistricting). There is also a base_year field listing multiple snapshot
+    years as text, e.g. "s1432/s1530/s1765/s1789/s1864/s1895/s1910/s1912"
+    (15 distinct patterns). These map naturally onto WHG timespans; the
+    multi-snapshot base_year needs a modelling discussion (below).
+  - Placename layer: NO per-feature dates. Temporality is only the dynasty
+    marker "(조선)" embedded in hisgeo_id, and the source is dated by the map
+    (Daedongyeojido, 1861 woodblock / late 19thC). We would apply a
+    dataset-level Joseon timespan unless you have finer dating.
+  - The ArcGIS .shp.xml holds only processing lineage (ArcGIS 10.8, edits
+    2024-2026) - no title/abstract/rights/date metadata. The lineage does
+    reveal the sample was spatially filtered to the Han River + East Sea
+    watersheds ("한강수계인접/동해수계인접"), which explains why the 989
+    placenames cluster in Gyeonggi and the east (approx. 126.0-127.8 E,
+    36.9-38.4 N) rather than covering the whole peninsula.
+
+GEOMETRY SANITY
+  - All 335 polygons are geometrically valid (shapely). 133 of them are
+    MultiPolygons - consistent with Joseon exclaves (월경지) and island
+    territories; RFC 7946 MultiPolygon handles these cleanly.
+  - The admin points are stored as PointZ, but Z is uniformly 0.0 (a container
+    artefact, not elevation).
+  - We confirmed all 335 county-seat points fall INSIDE their matching district
+    polygon. So the point layer is not a mere label/centroid - it is the actual
+    administrative seat (eupchi) within the district. Both representations are
+    worth keeping.
+
+RELATIONSHIP BETWEEN LAYERS
+  - Polygons <-> points: a clean 1:1 join on admid_grp. All 335 lv2 seat points
+    match a polygon; the 9 extra points are lv1 감영 (provincial offices) with
+    no polygon. NOTE: do NOT join on admid_gis - it carries a founding-year
+    suffix that differs between the two layers (polygon "경상_안동(1392)" may
+    pair with a differently-suffixed point). The year-stripped key / admid_grp
+    is the stable link.
+  - Placenames <-> admin: the placename hisgeo_id encodes province_county
+    (e.g. "경기_광주_..."), so a textual/spatial link to the admin districts is
+    feasible, but there is no shared numeric key. We would derive the linkage
+    at ingest.
+
+===================================================================
+3. WHERE WE AGREE / DIFFER WITH PALAK'S FIRST READ
+===================================================================
+Agreements (confirmed against the files):
+  - Both datasets are well-structured and align closely with WHG. Confirmed.
+  - The placename data carries Korean, Chinese and English forms. Confirmed
+    (Hangul + Hanja + in fact TWO romanizations).
+  - Feature-type classifications are detailed. Confirmed (25 categories).
+  - 132 placename records are marked "impossible to locate" (불가). Confirmed
+    exactly - loc_rank breaks down as 확실/certain 527, 유력/probable 240,
+    불가/impossible 132, 추정/estimated 90.
+  - Admin time_begin/time_end map onto WHG timespans, and base_year (multiple
+    snapshots) needs a modelling discussion. Confirmed.
+  - Shapefile is a format we can convert. Confirmed.
+
+Points to add / refine beyond the first read:
+  - PROJECTION: the data is NOT already WGS84 - it is EPSG:5179 and must be
+    reprojected. This is the single most important ingest step and was worth
+    flagging explicitly.
+  - STABLE IDs: hisgeo_id is unpopulated ("<reserved>") in BOTH admin layers.
+    The placename layer has stable IDs; the admin layers do not yet. WHG needs a
+    persistent per-feature ID, so this is our main request for the admin data.
+  - The 132 "불가" points still carry coordinates in the file - so they are
+    plotted somewhere. We need to know whether those coordinates are best
+    guesses/placeholders or should be treated as truly unlocated.
+  - The admin layers have no Hanja (nm_chn); only placenames do. Adding Hanja to
+    the district/seat names would make the WHG name-variant coverage consistent.
+  - Coverage includes present-day North Korea (함경/황해/평안 provinces, up to
+    ~42.9 N). WHG will assign ccodes KR and KP accordingly - please confirm you
+    want the northern features included.
+  - The loc_rank certainty grades and loc_addr (modern location) are valuable
+    provenance we would preserve as record-level metadata.
+
+Net verdict: SUITABLE for WHG ingestion as a new authority (working namespace
+"joseon", modelled on our existing CHGIS integration, which your database design
+already resembles). No blocking technical problems; the open items are
+clarifications and a couple of small data additions, not rework.
+
+===================================================================
+4. QUESTIONS WE NEED ANSWERED BEFORE A FIRST INGESTION
+===================================================================
+  1. Stable IDs: can you populate hisgeo_id (or provide another persistent key)
+     for the two admin layers? admid_grp is unique in the sample and could serve
+     as an interim key - is it stable across your year-by-year database, or does
+     it change when a district is created/renamed/abolished?
+  2. The 132 "불가" placenames: include as unlocated records, or exclude from the
+     first submission? And are the coordinates on those 132 placeholders or
+     genuine best-estimates?
+  3. base_year: the multi-snapshot list (e.g. s1432/.../s1912) - does each token
+     mean "this district's boundary is attested/unchanged at that snapshot
+     year", or does it enumerate distinct boundary versions? This determines
+     whether we emit one timespan or several per district.
+  4. Boundary vintage: the filename says 1864, but the polygons carry
+     time_begin/time_end spanning 1392-1914. Does a single polygon represent the
+     1864 snapshot specifically, or the district's whole life with 1864 as one
+     reference year? (This affects how we label the geometry's validity.)
+  5. Projection confirmation: EPSG:5179 (Korea 2000 Unified) - correct?
+  6. The 9 lv1 감영 points have blank names (nm_kor = "-"). Can you supply names,
+     or should we label them from admid_grp (province name + "감영")?
+  7. Source / provenance: admin src_gis cites "국편 역사지리정보 DB 2024" (the
+     National Institute of Korean History historical-geography DB) plus Team
+     Yeokji boundary restoration; placename src cites 대동여지도 and related
+     works. Should WHG attribute to Team Yeokji, to the underlying sources, or
+     both, and is there a citation string you would like used?
+  8. Licensing: WHG does not gate ingestion on licence terms, but for
+     downstream attribution we should record how you would like this data
+     licensed / credited. What terms apply?
+  9. Full dataset preferred, and please do NOT pre-process on our account.
+     Rather than iterating on this watershed-filtered sample (989 of ~15,529
+     placenames), our strong preference is to ingest directly from the FULL
+     databases - the complete placename set and the complete national admin set -
+     in their native form. There is no need for you to reproject, convert the
+     format, clip the extent, or otherwise prepare the data for us: WHG does all
+     of that as a matter of routine (reprojection EPSG:5179 -> WGS84, shapefile
+     conversion, script handling, etc.). The rawer and more complete, the better.
+     The ONLY pre-processing we would ask you to consider is removing any facets
+     you regard as sensitive or not yet suitable for open publication - beyond
+     that, please send the data exactly as it sits in your system.
+
+===================================================================
+5. LIKELY INGESTION PATH IF WE PROCEED
+===================================================================
+Assuming the above is resolved, the route into WHG is straightforward and
+mirrors our CHGIS pipeline:
+
+  1. Reproject all geometry EPSG:5179 -> WGS84 (EPSG:4326), round to 6 dp
+     (RFC 7946). Polygons and PointZ -> 2D.
+  2. Namespaced place_id per feature (e.g. joseon:<hisgeo_id>). Admin districts
+     keyed on the ID you confirm in Q1.
+  3. Titles and toponyms[]: title = nm_kor; name variants =
+     nm_kor (ko), nm_chn (Hani/zh-Hant, placenames), nm_eng and nm_engmr
+     (both ko-Latn). These feed WHG's cross-script name matching.
+  4. types[]: map feature_cd / gis_symbol via a Korean-feature -> Getty AAT
+     crosswalk (we would draft it and share for your review).
+  5. geometries[]: district polygon and its county-seat point both retained (the
+     seat can be carried as a second geometry or as a related "seat of" record).
+  6. timespans: from time_begin/time_end for admin (pending the base_year
+     decision in Q3); dynasty-level Joseon span for placenames unless finer
+     dating is available.
+  7. ccodes: KR (+ KP for northern features, pending Q on coverage).
+  8. Provenance: preserve src/src_gis, loc_rank, loc_addr, check_db as
+     record-level metadata for attribution and confidence display.
+
+We can validate the field mapping quickly on our side, then share the resulting
+WHG records back to you for review. Our preference (see Q9) is to run this against
+the FULL databases rather than the sample, in their native EPSG:5179 shapefiles -
+there is no need to prepare a reduced, reprojected, or reformatted extract for us.
+
+We are very happy with how clean and well-documented this material is, and we
+look forward to discussing the open questions on the Zoom call.
+
+With thanks and best regards,
+The WHG Technical Team
+(Stephen Gadd, Technical Director, World Historical Gazetteer)

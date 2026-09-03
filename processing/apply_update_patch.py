@@ -86,10 +86,22 @@ def main():
             g["approximation"] = args.approximation
             geoms.append(g)
         doc = {"geometries": geoms, "indexed_at": now}
-        if r.get("h3_centroid"):
-            doc["h3_centroid"] = r["h3_centroid"]
-        if r.get("h3_cover"):
-            doc["h3_cover"] = r["h3_cover"]
+        # h3_centroid/h3_cover belong ON THE GEOMETRY, not the document root:
+        # schemas/places.json declares geometries.h3_centroid /
+        # geometries.h3_cover and has no root equivalents. Writing them here
+        # produced 1,310,192 undeclared root instances.
+        #
+        # Patches produced since the wikidata-geoshapes fix already carry them
+        # inside each geometry entry, so nothing is needed for those. This
+        # block remains for LEGACY patch files, which carry them at the patch
+        # root — those values are still good, so fold them onto the geometry
+        # they describe rather than dropping them. ``setdefault`` means a value
+        # already present on the geometry (the new shape) always wins.
+        if geoms:
+            if r.get("h3_centroid"):
+                geoms[0].setdefault("h3_centroid", r["h3_centroid"])
+            if r.get("h3_cover"):
+                geoms[0].setdefault("h3_cover", r["h3_cover"])
         return {"_op_type": "update", "_index": args.index, "_id": pid, "doc": doc}
 
     es_opt = es.options(request_timeout=300)

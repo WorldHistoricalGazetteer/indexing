@@ -311,8 +311,8 @@ def process_row(row, ofs_idx, name_to_id):
                 h3g = select_h3_cover_geometry(ge, geo)
                 h3c, h3cov = compute_h3_fields(rp["lon"], rp["lat"], h3g)
                 if h3c:
-                    doc["h3_centroid"] = h3c
-                    doc["h3_cover"] = h3cov
+                    ge["h3_centroid"] = h3c
+                    ge["h3_cover"] = h3cov
             doc["geometries"] = [ge]
 
     if unit:

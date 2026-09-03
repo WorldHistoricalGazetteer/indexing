@@ -428,8 +428,18 @@ class BoundaryPassProcessor:
 
             h3_fields = build_h3_fields_for_geom_entry(geom_entry, raw_geom)
             if h3_fields:
-                update_doc.update(h3_fields)
-                upsert_doc.update(h3_fields)
+                # ON THE GEOMETRY, not the document root. The schema declares
+                # geometries.h3_centroid / geometries.h3_cover and has no root
+                # equivalents; `update_doc.update(h3_fields)` merged them into
+                # the root instead, and given osm/ohm volume this was the
+                # largest single contributor to the 1,310,192 undeclared root
+                # instances. Its sibling caller in osm_way_area_geometry.py
+                # already did this correctly — the two had diverged.
+                #
+                # One mutation covers both docs: update_doc and upsert_doc each
+                # hold `[geom_entry]`, the same object, so the fields appear
+                # inside the geometry of both.
+                geom_entry.update(h3_fields)
 
             self.buffer_callback(place_id, update_doc, upsert_doc)
             self.extracted += 1

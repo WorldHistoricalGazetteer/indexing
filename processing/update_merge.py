@@ -21,8 +21,8 @@ optional and only fields present on a patch row are merged)::
          "label": "Wikidata"}, ...
       ],
       "geometries_to_replace": [<enriched geom_entry>, ...],
-      "h3_centroid": "<cell>",   # only set when geometries_to_replace present
-      "h3_cover":    ["<cell>", ...]
+      # h3_centroid / h3_cover ride INSIDE each geom_entry. Legacy patches
+      # carry them at this level instead; both shapes are accepted.
     }
 
 Merge semantics:
@@ -35,8 +35,10 @@ Merge semantics:
   ``(relation_type, related_place_id)``.
 * ``geometries_to_replace`` overwrites the entire ``geometries`` array
   (matches the legacy WD-geoshapes ES script which did
-  ``ctx._source.geometries[0] = params.new_geom``). Top-level ``h3_centroid``
-  / ``h3_cover`` from the patch are preserved.
+  ``ctx._source.geometries[0] = params.new_geom``). ``h3_centroid`` /
+  ``h3_cover`` are PER-GEOMETRY and are preserved onto the geometry, never
+  onto the document root: the schema declares ``geometries.h3_centroid`` /
+  ``geometries.h3_cover`` and has no root equivalents.
 
 Idempotent: re-running the merger over the same source + patch produces
 byte-identical output.
@@ -238,10 +240,21 @@ def _apply_patch(doc: dict[str, Any], patch: dict[str, Any]) -> tuple[dict[str, 
                 replacement = dict(replacement, geometry_index=position)
             replacements.append(replacement)
         merged["geometries"] = replacements
-        if "h3_centroid" in patch:
-            merged["h3_centroid"] = patch["h3_centroid"]
-        if "h3_cover" in patch:
-            merged["h3_cover"] = patch["h3_cover"]
+        # h3_centroid/h3_cover are PER-GEOMETRY fields — schemas/places.json
+        # declares geometries.h3_centroid / geometries.h3_cover and has no
+        # root equivalents. Lifting them to the document root here was one
+        # source of 1,310,192 undeclared root instances.
+        #
+        # Patches written since the wikidata-geoshapes fix carry them inside
+        # each geometry already. LEGACY patches carry them at the patch root,
+        # and those values are still correct — so fold them onto the geometry
+        # they describe rather than discarding them. ``setdefault`` keeps a
+        # value already on the geometry (the new shape) in preference.
+        if replacements:
+            if "h3_centroid" in patch:
+                replacements[0].setdefault("h3_centroid", patch["h3_centroid"])
+            if "h3_cover" in patch:
+                replacements[0].setdefault("h3_cover", patch["h3_cover"])
         changed = True
 
     return merged, changed

@@ -372,14 +372,19 @@ def stage_geoshapes(refs_file: str, batch_size: int = BATCH_SIZE) -> dict:
                             rp["lon"], rp["lat"], h3_geom,
                         )
 
+                    # h3_centroid/h3_cover are PER-GEOMETRY fields: the schema
+                    # declares geometries.h3_centroid / geometries.h3_cover and
+                    # has no root equivalents. They used to be emitted at the
+                    # patch root, which apply_update_patch then wrote to the
+                    # document root — 1,310,192 undeclared root instances.
+                    if h3_centroid:
+                        geom_entry["h3_centroid"] = h3_centroid
+                    if h3_cover:
+                        geom_entry["h3_cover"] = h3_cover
                     row: dict = {
                         "place_id": place_id,
                         "geometries_to_replace": [geom_entry],
                     }
-                    if h3_centroid:
-                        row["h3_centroid"] = h3_centroid
-                    if h3_cover:
-                        row["h3_cover"] = h3_cover
                     out_jsonl.write(json.dumps(row, ensure_ascii=True) + "\n")
                     log_downloaded(place_id)
                     rows_written += 1

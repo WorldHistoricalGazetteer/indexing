@@ -200,8 +200,8 @@ def process_cliopatria_feature(feature, seen_ids=None):
         h3_geom = select_h3_cover_geometry(geom_entry, geometry)
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
-            doc['h3_centroid'] = h3c
-            doc['h3_cover'] = h3cover
+            geom_entry['h3_centroid'] = h3c
+            geom_entry['h3_cover'] = h3cover
 
     # Wikidata link if present
     wd_id = props.get('Wikipedia', props.get('wikidata'))

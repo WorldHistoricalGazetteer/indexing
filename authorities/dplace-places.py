@@ -143,8 +143,8 @@ def process_dplace_feature(feature, namespace=NAMESPACE):
         h3_geom = select_h3_cover_geometry(geom_entry, geometry)
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
-            place_doc['h3_centroid'] = h3c
-            place_doc['h3_cover'] = h3cover
+            geom_entry['h3_centroid'] = h3c
+            geom_entry['h3_cover'] = h3cover
 
     types = []
     language_family = lang_obj.get('language_family', props.get('language_family'))

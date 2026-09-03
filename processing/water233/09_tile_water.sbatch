@@ -6,7 +6,7 @@
 #SBATCH --partition=htc
 #SBATCH --qos=htc-htc-s
 #SBATCH --account=ishi
-#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8 --mem=64G
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8 --mem=128G
 
 # place#233 Step 3 — tile to z0-10, matching osm.mbtiles.
 #
@@ -49,9 +49,15 @@ mkdir -p "${TMPDIR_TP}"
 echo "tippecanoe temp: ${TMPDIR_TP}"
 df -h "${TMPDIR_TP}" | tail -1
 
+# Ocean comes from the SECOND build. The first inherited a 1-degree
+# (~111 km) close distance from --srs=4326 and bridged 12.0 km and 15.6 km
+# of open water; the second used a chosen 0.001 deg (~111 m). Measured
+# comparison (job 11112663): area 354,241,468 -> 354,241,475 km2, a delta of
+# +7 km2 (+0.0000%), so refusing those bridges cost no coverage at all.
+declare -A SRC=( [ocean]="ocean-c001.geojsonl" [lakes]="lakes.geojsonl" [rivers]="rivers.geojsonl" )
 INPUTS=()
 for layer in ocean lakes rivers; do
-    f="${D}/${layer}.geojsonl"
+    f="${D}/${SRC[$layer]}"
     if [ -s "$f" ]; then
         echo "  layer ${layer}: $(wc -l < "$f") features"
         INPUTS+=( -L "${layer}:${f}" )

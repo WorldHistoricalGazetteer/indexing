@@ -429,8 +429,8 @@ def build_geoscheme_place_doc(name, boundary_value, geom,
         h3_geom = select_h3_cover_geometry(geom_entry, raw_geom)
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
-            doc['h3_centroid'] = h3c
-            doc['h3_cover'] = h3cover
+            geom_entry['h3_centroid'] = h3c
+            geom_entry['h3_cover'] = h3cover
 
     if ccodes:
         doc['ccodes'] = ccodes

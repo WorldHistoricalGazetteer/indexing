@@ -98,8 +98,8 @@ def parse_gb1900_row(row):
         'geometries': geometries,
     }
     if h3_centroid:
-        place_doc['h3_centroid'] = h3_centroid
-        place_doc['h3_cover'] = h3_cover
+        geom_entry['h3_centroid'] = h3_centroid
+        geom_entry['h3_cover'] = h3_cover
 
     nation = row.get('nation', row.get('Nation', row.get('NATION', ''))).strip()
     if nation in ('England', 'Scotland', 'Wales'):

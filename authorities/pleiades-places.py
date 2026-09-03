@@ -189,8 +189,8 @@ def create_place_doc(pleiades_record):
         h3_geom = select_h3_cover_geometry(primary, raw_geom)
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
-            doc['h3_centroid'] = h3c
-            doc['h3_cover'] = h3cover
+            primary['h3_centroid'] = h3c
+            primary['h3_cover'] = h3cover
 
     return doc
 
