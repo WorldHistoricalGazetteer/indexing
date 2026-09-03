@@ -816,37 +816,68 @@ broken. These are worse than no check, because they are cited as evidence.
   This is why no availability check, no checksum, and no size-of-file gate could
   see it either.
 
-  🛑 **AND THE TROUGH READING ABOVE IS ITSELF THE SAME MISTAKE, ONE LEVEL DOWN —
-  THE OCEAN WAS DEGRADED AT EVERY ZOOM.** Measured against the same ocean tiled
-  **alone** (same flags, same input, competition the only variable):
+  🛑 **THE PARAGRAPH THAT STOOD HERE — "the ocean was degraded at EVERY zoom,
+  4.0% at z6" — IS RETRACTED. IT WAS WRONG, AND THE TROUGH READING IT
+  "CORRECTED" WAS SUBSTANTIALLY RIGHT.** Measured against the correct z0–10
+  reference:
 
   ```
-  ocean at z6, tiled ALONE          3,733,802 vertices
-  ocean at z6, with lakes present     148,670 vertices   =  4.0%
-  ocean at z3, with lakes present                        =  1.0%
+  z      shipped verts    alone verts   retained
+  z0            73,291         73,245     100.1%
+  z1           131,366        131,228     100.1%
+  z2           231,329        231,071     100.1%
+  z3           158,208        392,092      40.3%   <<
+  z4           565,572        678,510      83.4%
+  z5           521,970      1,165,816      44.8%   <<
+  z6         1,676,353      2,019,856      83.0%
+  z7         3,452,917      3,474,764      99.4%
+  z8         5,942,194      5,949,409      99.9%
   ```
 
-  ⚠️ **The shipped sequence 7,851 → 29,465 → 52,666 → 148,670 IS MONOTONIC** — it
-  rises at every step while sitting **two orders of magnitude below where it
-  belongs**. So z3 and z5 were merely the zooms where the damage was loud enough
-  to break monotonicity; the workaround built on that reading replaced the zooms
-  where the defect was *visible*, not the zooms where it *existed*, which is why a
-  user still saw square coastlines at z6.89.
+  **Neither earlier framing was right, and the honest one is narrower than
+  both**: the damage is *concentrated* at z3 and z5 (~40% retained), *moderate*
+  at z4 and z6 (~83%), and *absent* at z0–z2 and z7–z8. "Troughs at z3 and z5"
+  was the better of the two readings; "every zoom" was false.
 
-  🛑 **MONOTONICITY IS A PROPERTY OF SHAPE; THIS DEFECT IS IN MAGNITUDE. A shape
-  test can never bound a magnitude error**, and the acceptance criterion written
-  for the rebuild — per-zoom monotonicity in bytes and vertices — **would have
-  passed the broken build** at z4 upward. One insufficient check ("is any tile
-  over 500 KB?") had been replaced with another insufficient in the same way: a
-  property a correct build has that a broken build also has.
+  ⚠️ **HOW A CORRECTLY-MEASURED NUMBER PRODUCED A FALSE CLAIM — the instructive
+  part.** The 4.0% came from comparing an ocean+lakes **z0–6** control against
+  ocean-alone **z0–6**. Both z0–6, so the comparison was *internally valid*. But
+  **in a z0–6 build, z6 IS basezoom and carries full detail**, so budget pressure
+  there is at its maximum; in the shipped **z0–10** build, z6 sits four levels
+  below basezoom and is already thinned by the drop rate. **A ratio measured in
+  one zoom range was reported as a property of a file built over another.** Same
+  class as every other error in this file: a well-formed number answering a
+  question nobody asked.
 
-  ⚠️ **THE AGREEMENT OF TWO INSTRUMENTS WAS ACTIVELY HARMFUL — IT IS WHY BOTH
-  READERS STOPPED LOOKING.** Vertex counts and tile bytes are independent in how
-  they are computed and **identical in what they cannot see**: both measure how
-  the number MOVES, neither measures how LARGE it is. So the second instrument
-  bought the confidence that ended the inquiry and none of the coverage that would
-  have justified it. **Independence is not enough — instruments must be
-  independent IN THE DIRECTION OF THE ERROR.**
+  🛑 **AND THE EXPLANATION IT PROPPED UP IS NOW UNSUPPORTED.** A user's sighting
+  of square coastline at **z6.89** was attributed to z6 being at 4%. At 83%
+  retention that explanation does not hold. Either 83% vertex retention is still
+  compatible with visibly blocky coastline — plausible, since
+  `--coalesce-densest-as-needed` merges whole features and the missing 17% may be
+  concentrated in coastal detail rather than spread evenly — **or there is a
+  second cause at z6 that has not been identified.** Which of those is true is
+  **not known**, and it must not be resolved toward the convenient answer.
+  ⚠️ **Operational consequence: if the squares survive the rebuild, the cause is
+  not what anyone currently thinks**, and the interim workaround should stay until
+  it is found.
+
+  ✅ **What SURVIVES the retraction — the substantive point, unchanged.** The
+  shipped sequence rises at every step while retaining **40.3% at z3**, so
+  **monotonicity is a property of shape and cannot bound an error in magnitude.**
+  The acceptance criterion originally written for the rebuild — per-zoom
+  monotonicity in bytes and vertices — **would still have passed the broken
+  build.** That was true before this retraction and is true after it.
+
+  ⚠️ **THE AGREEMENT OF TWO INSTRUMENTS WAS STILL ACTIVELY HARMFUL, and note it
+  cut BOTH ways here.** Vertex counts and tile bytes are independent in how they
+  are computed and **identical in what they cannot see**: both measure how the
+  number MOVES, neither how LARGE it is. Their agreement bought the confidence
+  that ended the first inquiry. **Then a single unchallenged magnitude
+  measurement reversed a correct conclusion in the other direction** — so the
+  remedy is not "prefer magnitude over shape", it is that **a measurement must be
+  matched to the artefact it describes.** Independence is not enough; instruments
+  must be independent *in the direction of the error*, and comparable *in the
+  configuration under test*.
 
   ✅ **The test that works is a ratio against an absolute reference**: the same
   input, same flags, tiled with nothing competing. That is not a threshold anyone
