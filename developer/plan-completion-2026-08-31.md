@@ -4593,23 +4593,41 @@ only the scratch *inside* them.
 
 **Revised targets, split by volume — the `/vast` half is the valuable half:**
 
-| target | vol | size | notes |
+| target | vol | size | status / notes |
 |---|---|---|---|
-| `places_temporal-20260731t160000z` | `/vast` | 23 GB | ⚠️ confirm a SUCCESS snapshot exists **and** the index holds no alias first |
-| `/vast/ishi/tiles-verify` | `/vast` | 17 GB | |
+| `places_temporal-20260731t160000z` | `/vast` | 23 GB | ✅ **ALREADY DELETED 2 Sep** by S7 on SG's approval — `{"acknowledged":true}`, target 404, both aliases re-verified intact, data dir gone. **Do not re-run its precondition; a DELETE here now issues against a 404.** |
+| `/vast/ishi/tiles-verify` | `/vast` | 17 GB | 🛑 **NOT a free deletion — see below. A minimal known-bad reproducer must be extracted FIRST.** |
 | `/ix1/ishi/data/tiles/_step0` | `/ix1` | 2.7 GB | scratch only — **not** the sibling `.mbtiles` |
 | stale `*.geojsonl` in `/ix1/ishi/data/tiles` | `/ix1` | ~20 GB | incl. `osm_admin.*` from the May 2025 pre-rename era |
 
-**The `/vast` items are worth ~40 GB and are independent of `indexing-db`'s
-work**, which touches only `/ix1`. `/vast` is the constrained volume — 226 GB
-free of 1 TB, **shared with production Elasticsearch**, whose low watermark
-trips at 153.6 GB free and whose flood stage at **51.2 GB free turns every
-index read-only**. `/ix1` has 1,824 GB free of 5 TB and no ES on it, so the
-`/ix1` half is housekeeping with no urgency behind it.
+🛑 **`tiles-verify` IS THE ONLY KNOWN-BAD ARTEFACT SET IN EXISTENCE.** Those
+17 GB are the poly-less tilesets from the 7 August run, preserved deliberately
+so that a verifier can be **proved to fail** on them. This campaign's own
+doctrine is that every gate must be shown to FAIL on known-bad as well as pass
+on known-good — and **deleting these fixtures makes that permanently unprovable
+for every future verifier**, to reclaim 17 GB on a volume with 226 GB free and
+a low watermark at 153.6 GB. That is not urgent space.
 
-⚠️ **When released, stat `/vast/ishi`, never bare `/vast`** — the latter reports
-the 3.9 PB shared pool and is useless as a headroom signal (fixed in
-`build_geom_index_sqlite.sbatch`, `d506837`).
+✅ **Required before any deletion here: extract a minimal reproducer** — likely
+a few MB, one bucket's poly-less tileset plus its manifest — and delete only
+the bulk. If that reproducer does not exist, `tiles-verify` stays.
+
+**Remaining reclaim is therefore ~17 GB on `/vast` (gated as above) and ~23 GB
+on `/ix1`** — the 23 GB row is already freed and is *inside* the 226 GB figure,
+not additional to it. `/vast` is the constrained volume: 226 GB free of 1 TB,
+**shared with production Elasticsearch**, low watermark at 153.6 GB free,
+**flood stage at 51.2 GB free turning every index read-only**. `/ix1` has
+1,824 GB free of 5 TB and no ES on it, so its half is housekeeping.
+
+✅ **Reading `/vast` headroom — use ES, not `df`.** `_nodes/stats/fs` reports
+`path /vast/ishi/es/data  mount /vast/ishi  total 1099.5 GB  free 242.2 GB`,
+and `_cat/allocation` gives `disk.avail 225.5gb` (same measurement, GB vs GiB).
+This is the cheapest correct reading: it names the mount, needs no filesystem
+walk and no login-node ssh, and **it is the figure ES is actually watermarking
+on**, which is what decides flood stage. ⚠️ Bare `df /vast` reports the 3.9 PB
+shared pool and will show petabytes free while our 1 TB quota is nearly full —
+stat `/vast/ishi` if using `df` at all (that bug was live in
+`build_geom_index_sqlite.sbatch` until `d506837`).
 
 **Release condition:** `indexing-db` reports its `/ix1` footprint settled, and
 SG is satisfied the 3 Sep tilesets are stable enough to release the August
