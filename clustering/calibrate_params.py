@@ -86,9 +86,44 @@ DEFAULT_PARAMS = {
         "theta_synth": 0.70,          # create a synthetic edge (name+spatial pass)
         "theta_synth_structural": 0.60,  # structural shared-baseline synth edge
         "tau_name": 0.75,             # min s.n for the name signal to count
+                                      # ⚠️ ALSO A USER-FACING EDIT THRESHOLD — see below
         "tau_link": 1.0,              # hard-link confidence to force-merge
     },
 }
+
+# ---------------------------------------------------------------------------
+# ⚠️ TWO PROPERTIES OF THESE CONSTANTS THAT ARE NOT OBVIOUS FROM THE FIT
+# ---------------------------------------------------------------------------
+#
+# 1. A SINGLE-SIGNAL CONSUMER INHERITS AN UNREACHABLE FLOOR.
+#    The shared scorer always DEFINES ``signals.link`` — 0.0 when no hard-link
+#    edge exists — and always counts its weight in the denominator. So a pair
+#    carrying ONLY a name signal scores
+#
+#        (0.35 * name + 0.15 * 0) / 0.50
+#
+#    which caps a PERFECT name match at exactly 0.70. With
+#    ``theta_query + same_ns_penalty`` = 0.70 and the test being ``>=``, only a
+#    literal 1.0 cosine can ever merge. Measured (whg3, place#235):
+#    ``Newton``/``Newtown`` cosine **0.986** -> composite **0.690**, zero merges.
+#    That is not a strict threshold, it is an UNREACHABLE one.
+#    ✅ A consumer scoring on one signal must test that signal against its own
+#    calibrated threshold (``tau_name`` for names), NOT against the composite
+#    ``theta_*``. These weights are fitted on pairs where several signals are
+#    present; nothing in the fit says what happens when only one is.
+#    ⚠️ The same arithmetic will recur if ``distinct`` ever becomes a
+#    cannot-link signal with its own weight.
+#
+# 2. ``tau_name`` NOW GATES A USER-FACING DATA EDIT, not only internal scoring.
+#    Map-your-Data's near-duplicate column clustering (place#235, live 3 Sep)
+#    proposes rewriting cell values in a contributor's own dataset, and uses
+#    ``tau_name`` as its operating point. At 0.75 it groups ``Lisbon``/``Lisboa``
+#    at 0.822 — an exonym pair rather than a strict spelling variant, which SG
+#    confirmed is wanted for normalising a column. Every group is opt-out, so
+#    the failure mode is a proposal the user declines rather than data silently
+#    conflated.
+#    🛑 **A RECALIBRATION THAT MOVES ``tau_name`` CHANGES WHAT WHG PROPOSES TO
+#    REWRITE IN SOMEONE ELSE'S DATA.** Treat it as an interface, not a tunable.
 
 
 # ---------------------------------------------------------------------------
