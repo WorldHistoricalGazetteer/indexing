@@ -26,21 +26,36 @@ cell, with two positive controls whose answers were known in advance. And
 `geom_class` was never wrong — `helpers.py:1053` folds `Point` **and**
 `MultiPoint` → `"point"` deliberately, and a MultiPoint genuinely is not areal.
 
-🛑 **But the audit found the MIRROR defect, which is live and worse.** All
-**7,529** `whg` point-class geometries with a stored geometry are MultiPoints,
-and **every one has a single-cell `h3_cover` — including the 546 with real
-extent.** `whg:1381:18` (Silk Roads corridor) spans **46.27° of longitude** and
-is covered by **one cell**; `whg:1361:9` (Danube) spans 21.59° and is covered by
-one cell **at its eastern mouth**. Since `h3_cover` drives `containment=fuzzy`,
-**a fuzzy scope over Austria, Hungary or Germany does not return the Danube** —
-a recall failure invisible to any count, because the field is present and
-populated. Mechanism: `select_h3_cover_geometry` returns non-polygonal geometry
-unchanged, so a MultiPoint never reaches the areal path.
-⚠️ Plausibly a **side-effect of 2.11**, which was correct by its specification —
-it replaced hull-derived covers with covers computed from the stored geometry,
-and for a MultiPoint that is one cell. The pre-remediation hull may have had
-*better* recall than the "correct" cover that replaced it. The 31 MB rollback
-would settle cause vs. pre-existing.
+🛑 **But the audit found the MIRROR defect, which is live: 248 `whg` features
+whose `h3_cover` was shrunk to a single cell by 2.11.** All 7,529 `whg`
+point-class geometries with a stored geometry are MultiPoints carrying
+single-cell covers; **546 have real extent, and the rollback comparison splits
+those cleanly**:
+
+* **248 — ACTIONABLE, caused by 2.11.** Found in the retained rollback, and
+  **248 of 248 were shrunk**, no exceptions: `whg:1361:9` (Danube) went
+  **1,230 cells → 1**, `whg:1381:18` (Silk Roads corridor, 46.27° of longitude)
+  **892 → 1**. Since `h3_cover` drives `containment=fuzzy`, **a fuzzy scope over
+  Austria, Hungary or Germany no longer returns the Danube** — a recall failure
+  invisible to any count, because the field is present and populated.
+* **298 — NOT a defect, no action.** Absent from the rollback, so untouched by
+  2.11, and a 1-cell cover is *correct* for them: the widest spans **0.02°**
+  (~2 km), inside one cell at the resolutions in use.
+
+Mechanism: `select_h3_cover_geometry` returns non-polygonal geometry unchanged,
+so a MultiPoint never reaches the areal path and `compute_h3_fields` yields the
+single centroid cell whatever the extent.
+
+🛑 **The fix is NOT to restore the rollback values.** Those covers were
+**hull-derived** — precisely what 2.11 was correctly built to remove — so
+restoring them reinstates the over-coverage defect to cure the under-coverage
+one. **2.11 was right to change them and wrong about what to change them to.**
+The proposed fix is to cover a MultiPoint's **member cells** (one cell per
+member point), *not* its hull: the Silk Roads hull is a 46°-wide swath across
+Asia the corridor never touches, which is over-coverage arriving by a new door.
+Member cells cover where the place is and nowhere else. `geom_class` stays
+`point`, so these remain findable *within* a scope and can never *define* one —
+the two fields are independent by design. **Awaiting SG's decision.**
 
 ⚠️ **Still open:** a **top-level `h3_cover`** that is stale, diverged from the
 nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
@@ -726,9 +741,10 @@ the gitignored **`.env.local`**, never the tracked `.env`.
   no trace) and to its inverse, `geom_class = point` carrying an areal
   `h3_cover` — ⚠️ ~~248 of 248 defective~~ **now 0 of 213,081, closed 3 Sep**.
   The live problem is the opposite one and the predicate is blind to it too:
-  **a MultiPoint with real extent carrying a ONE-CELL cover** (546 of `whg`'s
-  7,529 stored MultiPoints, up to 46° of span), which silently fails
-  `containment=fuzzy` recall. **`h3_cover` size is independent of `geom_class`
+  **a MultiPoint with real extent carrying a ONE-CELL cover** (of `whg`'s 7,529
+  stored MultiPoints, 546 have real extent and **248 are actionable** — shrunk
+  by 2.11, up to 46° of span; the other 298 are genuinely point-like at ≤0.02°),
+  which silently fails `containment=fuzzy` recall. **`h3_cover` size is independent of `geom_class`
   and neither field constrains the other** — that independence is the point of
   the separation, and it is also where both defects hide. See
   `schemas/field-notes.md`.
