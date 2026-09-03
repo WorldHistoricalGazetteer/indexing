@@ -1219,6 +1219,59 @@ were resolved one at a time. Per-item marks cannot repair it — a reader scanni
 for open work sees the heading and the item count. **Headings go stale silently
 because nobody re-reads a heading they wrote.**
 
+⚠️ **TWO LAYERS BOTH OWNING ONE BEHAVIOUR PRODUCE CHANGES THAT LOOK EFFECTIVE
+AND ARE NOT.** Measured 3 Sep 2026, and this is a *structural* fault rather than
+a measurement one — the only such entry in this file, and the more valuable for
+it.
+
+`whg-context` declares `maxzoom: 10` on its boundary layers. The Atlas client's
+`showBoundaries` calls `_widenLayerZoomRange` → `setLayerZoomRange(id, 0, 24)` on
+every layer of an activated tier — **with a comment saying it does so precisely
+because the style's z10 ceilings make a chosen tier vanish as you zoom in.** So
+the server-side cap and the client-side widener are both trying to own "at which
+zooms does this layer draw", and the client silently wins.
+
+**place#233 item 5 removed the server-side cap. Measured against the pre-change
+style served side by side, on identical client code:**
+
+```
+                                    PRE (capped)   POST (uncapped)
+  DEFAULT path — the tier the client activates itself
+    osm-line-local  z11                    113            113
+    osm-line-local  z12                     27             27    <- IDENTICAL
+  DIRECT path — visibility forced, bypassing showBoundaries
+    osm-line-state  z11                      0              4
+    osm-line-dist   z11                      0              7    <- the only effect
+```
+
+**Correct, and inert.** The one layer a default user sees was already being
+widened client-side, so the cap was never what they hit; the layers that do
+change are reachable only by a probe forcing visibility, down a path the app
+never takes.
+
+🛑 **The dangerous property is that BOTH readings survive inspection of either
+side alone.** Read the style: the cap is real and removing it must matter. Read
+the client: the widener is real and the cap cannot matter. **Only running the two
+styles against the same client distinguishes them**, and that comparison was
+impossible until the superseded style was deliberately re-served at a second
+endpoint — the old artefact had ceased to exist, so the question was
+unanswerable rather than merely unanswered. ⚠️ **Keeping a superseded artefact
+addressable is what made this measurable at all.**
+
+⚠️ **And the probe's own confirmation line was broken in the same way.** It
+printed a "served maxzoom" read from `map.getStyle()` — **the LIVE style, already
+widened** — so it reported 24 for both runs including the capped one, confirming
+nothing. What actually proved the two runs loaded different styles was the
+`osm-line-state` 0 → 4 difference. **A route-confirmation read from the
+post-override surface cannot confirm the route**, and the error occurred inside
+the probe built to make exactly that distinction.
+
+**The remedy is not a better test.** Two owners of one behaviour must be reduced
+to one: either the style stops declaring caps the client overrides, or the client
+stops widening and honours the style. Until then, every change to either will
+look effective and may not be — and no amount of testing rigour prevents it,
+because the test can only ever show what the *current* pair does.
+
 ## ⭐ Class H — a TRUTHFUL status record that prevents recovery
 
 ⚠️ **AN OPEN QUESTION IS A STATUS RECORD TOO, AND IT DECAYS THE SAME WAY.**
