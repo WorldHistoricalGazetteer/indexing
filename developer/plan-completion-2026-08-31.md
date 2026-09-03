@@ -87,7 +87,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ✅ **PURPOSE SERVED 2 Sep** — it gated 2.7's `gn`/`wd`, and 2.7 is complete. The causal chain was demonstrated end to end (`un` hull cover → tier 1 inert → islands dropped; fix it and all 15 `nl` territories resolve). Questions 1 and 4 CLOSED; **2 and 3 remain open but gate nothing and are now UNOWNED, not S9's** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
-| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ✅ **DONE 2-3 Sep — 73 tilesets pushed, 0 gate refusals across the corpus.** 2.7's gate was met (S8, 2 Sep). Every polygon-bearing bucket passed `store N/N hull 0 point 0`; the two point-only gazetteers passed `store 0/0`; 2 buckets legitimately empty (`whg-1642`, `whg-1644`). **Independently verified** by the coordinator from tile coordinates computed off each tileset's own bounds, not S5's samples. See §3.1 |
 | **S6** (`whg3-74`) | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ✅ **DONE 3 Sep — LIVE ON PROD** (`whg3` main `8e0fe8f29`, dev `8f3af0191`). Verified on the live map, not just in the data: prod rows match dev **exactly**, incl. source-feature counts. Found and fixed a defect in *this* repo — see §3.2 |
 | **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
 
@@ -306,7 +306,7 @@ fresh as the last session that remembered to tick one.
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
 | **S5** | ⚠️ **2.5 COMPLETE — a hard gate, not an either/or (SG, 31 Aug).** Verify with the pipeline's **own** resolver, not `ls`: a stub is a valid file of the right name. `gn` **13,454,817**, `wd` **11,459,393**, `nl` **4,363** staged docs, each delta 0 against the live index | all three PASS |
 | **S5** | ❌ **WITHDRAWN — does not work.** `TILE_ES_DOC_NAMESPACES=gn,wd` was offered here as an escape hatch; `submit_tiles_slurm` **never consults it** (§3.1), so it cannot make an ineligible bucket eligible. Kept struck so nobody re-offers it. **Costs a ~24.5 M-document scan of production ES** and leaves the staged trees still wrong for the next consumer. Use only if the Beta genuinely cannot wait for `gn`'s extract | not the default |
-| **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
+| **S6** | ✅ **SATISFIED 3 Sep** — 3.1 deployed and independently verified; the nine formerly poly-less layers serve real MVT geometry (`clio` z9 2,501 B → 6,705 B decompressed, `kain_par` 39,321 B, and six more) | polygons present |
 | **S7** | S6 done and the map looked at | — |
 
 ---
@@ -4313,6 +4313,22 @@ trade. ⚠️ If the gateway ever recreates the file it may revert to `644`; the
 durable form is a `002` umask on the gateway service.
 
 ## Phase 3 — publication (Atlas, Beta-gated)
+
+### ✅ 3.1 IS COMPLETE — 2-3 Sep. The sections below are the RECORD OF HOW IT WAS MADE SAFE, not live blockers.
+
+**73 tilesets built and pushed, 0 gate refusals across the entire corpus**, 2
+buckets legitimately empty. The nine layers that had been serving points with no
+polygons — `clio`, `kain_par`, `po`, `vob_lgd`, `vob_rd`, `hgis`, `vob_rc`,
+`vob_cty`, `ukhc` — now serve real geometry, **verified independently** from
+tile coordinates computed off each tileset's own bounds rather than from S5's
+samples. `clio` alone went `poly=0 point=15,690` (6.3 MB, 7 Aug) →
+`poly=15,690 point=0` (2,628.8 MB, 2 Sep).
+
+⚠️ **Everything below is retained deliberately.** Each 🛑 and ⚠️ heading marks a
+trap that was found *before* it fired, and the reasoning is what made the retile
+safe. **Read them as history; none is an outstanding blocker.**
+
+---
 
 ### 🛑 3.1 PRE-RETILE GATE — a geom-store miss renders the HULL, not a point, and every planned check passes
 
