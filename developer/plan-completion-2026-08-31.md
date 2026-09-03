@@ -87,9 +87,52 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S9** (cont.) | 2.10 | **Diagnose the ccode H3 prefilter** — why small islands whose country polygon contains them are dropped before any polygon test. Code-reading, no staged writes. **Gates 2.7's `gn`/`wd`.** ⚠️ ~~Resolve the mainland-control contradiction first~~ — **ANSWERED**; see §2.10. Questions 2 and 3 only. | ✅ **PURPOSE SERVED 2 Sep** — it gated 2.7's `gn`/`wd`, and 2.7 is complete. The causal chain was demonstrated end to end (`un` hull cover → tier 1 inert → islands dropped; fix it and all 15 `nl` territories resolve). Questions 1 and 4 CLOSED; **2 and 3 remain open but gate nothing and are now UNOWNED, not S9's** |
 | **S9** (cont.) | 2.9 | Code-only residuals. | ✅ **DONE** — `a4ada2d` ccode preload (+ position-asserting test), `dbf789f` ukhc backfill (read fix **and** the silent-zero report), `1179664` `_unlink_quietly` narrowness pin, `4b1f8ca` og `geom_key` **and** writer, `3225fc6` symlink spec. Verified here. ⚠️ Resolver hoist still withheld behind 2.7 |
 | **S8** (`indexing-c0`) | ✅ **2.7 DONE 2 Sep** + the `un` recompute | Give `gn`/`wd`/`nl` a real `final/`; **and recompute `un`'s cover** (SG, 1 Sep). **Gates S5 and the overlay publish.** | ✅ **DONE 2 Sep** — all four namespaces have a real `final/`; row counts verified independently by the coordinator (`un` 247 / `nl` 4,363 / `gn` 13,454,817 / `wd` 11,459,393). Three residuals recorded, none blocking. **S8 dischargeable** |
-| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ✅ **DONE 2-3 Sep — 73 tilesets pushed, 0 gate refusals across the corpus.** 2.7's gate was met (S8, 2 Sep). Every polygon-bearing bucket passed `store N/N hull 0 point 0`; the two point-only gazetteers passed `store 0/0`; 2 buckets legitimately empty (`whg-1642`, `whg-1644`). **Independently verified** by the coordinator from tile coordinates computed off each tileset's own bounds, not S5's samples. See §3.1 |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ✅ **DONE 2-3 Sep — 73 tilesets pushed, 0 gate refusals across the corpus.** 2.7's gate was met (S8, 2 Sep). Every polygon-bearing bucket passed `store N/N hull 0 point 0`; the two point-only gazetteers passed `store 0/0`; 2 buckets legitimately empty (`whg-1642`, `whg-1644`). **Independently verified** by the coordinator from tile coordinates computed off each tileset's own bounds, not S5's samples. See §3.1. **⚠️ THE RETILE IS ONLY THIS ROW'S FIRST PACKAGE** — S5 was given five more after it (field deletions, corpus-wide `h3_coverage`, the 40,465-doc backfill, 4.20's four fall-through items, the ice rebuild). SG reports S5 finished 3 Sep; close-out requested and **partially verified here** — see the S5 close-out block below the map. |
 | **S6** (`whg3-74`) | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ✅ **DONE 3 Sep — LIVE ON PROD** (`whg3` main `8e0fe8f29`, dev `8f3af0191`). Verified on the live map, not just in the data: prod rows match dev **exactly**, incl. source-feature counts. Found and fixed a defect in *this* repo — see §3.2 |
 | **S7** (`indexing-57`) | 3.3 | Post-retile cleanup. ⚠️ **Scope revised TWICE on 3 Sep — re-read §3.3; the reproducer protocol is dropped and `tiles-verify` is not what it was described as.**  ⚠️ **Scope revised 3 Sep — re-read §3.3 before acting; the original target list predates the second tile generation.** | 🛑 **WAIT** — 3.1 is done, but `/ix1` has a live writer (`indexing-db`, ~250 GB peak) and **both** tile generations must survive. `/vast` half (~40 GB) is the valuable half and is independent of that writer |
+
+### S5 close-out — verified independently, 3 Sep
+
+⚠️ **S5's own report is not an independent measure of S5's work.** What follows is
+measured from the live index by the coordinator; S5's account is being collected
+separately and any disagreement will be resolved before either is written as fact.
+
+**✅ Package 8 — index-side field deletions: LANDED, verified.**
+
+```
+geometries.h3_cover  (nested)   50,299,792 docs   <- the REAL field, intact
+h3_cover     (top level, text)           0 docs   <- values deleted
+h3_centroid  (top level, text)           0 docs   <- values deleted
+descriptions (nested)               26,867 docs   <- CONTROL, matches §4.17 exactly
+depictions   (nested)                    0 docs   <- the genuine dead declaration
+```
+
+**This closes the last open `h3` item in `CLAUDE.md`** — the top-level `h3_cover`
+that was *"stale, diverged from the nested truth, and read by nothing"* now holds
+no values, while `geometries.h3_cover` is populated on 50,299,792 of 51,187,900
+docs (the 888,108 difference being docs with no geometry at all).
+
+⚠️ **The mapping still declares `h3_cover` and `h3_centroid`, and that is not a
+residual.** ES cannot remove a field from a mapping — only its values. A future
+reader diffing mapping against schema will see them again; §4.17's diff is a
+*mapping* instrument and cannot see that the values are gone.
+
+🛑 **THE FIRST RUN OF THIS CHECK RETURNED FIVE FALSE ZEROS, INCLUDING ON THE
+FIELD THAT MUST EXIST.** A plain `exists` on `geometries.h3_cover` returned **0**,
+as did `descriptions` — because `geometries`, `descriptions` and `depictions` are
+**`nested`**, and `exists` does not match inside a nested container. Had that run
+been trusted, it would have reported the corpus had lost its H3 covers entirely.
+**What caught it was carrying a control with a known answer**: `descriptions` was
+recorded at 26,867 in §4.17, the check said 0, and the discrepancy condemned the
+instrument rather than the corpus. §4.17 warned of exactly this and it still
+happened to a reader who had just read the warning — put it beside *"documentation
+does not prevent this and only the control does."*
+
+**◐ Remaining packages — NOT yet verified here, awaiting S5's close-out with
+denominators:** corpus-wide `h3_coverage` (how many namespaces of how many
+expected), the 40,465-doc backfill's re-census, 4.20's four items A/B/C/D, whether
+4.19 was reached at all, and — the one that matters most — **anything S5 was given
+and did not finish.**
 
 **Order:** S1, S2, S3 and S4 are mutually independent *in their work*; see the
 concurrency rules below before running them at the same time. Only S2 gates S5.
