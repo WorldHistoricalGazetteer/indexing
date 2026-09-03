@@ -5331,7 +5331,7 @@ prevent any attempt to repopulate the dropped fields?"* It did not, and it must.
 |---|---|---|
 | root `source` 2,991,143 | **`authorities/tgn-places.py:298`** — the ONLY writer | delete one line, then drop from index |
 | root `h3_cover` / `h3_centroid` | 7 authority scripts + `update_merge.py:244` / `apply_update_patch.py:92` | ✅ prescribing docstring already fixed (`5a02753`); remove the writes, then drop |
-| root `timespans` 82,508 | writer TBD — **all 202 are `dgsd`**, one namespace | **migrate the 202 sole-source docs FIRST**, then writer, then drop |
+| root `timespans` 82,508 | ✅ **NO writer change — the field was always correct** | ✅ **DECLARED, not deleted** (SG, 3 Sep, `c66caa3`) — see below |
 | `description` → `links` 2,057 | `nl` + `whg` writers | content migration, not a schema change |
 | Group D (12 fields) | one authority each | declare-as-intentional **or** remove the write |
 
@@ -5358,6 +5358,32 @@ hits are ES scripting and are not fields at all. An earlier note here named only
 ⚠️ **An earlier note said root `source` was written by "~24 authority scripts".
 Wrong, and contradicted by its own evidence** — the doc count 2,991,143 is
 *exactly* `tgn`'s document total, so no second writer is possible.
+
+✅ **ROOT `timespans` — RESOLVED 3 Sep BY DECLARING IT, and the planned
+migration turned out to be unexecutable.** SG's decision (option a), commit
+`c66caa3`. The plan said *migrate the 202 into a nested path, then drop the
+field*. On inspection that could not be done and should not have been:
+
+* **all 202 carry ZERO geometries**, so `geometries[].timespans` cannot receive
+  them;
+* moving a place lifespan onto `toponyms[].timespans` would silently restate
+  *"this place existed 965–1170"* as *"this **name** was in use 965–1170"* — a
+  different claim about the data;
+* and the field is **not a stray**: it is confined to exactly two authorities,
+  `chgis` (81,292) and `dgsd` (1,216), and is `dgsd`'s normal convention. The
+  202 are not malformed — they are simply the subset with nothing else dated.
+
+**There is no declared home for a place-level lifespan and two authorities
+deliberately write one** — the same shape as `depictions`, kept for the same
+reason. Declared `nested`, identical to its three siblings. Nothing migrated, no
+writer changed.
+
+⚠️ **CARRY THIS TO THE NEXT FULL REBUILD:** the live index maps root `timespans`
+**dynamically as `object` (not `nested`)**, carrying only `start.in`/`end.in`
+because that is all the data exhibited — so `earliest`/`latest` are absent and
+**nested queries against the root path fail on the current index**. The schema
+now matches its siblings; the live mapping converges only at the next full
+rebuild. **Re-check it there.**
 
 **Suggested order:** 1 `source` (2.99 M, zero risk, ONE LINE) · 2 declare Group A
 (closes the strict-mapping hazard) · 3 root `timespans` (migrate 202, then
