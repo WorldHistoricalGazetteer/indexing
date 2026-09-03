@@ -3870,6 +3870,31 @@ to 1,230 cells.
 **SG confirmed directly to S9 (who declined to act on my relay — correctly).
 Write executed, and verified here rather than relayed.**
 
+⚠️ **SCOPE NOTE ADDED 3 Sep — not a fault, a boundary of the specification.**
+2.11 fixed over-coverage for **5,268** geometries and **introduced
+under-coverage for 248 of them**, because *"recompute the cover from the stored
+geometry"* is right for polygons and wrong for **MultiPoints**:
+`select_h3_cover_geometry` returns non-polygonal geometry unchanged, so a
+MultiPoint never reaches the areal path and `compute_h3_fields` yields a single
+centroid cell whatever the extent. Established from 2.11's own retained
+rollback (Auditor, 3 Sep): of the 546 live `whg` multi-point features with real
+extent, **248 appear in the rollback and 248 of 248 were shrunk** — Danube
+`whg:1361:9` **1,230 cells → 1**, Silk Roads `whg:1381:18` **892 → 1**. The
+other 298 are absent from the rollback and correct as they stand (widest span
+0.02°).
+
+**Every other one of the 5,268 was improved**, and the arithmetic closes
+exactly: the rollback's `whg` half is 1,746 = area 888 + line 610 + **point
+248**, with the 248 derived independently from live geometry classes and bounds.
+
+🛑 **The remedy is NOT to restore the rollback values** — those were
+hull-derived, which is what 2.11 correctly removed. **2.11 was right to change
+them and wrong about what to change them to.** Proposed: cover a MultiPoint's
+**member cells**, not its hull (the Silk Roads hull is a 46°-wide swath the
+corridor never touches — over-coverage by a new door), leaving
+`geom_class = "point"` so these stay findable *within* a scope and can never
+*define* one. **Awaiting SG's decision.**
+
 ```
 frame            clio 15,683 + whg 2,565 = 18,248     recomputed 18,248, unresolved 0
 DEFECTIVE        clio 3,522 + whg 1,746 =  5,268      matched the census EXACTLY
