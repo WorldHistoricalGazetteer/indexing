@@ -4983,6 +4983,70 @@ the counterweight to "17 GB", so it must not stand at 29. A composition count of
 
 ✅ **EXECUTED 3 Sep — and both halves landed with their denominators.**
 
+✅ **BOTH ROWS COMPLETE. `/vast` 32.6 GB freed + 8.87 GB relocated; `/ix1`
+59.5 GB freed.**
+
+🛑 **BOTH `/ix1` FIGURES IN THIS PLAN WERE UNDERSTATED BY MORE THAN DOUBLE:**
+
+```
+                          plan said   actually was       deleted
+_step0                       2.7 GB   5,872,418,513 B    59 of 59
+stale *.geojsonl in tiles     22 GB  53,613,429,797 B   221 of 221
+                                     --------------
+                                     59,485,848,310 B   280 files
+denominator: 295 files at depth 1 in /ix1/ishi/data/tiles, plus _step0's 59
+```
+
+⚠️ **Preconditions were enforced INSIDE the job, ahead of every `rm`**, so a
+surprise would have exited rather than been noticed afterwards: August generation
+= 74 `.mbtiles`, September = 73, `clio.mbtiles` = 6,336,512 B exactly,
+`gn_capitals.mbtiles` = 3,121,152 B exactly, and **zero `.geojsonl` newer than
+2026-08-08**. The staleness test was **structural, not assumed** — all 221 date
+1 May – 7 Aug and **not one postdates the September retile**; a September-dated
+intermediate would have refused the job.
+
+⭐ **75 KB PRESERVED AGAINST 5.87 GB DELETED, AND IT ANSWERS A DISPUTE THIS
+CAMPAIGN SPENT A ROUND TRIP ON.** `_step0` was not homogeneous: five `ohm.*` band
+files held 5,871,481,474 of its bytes; the other **54 files were 936,978 bytes of
+logs and scripts**, now at `/vast/ishi/s7-move/step0-logs-20260903.tar.gz`.
+Seven build scripts (`step0.sbatch`, `step0b.sbatch`, `step0d.sbatch`,
+`wdcal.py/.sbatch`, `wdprec.py/.sbatch`) exist nowhere else. And the tippecanoe
+logs carry, verbatim:
+
+```
+tile 0/0/0 size is 2176885 with detail 12, >500000
+Going to try keeping the sparsest 18.37% of the features to make it fit
+```
+
+🛑 **That is contemporaneous, per-band, percentage-quantified evidence of the
+500 KB ceiling dropping features at low zoom — the exact question two sessions
+argued from single tile samples on 3 Sep, one inferring cap pressure from a
+493 KB tile and the other "refuting" it with uncompressed bytes.** Both were
+wrong; the answer was sitting in a log file that was hours from deletion.
+
+⚠️ **And it settles the ceiling's real role, which neither argument got right.**
+The cap *is* causal — it drops features exactly as the log says — but not by
+starving the ocean directly: the tile was over budget because of the lake count,
+and `--drop-densest-as-needed` evicts across the whole tile. **The ceiling was the
+mechanism's engine, not its subject.** A reader who sees "500 KB pressure:
+retracted" must not conclude the budget is irrelevant.
+
+⚠️ **`_step0`'s five large files were an EARLIER generation (29 Jul) of five of
+the very band fixtures relocated to `/ix1` that morning (6–7 Aug).** The later set
+was kept, so nothing unique was lost — but the two sets differ only by date, and
+a cleanup that had reversed the two would have looked identical in its report.
+
+🛑 **NOT ON ANY LIST, FLAGGED BY S7 AND UNOWNED:
+`/ix1/ishi/data/tiles-20260902-retile` holds 185 `.geojsonl` totalling
+27,843,077,990 bytes — 27.8 GB of the SEPTEMBER run's own intermediates.**
+Untouched, and deliberately so: they belong to **the generation currently
+deployed**, so whether that scratch is releasable is a judgement about the live
+generation rather than cleanup. **SG's call, not a session's.**
+
+ℹ️ `df` on `/ix1/ishi` reads 1.8 T either side — it rounds to 0.1 TB and the
+volume has another writer, so **the byte total above is the honest figure and the
+`df` delta is not.**
+
 ```
 /vast/ishi/tiles-verify        81 files examined, 18,082,186,467 B
   released  38 .mbtiles + 10 journals + 4 .py = 52 of 81   9,210,792,227 B
