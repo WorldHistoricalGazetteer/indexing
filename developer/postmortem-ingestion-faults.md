@@ -807,14 +807,55 @@ broken. These are worse than no check, because they are cited as evidence.
 
   ```
   NW Europe    z0    z1    z2     z3     z4     z5     z6
-    vertices  2020  3391  5509   1917  11767   7479  37108   ← z3, z5 troughs
-    bytes     326K  349K  493K    40K    95K    28K    91K   ← same troughs
+    vertices  2020  3391  5509   1917  11767   7479  37108   ← "z3, z5 troughs"
+    bytes     326K  349K  493K    40K    95K    28K    91K   ← same
     NE verts   682  1391  2435   4054   5937   7868   9534   ← monotonic
   ```
 
   Every tile returns **HTTP 200**. Nothing is missing; the tiles are simply thin.
   This is why no availability check, no checksum, and no size-of-file gate could
   see it either.
+
+  🛑 **AND THE TROUGH READING ABOVE IS ITSELF THE SAME MISTAKE, ONE LEVEL DOWN —
+  THE OCEAN WAS DEGRADED AT EVERY ZOOM.** Measured against the same ocean tiled
+  **alone** (same flags, same input, competition the only variable):
+
+  ```
+  ocean at z6, tiled ALONE          3,733,802 vertices
+  ocean at z6, with lakes present     148,670 vertices   =  4.0%
+  ocean at z3, with lakes present                        =  1.0%
+  ```
+
+  ⚠️ **The shipped sequence 7,851 → 29,465 → 52,666 → 148,670 IS MONOTONIC** — it
+  rises at every step while sitting **two orders of magnitude below where it
+  belongs**. So z3 and z5 were merely the zooms where the damage was loud enough
+  to break monotonicity; the workaround built on that reading replaced the zooms
+  where the defect was *visible*, not the zooms where it *existed*, which is why a
+  user still saw square coastlines at z6.89.
+
+  🛑 **MONOTONICITY IS A PROPERTY OF SHAPE; THIS DEFECT IS IN MAGNITUDE. A shape
+  test can never bound a magnitude error**, and the acceptance criterion written
+  for the rebuild — per-zoom monotonicity in bytes and vertices — **would have
+  passed the broken build** at z4 upward. One insufficient check ("is any tile
+  over 500 KB?") had been replaced with another insufficient in the same way: a
+  property a correct build has that a broken build also has.
+
+  ⚠️ **THE AGREEMENT OF TWO INSTRUMENTS WAS ACTIVELY HARMFUL — IT IS WHY BOTH
+  READERS STOPPED LOOKING.** Vertex counts and tile bytes are independent in how
+  they are computed and **identical in what they cannot see**: both measure how
+  the number MOVES, neither measures how LARGE it is. So the second instrument
+  bought the confidence that ended the inquiry and none of the coverage that would
+  have justified it. **Independence is not enough — instruments must be
+  independent IN THE DIRECTION OF THE ERROR.**
+
+  ✅ **The test that works is a ratio against an absolute reference**: the same
+  input, same flags, tiled with nothing competing. That is not a threshold anyone
+  chose, so ~100% is a criterion rather than an argued number. The fix returns
+  **100.0% at every zoom z0–z6** against the shipped build's 1.0% and 4.0%, and
+  the rebuild's gate **refuses** below 95% rather than reporting. Monotonicity was
+  removed from the gate entirely — keeping it as a secondary check would leave a
+  passing line in the output for a broken build, and someone under time pressure
+  reads the line that passes.
 
   ⚠️ **A SECOND INSTANCE OF THIS CLASS OCCURRED WHILE DIAGNOSING THE FIRST, IN
   BOTH DIRECTIONS, AND THE STRUCTURAL RECORD SETTLED IT.** The coordinator noted

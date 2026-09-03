@@ -2213,11 +2213,15 @@ re-tested.
 1. Why does a mainland point test as uncovered while 1,532 `US` resolutions
    happened? (Is my per-resolution containment test wrong, or is the cover
    genuinely that sparse?)
-2. What is actually passed as `un_records`? I read
-   `staged/un/final/places.jsonl` — the ccode run may not use that.
-3. Is `un.h3_coverage.json` consumed anywhere at all? `submit_h3_slurm`'s comment
-   calls it "the ccode enrichment pre-filter, when namespace == un", but
-   `build_un_prefilter` does not read it. Stale comment, or a second path?
+2. ~~What is actually passed as `un_records`?~~ ✅ **ANSWERED:**
+   `_load_un_records` → `_iter_staged_docs(UN_NAMESPACE)` → **`h3_merged`, not
+   `final`.** (The guess recorded here — `staged/un/final/places.jsonl` — was
+   wrong.)
+3. ~~Is `un.h3_coverage.json` consumed anywhere at all?~~ ✅ **ANSWERED: yes.**
+   Written by `gazetteer_h3_coverage`, read by `push_gazetteer_inventory`
+   (1.76 MB, 76,638 compacted cells). `build_un_prefilter` genuinely does not
+   read it — the **`submit_h3_slurm` comment was stale**, and is fixed in
+   `3e91395`. So "stale comment", not "a second path".
 4. Unproven hypothesis, offered only as a starting point: `compute_h3_fields`
    simplifies large polygons before polyfill, which would drop small offshore
    islands from a country's cover. That fits the islands and **not** the control.
@@ -3704,13 +3708,28 @@ namespace of the same fault", implying a single incident. It is **the same class
 in at least two separate occurrences, months apart, and the earlier one reached
 production.**
 
-**NOT established — do not read this as bounded:**
+✅ **BOTH GAPS BELOW WERE CLOSED THE SAME DAY — this block is superseded and is
+retained only to show what was unknown at the time (Auditor, 3 Sep).**
 
-* **`whg` has never been checked against live.** It is **78% defective in
+```
+whg   CENSUSED  1,746 of 2,565 live-defective (68.1%)   2,565/2,565 found
+clio  CENSUSED  3,522 of 15,683 live-defective (22.5%)  15,683/15,683 found
+      3,522 + 1,746 = 5,268 — matched the remediation census EXACTLY
+```
+
+🛑 **Do NOT act on the two bullets below. They direct effort at completed work**,
+and one of them labels it *"highest-value outstanding measurement in the
+campaign"* — a reader following it spends a Slurm job reproducing a census that
+closed exactly. This is the most damaging form of a stale status line: not merely
+misleading but actively misdirecting.
+
+* ~~**`whg` has never been checked against live.** It is **78% defective in
   staging** and is the obvious next candidate. **Highest-value outstanding
-  measurement in the campaign.**
-* **How many of `clio`'s 15,690 are affected in production** is unknown. The
-  309 all differ; an earlier uniform sample put staged `clio` at ~22%.
+  measurement in the campaign.**~~ ⚠️ **And `78%` is doubly stale: it came from
+  n=45 and S9 retired it — the figure to use is 61% at n=200.**
+* ~~**How many of `clio`'s 15,690 are affected in production** is unknown. The
+  309 all differ; an earlier uniform sample put staged `clio` at ~22%.~~
+  (The ~22% guess was almost exactly right: 22.5% measured.)
 * `nl` and `un` appear **fine in production** (`samish` live 103 == fresh;
   `un:usa` live 376 == extract), so this is **not universal** — which is exactly
   why per-namespace measurement replaces the date argument.
@@ -4287,7 +4306,15 @@ precisely the failure this campaign has been dismantling.
    defective — **a second defect, not a hull leftover** (the convex hull of a
    Point is a Point). Their covers are now correct *for their stored polygons*;
    if `geom_class` is wrong it is still wrong.
-3. **§2.10 questions 2 and 3** — open, gating nothing.
+3. ✅ **§2.10 questions 2 and 3 — BOTH ANSWERED, and the answers were already
+   in this document (Auditor, 3 Sep).** Q2: `ccode_enrichment._load_un_records`
+   calls `_iter_staged_docs(UN_NAMESPACE)`, which reads **`h3_merged`, not
+   `final`** — stated at §2.11 and 1,600 lines above this line. Q3:
+   `un.h3_coverage.json` **is** consumed — written by `gazetteer_h3_coverage`,
+   read by `push_gazetteer_inventory`, 1.76 MB / 76,638 compacted cells; the
+   stale part was the `submit_h3_slurm` Batch-7 comment, fixed in `3e91395`.
+   ⚠️ **This entry told a reader to re-investigate a question this file answers**
+   — the rediscovery tax, charged twice in one campaign.
 4. ✅ **`clio` +2,986 — DERIVED AND DISCHARGED 3 Sep. It was never unsourced;
    it was the point→polygon conversion count, and the conversion has happened.**
    From the tile-generation logs:
@@ -4878,8 +4905,14 @@ never the `.mbtiles`" rule.
 ✅ **AND THE ONE REAL REASON TO KEEP PART OF `tiles-verify` IS ALREADY IN THIS
 PLAN, IN PHASE 1**: its **29 `.geojsonl` band files** are *"the cheap fixtures
 for exercising the tile builder before Phase 3"*. **That justification survives —
-and it is 29 files, not 17 GB.** It is also a different claim from the one §3.3
+and it is 21 files, not 17 GB.** It is also a different claim from the one §3.3
 was making.
+
+⚠️ **Corrected 3 Sep: 21, not 29.** Eight of the 29 are **zero bytes** (all
+`e3b0c44298fc…`, the sha256 of the empty string — 29 files, 22 distinct hashes).
+The argument survives at 21, but **the number was doing rhetorical work here** as
+the counterweight to "17 GB", so it must not stand at 29. A composition count of
+29 elsewhere is correct — that is a file census, not a claim about usability.
 
 **Disposition: the extract-a-reproducer protocol is DROPPED.** Keep the
 `.geojsonl` fixtures; the 38 mbtiles, 10 journals and 4 scripts are releasable.
@@ -5901,6 +5934,12 @@ degeneracy — is refuted.
 * **r2 → 1,483 cells** would have worked (r1 → 215, r0 → 30). **Nothing coarser
   than r3 is ever in the candidate list**, so a shape that overflows at r3 has
   no escape.
+  ⚠️ **1,483 is a PRE-COMPACTION count; the shipped cover is 233 cells** and the
+  two describe the same set. `_polyfill_adaptive` yields the raw r2 set,
+  compaction returns 233 across r0/r1/r2, and `uncompact(233 → r2)` returns the
+  raw set exactly — lossless. **Recorded because a reader comparing the shipped
+  233 against 1,483 concludes the fix under-delivered by 6×**, which is how a
+  pre/post figure mismatch becomes a phantom defect.
 
 ⚠️ **The estimator missed by 27×** — predicted 381, actual 10,381 — because
 `_H3_HEX_AREA_DEG2` is *equator-equivalent* and this polygon reaches **81.7°N**,
@@ -6070,8 +6109,16 @@ after a clean 27/27 dry run. `gn` `[0, 2026]`, `wd` `[-10000, 2126]`, `nl`
 never had**; `ukhc` recomputed **identical** at `[1542, 1974]` (place#204 changed
 names, not dates); nothing else moved. All 27 `record_count`s verified against
 the live index before pushing. ⚠️ **The landed values were NOT independently
-confirmed** — `/api/registry/inventory` returns 403 "Bot access denied"
-unauthenticated, so that step rests on the tool's own report.
+confirmed**, and 🛑 **it CANNOT BE — the endpoint is write-only by
+construction.** Unauthenticated it returns **403 "Bot access denied"** (a bot
+filter, refusing before it inspects credentials); with a browser User-Agent and
+the `.env.local` token sent as `Bearer` — which is what
+`push_gazetteer_inventory.py:749` uses — it returns **405 `Method "GET" not
+allowed`**. ⚠️ **403 and 405 are different findings and the difference matters:**
+403 says *authenticate and it works*, so the earlier wording invited a retry that
+**cannot succeed**. No credential changes a 405. Verification requires the Django
+side or a read endpoint that does not exist, so this step rests on the tool's own
+report permanently.
 
 ### Remedy as originally specified — the guard first
 
