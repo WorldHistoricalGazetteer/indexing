@@ -849,6 +849,52 @@ broken. These are worse than no check, because they are cited as evidence.
   zoom, Hausdorff distance to a reference, or a rendered pixel diff. Coverage
   fraction is not a shape check and must never again be accepted as one.
 
+* **A WARM CACHE IS A CONTROL THAT HAS ALREADY BEEN CONTAMINATED BY THE
+  TREATMENT** — measured 3 Sep 2026 in the Atlas client (`whg3`), and the purest
+  instance of this class the campaign has produced, because **the check got
+  progressively LESS capable of failing each time it was run.**
+
+  The Atlas needs six boundary sources that exist only in the `whg-context`
+  style, so it builds on Context and swaps — fetching and discarding ~200 tiles
+  every load. The fix attempted was to build on the target style and **graft** the
+  six sources in. It was verified on dev across **five separate reloads** and
+  shipped. It broke production.
+
+  ⚠️ **The mechanism and the reason it tested clean are the same fact.** Adding
+  vector sources *after* the map's `load` event makes `map.loaded()` return false
+  again, so `idle` never fires and the loading overlay waits for ever. **Warm, the
+  sources resolve from cache instantly and nothing is noticed.** Cold, the page
+  never paints at all — while the *unfixed* build paints in 4.8 s.
+
+  🛑 **Each verification made the next one weaker.** The first dev load populated
+  the cache; every subsequent reload tested a system that had already been given
+  the thing whose absence was the defect. Five passes did not accumulate
+  confidence — **they accumulated contamination.** A single cold-cache run had
+  strictly more evidential value than all five together, and the five could never
+  have produced a failure no matter how many were run.
+
+  ⚠️ **A plausible mechanism already in the author's notes nearly absorbed the
+  evidence.** The prod failure was first attributed to the browser window being
+  moved mid-load — a real MapLibre hazard, previously recorded. It was withdrawn
+  only when a cold-cache control showed the reverted build renders fine unfocused
+  while the fix does not render at all. **A hazard you already believe in is the
+  most dangerous explanation available**, because it is the one that costs nothing
+  to accept and closes the investigation.
+
+  **The remedy is the CURATIVE form, not a better test.** Declaring the sources in
+  the *initial style* — server-side, in the style JSON — means they are resolved as
+  part of style load, **before `load` fires**. There is then no "after `load`" in
+  which adding a source can make `map.loaded()` go false. That does not work
+  around the defect; **it removes the condition that creates it**, and no cache
+  state can hide or reveal it because the failure mode no longer exists.
+
+  ⚠️ **Generalises past browsers.** Any check run against a system that retains
+  state from previous runs of the same check — a warm cache, a populated DuckDB
+  cache, an already-restored ES index, a `final/` left by an earlier run (see
+  *"rerun adopts the previous build"*) — is measuring the residue of its own
+  history. **State the cache state of every measurement, or the number is
+  unreadable.**
+
 ### The permanent fixes
 
 1. **Every check must be shown to FAIL on known-bad AND to PASS on known-good —
