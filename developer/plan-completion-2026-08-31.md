@@ -4884,12 +4884,50 @@ was making.
 **Disposition: the extract-a-reproducer protocol is DROPPED.** Keep the
 `.geojsonl` fixtures; the 38 mbtiles, 10 journals and 4 scripts are releasable.
 
-⚠️ **ONE OPEN QUESTION, measured but unexplained.** `tiles-verify`'s `clio` has
-**311,953 tiles — identical to the 2 Sep good build** — while the deployed
-7 August `clio` had 10,587. **A structurally complete `clio` existed on disk that
-night.** Whether it was built before the bad deploy and something else shipped,
-or built after as an abandoned repair, cannot be told from mtimes (01:25–02:27).
-Flagged as an open question, not a conclusion.
+✅ **CLOSED 3 Sep — built BEFORE, and it is NOT an anomaly.** `tiles-verify`'s
+`clio` has **311,953 tiles, identical to the 2 Sep good build** at all eleven
+zoom levels (z10: 229,306 both) and to the hundredth in bounds, while the
+deployed 7 August `clio` had 10,587.
+
+```
+tiles-verify/clio.mbtiles           7 Aug 01:32   311,953   -180.000000..180.000000
+tiles/clio.mbtiles  (DEPLOYED)      7 Aug 12:36    10,587   -155.401298..177.863115
+tiles-20260902-retile/clio.mbtiles  2 Sep 13:15   311,953   -180.000000..180.000000
+```
+
+**Built eleven hours BEFORE the poly-less build that shipped** — so it was not an
+abandoned repair made afterwards. ⚠️ **The mtime range this document said could
+not settle it (01:25–02:27) is `tiles-verify`'s OWN range.** The discriminator
+was the **deployed** file's mtime, in a different directory, which was never
+brought into the comparison — a question declared unanswerable because the
+answer was outside the frame being looked at. Both mtimes sit on one filesystem
+and one clock, so the ordering is safe; this is **not** the UTC-vs-EDT trap,
+which needs an mtime compared against a *run id*.
+
+🛑 **AND IT IS A REDISCOVERY, NOT A DISCOVERY (SG, 3 Sep).** This was examined
+weeks ago and is **part of what triggered this campaign**. Both the coordinator
+and S7 presented it as a new and uncomfortable result. It is neither new nor
+uncomfortable once placed against the known cause: **the geom store was destroyed
+on 2026-08-07** (`HANDOVER-2026-08-09-geom-store.md` §5). The store was intact at
+01:32 and destroyed before 12:36, so a complete build followed by a poly-less one
+is exactly what the established timeline predicts. **The finding CONFIRMS the
+narrative; it does not disturb it.**
+
+⚠️ **One attribution to reconcile, recorded rather than resolved.** SG recalls
+*"some sloppy manual deletions"*. The handover records the mechanism as the
+`unittest discover -s tests` sandbox bypass — *"a two-feature synthetic store
+overwrote the live index and shard 0001"* — with the guard shipped in `645f3f2`.
+These are not the same act, and both may have occurred. **The documented cause is
+an overwrite by a test, not a deletion**, and that distinction matters because the
+two take different permanent fixes: the overwrite is guarded in code, whereas
+manual deletion is not and cannot be.
+
+⚠️ **The transferable lesson is about the DOCUMENT, not the tileset.** This plan
+carried it as *"measured but unexplained"* while the campaign it belongs to had
+already explained it. **A question written down as open stays open to every later
+reader, regardless of what is known elsewhere** — and two sessions then spent
+effort rediscovering it and reported it upward as new. Class H: a truthful record
+that impedes recovery. When closing a question, close it *where it was asked*.
 
 **Remaining reclaim is therefore ~17 GB on `/vast` (gated as above) and ~23 GB
 on `/ix1`** — the 23 GB row is already freed and is *inside* the 226 GB figure,
