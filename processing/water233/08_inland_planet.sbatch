@@ -32,6 +32,17 @@ echo "=== node $(hostname) job ${SLURM_JOB_ID} start $(date -Is) ==="
 guard_volume vast "${VAST_PATH}" "${VAST_FLOOR_GB}" 0
 guard_volume ix1  "${IX1_PATH}"  "${IX1_FLOOR_GB}" 120
 
+# ⚠️ Re-derive control 1's FINDING here, rather than trusting that the job
+# which produced it exited 0. `afterok` holds when that job fails, but it
+# also RELEASES when that job exits cleanly having verified nothing -- and
+# nothing in the dependency can tell those apart.
+echo
+echo "=== re-deriving control 1 at point of use ==="
+python "${RUN_ROOT}/scripts/require_control1.py" \
+    "${RUN_ROOT}/data/counts.planet.json" \
+    "${RUN_ROOT}/data/counts.filtered.union.json" \
+    || { echo "FATAL: control 1 does not hold; refusing to run" >&2; exit 1; }
+
 # Refuse to run if control 2 has not passed. The scheduler dependency also
 # enforces this, but a human resubmitting by hand would bypass that.
 CTRL="${RUN_ROOT}/data/assembly.control.json"
@@ -80,7 +91,7 @@ ls -la "${RUN_ROOT}"/data/*.geojsonl
 
 echo
 echo "=== RECONCILIATION: assembly output vs input counts ==="
-python - "${RUN_ROOT}/data/counts.filtered.json" "${RUN_ROOT}/data/assembly.planet.json" <<'PY'
+python - "${RUN_ROOT}/data/counts.filtered.union.json" "${RUN_ROOT}/data/assembly.planet.json" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))["counts"]
 a = json.load(open(sys.argv[2]))

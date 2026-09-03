@@ -39,6 +39,17 @@ guard_volume vast "${VAST_PATH}" "${VAST_FLOOR_GB}" 0
 guard_volume ix1  "${IX1_PATH}"  "${IX1_FLOOR_GB}" 60
 [ -s "${FILTERED}" ] || { echo "FATAL: filtered PBF missing" >&2; exit 1; }
 
+# ⚠️ Re-derive control 1's FINDING here, rather than trusting that the job
+# which produced it exited 0. `afterok` holds when that job fails, but it
+# also RELEASES when that job exits cleanly having verified nothing -- and
+# nothing in the dependency can tell those apart.
+echo
+echo "=== re-deriving control 1 at point of use ==="
+python "${RUN_ROOT}/scripts/require_control1.py" \
+    "${RUN_ROOT}/data/counts.planet.json" \
+    "${RUN_ROOT}/data/counts.filtered.union.json" \
+    || { echo "FATAL: control 1 does not hold; refusing to run" >&2; exit 1; }
+
 echo "--- toolchain in this env ---"
 osmcoastline --version 2>&1 | head -2
 command -v ogr2ogr && ogr2ogr --version || { echo "FATAL: no conda ogr2ogr in whg-coastline" >&2; exit 1; }
