@@ -482,6 +482,19 @@ broken. These are worse than no check, because they are cited as evidence.
   an output format), **re-derive every constant expressed in it**, because the
   constant will not announce that it has moved.
 
+  🛑 **A BOUNDED blast radius is not a SMALL one. Enumeration is not
+  magnitude.** 3 Sep: an accidental ~111 km ring-closure tolerance was correctly
+  bounded — `added_line = 3` against 828,496 rings, so exactly three closures
+  could have been affected and the audit was complete rather than a sample. Both
+  participants read "only 3" as reassuring. Measured, the three were **28.9 m,
+  12.0 km and 15.6 km** — two straight lines drawn across open water, joining
+  coastlines that are not connected, 27.6 km of fictitious shore. The bound was
+  correct and the conclusion went the other way. **Knowing exactly how many
+  opportunities a defect had says nothing about what it did with them** — quote
+  the count to establish that the audit is complete, never to suggest the
+  finding is minor, and measure the members before drawing any comfort from
+  their number.
+
   🛑 **The diagnostic perturbed the thing it measured — in the OBSERVABILITY
   layer, which is where this campaign's failures actually live.** The `srun ...
   ps` probe added to prove the ocean job was alive is what manufactured the
