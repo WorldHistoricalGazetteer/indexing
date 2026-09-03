@@ -4612,6 +4612,22 @@ a low watermark at 153.6 GB. That is not urgent space.
 a few MB, one bucket's poly-less tileset plus its manifest — and delete only
 the bulk. If that reproducer does not exist, `tiles-verify` stays.
 
+**The agreed protocol (S7, 3 Sep), recorded here so it does not close with the
+session that devised it:**
+
+1. Extract one poly-less bucket's tileset plus its manifest from `tiles-verify`.
+2. Run the verifier against it and **require it to FAIL**.
+3. Run the same verifier against a **known-good tileset from the 3 Sep
+   generation** and **require it to PASS**.
+4. Report both results to the coordinator. **Only then** propose deleting the
+   bulk — the deletion is not S7's to make on its own reading.
+
+⚠️ **Step 3 is not optional padding.** A check that fails on everything is as
+useless as one that passes on everything, and a reproducer validated only by
+step 2 cannot tell those apart. This is the campaign's both-directions rule
+applied to the fixture that exists to enforce it. **A reproducer nobody has
+tested in both directions is a comment.**
+
 **Remaining reclaim is therefore ~17 GB on `/vast` (gated as above) and ~23 GB
 on `/ix1`** — the 23 GB row is already freed and is *inside* the 226 GB figure,
 not additional to it. `/vast` is the constrained volume: 226 GB free of 1 TB,
