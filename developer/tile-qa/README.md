@@ -64,6 +64,30 @@ tools, and the **unmodified originals remain in the 3 September manifest**.
   `.coverage` or `.labels`.
 * `tsize.py` prints only z0–z8.
 
+⚠️ **Three more, added 3 Sep after a cold review — and the first is the only one
+here that produces a CONFIDENTLY WRONG answer rather than a silently empty one,
+so read it first:**
+
+* 🛑 **`tsize.py`'s two labels are POSITIONAL and hardcoded.** `sys.argv[1]` is
+  always printed as **`NEW (with fix)`** and `sys.argv[2]` as **`OLD
+  (published)`**; nothing derives either label from the file. **A wrong-order
+  invocation produces a completely plausible table with the two tilesets'
+  identities swapped, inverting the conclusion.** This script exists *because*
+  two sessions argued over whether a new build improved on an old one, which
+  makes this the assumption most likely to bite in the situation it was written
+  for. It also requires exactly two arguments and raises `IndexError` on one.
+* ⚠️ **`tsize.py`'s headline figures span ALL zooms; its table stops at z8.**
+  `global max` and `over 500KB` are computed over every tile, so a reader sees
+  `over 500KB=N` and attributes it to a zoom in the table when it may lie
+  entirely at z9+.
+* ⚠️ **`lblchk.py` reports an UNREADABLE tileset as `label: no`.** On exception it
+  appends `(bucket, -1, False, 0.0)`. The `-1` tile count is a tell in the row,
+  but the summary line `with label anchors: %d/%d` counts that file in the
+  **denominator** and its `False` in the **negative** — so **a read failure is
+  arithmetically indistinguishable from a real negative.** That is the exact
+  fault the closing sentence of this section warns about, inside the tool
+  written to detect it.
+
 Each of these is a denominator the script does not state. **Check what a run
 matched before believing what it reports** — the campaign's most repeated fault
 is an absent input read as nothing to do.

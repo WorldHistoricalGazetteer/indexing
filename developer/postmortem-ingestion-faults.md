@@ -996,10 +996,25 @@ broken. These are worse than no check, because they are cited as evidence.
   ⚠️ **A plausible mechanism already in the author's notes nearly absorbed the
   evidence.** The prod failure was first attributed to the browser window being
   moved mid-load — a real MapLibre hazard, previously recorded. It was withdrawn
-  on the strength of the cold-cache control, which is now known not to
-  discriminate; the withdrawal was right, its stated reason was not. **A hazard
-  you already believe in is the most dangerous explanation available**, because it
-  is the one that costs nothing to accept and closes the investigation.
+  on the strength of the cold-cache control. **The withdrawal was right and its
+  stated reason was wrong — but not in the way revision 2 claimed.** The control
+  *did* discriminate; it was reporting the real defect. The withdrawal was right
+  because the window hypothesis was simply not the cause, which the control could
+  not have shown either way. **A hazard you already believe in is the most
+  dangerous explanation available**, because it is the one that costs nothing to
+  accept and closes the investigation.
+
+  🛑 **THE SENTENCE ABOVE PREVIOUSLY READ "which is now known not to
+  discriminate" — REVISION 2'S CLAIM SURVIVING INSIDE REVISION 3, FIFTY LINES
+  BELOW THE HEADING THAT REVERSES IT** (Auditor, 3 Sep). ⚠️ **And note what
+  distinguished the two instances in this same entry:** the heading writes
+  *"Revision 2 **recorded that** the harness 'could not discriminate'"* —
+  attributed, quoted, safely historical — while this line asserted the identical
+  claim in the **present tense as established fact**. A revision that reverses a
+  finding must hunt every *unattributed* restatement of it, because those read as
+  current knowledge no matter what the heading says. **Quoting a superseded claim
+  is safe; asserting it is not**, and the difference is invisible to a search for
+  the claim's words.
 
   ✅ **THE MINORITY-ROW RULE STILL HOLDS, AND IT POINTED THE RIGHT WAY.** In a
   mostly-failing result set, audit the **PASS**; in a mostly-passing one, audit the
@@ -1066,6 +1081,37 @@ have caught the problem.**
 **Rule:** a shared artefact under active measurement is frozen until the measurer
 says otherwise. Announce before, not after — an announcement afterwards tells
 someone their last N results are void, which is strictly worse than waiting.
+
+⚠️ **A HARD-WRAPPED DOCUMENT DEFEATS PHRASE SEARCH, AND EVERY NEGATIVE RUN
+AGAINST THESE FILES IS WEAKER THAN IT LOOKS.** Measured 3 Sep 2026: the surviving
+revision-2 claim above was **not** found by `grep -n "could not discriminate"` —
+that returns two other lines and misses it, because the phrase is split across the
+hard wrap:
+
+```
+  on the strength of the cold-cache control, which is now known not to
+  discriminate; the withdrawal was right, its stated reason was not.
+```
+
+**`developer/*.md` are hard-wrapped at ~76 columns**, so any multi-word phrase has
+roughly a **one-in-ten chance of straddling a newline and being invisible** to a
+plain `grep`. That applies retroactively to every phrase search in this campaign —
+`"fallback-free"`, `"29 fixtures"`, `"could not discriminate"` — so those
+"no other instances" statements are **probable, not established.**
+
+**Search these files with single words, `grep -Pz`, a `\s+` between words, or
+`tr '\n' ' '` first.** ⚠️ And the deeper point: **a negative result from a
+phrase grep over wrapped prose is not evidence of absence** — it is the same
+"filters must report their denominator" fault in a new substrate, where the
+denominator is *the fraction of the document the query could match at all.*
+
+⚠️ **Separately, and with no instrumental excuse: the same reader's grep DID
+match the trough annotation, printed it in full, and the reader mis-summarised
+the output as "a vertices/bytes table" without reading to the end of the line** —
+then reported the negative that had been specifically requested. No tool failed;
+the data was correct and on screen. **A correct measurement read carelessly is
+indistinguishable in its output from a measurement never taken**, and reviewing
+one's own command is not the same as re-reading one's own conclusion.
 
 ## ⭐ Class H — a TRUTHFUL status record that prevents recovery
 
