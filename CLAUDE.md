@@ -83,31 +83,54 @@ it — `h3_stage.py:125` (the staged pipeline that runs on **every** re-ingest),
 areal path. **A backfill without this fix is undone by the next re-ingest.**
 Order: fix the function, then backfill.
 
-⚠️ **481 IS A FLOOR, NOT THE POPULATION** (S5, 3 Sep — independent reproduction
-from ES `bounds`+`h3_cover`, a different instrument from the rollback method).
-**779 reproduces exactly** (whg 546 · wd 233, of 8,699 MultiPoints; the other
-7,920 are degenerate single-point). But **all 779 currently carry a cover of ≤ 1
-cell**, so *extent-bearing* and *flattened* are the same set today, and the
-actionable count is entirely "which of the 779 deserve more than one cell".
+✅ **MEASURED 3 Sep — the actionable population is 340, and 481 was wrong in
+BOTH directions.** Dry run over all 779 (job 11113760, 2 s, wrote nothing;
+per-feature result at `/vast/ishi/s5-dryrun/result.json`). 779 read, **0 store
+misses**, all `MultiPoint`. Predicate: `len(member_cells) > len(stored_cover)` —
+the fix's own computation, so no threshold to argue.
 
-**481 was derived from 2.11's rollback — i.e. from features that demonstrably
-HAD a larger cover and lost it. By construction it is blind to any feature that
-never had a correct cover to lose**, which includes part of the 298 and
-potentially all of `wd`.
+```
+            extent-bearing   actionable   already correct
+whg                    546          295               251
+wd                     233           45               188
+TOTAL                  779          340               439
+```
 
-🛑 **Span is the wrong predicate and no span cut can produce the answer.** H3
-here is **r7** (~2.4 km ≈ 0.02°), and position matters as much as extent:
-a MultiPoint spanning *less* than a cell still needs 2+ cells if its members
-straddle a boundary, and one spanning *more* can sit centrally within one. Only
-**165** `whg` geometries have span > 0.02° against 248 shrunk by 2.11, so ~83 of
-the 248 are sub-cell-span yet were previously polyfilled to several cells —
-exactly the straddling case, and it will recur among the 298.
+* **`wd` 45, not 233** — 188 have every member point inside a *single* r7 cell
+  despite non-zero span (0.0001°–0.0141°, all under one ~0.02° cell). A 1-cell
+  cover is **already correct** for them; treating all 233 as actionable would
+  have been 188 no-op rewrites.
+* **`whg` 295, not 248** — 47 more than the rollback found, which is exactly the
+  blind spot: features that never had a correct cover to lose.
+* **The "do not touch" set is 439, not 298**, and each is correct *by
+  construction* (exactly 1 member cell) rather than by prior list.
+* Corrections are small: 313 → 2 cells, 21 → 3–5, 5 → 6–20, 1 → 21–100.
 
-✅ **The settling computation is the fix's own:** compute member cells for all
-779 and take `len(member_cells) > len(stored_cover)`. No threshold to argue, a
-known-correct answer per feature, and free to run as a dry pass because it is
-the same work the backfill performs. Needs the geom store, so a Slurm job rather
-than a query.
+🛑 **THE MOTIVATING EXAMPLE IS NOT FIXED BY THIS. Do not read "MultiPoint covers
+fixed" as meaning the Danube search symptom went away.**
+
+```
+whg:1361:9  "Danube"   MultiPoint, TWO member points:
+   [29.743333, 45.221944]  Black Sea mouth
+   [ 8.154889, 48.095111]  Black Forest source
+   span 21.588°  ·  stored cover 1  ·  member cells 2  ·  2.11 rollback 1,230
+```
+
+**The mouth and the source, and nothing in between.** Member cells therefore
+yields two cells at the two endpoints, and **a fuzzy scope over Austria or
+Hungary still will not return the Danube** — there is no member point there and
+the fix invents none. The rule is right and works: Silk Roads `whg:1381:18` has
+**32 real member points → 32 cells** against 2.11's hull-derived 892, covering
+where the corridor is instead of 46° of Asia it never touches.
+
+⚠️ **Interpolation is NOT the answer** — synthesising intermediate points is
+inventing geometry, which is the standing prohibition and precisely how the hull
+defect arose. The honest options are to accept that sparse MultiPoints stay
+sparse, or to treat "the Danube should be findable from Austria" as a **data**
+problem needing a denser geometry or a `LineString`. **That is separate work.**
+
+**This package fixes the REPRESENTATION — faithfully, for 340 features — not the
+search symptom that motivated it.**
 
 ⚠️ **Still open:** a **top-level `h3_cover`** that is stale, diverged from the
 nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
