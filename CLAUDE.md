@@ -71,7 +71,17 @@ member point), *not* its hull: the Silk Roads hull is a 46°-wide swath across
 Asia the corridor never touches, which is over-coverage arriving by a new door.
 Member cells cover where the place is and nowhere else. `geom_class` stays
 `point`, so these remain findable *within* a scope and can never *define* one —
-the two fields are independent by design. **Awaiting SG's decision.**
+the two fields are independent by design.
+
+✅ **APPROVED by SG, 3 Sep — and the code fix is the load-bearing half.**
+⚠️ **Fix `select_h3_cover_geometry` (`processing/helpers.py:652`), not the
+authority scripts.** It is the single choke point: every producer routes through
+it — `h3_stage.py:125` (the staged pipeline that runs on **every** re-ingest),
+`osm_boundary_geometry.py:273`, `un-geoscheme-boundaries.py:429`, and
+`helpers.py:1131`. It currently returns any non-`Polygon`/`MultiPolygon`/
+`GeometryCollection` geometry **unchanged**, so a MultiPoint never reaches the
+areal path. **A backfill without this fix is undone by the next re-ingest.**
+Order: fix the function, then backfill the **481** (248 `whg` + 233 `wd`).
 
 ⚠️ **Still open:** a **top-level `h3_cover`** that is stale, diverged from the
 nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
