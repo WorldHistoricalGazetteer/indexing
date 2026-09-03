@@ -5552,7 +5552,78 @@ polygon-bearing collections, false for the two that are not. **An assertion in a
 comment that stops the check**, the same class as `submit_h3_slurm`'s Batch-7
 clause (`3e91395`).
 
-### Actions — all four, no gating
+### ✅ ALL FOUR ACTIONS DONE 3 Sep — and the census changed the picture
+
+1. ✅ **Fall-through made LOUD** — `6d853ab`. `_h3_fallback(reason, geom_type)`
+   increments `H3_COVER_FALLBACKS` and announces the first few per key, then
+   counts silently. **The three bare `except Exception: pass` blocks now report.**
+2. ✅ **GeometryCollection branch fixed** — same commit: recurses into nested
+   collections and covers non-polygon members instead of dropping them.
+3. ✅ **`h3_stage.py:88` comment corrected** — now says collections are handled
+   *when they contain polygonal members*, with the old flat claim recorded as
+   what stopped the check.
+4. ✅ **Census complete** — shipped `compute_h3_fields` (clone verified at
+   `760ffba`), predicate `len(correct) > len(stored)`, no span threshold.
+
+```
+examined (area, has_geom, stored cover <= 1)   145,764
+  ACTIONABLE                                    40,429   27.74%
+  would SHRINK                                       0   <- fix is monotonic
+osm 37,072 · wd 2,223 · kain_par 974 · ohm 143 · clio 7 · vob_lgd 7 · nl 2 · whg 1
+```
+
+**Zero would shrink across 145,764 geometries — no regression risk in applying it.**
+
+⚠️ **SEVERITY IS BIMODAL AND 99.9% IS MARGINAL.** Median extent of the actionable
+is **0.00685° (~750 m)**; only **9 exceed 0.05°**. So 40,408 are sub-cell
+features gaining a second cell — real, monotonic, very low value. **Seven are
+severe and ALL are `clio`:**
+
+```
+269.03 deg  clio:gb_british_emp_2_1943_1944_v2   1 -> 168 cells
+200.24 deg  clio:gb_british_emp_1_1783_1787_v2   1 -> 467
+200.24 deg  clio:gb_british_emp_1_1781_1782_v1   1 -> 501
+200.24 deg  clio:gb_british_emp_1_1778_1779_v1   1 -> 517
+200.24 deg  clio:gb_british_emp_1_1776_1777_v1   1 -> 498
+191.11 deg  clio:gb_british_emp_1_1772_1774_v1   1 -> 349
+187.31 deg  clio:gb_british_emp_1_1769_1771_v1   1 -> 344
+```
+
+**The British Empire, spanning 269° of longitude, is currently ONE H3 CELL.**
+Same class as the Silk Roads, in a namespace 2.11 already remediated once — they
+were never in 2.11's scope because their covers were not wrong by its
+fresh-recompute test; they were wrong by producing nothing.
+
+⚠️ **The 400-sample estimate of "~9,500 clearly under-covered" was WRONG and the
+error is instructive.** The census says 9 of 40,429 exceed 0.05°. The sample
+measured extent across *all* ≤1-cell geometries, but the large-extent ones are
+mostly **not actionable** — their stored 1-cell cover is what the current code
+reproduces. **Extent predicted the wrong population entirely**, which is why the
+`len(correct) > len(stored)` predicate was the right one and span reasoning
+could not have reached this.
+
+🛑 **THE PREDICATE'S BLIND SPOT, MEASURED.** `len(correct) > len(stored)` cannot
+see a geometry the current code **still fails on** — there `correct == stored`
+and it is silently excluded. Item 1 having already landed is what let this be
+measured: across 145,764 geometries the new fallback logging fired **6 times** —
+5 × `H3ResMismatchError` (all `MultiPolygon`) and 1 `uncoverable`. **The blind
+spot is 6, not thousands.** ✅ *Item 1 earning its keep within hours, in a job
+aimed at something else.*
+
+### Arising from the census — NOT yet actioned
+
+1. **Fix the 7 `clio`** — trivial volume, and the British Empire at one cell is
+   the worst cover in the corpus after the Silk Roads.
+2. **Fix `H3ResMismatchError`** — `_polyfill_adaptive` can return
+   **mixed-resolution** cells and `compact_cells` rejects them. Five live
+   instances, but it is a **latent class**, not five one-offs: it silently
+   degrades any large multi-resolution polygon.
+3. **The 40,408 marginal are genuinely low priority** — monotonic and safe,
+   worth doing at the next rebuild rather than as a campaign.
+4. ⚠️ **Quote the 40,429 with its limit** wherever it appears: it is *"everything
+   the current code would improve"*, **not** *"everything that is wrong"*.
+
+### Actions as originally specified — all four, no gating
 
 1. ⭐ **Make the fall-through LOUD** (highest value, lowest cost). Every path to
    the centroid-only return is silent, including three swallowed exceptions. A
