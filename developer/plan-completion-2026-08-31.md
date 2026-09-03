@@ -5478,6 +5478,63 @@ duplicate `source` field.)*
 
 ---
 
+## 4.20 The centroid-only fall-through — **all four items, 3 Sep**
+
+The MultiPoint fix (§package 1) was one type of a general defect: `compute_h3_fields`
+has a silent `return centroid_cell, [centroid_cell]` that several paths reach.
+Census: **11,768,864 store entries, 0 unparseable**; controls `whg` 9,849
+(byte-identical to 2.3's WKB census) and `wd` MultiPoint 1,170 (matching the ES
+sweep).
+
+**A · The GeometryCollection gap — REAL, 2 of 3,628.** Collections with no
+`Polygon`/`MultiPolygon` member fall through. `wd:Q1289367` "Lemboulas"
+(`[MultiLineString, Point]`, ~50 km) → 1 cell; `wd:Q11512408` "Meiji Dori"
+(`[GeometryCollection]`, ~11 km) → **0 cells, no fuzzy containment at all**.
+⚠️ The branch **does not recurse**, so a collection whose only member is another
+collection falls through even with polygons one level down.
+
+**B · The larger path neither reading listed.** Every branch is `if cells: …
+return` with three bare `except: pass`, so **any polygon whose polyfill yields
+no cells** reaches the same default — not type-dependent:
+
+```
+area geometries, cover > 1 cell   828,293   <- healthy control
+area geometries, cover <= 1 cell  145,695
+area geometries, cover = 0 cells        1
+```
+
+Most are correct (median span ~900 m, genuinely sub-cell), but a 400-sample
+suggests **6.5% span > 5.5 km → ~9,500 under-covered**. Severity is an order of
+magnitude below the MultiPoint case (worst ~9 km vs 5,000 km).
+
+**C · Why it survived two readings.** `cover_geometry_for` (`h3_stage.py:71`)
+**bypasses `select_h3_cover_geometry` on the store path** — with a reader and
+`has_geom` it hands the raw stored geometry straight to `compute_h3_fields`. The
+two functions never interact where it matters, so the hull cannot rescue a
+fall-through and reading them separately makes the pair look safe. 🛑 And
+`h3_stage.py:88` asserts *"compute_h3_fields handles them"* — true for
+polygon-bearing collections, false for the two that are not. **An assertion in a
+comment that stops the check**, the same class as `submit_h3_slurm`'s Batch-7
+clause (`3e91395`).
+
+### Actions — all four, no gating
+
+1. ⭐ **Make the fall-through LOUD** (highest value, lowest cost). Every path to
+   the centroid-only return is silent, including three swallowed exceptions. A
+   counter or debug line there **would have made both this and the MultiPoint
+   case visible without any audit.** A permanent instrument, not a one-off fix.
+2. **Fix the branch** — recurse into nested collections; cover non-polygon
+   members rather than dropping them.
+3. **Soften `h3_stage.py:88`** to say collections are handled *when they contain
+   polygonal members*.
+4. **Census the ~9,500** using `len(correct_cells) > len(stored_cover)` — S5's
+   predicate, **not** a span threshold, since position matters as much as extent
+   at r7. ⚠️ **This is a MEASUREMENT and needs no decision.** Any remediation it
+   implies is the decision, and comes after. Replacing a 400-sample
+   extrapolation with a census is the point.
+
+---
+
 ## 4.19 Finish `schemas/field-notes.md` — **S5, queued behind 4.17**
 
 ⚠️ **Not stale — HALF-WRITTEN.** `places.json` was brought current 3 Sep
