@@ -91,8 +91,27 @@ def remote_mbtiles_present(bucket: str) -> bool:
     return r.returncode == 0 and "OK" in r.stdout
 
 
-def plan_changes(cfg: dict, buckets: list[str]) -> tuple[dict, list[str], list[str], list[str]]:
-    """Return (merged_cfg, added, updated, skipped_missing) — original cfg untouched."""
+def plan_changes(cfg: dict, buckets: list[str],
+                 tilejson: dict[str, str] | None = None,
+                 ) -> tuple[dict, list[str], list[str], list[str]]:
+    """Return (merged_cfg, added, updated, skipped_missing) — original cfg untouched.
+
+    ``tilejson`` optionally supplies TileJSON field overrides (``name``,
+    ``description``, …) applied to **every** bucket in ``buckets``. TileServer GL
+    merges a data entry's ``tilejson`` block over the values read from the
+    mbtiles metadata, so this fixes what a tileset *serves* without touching the
+    file — the precedent is ``terrarium``, which carries one for ``attribution``.
+
+    Why it exists: tippecanoe defaults an mbtiles ``name``/``description`` to the
+    OUTPUT PATH when ``--name`` is not passed, so ``water.mbtiles`` served
+    ``/ix1/ishi/water233-20260902T220703Z/data/water.mbtiles`` as its public
+    name — an internal CRC path on a public endpoint.
+
+    ⚠️ Overrides are merged INTO any existing ``tilejson`` block, never over it.
+    Replacing the block wholesale would silently drop ``terrarium``'s
+    attribution, which is a licence-visible removal rather than a cosmetic one —
+    the same reasoning that makes this function preserve every other data entry.
+    """
     merged = json.loads(json.dumps(cfg))  # deep copy
     data = merged["data"]
     added, updated, skipped = [], [], []
@@ -110,6 +129,12 @@ def plan_changes(cfg: dict, buckets: list[str]) -> tuple[dict, list[str], list[s
         else:
             data[b] = {"mbtiles": mbt}
             added.append(b)
+        if tilejson:
+            existing = data[b].get("tilejson")
+            if not isinstance(existing, dict):
+                existing = {}
+            existing.update(tilejson)      # merge, never replace
+            data[b]["tilejson"] = existing
     return merged, added, updated, skipped
 
 
@@ -236,7 +261,8 @@ def verify_serving(buckets: list[str], *, attempts: int = 10, delay: float = 3.0
 
 
 def update_tileserver_config(buckets: list[str], *, execute: bool = False,
-                             do_restart: bool = True, do_verify: bool = True) -> bool:
+                             do_restart: bool = True, do_verify: bool = True,
+                             tilejson: dict[str, str] | None = None) -> bool:
     buckets = [b for b in dict.fromkeys(buckets) if b]  # dedupe, keep order
     if not buckets:
         print("No buckets specified — nothing to do.")
@@ -247,9 +273,11 @@ def update_tileserver_config(buckets: list[str], *, execute: bool = False,
 
     cfg = read_remote_config()
     before = len(cfg["data"])
-    merged, added, updated, skipped = plan_changes(cfg, buckets)
+    merged, added, updated, skipped = plan_changes(cfg, buckets, tilejson=tilejson)
 
     print(f"  existing data entries: {before}")
+    if tilejson:
+        print(f"  tilejson overrides: {tilejson} (merged into any existing block)")
     print(f"  add:     {', '.join(added) or '-'}")
     print(f"  update:  {', '.join(updated) or '-'}")
     print(f"  skipped (mbtiles missing on host): {', '.join(skipped) or '-'}")
@@ -303,14 +331,36 @@ def main() -> None:
     ap.add_argument("--bucket", "-b", action="append", required=True,
                     help="Tileset/bucket name to register (repeatable). mbtiles must be "
                          "named <bucket>.mbtiles and already pushed to the host.")
+    ap.add_argument("--tilejson-name",
+                    help="Override the served TileJSON `name` for the bucket(s). "
+                         "tippecanoe defaults name/description to the OUTPUT PATH "
+                         "when --name is not passed, which leaks an internal build "
+                         "path onto a public endpoint. Merged into any existing "
+                         "tilejson block, never replacing it.")
+    ap.add_argument("--tilejson-description",
+                    help="Override the served TileJSON `description`. Same merge "
+                         "semantics as --tilejson-name.")
     ap.add_argument("--execute", action="store_true", help="Apply (default: dry-run)")
     ap.add_argument("--no-restart", dest="restart", action="store_false",
                     help="Rewrite config but do not restart (not recommended)")
     ap.add_argument("--no-verify", dest="verify", action="store_false",
                     help="Skip post-restart HTTP serving check")
     args = ap.parse_args()
+
+    tilejson = {}
+    if args.tilejson_name:
+        tilejson["name"] = args.tilejson_name
+    if args.tilejson_description:
+        tilejson["description"] = args.tilejson_description
+    # Overrides apply to EVERY bucket in the call, so more than one bucket makes
+    # the intent ambiguous — refuse rather than silently name them all the same.
+    if tilejson and len(dict.fromkeys(args.bucket)) != 1:
+        ap.error("--tilejson-name/--tilejson-description apply to a single "
+                 "bucket; pass exactly one --bucket, or run once per bucket.")
+
     ok = update_tileserver_config(args.bucket, execute=args.execute,
-                                  do_restart=args.restart, do_verify=args.verify)
+                                  do_restart=args.restart, do_verify=args.verify,
+                                  tilejson=tilejson or None)
     sys.exit(0 if ok else 1)
 
 
