@@ -73,15 +73,35 @@ Member cells cover where the place is and nowhere else. `geom_class` stays
 `point`, so these remain findable *within* a scope and can never *define* one —
 the two fields are independent by design.
 
-✅ **APPROVED by SG, 3 Sep — and the code fix is the load-bearing half.**
-⚠️ **Fix `select_h3_cover_geometry` (`processing/helpers.py:652`), not the
-authority scripts.** It is the single choke point: every producer routes through
-it — `h3_stage.py:125` (the staged pipeline that runs on **every** re-ingest),
-`osm_boundary_geometry.py:273`, `un-geoscheme-boundaries.py:429`, and
-`helpers.py:1131`. It currently returns any non-`Polygon`/`MultiPolygon`/
-`GeometryCollection` geometry **unchanged**, so a MultiPoint never reaches the
-areal path. **A backfill without this fix is undone by the next re-ingest.**
-Order: fix the function, then backfill.
+✅ **DONE 3 Sep — fix `760ffba`, backfill 340 docs, 0 errors.**
+
+🛑 **The fix was NOT where this document said it was, and the wrong location was
+independently "confirmed" before being found wrong.** This entry named
+`select_h3_cover_geometry` (`helpers.py:652`), and a second session verified that
+it does return a MultiPoint unchanged — **true, and not the defect.** Passing a
+MultiPoint through is *correct*; the flattening is downstream in
+**`compute_h3_fields`**, which branches on Point / Polygon / LineString /
+GeometryCollection and let MultiPoint fall to `return centroid_cell,
+[centroid_cell]`. The fix is a new MultiPoint branch there;
+`select_h3_cover_geometry` needed **no change at all**.
+⚠️ **Verifying that a premise is true is not verifying that it is the cause** —
+two readers agreed about the wrong function.
+
+**Result, verified against the dry run through the shipped helper (one
+implementation, demonstrated not asserted):**
+
+```
+ACTIONABLE   340/340 now match computed member-cell count, all > 1
+             sizes {2:313, 3:17, 4:4, 6:2, 7:2, 10:1, 32:1}
+LEAVE-ALONE  439/439 still exactly 1 cell — untouched
+whg:1381:18  Silk Roads   1 -> 32   (2.11's hull: 892)
+whg:1361:9   Danube       1 ->  2   (2.11's hull: 1,230)
+```
+
+Artefacts `/vast/ishi/s5-dryrun/`. The `h3_stage.py:125` /
+`osm_boundary_geometry.py:273` / `un-geoscheme-boundaries.py:429` /
+`helpers.py:1131` call graph is still the reason a code fix was required —
+without it the next re-ingest re-flattens all 340.
 
 ✅ **MEASURED 3 Sep — the actionable population is 340, and 481 was wrong in
 BOTH directions.** Dry run over all 779 (job 11113760, 2 s, wrote nothing;

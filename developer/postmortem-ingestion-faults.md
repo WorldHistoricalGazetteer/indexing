@@ -375,6 +375,38 @@ broken. These are worse than no check, because they are cited as evidence.
   database contents — **the finding rather than the process**, the same
   correction as the `afterok` dependency above.
 
+  🛑 **A CONFIRMED PREMISE IS NOT A CONFIRMED CAUSE — and the confirmation can
+  make a wrong diagnosis harder to dislodge.** 3 Sep: the coordinator located the
+  MultiPoint cover defect in `select_h3_cover_geometry`, which "returns any
+  non-Polygon geometry unchanged". A second session **verified exactly that**,
+  read the code, and reported the diagnosis correct. **Both readings of the
+  function were accurate and the diagnosis was wrong**: passing a MultiPoint
+  through unchanged is *correct* behaviour, and the flattening was downstream in
+  `compute_h3_fields`, which let MultiPoint fall through to a centroid-only
+  return. The function named in the plan, in CLAUDE.md and in the work package
+  needed **no change at all**. What was verified was the premise (*does this
+  function do X?*) and never the causal claim (*is X where the defect comes
+  from?*), and the verification made the wrong location look better established
+  than an unchecked guess. ✅ **Ask the verifier to find the defect, not to
+  confirm the file.**
+
+  🛑 **TRANSPORT CORRUPTION — the payload that arrives is not the payload you
+  wrote.** Two instances in one bulk operation, 3 Sep, both caught before any
+  write:
+  * A Painless script shipped over ssh had its **single quotes stripped in
+    transit** — `g.get('geom_ref')` arrived as `g.get(geom_ref)` — because a
+    literal `'` terminates a single-quoted shell argument. All 340 updates failed
+    at *compile*, so this one was loud. ⚠️ **A corruption that left the script
+    syntactically valid while losing a quoted literal would not have been.**
+  * `"\\n".join(...)` inside a **quoted** heredoc reached Python as an escaped
+    backslash, producing a file of **0 lines containing 680 literal `\n`** —
+    invalid NDJSON, about to be POSTed. Caught by checking `wc -l` against the
+    expected 680 first.
+  ✅ **Both bugs were in transport, not logic** — a class nobody was watching,
+  because every check in this document targets what the code *computes*.
+  **Count the lines of a generated payload before sending it, and prefer
+  invocations with no quoting to defend.**
+
   🛑 **AN AGGREGATION BUCKET CAP IS A FILTER YOU DID NOT WRITE — and this one
   is the most dangerous form, because it returns a plausible, specific number
   that FITS THE HYPOTHESIS UNDER TEST.** 3 Sep: asked whether `tgn` places
