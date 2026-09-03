@@ -431,6 +431,28 @@ broken. These are worse than no check, because they are cited as evidence.
   `natural_earth` source — true, and the wrong question); none was checked
   against what the replacement actually contains.
 
+  🛑 **The dual of this class: a CORRECT reference to an EMPTY CONTAINER.** Not
+  a name that fails to denote — a name that denotes exactly what it says, which
+  turns out to hold nothing. 3 Sep, #233, and it invalidated the same decision
+  for the second time by a different mechanism. The size-pressure fallback,
+  already corrected once from `waterway=riverbank` (dead tag) to "drop the
+  `rivers` layer", was verified by checking that `classify()` routes
+  `water=river` to a `rivers` layer — **true, and the wrong question.** The
+  branch `natural=water → lakes` fired first, so every river polygon on the
+  planet landed in `lakes`: **23,140,155 features vs 4,856**, and the `rivers`
+  layer the lever targets holds 0.02% of inland water. **Existence of the
+  mechanism was checked; occupancy of it was not.** Both the implementer and the
+  coordinator verified the reference and neither asked what arrives there.
+  ⚠️ Note the common root: the same OSM migration (`waterway=riverbank` →
+  `natural=water` + `water=river`) invalidated the fallback **twice by different
+  routes**, and the two facts were established in the same session by the same
+  person without being connected. **When a fact invalidates one decision, search
+  for the others it invalidates** — a migration does not stop at the first thing
+  it breaks.
+  ✅ **The check that would have caught it is one line: for any lever of the
+  form "drop X", measure what is currently in X.** Not that X exists, not that
+  the routing to X is correct — the occupancy.
+
   ✅ **A fourth detection method, empirically the most productive here: when you
   touch something, look at what is next to it.** indexing-db's own accounting —
   two of its four catches came this way rather than from systematic
