@@ -1,11 +1,23 @@
 # CLAUDE.md — Agent Briefing for WHG Indexing Repository
 
 > **Repository:** `WorldHistoricalGazetteer/indexing`
-> **Last updated:** 2 September 2026
+> **Last updated:** 3 September 2026
 
 ---
 
-## ⚠️ READ FIRST — work in progress (31 August 2026)
+## ✅ READ FIRST — the completion campaign is CLOSED (3 September 2026)
+
+🛑 **Everything in this block is a RECORD, not live work.** It was written as
+work-in-progress on 31 August and the work finished on 3 September: the retile,
+the `h3_cover` remediation, the MultiPoint and point-class covers, the field
+cleanup, the water tileset rebuild, both cleanup rows and the corpus
+fallback-free census are all complete and verified.
+
+⚠️ **The individual ⚠️/🛑 markers below are PRESERVED DELIBERATELY** — the traps,
+failure modes and prohibitions still apply to future work. **But do not read any
+of them as describing something outstanding today.** A heading is a status claim
+about everything beneath it, and this one stood three days stale over a block
+every session reads first.
 
 **[`developer/HANDOVER-2026-08-31-rebuild-audit.md`](developer/HANDOVER-2026-08-31-rebuild-audit.md)**
 
@@ -26,7 +38,10 @@ cell, with two positive controls whose answers were known in advance. And
 `geom_class` was never wrong — `helpers.py:1053` folds `Point` **and**
 `MultiPoint` → `"point"` deliberately, and a MultiPoint genuinely is not areal.
 
-🛑 **But the audit found the MIRROR defect, which is live: 248 `whg` features
+✅ **FIXED 3 Sep (`760ffba`, 340 docs, 0 errors), and the count was 295 not 248** —
+the rollback could not see features that never had a correct cover to lose. The
+reasoning below is retained because it is the value; the status line was not.
+~~🛑 But the audit found the MIRROR defect, which is live: 248 `whg` features
 whose `h3_cover` was shrunk to a single cell by 2.11.** All 7,529 `whg`
 point-class geometries with a stored geometry are MultiPoints carrying
 single-cell covers; **546 have real extent, and the rollback comparison splits
@@ -160,10 +175,13 @@ places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
 not: a partial retile on 7 August ran against the geom store while it was
 destroyed, so **nine gazetteer boundary layers are on the live map today as
 points with no polygons** (`clio`, `kain_par`, `po`, `vob_lgd`, `vob_rd`,
-`hgis`, `vob_rc`, `vob_cty`, `ukhc`). That document is the authoritative
-statement of what landed, what is left, and in what order — every line of it
+`hgis`, `vob_rc`, `vob_cty`, `ukhc`). That document was the authoritative
+statement of what landed, what was left, and in what order — every line of it
 measured against the live indices and the deployed tilesets rather than against
-a manifest or a plan's own claim.
+a manifest or a plan's own claim. ⚠️ **It now carries its own scope banner saying
+its body beyond §1 has NOT been re-verified against 2–3 Sep. Read that banner,
+not this sentence** — a pointer asserting more authority than its target still
+claims will override the target's own qualification.
 
 ⚠️ **Before retiling anything, read its §3.1.** ~~The geom store holds **0**
 `un` geometries, so retiling `un` today would replace the country boundaries
@@ -556,7 +574,7 @@ is the shared builder. Licence data itself originates in `processing.settings.AU
 the registry with `python -m processing.verify_licences`, because the registry
 endpoint silently skips a `license_spdx` its own License table doesn't know.
 
-**Response ranking:** Results are sorted by normalised toponym-match score (0–100), with `cluster_size` as tiebreaker (legacy — to be replaced when `build_cluster_lookup` retires).
+**Response ranking:** Results are sorted by normalised toponym-match score (0–100), with **name-variant count** as the prominence tiebreaker — well-attested places carry more name forms across languages. ⚠️ The legacy `clusters`-index `cluster_size` tiebreaker was **retired 2026-07-12** with client-side clustering (`gateway/search.py:788`). This line described that retirement as a *future* change for two months after it happened, seventeen lines below the entry recording it — **a claim that went stale with no correction anywhere to propagate to it.**
 
 ### Search modes
 
