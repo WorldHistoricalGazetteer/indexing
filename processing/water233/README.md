@@ -88,3 +88,65 @@ OK.
    coincident" can distinguish a fixed map from an insensitive eye. This is
    evidence about the CURRENT map and must never be restated as if it were the
    post-build check.
+
+
+## Result — built 3 September 2026
+
+`water.mbtiles` **1.30 GB**, z0–10, 1,030,437 tiles, worst tile **454.4 KB**
+(under tippecanoe's 500 KB ceiling, so no tile is at risk of being silently
+skipped by `tile-join`).
+
+| layer | source features | source bytes |
+|---|---:|---:|
+| ocean | 57,413 | 1.82 GiB |
+| lakes | 22,432,127 | 18.20 GiB |
+| rivers | 712,884 | 3.52 GiB |
+
+Per-zoom totals: z7 93.9 MB · z8 192.3 MB · z9 344.9 MB · z10 531.4 MB.
+
+All three layers were verified **present in decoded tiles**, not merely
+declared in metadata, at five known locations — ocean at Neum and in the open
+Pacific, rivers dominant in the Nile delta, lakes dominant in the Finnish
+Lakeland, no ocean inland.
+
+### Ocean: the close-distance trap
+
+The first ocean build inherited `--close-distance=1` while running
+`--srs=4326`. That option is in the **units of the output SRS**, so the
+tolerance was 1 degree ≈ **111 km**, not the 1 metre the default intends in
+osmcoastline's native EPSG:3857. It bridged **12.0 km and 15.6 km** of open
+water, joining coastlines that are not connected.
+
+Rebuilt with `-c 0.001` (~111 m), a value chosen for the scale of coastline
+vertex spacing. Measured comparison:
+
+| | c=1° (~111 km) | c=0.001° (~111 m) |
+|---|---:|---:|
+| polygons | 57,413 | 57,413 |
+| total area | 354,241,468 km² | 354,241,475 km² |
+| `added_line` | 3 | 0 |
+| `not_closed` | 2 | 5 |
+
+Area delta **+7 km² (+0.0000%)** — refusing the bridges cost no coverage.
+
+⚠️ Polygon **count** is a poor comparator here: at `--max-points=1000` the
+water polygons are split pieces, so the count measures geometric complexity,
+not coverage. Compare **area**.
+
+### The fallback ladder — measured, not assumed
+
+The size gate passed with room, so no fallback was applied. If one is ever
+needed, the rungs measured on this corpus:
+
+1. **Minimum-area threshold.** 73.5% of inland features are under 1 hectare —
+   0.65 px at z10, invisible — and cutting them removes 36.7% of source
+   bytes. Cartographically correct rather than a degradation.
+2. **Drop the rivers layer** — 3.52 GiB, 16.8% of inland bytes. But it removes
+   a *visible category*, so it likely ranks below capping inland zoom. That
+   ordering is SG's call.
+3. ⚠️ **`waterway=riverbank` is dead** — 3 ways planet-wide. Dropping it saves
+   nothing; river areas are `natural=water` + `water=river` now.
+
+No area threshold gets past ~90% of bytes: the remainder is large lakes with
+huge vertex counts, which must be kept. Simplification is the next axis, not
+a lower threshold.
