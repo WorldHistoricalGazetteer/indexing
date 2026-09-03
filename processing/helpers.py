@@ -1192,8 +1192,25 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
     # Try the chosen res; on overflow drop to the next coarser one. The
     # ordered candidate list keeps the original res 5 / res 3 fallback
     # for shapes whose bbox underestimates the actual polyfill cost.
+    #
+    # ⚠️ The ladder MUST run down to r0. It used to stop at r3, and a shape
+    # that overflowed there had no escape: the loop returned an empty set,
+    # `if cells:` failed in the caller, and the geometry got a centroid-only
+    # fallback with an EMPTY ``h3_cover`` — no fuzzy containment at all.
+    # Measured on `po:p0s2rwkrjbs`, a valid near-global MultiPolygon
+    # (359.99° × 116.53°, 33% fill, reaching 81.7°N): r3 gave 10,381 cells
+    # against a 10,000 cap and r5 gave 508,243, so both were rejected —
+    # while r2 gives 1,483 and would have worked. r0 has 122 cells globally
+    # and can never exceed the cap, so with the ladder complete THIS FUNCTION
+    # CAN NO LONGER RETURN AN EMPTY COVER FOR A VALID POLYGON.
+    #
+    # ⚠️ Note ``_pick_polyfill_resolution``'s estimate is *equator-equivalent*
+    # (``_H3_HEX_AREA_DEG2``) and so is systematically optimistic at high
+    # latitude — it under-predicted that polygon by 27×. The ladder makes that
+    # a performance matter rather than a correctness one; do not rely on the
+    # estimate to keep the first candidate inside the cap.
     candidates: list[int] = []
-    for res in (start_res, 5, 3):
+    for res in (start_res, 5, 3, 2, 1, 0):
         if res not in candidates:
             candidates.append(res)
 
