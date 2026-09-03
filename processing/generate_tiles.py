@@ -87,9 +87,23 @@ TILES_OUTPUT_DIR = Path(DATA_DIR) / 'tiles'
 #   possibly   ['any', ['!', ['has','start']],
 #                      ['all', ['<=',['get','start'],toYear],
 #                              ['>=',['get','end'],fromYear]]]
-#   definitely ['all', ['has','start_def'],
-#                      ['<=',['get','start_def'],fromYear],
-#                      ['>=',['get','end_def'],toYear]]
+#   definitely ['all', ['has','start_def'], ['has','end_def'],
+#                      ['<=',['get','start_def'],toYear],
+#                      ['>=',['get','end_def'],fromYear]]
+#
+# ⚠️ CORRECTED 3 Sep. This sketch previously gave *definitely* as CONTAINMENT
+# (``start_def <= fromYear AND end_def >= toYear`` — alive THROUGHOUT the
+# window). That is wrong, and it contradicted both the gateway and this very
+# comment's own *possibly* line, which is an overlap test. The gateway's
+# ``es_helpers._temporal_filter`` is interval OVERLAP in BOTH modes — its
+# docstring: *"The window is an interval, so the test is interval overlap...
+# Which bound stands for 'the place's start' is what the mode selects"* — and
+# the deployed client mirror ``atlas.js::temporalHitPasses`` is overlap too.
+# **The mode selects WHICH BOUND is compared (inner vs outer), never the shape
+# of the comparison.** A client built to the old sketch would disagree with the
+# result list on every partially-overlapping record — precisely the map/list
+# divergence place#169 exists to close. Caught by whg3-74 while implementing
+# place#176's §3.2, which correctly followed the gateway over this comment.
 #
 # The envelope reads *both* ``start`` and ``end`` on every dated feature, so an
 # open-ended span can't leave a bound absent (a missing ``end`` would wrongly
