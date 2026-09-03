@@ -5653,11 +5653,59 @@ run reported "no fallbacks" where the prediction was ~1. **One cause, two
 failures, both in the flattering direction.** Corrected and re-run rather than
 reasoned past.
 
-🛑 **ONE GENUINE DEFECT REMAINS AND IS NOW THE ONLY FALLBACK IN THE CORPUS:**
-`po:p0s2rwkrjbs`, a real ~16°-wide MultiPolygon that **polyfills to nothing**
-(`uncoverable`). It is *unchanged* rather than *wrong*, so it sat outside this
-package's predicate by construction — the blind spot, with one member. Worth its
-own look.
+✅ **THE LAST FALLBACK — DIAGNOSED 3 Sep. A resolution FLOOR, not a malformed
+geometry, and the fix is one tuple.**
+
+⚠️ **It is not ~16° wide, as this plan previously said — it is GLOBAL.**
+`po:p0s2rwkrjbs`: MultiPolygon, 2 members, 245 vertices, **valid**, bounds
+`-180.000000, -34.804742 → 179.990977, 81.730126` = **359.99° × 116.53°**, bbox
+41,951 deg² with a **33% true fill**, and it does **not** cross the antimeridian.
+Every candidate mechanism — sliver, self-intersection, antimeridian artefact,
+degeneracy — is refuted.
+
+**MECHANISM: a floor with nothing beneath it.**
+* `_pick_polyfill_resolution` (`helpers.py:988`) tries only **`(7, 5, 3)`** and
+  returns **3** for this bbox.
+* `_polyfill_one_polygon` builds candidates from `(start_res, 5, 3)`, which with
+  `start_res=3` **de-duplicates to `[3, 5]`**.
+* Measured: **r3 → 10,381 cells** (over the 10,000 cap), **r5 → 508,243**. Both
+  rejected → `set()` → `if cells:` fails → centroid-only fallback, and
+  `h3_cover` ends up **empty**. No fuzzy containment at all.
+* **r2 → 1,483 cells** would have worked (r1 → 215, r0 → 30). **Nothing coarser
+  than r3 is ever in the candidate list**, so a shape that overflows at r3 has
+  no escape.
+
+⚠️ **The estimator missed by 27×** — predicted 381, actual 10,381 — because
+`_H3_HEX_AREA_DEG2` is *equator-equivalent* and this polygon reaches **81.7°N**,
+where a hexagon spans far fewer degrees². **The estimator is systematically
+optimistic at high latitude.**
+
+**IS IT A CLASS? Structurally yes; empirically one member of 1,021.** The failure
+condition is bbox > 22,000 deg² (forcing r3) **and** true r3 count > 10,000:
+
+```
+area geometries examined      986,065
+  bbox <= 2,200 deg2 (r7)     983,034
+  2,200 - 22,000     (r5)       2,010
+  > 22,000           (r3)       1,021   <- at risk
+    actually failing                1
+```
+
+**Bbox area is not the discriminator** — `wd:Q24945893` at 129,600 deg² covers
+fine (216 cells). The failing case has a *smaller* bbox but large true area and
+extreme latitude. ⚠️ *Caveat: only the top 25 of the 1,021 were listed, so the
+at-risk set's namespace composition is not fully characterised; the 1,021 and
+the single failure are solid.*
+
+### The fix — extend the ladder
+
+⭐ **`(start_res, 5, 3, 2, 1, 0)`.** One tuple, no new logic, and it makes the
+"return nothing" branch **unreachable for any polygon** — r0 has 122 cells
+globally and can never exceed the cap. **Today the code can return an empty
+cover for a valid polygon; after this it cannot.** Correcting the estimator's
+latitude blindness (scale by `1/cos(mean_lat)`) is secondary: the ladder fix
+makes estimate accuracy a *performance* matter rather than a *correctness* one.
+**No data correction needed** — the geometry is valid.
 
 1. **Fix the 7 `clio`** — trivial volume, and the British Empire at one cell is
    the worst cover in the corpus after the Silk Roads.
