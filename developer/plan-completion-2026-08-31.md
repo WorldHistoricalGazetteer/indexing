@@ -5688,6 +5688,61 @@ own look.
 
 ---
 
+## ⭐ 4.21 The temporal aggregate goes stale silently — existence, not freshness
+
+**SG, 3 Sep: S5 had to fire `gazetteer_temporal_extent` by hand for several
+namespaces. That should not be manual — and the fault is precise.**
+
+**IT IS AUTOMATED, BUT ONLY ON ONE PATH.** `gazetteer_temporal_extent` is wired
+into `submit_batch9_slurm:286` — **post-global-barrier**, depending on the AAT
+array so it reads the enriched `final` snapshot — and `temporal_extent` is a
+tracked stage in `staging_orchestrator._default_per_gazetteer_stages()`. Its
+sibling `gazetteer_h3_coverage` is invoked from `submit_h3_slurm:238`, i.e.
+**bolted onto a stage that always runs.**
+
+🛑 **So a TARGETED or INCREMENTAL re-extract never reaches Batch 9, and the
+aggregate silently goes stale.** That is exactly what happened: `gn`/`wd`/`nl`
+got a real `final/` on 2 Sep via 2.7 — a repair, not a full run — so the
+7 Aug aggregates were never recomputed. CLAUDE.md's incremental single-namespace
+workflow lists the aggregates as **manual step 5**, which is the same gap
+written down rather than fixed.
+
+🛑 **AND NOTHING DETECTS IT. The guard tests EXISTENCE, NOT FRESHNESS**
+(`push_gazetteer_inventory:521-529`):
+
+```python
+if not _temporal_extent_path(namespace).exists():
+    raise RuntimeError(f"Missing temporal_extent aggregate for {namespace} …")
+```
+
+A stale aggregate passes. `verify_aggregates.py` has **no** mtime or staleness
+check at all. **This is 4.11's fault class in a new place** — a chain that tests
+existence when the question is content — and it is why a wrong number can reach
+the public registry with every gate green.
+
+⚠️ **There is a documented precedent in the very file that runs it.**
+`submit_batch9_slurm`'s own docstring, on the AAT stage: *"Previously this stage
+existed and was barrier-required but was never wired into any submit script, so
+it only ran when invoked by hand — leaving namespaces silently un-enriched."*
+That fault was fixed by wiring it in. **This one is its sibling: wired in, but
+only on a path that partial runs do not take.**
+
+### Remedy — the guard first
+
+1. ⭐ **Make the aggregate guards test FRESHNESS.** Compare each aggregate's
+   mtime against the staged source the pipeline's own resolver would select, and
+   **refuse (or loudly warn) when the tree is newer**. Small, in
+   `push_gazetteer_inventory` and `verify_aggregates`. **This is the high-value
+   half: it converts "someone must remember" into "it cannot ship silently."**
+2. **Have the incremental path produce them** — either `index_namespace` runs
+   both aggregates, or CLAUDE.md's manual step 5 is automated. Removes the
+   omission rather than only detecting it.
+3. ⚠️ **`record_count` rides along in the same aggregate** and is published on
+   the gazetteer page, so a stale aggregate is a **user-visible wrong number**,
+   not just an internal one.
+
+---
+
 ## 4.19 Finish `schemas/field-notes.md` — **S5, queued behind 4.17**
 
 ⚠️ **Not stale — HALF-WRITTEN.** `places.json` was brought current 3 Sep
