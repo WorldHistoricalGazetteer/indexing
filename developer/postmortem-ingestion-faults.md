@@ -444,6 +444,34 @@ broken. These are worse than no check, because they are cited as evidence.
   `natural_earth` source — true, and the wrong question); none was checked
   against what the replacement actually contains.
 
+  🛑 **A constant that was CORRECT WHEN WRITTEN and became wrong through an
+  unrelated change elsewhere. No one erred at any point.** Two instances within
+  one evening, 3 Sep, which suggests it is common rather than exotic:
+  * `osmcoastline --close-distance` defaults to `1`, meaning **one metre** in
+    its default SRS of 3857 — entirely sane. Passing `--srs=4326`, which we must
+    because tippecanoe wants degrees, silently rescales that same `1` to **one
+    degree, ~111 km**. The log prints `Closing if distance between nodes smaller
+    than 1.` and never names a unit. Neither option documents the other.
+  * A completion monitor excluded the `.batch` and `.extern` step suffixes —
+    a complete list for the world as it stood. Introducing an `srun` probe an
+    hour later created step `.0`, a suffix that had never existed in this
+    campaign, which completed in under a second and **fired the monitor while
+    the job ran on**.
+  ✅ **Remedy, from the second fix: match the SHAPE of the thing, not the
+  instances you happen to have met** — exclude any JobID containing a dot rather
+  than enumerating known suffixes. And when you change a frame (an SRS, a unit,
+  an output format), **re-derive every constant expressed in it**, because the
+  constant will not announce that it has moved.
+
+  🛑 **The diagnostic perturbed the thing it measured — in the OBSERVABILITY
+  layer, which is where this campaign's failures actually live.** The `srun ...
+  ps` probe added to prove the ocean job was alive is what manufactured the
+  false completion event for that same job. Run it and walk away, and the next
+  notification is a false positive pointing at exactly the wrong conclusion.
+  It was caught only by checking the parent job's state before believing the
+  notification — prompted by **expecting a much larger elapsed time**, i.e. by a
+  sourced expected magnitude, the defence recorded above.
+
   🛑 **The dual of this class: a CORRECT reference to an EMPTY CONTAINER.** Not
   a name that fails to denote — a name that denotes exactly what it says, which
   turns out to hold nothing. 3 Sep, #233, and it invalidated the same decision
