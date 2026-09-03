@@ -811,6 +811,23 @@ broken. These are worse than no check, because they are cited as evidence.
   axis-aligned rectangular blocks, named by the artefact rather than inferred
   from its size.
 
+  ⚠️ **HOW THE WRONG MEASUREMENT DISGUISED ITSELF, which is the reusable part.**
+  The refuting script read `requests`' `r.content` — which **transparently
+  decompresses** — and then tested `raw[:2] == b"\x1f\x8b"` for the gzip magic
+  bytes. That test could never be true, because the bytes were already gone. So
+  the script reported the *decompressed* length in both its "wire" and
+  "uncompressed" columns, and their **equality was read as proof that nothing was
+  hidden in gzip.**
+
+  **The defect's signature was identical to the reassuring result.** A degenerate
+  instrument that collapses two quantities into one produces exactly what a clean
+  measurement of two genuinely-equal quantities produces. There is no way to tell
+  them apart *from the output* — only from the header (`content-encoding: gzip`,
+  which was there to be read) or from a control where the two are known to
+  differ. **Whenever a check reports that two independently-derived quantities
+  are equal, the first hypothesis must be that they came from the same source,
+  not that the world is consistent.**
+
   ⚠️ **This is the structural-beats-historical rule in a new substrate.** Two
   readers spent a round trip inferring a build's configuration from the size of
   its output, while the configuration was **stored verbatim inside the output**.
