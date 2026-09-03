@@ -711,6 +711,44 @@ def _h3_fallback(reason: str, geom_type: str | None,
     )
 
 
+def _compact_mixed(cells) -> set:
+    """``compact_cells`` over a possibly MIXED-RESOLUTION cell set.
+
+    ``h3.compact_cells`` raises ``H3ResMismatchError`` when handed cells of
+    differing resolutions, and ``_polyfill_adaptive`` legitimately produces
+    such a set: for a dateline-crossing MultiPolygon it fills each member (and
+    each antimeridian-split part) **independently**, and
+    ``_polyfill_one_polygon`` picks its resolution from *that part's* bounding
+    box. A multipolygon whose parts differ greatly in size — a colonial empire,
+    a country with distant islands — therefore yields a union spanning
+    resolutions, and compaction blew up on it.
+
+    Compacting **within** each resolution and unioning is the right fix rather
+    than normalising to one resolution: a mixed-resolution cover is the
+    intended output (``schemas/field-notes.md`` documents ``h3_cover`` as a
+    "compacted, multi-resolution set"), and flattening would either explode the
+    cell count going finer or lose precision going coarser.
+
+    Measured 3 Sep 2026: 5 live instances, all MultiPolygon, out of 145,764
+    geometries — but it is a latent CLASS, not five one-offs. It silently
+    degrades any large multi-resolution polygon, and the population grows with
+    the corpus. It was invisible to a `computed != stored` census because the
+    exception left `computed == stored`; it surfaced only because the fallback
+    counter added in this module records the exception rather than swallowing it.
+    """
+    if not cells:
+        return set()
+    by_res: dict[int, list] = {}
+    for c in cells:
+        by_res.setdefault(_h3.get_resolution(c), []).append(c)
+    if len(by_res) == 1:
+        return set(_h3.compact_cells(cells))
+    out: set = set()
+    for group in by_res.values():
+        out |= set(_h3.compact_cells(group))
+    return out
+
+
 def _cover_cells(geojson_geom: dict) -> set | None:
     """Cells covering ``geojson_geom``, or ``None`` when it cannot be covered.
 
@@ -740,14 +778,14 @@ def _cover_cells(geojson_geom: dict) -> set | None:
 
     if gt in ("Polygon", "MultiPolygon"):
         cells = _polyfill_adaptive(geojson_geom)
-        return set(_h3.compact_cells(cells)) if cells else None
+        return _compact_mixed(cells) or None
 
     if gt in ("LineString", "MultiLineString"):
         # ~500 m buffer in degrees (≈ 0.005°) so a line has an area to fill.
         buffered = shape(geojson_geom).buffer(0.005)
         buf_geojson = json.loads(json.dumps(buffered.__geo_interface__))
         cells = _polyfill_adaptive(buf_geojson)
-        return set(_h3.compact_cells(cells)) if cells else None
+        return _compact_mixed(cells) or None
 
     if gt == "GeometryCollection":
         out: set = set()
