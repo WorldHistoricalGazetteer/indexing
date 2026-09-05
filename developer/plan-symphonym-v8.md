@@ -2620,6 +2620,70 @@ tombstone. Even spread across all three shapes refutes it.
   on shared `/vast` means exact containment was never at risk**. Reusable as
   `process/staging_gateway.sbatch` + `process/compare_gateways.py`.
 
+## 6.11 A THIRD DATA SOURCE — the 1908 Atlas of the Chinese Empire (SG authorised)
+
+Offered by `gotw-eb`, built by `gotw-b6`, **explicitly authorised by SG**. On
+`main` as `data/atlas1908_*.json`, built by `process/atlas1908_index.py`.
+
+**6,517 entries / ~6,113 distinct names, every one carrying a province and a
+minute-precision lat/lon.** OCR'd with Surya from public-domain page images
+(Stanford / China Inland Mission, 1908; Stanford d. 1904 — **public domain, and
+the transcription is ours, not a third-party transcript**, which their CLAUDE.md
+requires). Credit the China Inland Mission / Edward Stanford as source atlas.
+
+### Why it matters more than its size suggests
+
+It is **postal-era romanisation** — standardised at the 1906 Shanghai conference
+from Giles's Nanking syllabary — a convention v7's corpus almost entirely lacks,
+and **measurably closer to 19th-century orthography than pinyin**:
+
+```
+mean string similarity to our 1856 forms:  postal 0.786   pinyin 0.571
+and the gain lands where pinyin collapses: Chih-le -> Chihli 0.77 vs Hebei 0.33
+```
+
+✅ **The coordinates are the point.** A coordinate join to a modern gazetteer
+generates `(postal, modern)` pairs **at scale and independent of our corpus** —
+GOTW's own intersection is 90 verified pairs; the derivable ceiling is thousands.
+
+✅ **It is NOT China-only** (`gotw-b6` corrected that): Mongolia 414, Tibet 323,
+Sinkiang 261, Korea 102, Kirin 87, Burma 81, Formosa 79, plus Russia, Annam,
+Laos, Tongking, Siam. **So it is one consistent romanisation convention applied
+across Mongolian, Tibetan, Turkic, Korean and Vietnamese toponyms** — for a
+phonetic model that is worth more than a larger China-only set.
+
+✅ **It satisfies §6.5b's test.** The convention is Stanford's cataloguing
+decision, taken in 1908 for its own reasons — **a witness from outside the
+matching problem**, which is what killed every filter in that section's table.
+
+### 🛑 The caveat, which must not get lost
+
+**This teaches POSTAL → MODERN. Our measured problem is 1856 → MODERN. That is
+two rungs and this supplies one.**
+
+⚠ **And the evidence that the missing rung is non-trivial is itself
+selection-affected — `gotw-eb` caught this in its own offer.** Only **263 of
+2,414 (10.9%)** of the 1856 Chinese headwords reach a postal form by exact match
+after normalising hyphens, case and diacritics. Where they do, the difference
+really is just hyphenation (`Shang-Hai → Shanghai`) — **but that observation is
+selected on precisely the cases where the transformation was trivial.** For the
+other ~89%, nothing here says how to get from `Keang-su` to `Kiangsu`.
+
+**Acquiring 1856 → postal pairs remains open**, and if v8 is evaluated on
+19th-century forms **this dataset will not by itself close that gap**.
+
+### QA — filter on `clean`
+
+`6,171 of 6,517 (94.7%)` unflagged. 🛑 **`suspect_name` (75 rows) is the flag that
+matters**: two entries welded together where Surya rendered a row's coordinates as
+LaTeX or substituted a glyph, so a **real coordinate sits under a name that has
+swallowed its neighbour** — invisible in aggregate, poisonous in a training pair.
+Province line-wraps (`Kwang- tung`, `Mon- golia`) are rejoined, which moved
+Kwangtung 216→264 and Mongolia 334→414; that never affected GOTW's own numbers
+because their join key normalises spaces, **but it would hit anyone grouping on
+the province field.** Independent QA: 98.7% of China-proper coordinates fall
+inside the province box the index itself prints; 0.94% alphabetical inversions.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
