@@ -1033,14 +1033,40 @@ exists. That moves them from "open decisions someday" to **the first gate on v8*
 
 **Measured 5 Sep, after the run, because nobody had checked:**
 
-| | names/sec |
-|---|---|
-| CPU, 16 torch threads, batch 4096 *(laptop)* | **5,602** |
-| A100, from today's real 72.7M run | **~25,000** |
-| ratio | **4.5×**, not the 50× one assumes |
+⚠ **SUPERSEDED — the laptop figure was flattering. Measured on CRC by
+`indexing-9c`, same model, 200k real toponyms:**
 
-72,703,777 names is **3.6 h on one 16-thread CPU process**; minutes across a
-modest CPU array.
+| host | device | threads | batch | names/s |
+|---|---|---|---|---|
+| htc | Xeon 8352Y | 4 | 1024 | 2,101 |
+| htc | Xeon 8352Y | 4 | 4096 | 1,756 |
+| htc | CPU | 32 | 1024 | 6,426 |
+| htc | CPU | 32 | 4096 | **7,543** |
+| gpu-n65 | **L40S** | 4 | 1024 | **49,057** |
+| gpu-n65 | L40S | 4 | 4096 | 48,050 |
+
+**The ratio is 6.5× (L40S vs CPU-32) to 23× (vs CPU-4), not 4.5×.** This
+session's laptop figure was 16 threads against 4, and its ~25,000/s GPU number
+was diluted by per-shard model load and by the Python diff/quantise loop, which
+is not embedding at all — steady state on an L40S is ~49,000/s.
+
+The *mechanism* stands and still explains why the gap is 6.5× and not 50×.
+
+🛑 **42% of GPU wall time is CPU tokenisation.** `_pad_batch` is pure Python and
+runs on the host either way, so it is a hard floor on the GPU rate — if it were
+free the L40S would be at ~85,000/s. **The next factor of two is in tokenisation,
+not hardware.**
+
+⚠ **CPU scales 4→32 threads by only 3.6× for 8× the cores**, and batch 4096 is
+*slower* than 1024 at 4 threads while faster at 32. Peak RSS is set by batch size
+(4.7 GB at 1024, 8.5 GB at 4096), not thread count — so a CPU fan-out wants
+**many small-batch processes, not few large-batch ones**: ~16 tasks on a
+64-core/240 GB htc node ≈ 34,000 names/s, about two-thirds of one L40S.
+
+⚠ **A wrong figure is loose on `/vast`.**
+`reembed/20260905T1455Z/reembed_cpu.sbatch` claims "~4,800 rows/s on 4 threads
+… only ~4x slower" — a present-tense claim no run produced, on shared storage
+where the next session reads it as measured.
 
 **Why the gap is small, which determines whether it generalises:** the model is
 8.3M parameters of which ~87% is a character embedding *table* (a lookup, not a
@@ -1049,9 +1075,9 @@ matmul), sequences are toponym-length (~10–20 tokens), and the encoder is a
 about INFERENCE only. Do not generalise it to the training phases**, which are a
 different problem.
 
-⚠ **Both numbers need re-measuring on CRC before anyone acts on them.** 5,602/s
-is a laptop, not a compute node; and the ~25,000/s includes per-shard model load,
-so it understates steady-state GPU throughput.
+✅ **Both have now been measured on CRC (above).** The instruction to re-measure
+rather than act on the laptop figure was right, and it changed the answer by
+between 1.4× and 5×.
 
 🛑 **The question this raises is not "is CPU fast enough" but "is waiting for a
 GPU slower than starting on CPU now?"** Today's array spent **0.81 h computing**
@@ -1072,8 +1098,19 @@ processing/reembed_canonical.sbatch         --gres=gpu:1 --cpus-per-task=4
 A hard `default="cuda"` on a GPU-less node is a crash, not a fallback. And the
 sbatch asks for **4** CPUs, so a naive CPU fallback there would run at roughly a
 quarter of the measured rate — a fallback that "works" while being silently 4×
-slower than it needed to be. *Referred to `indexing-9c` (5 Sep) to measure on CRC
-and to argue both ways on whether a shared routing utility is worth one home.*
+slower than it needed to be. ✅ **Resolved (`indexing-9c`, 5 Sep): a `resolve_device` policy module, but NO
+scheduler-aware router.** The reason is better than the one this document
+proposed: *the input a router needs is the one input Slurm will not give you* —
+`squeue` describes an instant, not your future priority, and a router that is
+wrong is wrong invisibly because the job merely looks slow.
+
+**Race the queues instead.** `reembed`'s shard design already makes estimation
+unnecessary: unique temp names, atomic renames, `.done` gating, and
+`cmd_compute` skipping a complete shard. Submit both a CPU and a GPU array and
+let whichever the scheduler starts first win. ⚠ **Verify the ledger cannot
+double-count a shard computed twice BEFORE racing a real run** — a race makes
+that the expected case rather than the exceptional one, and it is precisely the
+inflation the completeness check was built to catch.
 
 ## 6. DECISIONS TAKEN — 5 September 2026 (SG)
 
