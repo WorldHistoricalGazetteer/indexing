@@ -2215,6 +2215,29 @@ for the evaluation stratum as a justification for a production write.
 
 ### What the patch actually fixes — the date filter is INERT on TGN today
 
+🛑 **SCOPE CORRECTED — 22.3 M places, and TGN is not the largest offender.**
+`indexing-9c`'s namespace audit found **`osm` carrying 20,581,812 uniform
+placeholders**, byte-for-byte the TGN shape. Total affected **22,298,836**:
+`osm` 20,581,812 · `tgn` 1,712,662 · `nl` 4,362. Real dates: `gb` 1,174,027,
+`wd` 187,802, `gn` 2,150. `whg` has none, legitimately. `chgis`/`pl`/`clio`/
+`dgsd`/`ohm` looked anomalous and are **not** — they use the `start.in`/`end.in`
+exact-year convention `_bound_clause` documents and handles.
+
+⚠ **THIS BREAKS THE ISSUE'S ORIGINAL ACCEPTANCE CRITERION.** The patch is
+**TGN-only**, so applying it fixes **1.71 M of 22.3 M — 7.7%**. A `tgn`-scoped
+re-measure *"will show the filter discriminating beautifully and the filter will
+still be inert for 20.6 M OSM places"* — **a label that has stopped describing its
+set.** The closing evidence must be **unscoped, or scoped and labelled as
+partial**. `place#244` has been corrected in place: title, scope table and
+criterion.
+
+✅ **Task 1 closed causally, not by consistency.** `indexing-9c` pre-registered the
+prediction that `definitely` mode flips as soon as the window's end year reaches
+2026, then measured `[1500,2025] → 2,383` against `[1500,2026] → 1,713,432`. **A
+one-year change moves 1.7 M places, and the discontinuity sits exactly on the
+placeholder's value.** The residual 2,126 are the fallback branch working
+correctly on the few real dates.
+
 📋 **Filed as [`place#244`](https://github.com/WorldHistoricalGazetteer/place/issues/244)
 and handed to `indexing-9c`** (bug / API / coding-agent). Its tasks: check this
 section's mode analysis adversarially, audit the other namespaces for the same
