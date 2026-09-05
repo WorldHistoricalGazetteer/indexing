@@ -13,7 +13,7 @@
 
 ## 0. The short version
 
-**v7 is not measurably better than Levenshtein**, and the reason is not the
+**v7 is not measurably better than anyascii-romanised Levenshtein**, and the reason is not the
 architecture. Three things are wrong, in ascending order of cost to fix:
 
 1. **The gateway tokenises queries differently from the way the index was
@@ -34,7 +34,7 @@ architecture. Three things are wrong, in ascending order of cost to fix:
 Findings 2 and 3 are what v8 is *for*, and Package 1 did nothing about them.
 They are **still not scheduled**, because the project still has no benchmark that
 could resolve whether a retrain helped: the only ranking evaluation is 137
-queries, on which v7 (R@1 0.852) is inside the noise band of plain Levenshtein
+queries, on which v7 (R@1 0.852) is inside the noise band of romanised Levenshtein
 (0.815) — and v7 is *worse* than v6 (0.867).
 
 🛑 **Independent confirmation arrived 5 Sep, from a consumer rather than from
@@ -377,12 +377,37 @@ over 5 testsets:
 |---|---|---|
 | PanPhon192 (teacher's own space) | 0.411 | 0.450 |
 | Jaro-Winkler | 0.785 | 0.863 |
-| **Levenshtein** | **0.815** | **0.885** |
+| **Levenshtein** *(anyascii-romanised — see below)* | **0.815** | **0.885** |
 | Symphonym v6 | 0.867 | 0.903 |
 | **Symphonym v7** | **0.852** | **0.908** |
 
-Binomial SE at n=137 is ≈3.1pp. v7, v6 and Levenshtein are **statistically
-indistinguishable**, and v7 is nominally *below* v6 on R@1. The five testsets
+⚠ **"Levenshtein" here means ANYASCII-ROMANISED Levenshtein.**
+`mehdie_benchmark.levenshtein_similarity` does `anyascii(s).lower()` internally
+before measuring. That matters more than it looks: **raw edit distance scores
+0.000 on every cross-script pair by construction**, since the two strings share
+no characters. So the baseline v7 ties is not a naive algorithm — it is
+*anyascii plus* edit distance, and anyascii is itself a transliteration system
+doing the hard half of the work.
+
+🛑 **And on some script pairs that baseline is already PERFECT.** Measured
+(`indexing-9c`, 5 Sep): `London ~ Лондон` scores **1.000** under romanised
+Levenshtein and 1.000 under romanised Jaro-Winkler. For Cyrillic↔Latin there is
+nothing left for a model to win. Where the baseline actually fails is
+**CJK/Kana/Hangul↔Latin** — `東京 ~ Tokyo` drops to **0.125**, because anyascii
+gives Mandarin readings for Japanese kanji.
+
+⚠ **That localises v8's whole value proposition, and it sits awkwardly with the
+scoping decision.** A learned phonetic model can only beat anyascii+Levenshtein
+where anyascii is weak — which is the CJK family. But D-B (a Japanese kanji
+reading table) was explicitly ruled out by "cross-script only". **Worth
+re-examining before any GPU is committed: if romanised Levenshtein is near-perfect
+on the alphabetic cross-script pairs, "optimise for cross-script phonetic
+matching" may in practice mean "optimise for CJK", which is a narrower and more
+data-hungry target than it sounded.** The retrieval benchmark's per-script-pair
+breakdown will answer this directly, which is one more reason it precedes D-D.
+
+Binomial SE at n=137 is ≈3.1pp. v7, v6 and romanised Levenshtein are
+**statistically indistinguishable**, and v7 is nominally *below* v6 on R@1. The five testsets
 are all Arabic/Hebrew/Latin historical gazetteers — there is no CJK, Indic or
 Cyrillic evaluation at all, which is precisely where §2 shows the model is
 broken.
@@ -1036,16 +1061,41 @@ exists. That moves them from "open decisions someday" to **the first gate on v8*
 ⚠ **SUPERSEDED — the laptop figure was flattering. Measured on CRC by
 `indexing-9c`, same model, 200k real toponyms:**
 
-| host | device | threads | batch | names/s |
-|---|---|---|---|---|
-| htc | Xeon 8352Y | 4 | 1024 | 2,101 |
-| htc | Xeon 8352Y | 4 | 4096 | 1,756 |
-| htc | CPU | 32 | 1024 | 6,426 |
-| htc | CPU | 32 | 4096 | **7,543** |
-| gpu-n65 | **L40S** | 4 | 1024 | **49,057** |
-| gpu-n65 | L40S | 4 | 4096 | 48,050 |
+Thread sweep, one `--exclusive` allocation on htc-n30 (Xeon Gold 6248R, 48
+cores), varying only thread count. An earlier set was **discarded as
+contaminated**: two submissions landed on one node together and measured each
+other — 382/s and 341/s for a configuration that gives 2,101/s alone.
 
-**The ratio is 6.5× (L40S vs CPU-32) to 23× (vs CPU-4), not 4.5×.** This
+| threads | bs=256 | bs=1024 | bs=4096 |
+|---|---|---|---|
+| 1 | 902 | 665 | 528 |
+| 4 | 2,073 | 2,106 | 1,826 |
+| 8 | 2,631 | 3,193 | 3,069 |
+| **16** | **3,451** | **4,302** | **4,430** |
+| 32 | 2,704 | 4,291 | 4,406 |
+| 48 | 846 | 1,701 | 3,499 |
+
+| GPU | names/s |
+|---|---|
+| **L40S** | **49,057** |
+| A100-PCIE-40GB | 33,211 |
+
+🛑 **Using the whole node is 4× WORSE than using a third of it** — 846/s at 48
+threads against 3,451/s at 16. The model is too small for the thread pool and
+spends its time synchronising. **The CPU fan-out shape is three 16-thread tasks
+per 48-core node, not one 48-thread task.** Peak RSS is set by batch size
+(4.7 GB at ≤1024, 8.3 GB at 4096), not threads, so three fit in ~14 GB.
+
+⚠ **The L40S beats the A100 by 1.5×** (forward 2.35 s vs 3.16 s, same 200k
+names). A small sequential BiLSTM rewards clocks, not tensor cores — so
+`--constraint=a100|l40s` is right, and prefer the L40S given a choice.
+
+⚠ **htc nodes are heterogeneous by ~1.7×.** Size a fan-out for the low end.
+
+**The ratio is 11× (L40S vs the best CPU configuration), not 6.5× and not 4.5×.**
+72.7M names is ~25 min on one L40S or ~4.6 h on one 16-thread CPU task, so
+**16 concurrent 16-thread tasks ≈ one L40S** — the number to hold when deciding
+whether to wait for a GPU. This
 session's laptop figure was 16 threads against 4, and its ~25,000/s GPU number
 was diluted by per-shard model load and by the Python diff/quantise loop, which
 is not embedding at all — steady state on an L40S is ~49,000/s.
@@ -1107,10 +1157,22 @@ wrong is wrong invisibly because the job merely looks slow.
 **Race the queues instead.** `reembed`'s shard design already makes estimation
 unnecessary: unique temp names, atomic renames, `.done` gating, and
 `cmd_compute` skipping a complete shard. Submit both a CPU and a GPU array and
-let whichever the scheduler starts first win. ⚠ **Verify the ledger cannot
-double-count a shard computed twice BEFORE racing a real run** — a race makes
-that the expected case rather than the exceptional one, and it is precisely the
-inflation the completeness check was built to catch.
+let whichever the scheduler starts first win. ✅ **Checked before racing: double-counting does not arise** — one `.done` per
+shard id, so a shard computed twice yields one meta and `examined_total` cannot
+inflate.
+
+🛑 **But racing breaks something subtler, now fixed (`8a7fb38`).** Both tasks
+`os.replace` onto the same final path from unique temp names, so two can
+interleave as `A.parquet, B.parquet, B.done, A.done` — leaving **a marker written
+by one process beside data written by another**. Harmless while both computed the
+same thing; a CPU task and a GPU task do **not**, since the run counts
+one-int8-step differences as hardware quantisation noise. Every downstream count
+would then describe a file other than the one applied. `cmd_apply` now asserts
+each parquet's row count against its own marker.
+
+⚠ **The fixture could not have caught it**: `_complete_shard` wrote `b""` as the
+data file, so every test in that class was blind to a marker and its data
+disagreeing.
 
 ## 6. DECISIONS TAKEN — 5 September 2026 (SG)
 
