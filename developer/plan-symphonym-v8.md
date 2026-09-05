@@ -1317,7 +1317,47 @@ licence does not exist yet. Nothing may be *published* — model, deposit, or
 paper — that is trained on LHPN data until it is in place. Record it against the
 v8 release checklist, not as done.
 
-## 6.2 The historic-transcription packs — what they are, and the dependency SG owns
+## 6.2 ~~The historic-transcription packs~~ — 🛑 **CANCELLED by SG, 6 Sep**
+
+🛑 **THE SPECIALIST-REVIEW INITIATIVE IS DROPPED.** SG asked whether there was a
+strong reason to keep it; `gotw-eb`'s honest answer was no. The curated list will
+not be produced and `docs/toponyms/` has been removed from the site (34 files;
+2,391 Chinese and 3,147 Russian pick-lists).
+
+**Two consequences, and they are unequal:**
+
+* ✅ **The staging/production pick-list divergence (§6.10) is MOOT** — it has no
+  consumer. The weaker, correct characterisation stands on record anyway: the
+  divergence was **score-level, not content-level**, so a candidate staging
+  offered *does* exist in production and was merely ranked below the cutoff.
+* 🛑 **The 1856 → POSTAL rung now has NO acquisition route at all** — not a slow
+  one, none. The specialist review was the only mechanism for it, and the 1908
+  atlas (§6.11) supplies **postal → modern**, the *other* rung. **If v8 is ever
+  evaluated on nineteenth-century orthography rather than postal-era, nothing
+  currently in prospect closes that gap.**
+
+### ⚠ What v8's second target now rests on — and it is less damaged than it looks
+
+**The loss falls harder on GOTW than on v8.** `Keang-su → Jiangsu` is GOTW's
+problem and is now unsolved. **v8's target was *historic orthography*, and
+postal-era romanisation IS historic orthography** — it simply is not *1856*
+orthography. Three legs remain, **none requiring a specialist**:
+
+| leg | what it gives | status |
+|---|---|---|
+| **LHPN Welsh ↔ English** | the volume; clerk transliteration of Welsh sound | ✅ RCAHMW cleared (§6.1); ~5.5% `HeadName` yield is the binding constraint |
+| **1908 Atlas** (§6.11) | postal ↔ modern, coordinate-anchored, **five language families under one convention** | ✅ on `main`, public domain |
+| **TGN dated variants** (§6.8) | **labelled** European historic forms — `Dorchestre`/`Dorcic`/`Dorkecestre` | ✅ constructible from the **`toponyms`** index + the patch file, no production write |
+
+🛑 **What is genuinely lost is the EVALUATION on 19th-century forms**, and the
+hardest tail with it. Any v8 claim about historic orthography must therefore say
+**which** historic orthography — postal-era and Welsh clerk forms, not 1856
+gazetteer transcription. ⚠ **That distinction must survive into the paper**, or
+the claim will be read as covering exactly the case it does not.
+
+---
+
+## ~~6.2b~~ The packs as they were specified — retained for the design, not as live work
 
 `gotw-eb` has described the "pinyin list" in full (5 Sep). **It reframed it in a
 way that simplifies v8's scope, and attached a warning that must not be lost.**
