@@ -37,6 +37,45 @@ a 1M benchmark, but exactly enough to measure how far any proposed labeller (or
 a hand-labelled sample) agrees with an uncontaminated signal before anyone
 trusts one at scale.
 
+⚠⚠ THE SELECTION CRITERION IS ITSELF A DIFFICULTY FILTER, AND NO REPORTING AXIS
+CAN SEE IT. A place enters this corpus only if it carries names in two or more
+scripts — which is a fact about how well DOCUMENTED it is, not about the
+matching problem. Measured over 20,000 randomly sampled live places (5 Sep 2026):
+
+    qualifying (>=2 scripts)   3,179 places   mean 6.45 toponyms/place, median 3
+    not qualifying            16,821 places   mean 1.67 toponyms/place, median 1
+    qualify rate 15.90%                       prominence ratio 3.9x
+
+So **every recall figure this corpus produces is measured on the best-documented
+sixth of the index and is an upper bound** for the corpus at large; the true
+figure over all places is worse. The namespace mix inverts too — `osm` is 45% of
+non-qualifying places and 22% of qualifying — so it is not a uniform thinning.
+
+This is NOT fixable by sampling differently: co-attestation cannot produce a
+cross-script pair for a place that has only one name, so the conditioning is the
+positive source itself. It is only reportable. Say "measured on places carrying
+>=2 scripts, 15.9% of the index, mean 3.9x the toponyms of the rest" beside any
+absolute recall number, and never let one be quoted as a corpus-wide rate.
+
+⚠ THE PATTERN, NAMED, BECAUSE THIS IS THE THIRD INSTANCE IN ONE EVALUATION:
+*a corpus property masquerading as a model property, invisible to the axis the
+results are reported on.* The three:
+
+  1. 35.1% of CJK<->LATIN positives romanise to byte-identical strings, so the
+     romanised baseline is a near-oracle there by construction (see
+     `evaluation/baselines.py`).
+  2. An external pack returned easiest-first makes every metric an upper bound,
+     uniformly across cells, so nothing looks anomalous.
+  3. This one: the corpus's own entry criterion selects for documentation
+     richness.
+
+Each is invisible to per-script-pair reporting because the confound is
+ORTHOGONAL to script pair — it shifts every cell in the same direction, so no
+cell stands out and the axis cannot help. **The technique that finds them is not
+inspecting output. It is asking what had to be TRUE OF A RECORD for it to enter
+the corpus at all, and then asking whether that property correlates with
+difficulty.** Selection criteria, not results, are where to look.
+
 ⚠ WHAT COULD STILL MAKE THIS CORPUS A MEASUREMENT OF SOMETHING ELSE. Wikidata
 carries machine-generated multilingual labels, so a single `wd` place can emit
 dozens of cross-script "positives" that are all transliterations of one string.
