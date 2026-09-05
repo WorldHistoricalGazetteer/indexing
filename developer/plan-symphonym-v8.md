@@ -2156,11 +2156,52 @@ confidence interval with the place as the unit. Never treat pairs as independent
 harder to catch — it produces a **plausible** number rather than an obviously
 inflated one, and 40,937 would have been quoted without hesitation.
 
+### ✅ THE EVALUATION SET NEEDS NO `apply` — the two arguments decouple completely
+
+🛑 **`indexing-9c`: the pairs are constructible from the live index TODAY, with no
+production write.** Both halves of every example are already present as toponyms
+and already co-attested to the same TGN place — checked over *all* matching docs,
+`examined == total` in every case:
+
+```
+Dorkecestre / Dorchestre / Dorocine   all  -> tgn:7011929
+Samarobriva (14 docs) / Samasobriva   both -> tgn:7010588
+Toscanella (9) / Tuscana (4)          both -> tgn:7006796
+Pausula (3) / Mont'Olmo (1)           both -> tgn:7009095
+```
+
+**The ingest did NOT drop the variant names. It only overwrote their DATES with
+the 2026 placeholder.** So **the index supplies the pairs; the patch file supplies
+the labels** — and the patch file already exists on `/vast`, written by a job that
+touched no index.
+
+🛑 **THEREFORE THE BENCHMARK ARGUMENT FOR `apply` DOES NOT EXIST.** This section
+deliberately kept the two arguments separate so the newer could not absorb the
+older; the separation is now *total* rather than merely disciplined. **`apply`
+stands or falls on the temporal search filter and the clustering `s.t` fuel — the
+purposes it was written for — and on nothing else.** No future reader can reach
+for the evaluation stratum as a justification for a production write.
+
 ⚠ **`apply` HAS NOT BEEN RUN and is not mine to run** — it writes to the live
-`places` index and needs SG's authorisation. Note also (`indexing-9c`) that the
-backfill's *own* purpose is the **temporal search filter** and the clustering
-`s.t` fuel, not any benchmark; the 40,937 pairs are a use we invented today. Both
-arguments for running it are now evidenced, and they are independent.
+`places` index and needs SG's authorisation, now on a single ground rather than
+two.
+
+⚠ **`indexing-9c` nearly reported the exact opposite, via today's recurring trap.**
+Its first pass used `size: 3` and returned *"Samarobriva → (no tgn attestation)"*
+and *"Toscanella → (no tgn attestation)"* — **both false**: Samarobriva has 14 docs
+and Toscanella 9, and it had looked at three. **A universal negative asserted from
+a truncated result**, which would have declared two of the four example pairs
+unconstructible. *"The fix that would have caught it automatically is the one I
+keep advocating and did not apply to myself: print the denominator."*
+`examined=14 total_docs=14` makes the flaw unmissable; `(no tgn attestation)` hides
+it.
+
+⚠ **The asymmetry, stated in the direction that is easy to miss:** because this
+stratum is European Latin-script and nothing else, **it cannot be traded against
+the cross-script work in any planning sense. It does not reduce what the
+specialist spend has to buy.** *40,937 is a number that will look like it bought
+more than it did* — twice over, once through the clustering above and once
+through scope.
 
 ## 6.9 🛑 PRODUCTION: a wedged `/ix1` BLOCKS ES BOOT — an availability SPOF
 
