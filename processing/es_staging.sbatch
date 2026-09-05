@@ -232,6 +232,23 @@ curl -s -X PUT "$ES_URL/_snapshot/$STAGING_REPO_NAME" \
 }" | python3 -m json.tool
 echo
 
+# Register the RESTORE SOURCE repo, read-only. A staging node consumes
+# production's backups; it must never be able to write into them, and marking it
+# readonly here makes that structural rather than a matter of discipline.
+if [ -n "${RESTORE_SNAPSHOT_DIR:-}" ] && [ -n "${RESTORE_REPO_NAME:-}" ] \
+   && [ "$RESTORE_REPO_NAME" != "$STAGING_REPO_NAME" ]; then
+    echo "Registering restore-source repository '$RESTORE_REPO_NAME' (readonly)..."
+    curl -s -X PUT "$ES_URL/_snapshot/$RESTORE_REPO_NAME" \
+        -H 'Content-Type: application/json' -d "{
+      \"type\": \"fs\",
+      \"settings\": {
+        \"location\": \"$RESTORE_SNAPSHOT_DIR\",
+        \"readonly\": true
+      }
+    }" | python3 -m json.tool
+    echo
+fi
+
 # Register cluster exchange repo (for snapshot handoff with production)
 if [ -n "$CLUSTER_EXCHANGE_DIR" ]; then
     mkdir -p "$CLUSTER_EXCHANGE_DIR"
@@ -285,9 +302,14 @@ else
     RESTORE_PREFIXES="places toponyms"
 fi
 
+# Restore from RESTORE_REPO_NAME when it is configured, else fall back to the
+# staging repo (which is what this script did before 2026-09-05, and which is
+# still right for a site that keeps only one repo).
+SOURCE_REPO="${RESTORE_REPO_NAME:-$STAGING_REPO_NAME}"
+
 # Find the latest successful snapshot whose indices include a places* entry,
 # and output its name plus the full list of concrete indices it contains.
-SNAPSHOT_INFO=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all" | python3 -c "
+SNAPSHOT_INFO=$(curl -s "$ES_URL/_snapshot/$SOURCE_REPO/_all" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -332,12 +354,12 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
     # answer to notice.
     if [ "${RESTORE_PLACES_ONLY:-0}" != "1" ]; then
         if ! echo "$RESTORE_INDICES" | grep -q "toponyms"; then
-            echo "ERROR: snapshot '$LATEST_SNAPSHOT' in repo '$STAGING_REPO_NAME'" >&2
+            echo "ERROR: snapshot '$LATEST_SNAPSHOT' in repo '$SOURCE_REPO'" >&2
             echo "       contains NO toponyms index, and --places-only was not requested." >&2
             echo "       Indices in it: ${ALL_SNAPSHOT_INDICES:-<none>}" >&2
             echo "       Restoring this would give a staging ES where every phonetic" >&2
             echo "       query returns nothing while appearing to work." >&2
-            echo "       Fix: point STAGING_REPO_NAME at the repo holding a current" >&2
+            echo "       Fix: point RESTORE_REPO_NAME at the repo holding a current" >&2
             echo "       snapshot of BOTH indices, or pass --places-only if that is" >&2
             echo "       genuinely what you want." >&2
             exit 1
@@ -346,10 +368,10 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
 
     # --- Restore from snapshot ---
     echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
-    echo "  From repository:   $STAGING_REPO_NAME"
+    echo "  From repository:   $SOURCE_REPO"
     echo "  Concrete indices: $RESTORE_INDICES"
     # Start restore WITHOUT wait_for_completion so ES remains responsive
-    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore" \
+    curl -s -X POST "$ES_URL/_snapshot/$SOURCE_REPO/$LATEST_SNAPSHOT/_restore" \
         -H 'Content-Type: application/json' -d "{
       \"indices\": \"$RESTORE_INDICES\",
       \"ignore_unavailable\": true,
