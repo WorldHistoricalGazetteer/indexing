@@ -42,8 +42,35 @@ if [ ! -f "$CONDA_SETUP_PATH" ]; then
 fi
 CONDA_BIN_PATH="$(dirname "$CONDA_SETUP_PATH")/../bin"
 
-# Ensure PATH includes Java if available
-if [ -n "$JAVA_HOME" ] && [ -d "$JAVA_HOME/bin" ]; then
+# --- Java on PATH -------------------------------------------------------------
+#
+# This block runs at SOURCE time, so every `es` subcommand pays for it. It used
+# to be an unbounded `[ -d "$JAVA_HOME/bin" ]` against
+# JAVA_HOME=${IX1_BASE}/jdk-21.0.1 — a stat on a HARD NFS mount. When /ix1 wedged
+# (twice on 2026-09-05) that hung the whole script family, which is why "can we
+# restart ES?" was unanswerable for hours while ES itself was running perfectly.
+# Two changes, and the ORDER of the two source lines above matters to both:
+# `.env` is sourced first and `.env.local` overrides it, so anything derived from
+# ES_HOME has to be derived HERE, after both, not inside `.env`.
+#
+# 1. Prefer Elasticsearch's OWN bundled JDK, which sits at $ES_HOME/jdk and moves
+#    with ES. This host relocated ES to /vast (place#118) via .env.local, so the
+#    bundled JDK is already off the hard mount. It is also what ES actually
+#    executes: the running process is $ES_HOME/jdk/bin/java regardless of
+#    JAVA_HOME, because ES 8+ ignores JAVA_HOME in favour of its bundle. So this
+#    makes the variable agree with reality rather than changing which JDK runs.
+# 2. BOUND every probe. `timeout` returns on this mount (measured: rc=124), so a
+#    wedged path costs 2 seconds per subcommand instead of forever. Never
+#    reintroduce a bare `[ -d ... ]` here — the point is not that /ix1 is wrong,
+#    it is that no unbounded filesystem probe belongs on the path every command
+#    takes.
+_es_dir_exists() { timeout 2 test -d "$1" 2>/dev/null; }
+
+if [ -n "${ES_HOME:-}" ] && _es_dir_exists "${ES_HOME}/jdk/bin"; then
+    JAVA_HOME="${ES_HOME}/jdk"
+fi
+if [ -n "${JAVA_HOME:-}" ] && _es_dir_exists "$JAVA_HOME/bin"; then
+    export JAVA_HOME
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
