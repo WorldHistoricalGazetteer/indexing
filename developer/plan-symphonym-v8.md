@@ -2582,9 +2582,29 @@ tombstone. Even spread across all three shapes refutes it.
 
 ### Consequences
 
-* **The lever, if alignment is wanted:** `es -forcemerge` production to expunge
-  deletes **before** snapshotting. ⚠ Expensive I/O on the volume prod serves
-  from — named, not proposed.
+* **The lever, if alignment is wanted — and my first description of it was
+  wrong.** ⚠ **`es -forcemerge` CANNOT touch production**: `do_forcemerge`
+  requires `$STAGING_INFO_FILE` and errors *"No staging ES instance running"*,
+  then merges via `ES_NODE`/`ES_PORT` from that file. It is a **staging-only**
+  tool, and merging staging does not help — staging already has zero tombstones.
+  Aligning them means expunging deletes in **production**, which is a direct
+  `_forcemerge` against prod ES, not this command.
+
+  ✅ **Do it TRIAGED — SG's standing guidance, and the script already embodies
+  half of it.** Iterative mode (the default, `--step-factor 2`) **halves the
+  per-shard segment count each pass rather than jumping straight to 1**, so each
+  pass rewrites less data and peak memory stays bounded. The script uses
+  `max_num_segments`; for this purpose
+  **`_forcemerge?only_expunge_deletes=true`** is the cheaper primitive again,
+  rewriting only segments whose delete ratio exceeds the threshold instead of
+  everything.
+
+  🛑 **`toponyms` is the dangerous one, on record.** Production OOM/429s were
+  traced to **`dense_vector` merges on the toponyms index** — see
+  `~/.claude/memory/es_heap_hnsw_merge_root_cause.md`. Its 292,493 deletes are
+  0.4% against `places`'s 3.9%, so it is simultaneously the **riskiest** target
+  and the one with the **least to gain**. Merge `places` if anything; leave
+  `toponyms` alone.
 * **Recommendation: stay on the production gateway.** 0.67% set divergence is
   small but is not noise, and a re-reconciliation about *which parent regions are
   trusted* lands precisely on boundary-case flips.
