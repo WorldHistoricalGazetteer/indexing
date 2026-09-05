@@ -1935,6 +1935,101 @@ no licence conversation, no specialist time, no download. It is running an
 existing module against a release already on disk. Worth knowing *before* anyone
 opens a conversation with Getty.
 
+## 6.7 THE SOURCE SURVEY — answered. Verdict: VALIDATE, barely REDUCE, cannot REPLACE
+
+`gotw-eb`, measured on **staging** rather than production — a full copy of the
+same indices, so the read-only constraint **dissolved rather than being worked
+within**. Worth remembering as a technique: the cheapest way to satisfy a
+constraint is sometimes to move off the resource it protects.
+
+```
+places with >=1 name variant dated before 2020   (track_total_hits, real totals)
+  tgn          0 of  2,991,143   0.000%
+  wd     174,500 of 11,459,393   1.523%
+  chgis        0 of     81,292   0.000%
+  gn       1,892 of 13,454,817   0.014%
+```
+
+🛑 **The premise of my own brief is false as deployed: TGN carries NO dated name
+variants**, and this is the warned trap at one further remove. Not *"populated and
+wrong"* — **supported end to end and empty.** `authorities/tgn-places.py` parses
+Getty's per-term `estStart`/`estEnd` into `term_dates` (:153) and writes
+`timespan(td[0], td[1])` when present (:255); the schema has nested
+`toponyms.timespans`. **Every layer works. Getty's dump supplies nothing.** Every
+sampled TGN toponym carries the identical degenerate stamp
+`{start:{latest:2026}, end:{earliest:2026}}` — **100% populated, zero
+discriminating information.**
+
+### ✅ The one real signal, and it is not dates
+
+**TGN tags Chinese romanisations by SYSTEM** in BCP-47: bare `zh-Latn` against
+`zh-Latn-pinyin-x-notone` / `-x-hanyu`. **67,192 TGN places carry both**, and the
+pairs are the target shape:
+
+```
+Hsia-ch'i Tao              -> Xiazhi Dao
+Ch'eng-an-hsien            -> Cheng'an
+Kuang-hsi Sheng            -> Guangxi
+Chung-hua Jen-min-kung-ho-kuo -> Zhonghua
+```
+
+⚠ **Do NOT take 67,192 at face value.** Hand-adjudicating 20 pairs: roughly half
+are genuine Wade-Giles↔pinyin; the rest are English conventional forms
+(`New Taipei → Taibei`), **Japanese colonial-era romanisations**
+(`Kashoto Island → Lü Dao`), or outright **renamings**
+(`Anhua Xian → Dongping`). **~30–35k usable after filtering, and the filter is not
+obvious — the tag marks *pinyin vs not-pinyin*, not *modern vs historic*.**
+
+✅ **Its virtue is exactly what §6.5b demanded: a witness from OUTSIDE the matching
+problem.** It is Getty's cataloguing, not our edit distance — so unlike every
+filter in that section's table, it cannot select for the thing being measured.
+
+### The other four, ranked
+
+| | source | verdict |
+|---|---|---|
+| 2 | **GeoNames name-level dates** | Right kind, negligible volume — 1,892 places (0.014%). Genuinely name-in-use semantics: `gn:10426575` has `Lich@en` starting 2004 and `Գյոլջգին@hy` **ending** 2004. Renamings, not romanisations. |
+| 3 | **Wikidata dates** | Populated, wrong thing. 174,500 places, but they date the **ENTITY**: `wd:Q1001069` stamps 1879 on its German, Albanian, English *and* Armenian names alike. **Cannot separate historic from modern by construction.** |
+| 4 | **Russian** | Nothing. 0 TGN places carry both a bare `ru-Latn` and any `ru-Latn-<variant>` — TGN does not tag Russian romanisation systems. No in-house substitute exists; BGN/PCGN vs GOST must come from outside. |
+| 5 | **CHGIS** | 0 dated terms across all 81,292 records. |
+
+### 🛑 The decisive measurement — coverage of the actual tail
+
+**Of 400 distinct 1856 Chinese headwords tested against the WHOLE index, 15.0%
+match an indexed name exactly** — by namespace: `gn` 43, `wd` 9, `osm` 3, `gb` 1,
+**`tgn` 4**.
+
+**So TGN's 67k romanisation pairs, whatever their purity, barely touch our
+corpus.** They are a decent unlabelled-to-weakly-labelled **training** resource
+and they do not answer our questions. ✅ **The specialist spend is justified**,
+which is the useful outcome.
+
+### ⚠ Three of the survey's own numbers were wrong before they were right
+
+Recorded because the failure modes are reusable:
+
+* an `exists` query on a **nested subfield** returned 0.00% coverage — a query
+  artefact, not a fact;
+* totals of **exactly 10,000** across four namespaces were Elasticsearch's default
+  `track_total_hits` cap, **not a coincidence**;
+* a `term` query against the **analysed** `toponyms.label` returned **0 of 400**
+  headwords — *"a clean, quotable, completely false zero"*, caught **only because
+  Peking/Nanking/Canton/Beijing were run as a positive control and failed too.**
+  On `.keyword` the real figure is 15%.
+
+🛑 **That last one is §6.5b arriving at the other end of the conversation**: a
+probe that could only return the answer half-expected. **The positive control is
+the entire reason the reported number is 15% and not 0%** — and a 0% here would
+have justified the specialist spend just as neatly, for entirely false reasons.
+
+### The job I submitted is still worth completing — it asks a different question
+
+`gotw-eb` measured **the INDEX**. Job **11157269** parses **Getty's RELEASE**. They
+discriminate between two very different states: *Getty ships no dates* versus *we
+lost them in ingestion*. The survey's evidence points at the former (`term_dates`
+is parsed and written correctly), but that is an inference from reading the code,
+not a measurement of the dump.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
