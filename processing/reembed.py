@@ -80,6 +80,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -227,11 +228,30 @@ def cmd_pin(args) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     repo = _repo_root()
+    # `str.isalpha()` is a property of the INTERPRETER's Unicode tables, not of
+    # our code, and the canonical tokeniser's script detection filters on it:
+    # 515 codepoints are alphabetic in Unicode 14.0.0 and not in 13.0.0 (all
+    # Unicode 14 additions — Cypro-Minoan, Tangsa, Vithkuqi, Latin Ext-G,
+    # Arabic Extended-B, Toto, Ethiopic Ext-B, Old Uyghur). A name containing
+    # one of them gets a different script_id under the two, so a shard computed
+    # under the wrong interpreter produces "differences" that are artefacts of
+    # the interpreter and writes them back.
+    #
+    # Measured 5 Sep 2026: CRC conda `whg` is 3.11.13 / 14.0.0 — the index
+    # writer — while pitt (system 3.9.25 and the reembed venv) is 13.0.0. The
+    # export and apply phases do not tokenise, so 13.0.0 is harmless there; the
+    # COMPUTE must be 14.0.0. Because `pin` is normally run on pitt, the
+    # required version is stated explicitly rather than sampled from whichever
+    # host happened to run it — sampling would pin 13.0.0 and abort every shard.
+    required_unicode = args.unicodedata_version or unicodedata.unidata_version
     pin = {
         "tokeniser_block_sha256": _canonical_block_hash(repo / "phonetics" / "tokenise.py"),
         "hf_inference_block_sha256": _canonical_block_hash(repo / "hf" / "inference.py"),
         "checkpoint": _checkpoint_hash(Path(args.model_dir) if args.model_dir else repo / "hf"),
         "git_commit": _git_commit(out_dir),
+        "unicodedata_version": required_unicode,
+        "pinned_by_python": platform.python_version(),
+        "pinned_by_unicodedata": unicodedata.unidata_version,
         "pinned_at": datetime.now(timezone.utc).isoformat(),
     }
     if pin["tokeniser_block_sha256"] != pin["hf_inference_block_sha256"]:
@@ -262,6 +282,12 @@ def cmd_pin(args) -> None:
     path.write_text(json.dumps(pin, indent=2))
     print(f"[pin] tokeniser {pin['tokeniser_block_sha256'][:12]} · "
           f"git {pin['git_commit'][:8]} · {pin['checkpoint'][:24]}... → {path}")
+    print(f"[pin] compute must run under unicodedata {required_unicode} "
+          f"(this host has {unicodedata.unidata_version})")
+    if required_unicode != unicodedata.unidata_version:
+        print(f"[pin] that is deliberate: the tokeniser's script detection reads "
+              f"str.isalpha(), so the COMPUTE has to match the interpreter that "
+              f"wrote the index, not the one that pinned it.")
 
 
 def cmd_stage(args) -> None:
@@ -526,8 +552,21 @@ def verify_tokeniser(pin: dict) -> str:
             f"the pinned one; mixing the two would UNDER-count, because a shard "
             f"running post-fix code compares canonical against canonical, finds "
             f"nothing, and is indistinguishable from a clean shard.")
+    want_unicode = pin.get("unicodedata_version")
+    if want_unicode and unicodedata.unidata_version != want_unicode:
+        raise SystemExit(
+            f"ABORT: this task runs Python {platform.python_version()} with "
+            f"unicodedata {unicodedata.unidata_version}, but the run is pinned to "
+            f"{want_unicode}. The tokeniser's script detection filters on "
+            f"str.isalpha(), which is the INTERPRETER's Unicode table: 515 "
+            f"codepoints are alphabetic in 14.0.0 and not in 13.0.0, so this task "
+            f"would assign a different script_id from the one the index holds and "
+            f"write the resulting artefacts back as repairs. Activate the conda "
+            f"`whg` env (3.11.13 / 14.0.0) — not the reembed venv, which exists "
+            f"for the export and apply phases and does not tokenise.")
     print(f"[compute] tokeniser verified at the reader: {hf_inference} "
-          f"block sha256 {got[:12]} == pin")
+          f"block sha256 {got[:12]} == pin · unicodedata "
+          f"{unicodedata.unidata_version} == pin")
     return got
 
 
@@ -689,6 +728,8 @@ def cmd_compute(args) -> None:
         "changed_candidate": changed_candidate,
         "changed_non_candidate": changed_non_candidate,
         "tokeniser_sha256": block_hash,
+        "unicodedata_version": unicodedata.unidata_version,
+        "python_version": platform.python_version(),
         # SLURM_RESTART_COUNT is how many times Slurm requeued THIS task. On
         # preempt a non-zero value is routine, not a fault — but without it a
         # shard that ran twice and was recorded once is indistinguishable from
@@ -796,6 +837,14 @@ def cmd_apply(args) -> None:
                 f"{str(meta.get('tokeniser_block_sha256'))[:12]}, but the run is "
                 f"pinned to {pin['tokeniser_block_sha256'][:12]}. Recompute that "
                 f"shard (--force) rather than applying a mixed run.")
+        if pin.get("unicodedata_version") and \
+                meta.get("unicodedata_version") != pin["unicodedata_version"]:
+            raise SystemExit(
+                f"ABORT: shard {i:04d} was computed under unicodedata "
+                f"{meta.get('unicodedata_version')} against the pinned "
+                f"{pin['unicodedata_version']}. Mixed Unicode tables across an "
+                f"array are the requeue hazard with a different variable, and "
+                f"equally invisible in the totals. Recompute that shard.")
         if meta.get("checkpoint") != pin["checkpoint"]:
             raise SystemExit(
                 f"ABORT: shard {i:04d} used checkpoint {str(meta.get('checkpoint'))[:24]} "
@@ -924,6 +973,11 @@ def main() -> None:
     pp = sub.add_parser("pin", help="pin the tokeniser + checkpoint for this run")
     pp.add_argument("--out-dir", required=True)
     pp.add_argument("--model-dir")
+    pp.add_argument("--unicodedata-version", metavar="X.Y.Z",
+                    help="the Unicode table the COMPUTE must run under (14.0.0 "
+                         "for the conda whg env, which wrote the index). Defaults "
+                         "to this host's, which is wrong whenever pin runs on "
+                         "pitt and compute runs on CRC.")
     pp.set_defaults(func=cmd_pin)
 
     pe = sub.add_parser("export", help="prod ES → sharded parquet (run on pitt)")

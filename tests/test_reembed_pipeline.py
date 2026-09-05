@@ -190,7 +190,7 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         import unittest.mock as mock
         with mock.patch.object(reembed, "_git_commit", return_value="unknown"):
             with self.assertRaises(SystemExit) as ctx:
-                reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None))
+                reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None, unicodedata_version=None))
         self.assertIn("records nothing", str(ctx.exception))
 
     def test_the_staged_commit_file_is_authoritative_over_any_repo_above_it(self):
@@ -199,14 +199,49 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         (self.dir / "staged_commit.json").write_text(json.dumps({"commit": "e" * 40}))
         self.assertEqual(reembed._git_commit(self.dir), "e" * 40)
 
+    def test_the_required_unicode_table_is_stated_not_sampled(self):
+        """`pin` normally runs on pitt (13.0.0) and compute on CRC (14.0.0).
+
+        `str.isalpha()` is the interpreter's Unicode table, and the tokeniser's
+        script detection filters on it — 515 codepoints are alphabetic in 14.0.0
+        and not in 13.0.0. Sampling the pinning host would pin 13.0.0 and abort
+        every shard, so the required version is stated.
+        """
+        reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None,
+                                        unicodedata_version="14.0.0"))
+        pin = reembed.load_pin(self.dir)
+        self.assertEqual(pin["unicodedata_version"], "14.0.0")
+        # and it records what it was pinned BY, so a wrong pin is diagnosable
+        self.assertEqual(pin["pinned_by_unicodedata"], unicodedata.unidata_version)
+
+    def test_a_shard_under_the_wrong_unicode_table_aborts(self):
+        import unittest.mock as mock
+        pin = {"tokeniser_block_sha256": reembed._canonical_block_hash(
+                   Path(reembed.__file__).resolve().parents[1] / "phonetics" / "tokenise.py"),
+               "git_commit": "c" * 40,
+               "unicodedata_version": "99.0.0"}   # never any real table
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.verify_tokeniser(pin)
+        self.assertIn("unicodedata", str(ctx.exception))
+        self.assertIn("isalpha", str(ctx.exception))
+
+    def test_the_matching_unicode_table_does_not_abort(self):
+        repo = Path(reembed.__file__).resolve().parents[1]
+        pin = {"tokeniser_block_sha256": reembed._canonical_block_hash(
+                   repo / "phonetics" / "tokenise.py"),
+               "git_commit": "c" * 40,
+               "unicodedata_version": unicodedata.unidata_version}
+        self.assertEqual(reembed.verify_tokeniser(pin),
+                         pin["tokeniser_block_sha256"])
+
     def test_repinning_a_moved_tree_aborts(self):
         self._write_pin(tokeniser_block_sha256="d" * 64, hf_inference_block_sha256="d" * 64)
         with self.assertRaises(SystemExit) as ctx:
-            reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None))
+            reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None, unicodedata_version=None))
         self.assertIn("NEW run directory", str(ctx.exception))
 
     def test_pinning_the_real_tree_records_the_shipped_tokeniser(self):
-        reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None))
+        reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None, unicodedata_version=None))
         pin = reembed.load_pin(self.dir)
         repo = Path(reembed.__file__).resolve().parents[1]
         self.assertEqual(pin["tokeniser_block_sha256"],
