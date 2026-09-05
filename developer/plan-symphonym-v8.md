@@ -1426,6 +1426,63 @@ filtering, the same rule asked for on coordinates:
 * **Never drop the row.** `gotw-eb` is right that an override is usually a
   *better* answer than the pick — it is a correction — just not an anchored one.
 
+🛑 **THAT GUARD IS DESIGNED ON A SIGNAL THAT MOSTLY DOES NOT EXIST.** `gotw-eb`
+measured it against the deployed packs rather than letting it ship:
+
+```
+administrative context on candidate places
+  Chinese     0 of 20,682 options carry region/admin_unit/subregion   0.00%
+  Russian    10 of 20,485                                             0.05%
+
+rows with NO usable printed coordinate
+  Chinese  1,247 of 2,413    52%
+  Russian  3,333 of 3,534    94%
+```
+
+**Both corroboration routes are absent on the majority of Chinese rows and almost
+all Russian ones.** The index supplies no administrative context for these places
+at all — `region`, `admin_unit`, `subregion` null and `relations` empty on every
+candidate sampled — so the UI cannot prefill `modern_province`, and a reviewer who
+has just picked a name from a list has no reason to fill an optional-looking box.
+
+⚠ **The failure mode is the one this document keeps describing.** Every override
+on those rows falls back to unanchored, which is *safe* — but **the re-resolution
+route would be dead precisely on the population it was designed to rescue, and it
+would look like it was working, because nothing errors.** A guard that never fires
+reports the same thing as a guard with nothing to catch.
+
+**Mitigation shipped by `gotw-eb` (`2740c6f`):** on a row with no usable
+coordinate the province field is highlighted, placeheld *"please fill this one
+in"*, and carries its reason — that the entry has no usable coordinates so the
+province is the only independent check available. Asked for on exactly the rows
+that need it and nowhere else. It cannot be promised, only requested.
+
+### A third corroboration route, to be measured before it is built
+
+**Siblings.** Every row carries `printed_hierarchy` from the 1856 book — a signal
+that is independent of the index, independent of the row's own coordinate, and
+**present on rows that have neither**. Entries sharing a printed parent should
+resolve to places near one another. So a re-resolution is corroborated when it
+lands near the centroid of its **cleanly-anchored** siblings.
+
+⚠ **Only clean siblings may vote** — `overridden: false` with a coordinate-backed
+anchor. Never another re-resolution, or the corroboration chains and one bad
+anchor propagates through a whole printed division.
+
+**The measurement that decides whether this is worth building, and it is
+`gotw-eb`'s to take:** *of the rows with no usable coordinate, how many share a
+`printed_hierarchy` with at least one cleanly-anchored sibling?* If that is small,
+the route is as dead as the other two and should not be written. **It is a
+bootstrap, and bootstraps can have no seed.**
+
+### Reporting requirement — the fire rate needs its denominator
+
+⚠ **Report how often re-resolution fired, split by whether corroboration was
+AVAILABLE at all.** Otherwise a low rate reads as *"specialists rarely
+override"* when it may mean *"we had nothing to check against"* — and those
+demand opposite responses. This is `filters must report their denominator`
+arriving in the ingest path.
+
 🛑 **A PARTIAL RETURN IS NOT A RANDOM SAMPLE, AND THAT NOW BITES THE TRAIN SIDE
 TOO.** The pack leads with the rows most
 likely to be answered quickly — usable coordinates, stated hierarchy, hyphenated
@@ -1446,6 +1503,23 @@ only the reported split.
 is ever returned, the honest response is not a cleverer split but a stated limit:
 **report the train set's composition beside the test set's, and do not claim
 corpus-level improvement from a corpus-biased sample.**
+
+🛑 **THESE ARE NOT TWO CAVEATS. THEY ARE ONE, COUNTED TWICE** — `gotw-eb`'s
+observation, and it is the sharpest structural point in this section. The
+coordinate-bearing rows are **both** the ones the anchor guard can validate **and**
+the ones ordered first for return. So:
+
+> the anchored, corroborated, cleanly-resolvable subset is *the same population*
+> as the well-documented easy half. **The rows where anchoring is hardest are the
+> rows where the book is thinnest**, and they will be simultaneously
+> under-returned, under-anchored and under-validated.
+
+Writing them as separate bullets in a limitations section would understate the
+problem by implying they might partially cancel. They compound. **State it as one
+correlated deficit.**
+
+*"Stratifying cannot manufacture what never arrives — nor can it manufacture the
+ability to check what does."*
 
 🛑 **THE DELIVERY IS NOT AGREED, AND V8's SCHEDULE MUST NOT ASSUME IT.**
 `gotw-eb`'s own words: nothing has been sent, no specialist has committed, and
