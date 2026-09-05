@@ -1775,10 +1775,9 @@ co-attested to the same `place_id` as their modern form.** What is absent is the
 
 ### What that changes
 
-1. ✅ **There is a free, unlabelled historic-orthography training corpus already
-   in the index**, harvestable by co-attestation with no specialist involvement:
-   Latin-script variants co-attested with a non-Latin-script place, where the
-   variant is not the modern romanisation.
+1. ⚠ **AMENDED — see §6.5b. There is a large free unlabelled corpus, but it is
+   NOT a historic-orthography corpus**; it is a cross-romanisation one, in which
+   historic forms are a small unmarked minority.
 2. 🛑 **For TRAINING, the historic label is not required.** `(Peking, Beijing)` is
    a useful positive pair whether or not anything calls it historic. **The label
    matters for evaluation stratification, not for the objective.** This is the
@@ -1786,6 +1785,68 @@ co-attested to the same `place_id` as their modern form.** What is absent is the
 3. ⚠ **So the pack's value is narrower and sharper than "supplies the missing
    pairs":** it supplies (a) the **hard tail**, which genuinely is absent, and
    (b) **labelled evaluation data**, which nothing in the index provides.
+
+### 6.5b The conclusion survives; the DESCRIPTION of it does not
+
+🛑 **`indexing-9c` measured the population my probe pointed at (`d5bcd49`), and
+"a free historic corpus" is the wrong name for it.** Over 20,000 sampled places,
+**5.00% carry two or more distinct Latin names alongside a non-Latin one** —
+~2.56 M places corpus-wide, 30,542 same-script pairs in the sample. Classified by
+how far the two forms differ once case-folded and stripped of combining marks:
+
+```
+identical when folded    1.0%   'Lac à Robert' ~ 'lac à Robert'
+near      (>=0.85)       5.8%   'Agía Marína' ~ 'Ayia Marina'
+mid   (0.55-0.85)       35.3%   'Chŏm-ni' ~ 'Jeomni'          (M-R vs RR)
+far       (<0.55)       57.9%   'Zhongzheng Village' ~ 'Tiong-chèng-lí'
+```
+
+**It is dominated by diacritic and case variants, competing romanisation systems
+(McCune-Reischauer against Revised Romanization), different languages' readings of
+the same characters (Mandarin against Taiwanese Hokkien), and full-name-against-
+short-name pairs.** Historic forms are present and are a **small, unmarked
+minority** — and **no edit-distance band isolates them**: `Peking`/`Beijing` lands
+in the same band as `Chŏm-ni`/`Jeomni`. The 57.9% "far" bucket is almost entirely
+truncations and cross-language readings, not history.
+
+**So the claim splits, and both halves matter:**
+
+* ✅ **Excellent unlabelled training data for cross-romanisation phonetic
+  matching** — which *is* v8's objective. `(Chŏm-ni, Jeomni)` and
+  `(Zhongzheng Village, Tiong-chèng-lí)` are exactly the positives the model
+  should learn from, and the point that **the historic label is not required for
+  training** is precisely why this works.
+* 🛑 **NOT an evaluation set for historic orthography.** The label that would
+  stratify it is the one thing it does not carry.
+
+⚠ **THE FOURTH INSTANCE OF §8.3b, AND IT LANDS ON THIS SESSION'S OWN EVIDENCE.**
+The probe behind §6.5 was **eight names already known to be historic** — Peking,
+Nanking, Canton, Tientsin, Amoy, Tiflis. **Probing for what you already know finds
+it and tells you nothing about the population**, and the population looks nothing
+like the probe set.
+
+> **Selection effects reach the evidence we gather ABOUT a corpus, not only the
+> corpus itself.**
+
+That is a different door from the previous three: instances 1–3 were confounds in
+the corpus; this one is a confound in the *sampling of evidence*. The tell was
+that a claim about a **population** rested on a hand-picked **probe** — and every
+earlier instance today was a claim about a population that turned out to be a
+claim about a filter.
+
+🛑 **A WARNING ABOUT THE OBVIOUS NEXT STEP.** Isolating the historic minority needs
+a definition of *"not the modern romanisation"*, and every obvious one is
+contaminated:
+
+| candidate filter | what it actually selects for |
+|---|---|
+| edit-distance threshold | **phonetic distance — the thing being measured** |
+| "differs from the preferred name" | a *source* property, not a linguistic one |
+| "≠ anyascii romanisation of the native form" | **where romanisation is lossy — the stratum v7 already wins on** (§8.3) |
+
+**Any such filter needs a witness from outside the matching problem** — the same
+corroboration principle as the GOTW anchor ladder (§6.2). Until one exists, use
+this corpus for training and do not build an evaluation stratum out of it.
 
 ### GeoNames `isHistoric` — present, populated, and not what we mean
 
