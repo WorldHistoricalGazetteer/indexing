@@ -1475,6 +1475,49 @@ anchor propagates through a whole printed division.
 the route is as dead as the other two and should not be written. **It is a
 bootstrap, and bootstraps can have no seed.**
 
+### Consequences of this spec inside the harness
+
+**`unanchored_no_exclusion` was a scalar, and the spec above makes it a mixture**
+(`indexing-9c`, `7ff1e74`). "Unanchored" now means at least three different
+things: a row that never had an anchor; a row whose anchor the specialist
+**rejected** and whose typed correction failed re-resolution for want of
+corroboration; and a row that re-resolved ambiguously. 🛑 **The middle group are
+corrections — the higher-quality answers in the pack.** One count averages the
+best rows together with the ones nobody could place: the
+two-populations-readable-as-one failure, occurring one level down, inside the
+field added the day before to prevent exactly that. Now broken down by `source`,
+with a test asserting two unanchored sources come back separated.
+
+**A rule worth extracting from the key collision**, stated by `indexing-9c` as a
+rule rather than a fact about GOTW:
+
+> **A key that is stable is not thereby unique**, and a split on a non-unique key
+> **trains and tests on the same entity while reporting a clean separation.**
+> Nothing in the output distinguishes that from a real result.
+
+### The ordering bias is invisible to per-script-pair reporting
+
+🛑 **`indexing-9c`'s finding, and it lands on the benchmark rather than the
+ingest.** If a partial return is systematically the places the book documented
+best, then **any metric computed on it is an upper bound** — and the
+per-script-pair breakdown *cannot see this*, because **difficulty is orthogonal to
+script pair**. Every cell is uniformly optimistic, so nothing looks anomalous and
+no comparison between cells reveals it.
+
+⚠ **This is the same shape as the 35.1% romanisation artefact (§8.3): a corpus
+property masquerading as a model property.** Both are invisible to the axis the
+results are reported on, which is why both had to be found by reasoning about how
+the corpus was built rather than by inspecting the numbers.
+
+**Required mitigation:** report the denominator as **"n of N in the pack"** *and*
+**where in the ordering the returned rows sit**, so a reader can see that recall
+was measured on the easy half.
+
+🛑 **This has a dependency that does not exist yet: the export must carry each
+row's POSITION in the pack ordering.** Without it the returned subset's
+composition is unrecoverable — we would know the ordering was easiest-first and
+be unable to say where any particular return stopped. Requested from `gotw-eb`.
+
 ### Reporting requirement — the fire rate needs its denominator
 
 ⚠ **Report how often re-resolution fired, split by whether corroboration was
