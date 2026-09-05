@@ -278,10 +278,42 @@ def cross_script_pairs(place: dict, *, max_per_place: int,
     for the cross-script target and WRONG for historic orthography, which is
     usually same-script — Welsh<->English forms are both LATIN. It is a
     parameter rather than a hard-coded filter so the exclusion is a decision the
-    caller makes, not one buried in a list comprehension. It cannot rescue
-    historic forms on its own, though: a historic spelling is typically ABSENT
-    from the index, which is the whole complaint, so co-attestation cannot
-    generate those pairs at any setting. They need an external pack.
+    caller makes, not one buried in a list comprehension.
+
+    ⚠ A CORRECTION TO WHAT THIS DOCSTRING USED TO SAY. It claimed historic pairs
+    are unreachable by co-attestation because the historic form is absent from
+    the index, and therefore need an external pack. That is only half true, and
+    the wrong half was load-bearing. The WELL-KNOWN historic romanisations are
+    already co-attested to the same `place_id` as their modern form — Peking /
+    Beijing share 5 place_ids, Canton / Guangzhou 6, Tiflis / Tbilisi 5. What is
+    absent is the obscure tail, which is what an 1856 gazetteer actually
+    contains.
+
+    ⚠ BUT THE HARVESTABLE POPULATION IS NOT A HISTORIC CORPUS, and anyone
+    reaching for it should know what it holds. Measured over 20,000 sampled
+    places: 5.00% carry two or more distinct Latin names alongside a non-Latin
+    name (~2.56M places corpus-wide), yielding 30,542 same-script pairs in the
+    sample. Classified by how much the two forms differ once case-folded and
+    stripped of combining marks:
+
+        identical when folded      1.0%   'Lac à Robert' ~ 'lac à Robert'
+        near      (>=0.85)         5.8%   'Agía Marína' ~ 'Ayia Marina'
+        mid   (0.55-0.85)         35.3%   'Chŏm-ni' ~ 'Jeomni'   (M-R vs RR)
+        far       (<0.55)         57.9%   'Zhongzheng Village' ~ 'Tiong-chèng-lí'
+
+    The population is dominated by diacritic and case variants, competing
+    ROMANISATION SYSTEMS (McCune-Reischauer against Revised Romanization),
+    different LANGUAGES' readings (Mandarin against Taiwanese Hokkien), and
+    full-name-against-short-name pairs ('Rūdkhāneh-ye Faşlī-ye Khar Rūd' ~ 'Khar
+    Rūd'). Historic forms are in there and are a small, UNMARKED minority, and
+    no edit-distance band isolates them — Peking/Beijing lands in the same band
+    as Chŏm-ni/Jeomni.
+
+    The consequence is a split, not a verdict: this is **good unlabelled
+    training data for cross-romanisation phonetic matching**, which is the
+    actual objective and needs no historic label; and it is **not** an
+    evaluation set for historic orthography, because the label that would
+    stratify it is precisely what it does not carry.
 
     Returns ``(pairs, n_dropped)``. The drop count is returned rather than
     discarded because the cap is the one place this construction can silently
