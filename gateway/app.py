@@ -191,6 +191,23 @@ async def health():
     except Exception as e:
         es_status = f"error: {e}"
 
+    # Degraded stores, reported rather than inferred. Before place#241/#242 a
+    # gateway serving without hard links, or without a phonetic model, looked
+    # from outside exactly like one whose stores held nothing — and a gateway
+    # WEDGED on an unreachable store could not report anything at all, because
+    # it was blocked in a syscall instead of running code.
+    degraded: dict = {}
+    try:
+        from . import symphonym
+        degraded["symphonym"] = symphonym.status()
+    except Exception as exc:  # pragma: no cover — diagnostics must never 500
+        degraded["symphonym"] = {"error": str(exc)}
+    try:
+        from .hard_link_expansion import store_degraded, store_stats
+        degraded["hard_links"] = {"degraded": store_degraded(), "stores": store_stats()}
+    except Exception as exc:  # pragma: no cover
+        degraded["hard_links"] = {"error": str(exc)}
+
     return {
         "gateway": "ok",
         "elasticsearch": es_status,
@@ -198,6 +215,7 @@ async def health():
             "es": ES_BACKEND,
             "kibana": KIBANA_BACKEND,
         },
+        "stores": degraded,
     }
 
 
