@@ -212,6 +212,23 @@ def _finish_shard(final: Path, temp: Path, done: Path, meta: dict) -> None:
 
 ROMANISED_SCRIPTS = frozenset({"CJK", "HIRAGANA", "KATAKANA", "HANGUL"})
 
+#: D5. Scripts the PRE-FIX detector recognised and the canonical one does not.
+#:
+#: `hf/inference.py`'s old table carried GURMUKHI (U+0A00-U+0A7F);
+#: `phonetics/utils/script_detection.py` — the table the index was written
+#: with, and the one now vendored — has no Gurmukhi entry at all, so Punjabi
+#: names score OTHER. A document embedded by the backfill therefore carries a
+#: GURMUKHI script id that the canonical tokeniser can never reproduce, while
+#: nothing about the NAME marks it out: single word, already NFC, no digits, and
+#: both detectors agree on OTHER today because only one of them ever disagreed.
+#:
+#: Found by `changed_non_candidate` going from 0 at 38% of the corpus to 12 at
+#: 100% — twelve Punjabi country names (ਪਾਕਿਸਤਾਨ, ਨੇਪਾਲ, ਬੰਗਲਾਦੇਸ਼ …) at cosine
+#: 0.80-0.98. They are the clearest direct evidence in the run that
+#: backfill-written documents exist, and they were invisible to every other
+#: check because the predicate had no reason to look at them.
+LEGACY_ONLY_SCRIPT_RANGES = ((0x0A00, 0x0A7F),)   # Gurmukhi
+
 
 def is_candidate(name: str, script: str | None) -> bool:
     """Could the two tokenisers have disagreed about this name?
@@ -250,8 +267,12 @@ def is_candidate(name: str, script: str | None) -> bool:
     # 'กรุงเทพ' is not a D4 name. Digits and punctuation are the shifting class,
     # because they fall outside every script range and the legacy detector
     # counted them as OTHER.
-    return any(not c.isalpha() and c != " "
-               and unicodedata.category(c)[0] != "M" for c in name)
+    if any(not c.isalpha() and c != " "
+           and unicodedata.category(c)[0] != "M" for c in name):
+        return True
+    # D5, above.
+    return any(any(lo <= ord(c) <= hi for lo, hi in LEGACY_ONLY_SCRIPT_RANGES)
+               for c in name)
 
 
 def is_control(name: str, script: str | None) -> bool:

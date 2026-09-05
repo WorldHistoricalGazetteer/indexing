@@ -163,7 +163,11 @@ class TestD4NamesAreCandidates(unittest.TestCase):
         pulled most of the Thai, Devanagari and Arabic corpus into the candidate
         set and shrunk the control that vouches for the weights.
         """
-        for name in ("กรุงเทพ", "मुंबई", "কলকাতা", "ਅੰਮ੍ਰਿਤਸਰ"):
+        # NB: no Gurmukhi here. 'ਅੰਮ੍ਰਿਤਸਰ' sat in this fixture until the census
+        # found D5, and it is now a candidate for a reason that has nothing to
+        # do with combining marks — which is exactly why it must not be the
+        # example that proves marks are harmless.
+        for name in ("กรุงเทพ", "मुंबई", "কলকাতা", "தமிழ்"):
             with self.subTest(name=name):
                 self.assertFalse(reembed.is_candidate(name, "THAI"))
 
@@ -173,6 +177,31 @@ class TestD4NamesAreCandidates(unittest.TestCase):
         for name in ("London", "Москва", "Αθήνα", "Gherke"):
             with self.subTest(name=name):
                 self.assertFalse(reembed.is_candidate(name, "LATIN"))
+
+    def test_gurmukhi_names_are_candidates_d5(self):
+        """The divergence only the full census could find.
+
+        The pre-fix detector knew GURMUKHI; the canonical one does not, so
+        Punjabi names score OTHER and a backfill-written document carries a
+        script id the canonical tokeniser can never reproduce. Nothing about the
+        name marks it: single word, NFC, no digits, and BOTH detectors agree on
+        OTHER today, because only one of them ever disagreed.
+
+        Twelve real ones turned up at 100% of the corpus having been absent at
+        38% — the strongest direct evidence in the run that backfill-written
+        documents exist.
+        """
+        for name in ("ਪਾਕਿਸਤਾਨ", "ਨੇਪਾਲ", "ਬੰਗਲਾਦੇਸ਼", "ਭੂਟਾਨ"):
+            with self.subTest(name=name):
+                self.assertTrue(reembed.is_candidate(name, "OTHER"))
+                self.assertFalse(reembed.is_control(name, "OTHER"))
+
+    def test_other_indic_scripts_are_not_swept_in_by_d5(self):
+        # Devanagari and Bengali are in BOTH tables, so they never diverged and
+        # must not be pulled into the candidate set by this clause.
+        for name in ("मुंबई", "কলকাতা"):
+            with self.subTest(name=name):
+                self.assertFalse(reembed.is_candidate(name, "DEVANAGARI"))
 
     def test_a_d4_name_is_never_a_control(self):
         self.assertFalse(reembed.is_control("SO-10731", "LATIN"))
