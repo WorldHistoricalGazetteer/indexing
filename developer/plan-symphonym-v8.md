@@ -1029,6 +1029,52 @@ trained on the tokenisation the v8 index will be written with. So D-A/D5/D6/D7
 must be settled **before** training data is regenerated, not after the model
 exists. That moves them from "open decisions someday" to **the first gate on v8**.
 
+### 5.13 Device selection — GPU is only ~4.5x CPU for this model
+
+**Measured 5 Sep, after the run, because nobody had checked:**
+
+| | names/sec |
+|---|---|
+| CPU, 16 torch threads, batch 4096 *(laptop)* | **5,602** |
+| A100, from today's real 72.7M run | **~25,000** |
+| ratio | **4.5×**, not the 50× one assumes |
+
+72,703,777 names is **3.6 h on one 16-thread CPU process**; minutes across a
+modest CPU array.
+
+**Why the gap is small, which determines whether it generalises:** the model is
+8.3M parameters of which ~87% is a character embedding *table* (a lookup, not a
+matmul), sequences are toponym-length (~10–20 tokens), and the encoder is a
+2-layer BiLSTM — inherently sequential and unable to saturate a GPU. ⚠ **This is
+about INFERENCE only. Do not generalise it to the training phases**, which are a
+different problem.
+
+⚠ **Both numbers need re-measuring on CRC before anyone acts on them.** 5,602/s
+is a laptop, not a compute node; and the ~25,000/s includes per-shard model load,
+so it understates steady-state GPU throughput.
+
+🛑 **The question this raises is not "is CPU fast enough" but "is waiting for a
+GPU slower than starting on CPU now?"** Today's array spent **0.81 h computing**
+and most of its wall clock `PENDING (Priority)` / `PENDING (Resources)`, was
+cancelled and resubmitted in fragments, and ran at `%16` rather than the designed
+`%100`. The `htc` CPU partition has no GPU allocation to queue behind. That makes
+it an *availability estimate*, not a capability test.
+
+**The code is inconsistent, and the newest file is the one missing the check:**
+
+```
+processing/reembed.py:1272                  --device default "cuda"   NO check
+phonetics/inference/backfill_embeddings.py  --device default "cuda"   NO check
+phonetics/inference/update_es.py:675        'cuda' if torch.cuda.is_available() else 'cpu'
+processing/reembed_canonical.sbatch         --gres=gpu:1 --cpus-per-task=4
+```
+
+A hard `default="cuda"` on a GPU-less node is a crash, not a fallback. And the
+sbatch asks for **4** CPUs, so a naive CPU fallback there would run at roughly a
+quarter of the measured rate — a fallback that "works" while being silently 4×
+slower than it needed to be. *Referred to `indexing-9c` (5 Sep) to measure on CRC
+and to argue both ways on whether a shared routing utility is worth one home.*
+
 ## 6. Open decisions — NOT scheduled
 
 Everything below needs discussion before it becomes work. Each is stated as the
