@@ -1223,6 +1223,10 @@ transliteration/typo augmentation beyond what cross-script needs. And it means
 GOTW's `Keang-su → GANSU` is **not** a v8 acceptance criterion — worth telling
 `gotw-de`, which is holding a design conclusion on it.
 
+🛑 **REVERSED 5 Sep by §6.1 — do not act on the preceding sentence.** SG added
+historic orthography as a second target, so `Keang-su → Jiangsu` **is** in scope.
+`gotw-de` was given the old answer and is owed the new one.
+
 ⚠ **A TENSION IN THESE ANSWERS, STATED SO IT IS DELIBERATE.** "Benchmark first"
 means v8 is at minimum a month out and may not happen at all; "bundle into v8"
 therefore leaves D-A/D5/D6/D7 unfixed for that whole period, and permanently if
@@ -1241,6 +1245,137 @@ v8 does not proceed. I flagged this and measured the cost before accepting it:
 **So the decision stands on a smaller index-side defect than my framing
 suggested, and an unmeasured query-side one.** Revisit if v8 slips past a
 quarter, or if a contributed dataset arrives in upper case.
+
+## 6.1 DECISIONS TAKEN AFTER THE BENCHMARK — 5 September 2026 (SG)
+
+The benchmark §6 made a precondition has run (§8), so the four questions it
+deferred were put to SG and answered. **Two of these SUPERSEDE lines in §6's
+table. §6 is retained as the record of what was decided on the information
+available before the benchmark, not as current scope.**
+
+| | decision | supersedes |
+|---|---|---|
+| **Retrain?** | **YES — retrain to fix the geometry.** | §6 "benchmark first, then decide" — the benchmark decided. |
+| **Scope** | **Add historic orthography as a SECOND target**, alongside cross-script phonetic matching. | 🛑 §6 "Historic romanisations … explicitly not v8's target". That line is now **WRONG** and is superseded here. |
+| **Welsh data (`place#161`)** | **Cleared to use.** SG: *"I've had conversations with RCAHMW and they are very happy for us to use the data. I will formalise the licence later when v8 is ready for release."* | `place#161` "paused 30 Jul, outreach drafted and never sent". |
+| **Release gating** | Push `indexing-9c`'s seven commits; fix the published `config.json` defect; settle the `path.repo` boot question; take the pinyin list GOTW is assembling. | — |
+
+### What "retrain for the geometry" commits us to
+
+The target is the finding in §3 and the gate in §8: **11 of 128 directions carry
+95.3% of the variation, and a vector rebuilt from 20 directions is cosine
+1.00000 to the original.** So ~108 of the 128 dimensions are paid for in storage,
+index size and KNN cost while carrying nothing. This is the one v8 objective that
+the benchmark **positively supports**: v7 wins discrimination (AUC 0.9324 vs
+0.9002, separated interval) and loses retrieval (R@10 0.294 vs 0.323), and §8.1
+shows one mechanism behind both — a representation too dense to separate
+neighbours at corpus scale. Spreading the representation over its available
+directions is the direct attack on that mechanism.
+
+⚠ **What it does NOT commit us to.** "Fix the geometry" is not "beat Levenshtein
+on retrieval". §8.2 measured the density effect as scaling with n^−0.22, and
+§9 states what cannot be claimed. The acceptance criterion is the geometry gate
+plus **no regression** on discrimination — not a retrieval win, which may not be
+available at 72.7M documents by any means.
+
+### What adding historic orthography changes — this is not a free addition
+
+🛑 **It invalidates the label design that "cross-script only" settled.** §6 fixed
+D-D's positives as *co-attestation of the same `place_id` across gazetteers plus
+the hard-link overlay*, and justified that precisely because it is the
+cross-script signal. **Historic orthography is not in that signal.**
+`Llanddona`/`Seynt Dona` and `Keang-su`/`Jiangsu` are same-script pairs that
+co-attestation will not produce, because the historic form is usually **not in
+the index at all** — that is the whole complaint. So D-D now needs a *second*
+positive source, and it must be an independent one.
+
+Three consequences to carry into D-D:
+
+1. **The two named sources become load-bearing.** LHPN Welsh↔English clerk
+   transliterations (§7.4: pass `generate_pairs.py`'s gate at 80.5–86.7% where
+   the corpus's existing `cy`/`en` pairs score near zero) and GOTW's pinyin /
+   Qing-transcription list. Neither existed as a v8 input before today.
+2. ⚠ **`place#163`'s own warning still stands and is now the binding
+   constraint**: only ~5.5% of sampled LHPN records carry a populated
+   `HeadName`. *"Don't extrapolate 700k records → 700k useful pairs."* The
+   usable yield, not the record count, is what must be quoted.
+3. 🛑 **A retraction I owe `gotw-de`.** §6 states that `Keang-su → GANSU` is
+   **not** a v8 acceptance criterion and says to tell `gotw-de` so. **That is
+   now reversed** — historic transcription is in scope. `gotw-de` was told the
+   old answer and must be told the new one.
+
+### `place#161` / `place#163` — what the clearance does and does not do
+
+✅ **Unblocked in substance.** `place#163` was gated on `place#161` (RCAHMW
+licensing). SG has spoken to RCAHMW directly and reports they are happy for the
+data to be used, with the licence to be formalised when v8 is ready for release.
+So LHPN pairs may now be used as a v8 training input.
+
+⚠ **The formalisation is a RELEASE gate, not a training gate, and it is now
+someone's job.** The permission is verbal and forward-looking; the written
+licence does not exist yet. Nothing may be *published* — model, deposit, or
+paper — that is trained on LHPN data until it is in place. Record it against the
+v8 release checklist, not as done.
+
+## 6.2 The historic-transcription packs — what they are, and the dependency SG owns
+
+`gotw-eb` has described the "pinyin list" in full (5 Sep). **It reframed it in a
+way that simplifies v8's scope, and attached a warning that must not be lost.**
+
+🛑 **It is NOT a third target. It is data for the second one.** Pinyin is simply
+the modern side of a historic-orthography pair, so there is no separate pinyin
+objective to budget for — `Keang-su → Jiangsu` is the same phenomenon as
+`Llanddona → Seynt Dona` in another language. §6.1's two targets stand
+unchanged.
+
+**Shape.** Each row is a per-place adjudication of a real 1856 gazetteer entry,
+so every pair is anchored to a place rather than floating free. Given: printed
+headword, the book's variant spellings, printed admin hierarchy, printed
+coordinates where usable, volume + page. To be filled by a specialist:
+`modern_pinyin`, `chinese_characters`, `modern_province`, `confident (y/n/guess)`,
+`notes`. A completed row yields a historic→modern Latin pair, a historic→hanzi
+pair, and — for the 1,166 with usable coordinates — an anchor by which the pair
+can be *checked* rather than trusted.
+
+**Size offered:** 2,414 Chinese rows (30 sorted to the top as a pilot); a Russian
+pack of 3,535 rows in the same shape.
+
+🛑 **THE DELIVERY IS NOT AGREED, AND V8's SCHEDULE MUST NOT ASSUME IT.**
+`gotw-eb`'s own words: nothing has been sent, no specialist has committed, and
+the return rate is unknown — *"It could be 30 rows or 2,414. If v8's schedule
+depends on this arriving, that dependency is currently unfunded and Stephen
+should be the one to decide it."* **That is correct and it is recorded here as
+SG's decision to take, not ours.** v8's historic-orthography target must
+therefore be designed to stand on the LHPN Welsh pairs alone, with the Chinese
+pack as upside.
+
+### Four constraints on using it, from the party that built it
+
+1. **Contamination protocol — settled.** `gotw-eb` proposes we reserve a split it
+   never sees. A private split does not actually work, because it holds the whole
+   pack and can derive the complement. **So the protocol is the other way round:
+   we publish the TRAIN ids and keep nothing secret.** `gotw-eb` then evaluates
+   its cascade on the complement, which is exactly the set v8 did not train on.
+   Neither side is circular, and nothing depends on either side's discretion.
+2. **`confident` is signal, and `guess` rows are excluded or heavily
+   down-weighted.** The brief tells the specialist that an uncertain answer
+   marked uncertain is useful and a confident-looking guess is not — so the
+   column carries information only if we honour it.
+3. ⚠ **The 30 pilot rows are chosen as cases GOTW currently gets WRONG.** They
+   are right for measuring improvement and **wrong for estimating any base
+   rate**. They are kept as a named stratum and reported separately — never
+   pooled into a headline, and never fitted to.
+4. ⚠ **Russian pairs are weakly verifiable.** Only 201 of 3,535 rows have a
+   usable coordinate (5.7%) against Chinese 1,166 of 2,414 (48.3%), so roughly
+   one Russian row in eighteen can be independently checked. Russian pairs do not
+   get called gold without that caveat attached.
+
+**Return format requested:** JSONL, one object per row, **every offered row
+present including the ones with unusable coordinates**, carrying the source
+fields, the filled fields, `confident`, provenance (volume, page), and explicit
+per-row validity flags rather than pre-filtered content. We can drop rows; we
+cannot un-drop them, and §7.1 above is what happens when a cleaning rule is
+applied upstream of the people who need to see what it removed.
 
 ## 7. What is now scheduled, and what is closed
 
@@ -1384,6 +1519,43 @@ Do **not** revisit int8 (§3, negative finding).
 ---
 
 ### 7.1 What no embedding can fix — a ceiling measured from outside
+
+🛑 **RETRACTED BY ITS SOURCE, 5 Sep — the numbers below are WITHDRAWN, and the
+argument is not.** `gotw-eb` found that the coordinates underlying every figure
+in this section are substantially corrupt, and withdrew them unprompted. Its
+first report said ~3.5%; **its own follow-up corrected that UPWARD to 13.7%**,
+because the 3.5% counted only rows where *both* coordinates were present and so
+could not see the largest defect at all:
+
+```
+Chinese  2,414 places, 1,351 with coordinate data
+  half-coordinate (lat or lon, not both)   143   10.6%   <- invisible to the first count
+  negative longitude (impossible for CN)    28    2.1%
+  outside national bbox                     14    1.0%
+  USABLE                                 1,166   86.3%
+
+Russian  3,535 places,   351 with coordinate data
+  half-coordinate                          138   39.3%
+  negative longitude                        10    2.8%
+  outside national bbox                      2    0.6%
+  USABLE                                   201   57.3%
+```
+
+⚠ **The correction is the lesson, not the number.** A filter that requires both
+fields to be present in order to test them is blind to the case where one is
+missing — and that case was three times commoner than everything the filter
+could see. It is `filters must report their denominator` in a new costume: the
+denominator here silently became "rows complete enough to check".
+
+**What this retracts:** the `150 → 86` leaf-hit figure and the `11/18 → 18/18`
+parentage figure below, and with them this section's quantitative claim. **What
+survives untouched:** the *qualitative* ceiling — query expansion cannot conjure
+a document that is not in the index, and neither can a better embedding. That
+argument never depended on a coordinate. It is why the ≥1M retrieval benchmark
+measures against documents that demonstrably exist, which remains correct.
+
+**Do not re-cite the numbers below.** They are kept only so that anything else
+resting on them can be found.
 
 ⚠ **Some of the apparent retrieval failure is MISSING DOCUMENTS, not bad
 embeddings, and no v8 can recover it.** GOTW measured this while building a
@@ -1604,6 +1776,20 @@ between a narrow data-hungry target and a broad one with two consumers waiting.
 
 *(`place#163` remains gated on `place#161` regardless; nothing here authorises
 acquiring LHPN data.)*
+
+✅ **ANSWERED 5 Sep — this section's argument was accepted, and its gate is
+lifted.** SG decided to **add historic orthography as a second v8 target**
+(§6.1), which is the change the three measurements above were pointing at, and
+separately reported that **RCAHMW are content for the data to be used**, with the
+licence to be formalised at v8 release. So both halves of this card resolve: the
+scoping question is settled in favour of the broad target, and `place#161` no
+longer blocks using LHPN pairs as a training input.
+
+⚠ **Two things this does NOT settle.** The **~5.5% `HeadName` yield** stands as
+the binding constraint on how many usable pairs actually exist — the record count
+is not the pair count. And the licence is **verbal and forward-looking**: it
+gates *publication*, so it belongs on the v8 release checklist as an open item,
+not in the done column.
 
 ## 8. THE BENCHMARK RAN — a split verdict, 5 September
 
@@ -1833,3 +2019,60 @@ Not part of Package 1; do not fold these in.
   opposite designs. One of them must go.
 - The `lang` field of the toponyms carries street fragments and language names
   (§4.3). That is an upstream ingestion problem, not a Symphonym one.
+
+## 12. Two deployment faults found on 5 September, both silent
+
+Neither is a Symphonym fault. Both are recorded here because they are the same
+fault class as everything in `developer/postmortem-ingestion-faults.md` — *a step
+reports nothing wrong because the step never ran* — and both cost real work today.
+
+### 12.1 A tracked file was the only writable place for a per-host value
+
+**Symptom.** `gotw-eb` ran `es -staging-start`, was told `STAGING ES READY`, and
+was silently restored from the **6 August places-only snapshot** — no toponyms
+index at all. The fix for exactly that (`d8a82f6` + `ba9a89c`, which aborts when
+toponyms is absent and restores from a read-only `prod_repo`) had been committed
+and pushed **hours earlier** and was not deployed.
+
+**Mechanism, which is the part worth keeping.** `gateway/config.py` read only
+`.env`, and it is the gateway process's *sole* source of environment:
+`scripts/_common.sh` sources both `.env` and `.env.local` but **without
+`set -a`**, so nothing it reads is exported to the child python. A host needing to
+pin `SYMPHONYM_MODEL_DIR` off the wedged `/ix1` mount (place#242) therefore had
+**no choice but to edit the TRACKED `.env`**. From that moment, `git pull` on the
+deployed checkout could not fast-forward past any commit touching `.env` — and
+`ba9a89c` touches `.env`. The deployment did not fail loudly; it simply never
+happened, and nothing anywhere said so.
+
+**Fixed (`0db74a8`).** `gateway/config.py` now layers `.env.local` over `.env`
+with `override=True`, matching `processing/settings.py` and
+`clustering/config.py`. The layer is **guarded**: `load_dotenv` *propagates*
+`PermissionError`, and `.env.local` on this host is mode 660 `stg135:ishi` while
+the gateway runs as `gazetteer` — which reads only because gazetteer's primary
+group *is* `ishi` (uid 11001, gid 16604, checked rather than assumed). Absent is
+silent; present-but-unreadable warns to stderr and starts anyway, so a
+permissions quirk can never become a gateway that will not boot.
+
+**Deployed and verified on the host:** HEAD `e03d4cc` → `0db74a8` (34 commits),
+working tree clean, `RESTORE_REPO_NAME` present in `.env` and referenced 7× in
+`processing/es_staging.sbatch`, the pin preserved in `.env.local`, `_common.sh`
+sourcing and resolving `JAVA_HOME` to the ES-bundled JDK on `/vast`. No gateway
+restart was needed: the running process already held the correct value, and any
+future restart now reads the same value from the per-host file.
+
+⚠ **The generalisation to check elsewhere:** *any* local modification to a
+tracked file on a deployed checkout is a silent embargo on every future
+deployment of every commit that touches it.
+
+### 12.2 In a shared working tree, "I have not pushed yet" is not a durable fact
+
+`indexing-9c` reported seven commits awaiting authorisation to push. SG
+authorised it; on checking, **all seven were already on `origin/main`** — they had
+gone out inside *this* session's `git push`, because we share one working tree and
+a push carries whatever is committed in it. `indexing-9c` had told SG the same
+thing an hour earlier and it was already false when said.
+
+**Neither party is notified.** So in this repo, a statement about push state is
+only true at the instant it is checked, and it must be checked against the live
+remote (`git ls-remote`) rather than a local tracking ref, which can itself be
+stale. Verify immediately before acting, never from memory of an earlier check.
