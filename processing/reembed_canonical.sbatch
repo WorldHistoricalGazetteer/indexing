@@ -42,8 +42,18 @@
 
 set -euo pipefail
 
-RUN_DIR="${1:?usage: sbatch reembed_canonical.sbatch <run-dir>}"
+# TWO directories, deliberately separate. CODE_DIR is the immutable staged tree
+# (`git archive <sha>` — see `reembed stage`); RUN_DIR holds the shards, the pin
+# and the ledger. Running from the live checkout instead of the staged tree is
+# the whole fault staging exists to prevent, so the code directory is an
+# explicit argument rather than a default that could quietly be the wrong one.
+CODE_DIR="${1:?usage: sbatch reembed_canonical.sbatch <code-dir> <run-dir>}"
+RUN_DIR="${2:?usage: sbatch reembed_canonical.sbatch <code-dir> <run-dir>}"
 SHARD="${SLURM_ARRAY_TASK_ID:?this script must be submitted as an array}"
+
+# The array index maps 1:1 onto an export slice, so the array width MUST equal
+# the export's --slices. A mismatch is not a partial run: indices above the
+# slice count find no shard and abort, and slices below it are never computed.
 
 echo "=== reembed shard ${SHARD} on $(hostname) at $(date -Is) ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
@@ -55,7 +65,9 @@ source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
 conda activate whg
 set -u
 
-cd /vast/ishi/elastic
+cd "${CODE_DIR}"
+echo "running from staged code: $(pwd)"
+python -c "import sys, unicodedata; print(f'python {sys.version.split()[0]} unicodedata {unicodedata.unidata_version}')"
 
 python -u -m processing.reembed compute \
     --in-dir "${RUN_DIR}" \
