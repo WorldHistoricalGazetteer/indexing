@@ -2068,6 +2068,131 @@ untouched by any of this.** What is being bounded is its usefulness as a source 
 ⚠ Do not let *"TGN dates are weak for v8 pairs"* propagate as *"the TGN backfill
 is pointless"*.
 
+## 6.8 JOB 11157269 LANDED — Getty ships the dates; WE lost them
+
+🛑 **The survey's inference was wrong, and the difference is actionable.**
+`gotw-eb` measured the INDEX (0 dated of 2,991,143) and inferred *"Getty's dump
+supplies nothing"*. Job 11157269 parsed **the RELEASE** and found the opposite:
+
+```
+9,450 concepts with term-level dates
+1,448 concepts with relation-level dates
+9,623 patch rows written -> /vast/ishi/staged/tgn/temporal_patch.jsonl
+```
+
+**Getty ships the dates. They are absent from our index because the placeholder
+overwrote them** — which is precisely what `processing/tgn_temporal_backfill.py`
+was written to repair, and never ran. *An inference from correct-looking code is
+not a measurement of the input.*
+
+### The pair yield, against the pre-registered reading
+
+`indexing-9c` fixed the interpretation before the number landed: a dated term
+must survive four multiplicative steps. **All four survive.**
+
+```
+patch rows                          9,623
+rows carrying toponym_spans         9,450
+rows with >=2 GENUINELY dated names  3,565   <- pairable (placeholder 2026 excluded)
+distinct within-place pairs         40,937
+
+dated names per place:  1 -> 5,885   2 -> 2,408   3 -> 695   4 -> 258
+                        5+ -> 176    (max 62)
+```
+
+**3,565 is comfortably inside the ≤176,458 ceiling**, so the ceiling was not
+binding. And the pairs are the real thing — dated name-in-use spans on multiple
+forms of one place:
+
+```
+tgn:7011929  Dorchestre 600-1500 · Dorcic 600-1000 · Dorkecestre 600-1500
+             Dorocine -300-500
+tgn:7009095  Mont'Olmo 500-1851 · Pausula 1851-1931 · Corridonia 1931-
+tgn:7006796  Tuscana -500-1000 · Toscanella 1000-1850
+tgn:7010588  Samarobriva -500-1000 · Samasobriva -600-400
+```
+
+### 🛑 What it is, and the two things it is NOT
+
+```
+pairable places                       3,565
+...CROSS-SCRIPT internally               11   (0.3%)
+scripts:  LATIN 3,565 · GREEK 4 · CYRILLIC 2 · ARABIC 2 · CJK 1 · HANGUL 1
+```
+
+* ✅ **This IS the labelled historic-orthography evaluation stratum §6.5b said we
+  did not have.** ~40,937 dated same-script pairs, labelled by Getty's own
+  cataloguing — **a witness from outside the matching problem**, satisfying the
+  test that killed every filter in §6.5b's table. It is the only labelled
+  historic-orthography data we have found anywhere.
+* 🛑 **It does NOT serve the cross-script target.** 11 places of 3,565.
+* 🛑 **It does NOT touch Chinese or Russian — CJK 1, Cyrillic 2.**
+  **`gotw-eb`'s verdict stands unchanged: the specialist spend is justified.** This
+  is European Latin-script historic orthography and answers a different question.
+
+⚠ **`apply` HAS NOT BEEN RUN and is not mine to run** — it writes to the live
+`places` index and needs SG's authorisation. Note also (`indexing-9c`) that the
+backfill's *own* purpose is the **temporal search filter** and the clustering
+`s.t` fuel, not any benchmark; the 40,937 pairs are a use we invented today. Both
+arguments for running it are now evidenced, and they are independent.
+
+## 6.9 🛑 PRODUCTION: a wedged `/ix1` BLOCKS ES BOOT — an availability SPOF
+
+**`indexing-04` closed §7.3b, and the answer is the bad one.** ES makes **three
+sequential blocking filesystem calls on `path.repo` during startup**. Measured on
+the same binary production runs, on `htc` compute nodes (jobs 11156750, 11157199):
+
+```
+control, good path              18s
+path blocks 90s/op  -> boot    286s   = 16 + 3x90
+path blocks 30s/op  -> boot    105s   = 16 + 3x30
+```
+
+✅ **The 30s run was a PREDICTION made before it ran (~105s), and it returned
+105s** — which turns *"286 is consistent with three calls"* into a causal claim
+rather than arithmetic that happens to fit.
+
+**`/ix1/ishi` is mounted `hard`** (`retry forever`), and `path.repo` is
+`/ix1/ishi/es/snapshots`. **So production ES cannot restart while `/ix1` is
+wedged.** `/ix1` wedged **twice on 5 September alone**; the only reason this has
+not bitten is that prod has not restarted since 31 August.
+
+**The three conditions diverge, which is why they had to be separated:**
+
+| condition | result |
+|---|---|
+| path does **not exist** | boots fine, and **self-heals** — ES creates it, `_verify` then succeeds |
+| path **unreadable** (mode 000) | boots fine; fails only on use — *"path is not accessible on master node"* |
+| path **hanging** | 🛑 **boot never completes** |
+
+⚠ **Testing only "does not exist" — the obvious thing to try — returns the
+reassuring wrong answer.**
+
+🛑 **Registration in cluster state is IRRELEVANT.** A *fresh* cluster with
+`path.repo` set and **no repository registered** blocked identically, at the same
+105s and 286s. **It is the SETTING, not the replay of a registered repo — so
+unregistering `prod_repo` would not help. Only changing `path.repo` does.**
+
+**The trade-off is SG's call.** `/vast` is also a hard NFS mount, so moving
+`path.repo` there does not remove blocking — but it **adds no new failure mode**,
+because ES already cannot run without `/vast` (`path.data` lives there). *A
+dependency you already have is free; a second one is not.* Against that: `/vast`
+had 226 G free at 78%, is shared with prod ES, and keeping snapshots off the
+serving path was deliberate. **The `/ix1` location buys isolation and costs
+availability — and the price is now measured rather than guessed.**
+
+Re-runnable in ~5 minutes from `/vast/ishi/pathrepo-probe/`.
+
+⚠ **Two instrument failures, both today's fault class.** Run 1 reported `BOOTED`
+for the hanging case **having tested nothing** — the FUSE mount silently failed to
+mount over a non-empty directory, and the summary line said `BOOTED` while the
+detail said otherwise. **Reporting it would have been the most consequential
+possible wrong answer: "stop worrying about /ix1".** Run 2 then **deadlocked in its
+own control**: `timeout 8 stat` cannot kill a process blocked in a FUSE call, which
+is uninterruptible until the filesystem replies. **A control for blocking must
+OBSERVE the block** — is the backgrounded `stat` still alive after 12s? — **not try
+to interrupt it.**
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
