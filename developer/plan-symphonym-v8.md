@@ -2527,6 +2527,79 @@ is uninterruptible until the filesystem replies. **A control for blocking must
 OBSERVE the block** — is the backgrounded `stat` still alive after 12s? — **not try
 to interrupt it.**
 
+## 6.10 STAGING IS NOT A FAITHFUL REPLICA — and the mechanism is tombstones
+
+🛑 **Measured by `gotw-eb`, 6 Sep, with a control that is the reason it is
+readable at all.** A staging gateway was stood up on a compute node and gated
+against production with 299 real corpus queries across three request shapes:
+
+```
+staging vs production :  set 99.33%   order 97.66%
+production vs ITSELF  :  set 100.00%  order 100.00%   <- control
+```
+
+**Without the same-endpoint control the 97.66% would have been written off as
+Elasticsearch tie-breaking** — a fifteen-hour mistake in the other direction.
+Production is perfectly reproducible against itself, so the residual is real.
+
+Two of 299 return genuinely different documents, and not randomly: **staging
+returns `tgn` ids where production returns `osm`/`wd`/`gn`.**
+
+### Three hypotheses killed before the fourth
+
+* **Index generation** — identical. Production serves
+  `places_h3ccode-20260805t120000z` + `toponyms_temporal-20260731t160000z`, and
+  **both `prod_repo` snapshots contain exactly those two concrete indices.**
+* **Missing documents** — no. All eight divergent ids **exist in production**. It
+  is ranking, not absence.
+* **Stale embeddings** — no, and this was the leading hypothesis. `toponyms` shows
+  exactly **100,960** writes since node start, precisely today's re-embed; the
+  re-embed finished **15:19 EDT** and the snapshot was taken **15:31 EDT**.
+  **Staging has the new vectors.**
+
+### The mechanism: a restore purges tombstones, which changes per-shard IDF
+
+```
+places_h3ccode-20260805t120000z    docs 361,746,797   DELETED 14,169,759   (3.9%)
+toponyms_temporal-20260731t160000z docs  72,703,777   DELETED    292,493
+```
+
+A snapshot stores **live documents only**, so a restore purges deletes. ES
+computes **IDF per shard** under the default `query_then_fetch`, and
+deleted-but-unmerged documents still contribute to shard-level term statistics.
+Different IDF → different BM25 scores → different order, and occasionally a
+different **set** where a boundary case crosses the top-N cutoff.
+
+**It fits:** order agreement degrading faster than set agreement is what a small
+uniform score perturbation produces, and production's self-consistency follows
+because its own tombstones are constant within a run.
+
+⚠ **Recorded as a MECHANISM WITH CONSISTENT EVIDENCE, not a proven cause.** The
+decisive test is cheap and uses the existing harness: **if this is IDF, divergence
+concentrates in the request shapes with a lexical component and is near-absent in
+pure phonetic KNN** — a per-vector cosine is unaffected by another document's
+tombstone. Even spread across all three shapes refutes it.
+
+### Consequences
+
+* **The lever, if alignment is wanted:** `es -forcemerge` production to expunge
+  deletes **before** snapshotting. ⚠ Expensive I/O on the volume prod serves
+  from — named, not proposed.
+* **Recommendation: stay on the production gateway.** 0.67% set divergence is
+  small but is not noise, and a re-reconciliation about *which parent regions are
+  trusted* lands precisely on boundary-case flips.
+* ⚠ **Anything validated against staging inherits this.** The specialist
+  pick-lists at `docs/toponyms` (2,391 Chinese, 3,147 Russian) were generated
+  from staging. **But the divergence is SCORE-level, not content-level** — a
+  candidate staging offered *does* exist in production and is reachable there,
+  merely ranked below the cutoff. That is materially weaker than "offers
+  candidates production does not have", and choices keyed on WHG ids are
+  unaffected. Not regenerating is the right call.
+* ✅ Everything else about the staging gateway worked: aliases resolved, Symphonym
+  loaded (`Kanterberry` → 0 exact, 10 phonetic), and the **geom store being live
+  on shared `/vast` means exact containment was never at risk**. Reusable as
+  `process/staging_gateway.sbatch` + `process/compare_gateways.py`.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
