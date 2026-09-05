@@ -1417,6 +1417,39 @@ by source; and `pairs_per_place` divides by **anchored pairs only** — counting
 distinct `place_id`s would have folded every external pair into a single phantom
 "place" and deflated the ratio.
 
+### The generalisation, which is worth more than the three fixes
+
+`indexing-9c` corrected its own account of how it found these, and the correction
+is the useful part. It first said it found them *"by asking what a new input class
+does to an old default"* — accurate, but flattering, because **it only asked
+because it was told the scope had changed. The trigger was external.**
+
+🛑 **The standing version:** *whenever a scope decision is reversed, re-read every
+default that was chosen under the old scope.* **A default is an unstated
+assumption about the input distribution, and a scope change silently invalidates
+it** — without touching the line, without failing a test, and without appearing in
+any output. `"I thought to ask"` does not generalise; that rule does.
+
+Note what it would have cost here: `own_names.get(place_id, ())` is *correct* code
+under co-attestation and *wrong* code the moment a positive can lack a
+`place_id` — and the census looked normal either way.
+
+⚠ **Ranking the two by cost of the resulting investigation, not by subtlety.** The
+silent exclusion is the subtler bug; **the cross-script filter is the more
+expensive one.** A wrong number gets argued with. *Zero pairs* from an LHPN pack
+sends someone to the pack, the parser, the licence and the encoding before the
+filter — a search that starts at the wrong end and can run for a day. Both are
+"the absence looks like someone else's problem"; the filter version distributes
+the cost onto whoever owns the data.
+
+✅ **The harness is source-agnostic, checked rather than asserted.** `source` is a
+free-form string aggregated with a `Counter` (`corpus.py:214` default only, `:292`
+count, `:302` report, `negatives.py:135` names it in the abort). Nothing branches
+on a source name. So **an LHPN-only run is a first-class shape, not a degraded
+two-source one** — if the Chinese pack never arrives nothing needs changing and no
+code path goes untested, and if it arrives late it is a new value in a string
+column.
+
 ### Two decisions handed to whoever builds the LHPN pack
 
 1. **What is the exclusion for an unanchored pair?** `allow_unanchored=True` is
