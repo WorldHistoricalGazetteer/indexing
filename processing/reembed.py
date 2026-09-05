@@ -1090,6 +1090,7 @@ def cmd_apply(args) -> None:
     es_opt = es.options(request_timeout=300)
     ok = errs = 0
     ledger_ids = []
+    verify_sample: list = []          # (toponym_id, vector) spanning the run
     applied_dir = in_dir / "applied"
     applied_dir.mkdir(exist_ok=True)
     t0 = time.time()
@@ -1157,11 +1158,15 @@ def cmd_apply(args) -> None:
         ok += s_ok
         errs += s_err
         ledger_ids.extend(s_ids)
+        if rows and len(verify_sample) < 40:
+            verify_sample.append(rows[0])
         print(f"[apply]   shard {i:04d}: {ok:,} ok / {errs:,} err", flush=True)
 
         if args.canary and ok >= args.canary:
             es.indices.refresh(index=args.index)
-            verified = _verify_written(es, args.index, s_ids[:20], rows)
+            verified = _verify_written(es, args.index,
+                                       [t for t, _ in (verify_sample or rows[:20])],
+                                       verify_sample or rows[:20])
             print(f"[apply] CANARY: stopped after {ok:,} documents "
                   f"({i + 1} shard(s)). Read-back check: {verified}. "
                   f"Re-run without --canary to continue; completed shards will "
@@ -1169,12 +1174,19 @@ def cmd_apply(args) -> None:
             return
 
     es.indices.refresh(index=args.index)
-    sample = ledger_ids[:20]
-    readback = _verify_written(es, args.index, sample,
-                               list(zip(table.column("toponym_id").to_pylist(),
-                                        table.column("embedding").to_pylist()))
-                               if ledger_ids else [])
-    print(f"[apply] read-back check on {len(sample)} documents: {readback}")
+    # Verify against a sample COLLECTED AS WE WROTE, spanning many shards.
+    #
+    # The first version of this took its ids from the head of the ledger and its
+    # expected vectors from `table` — the last shard's, left over from the loop.
+    # The two never intersected, so a completely successful run of 100,960
+    # documents reported "0 of 20 match, 20 unreadable". It failed loudly rather
+    # than silently, which is the right direction for a bug in a verifier, and
+    # it still cost an hour of doubt about a correct write.
+    readback = _verify_written(es, args.index, [t for t, _ in verify_sample],
+                               verify_sample)
+    print(f"[apply] read-back check on {len(verify_sample)} documents "
+          f"across {len({t for t, _ in verify_sample})} ids from "
+          f"{len(metas)} shards: {readback}")
     ledger = {
         "run_dir": str(in_dir),
         "index": args.index,

@@ -631,6 +631,30 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
                                       "toponyms", ["a@en", "b@en"], rows)
         self.assertIn("MISMATCH", bad)
 
+    def test_read_back_compares_ids_against_their_own_vectors(self):
+        """The bug this replaces: sample ids from one shard, expected vectors
+        from another. The two sets never intersected, so a completely successful
+        write of 100,960 documents reported "0 of 20 match, 20 unreadable".
+
+        A verifier whose sample and whose expectations come from different
+        places cannot report anything but failure — and it failed on a correct
+        run, which is the right direction for the bug and still costly.
+        """
+
+        class FakeES:
+            def mget(self, index, ids, _source):
+                return {"docs": [{"_id": i, "_source": {"embedding": [1, 2, 3]}}
+                                 for i in ids]}
+
+        # ids present in `rows`: verifiable
+        rows = [("a@en", [1, 2, 3]), ("b@en", [1, 2, 3])]
+        self.assertIn("2 of 2 match",
+                      reembed._verify_written(FakeES(), "t", ["a@en", "b@en"], rows))
+        # ids absent from `rows`: reported unreadable, NOT as a match
+        out = reembed._verify_written(FakeES(), "t", ["zz@en"], rows)
+        self.assertIn("unreadable", out)
+        self.assertNotIn("1 of 1 match", out)
+
     def test_read_back_never_fails_the_run_on_its_own_error(self):
         class BrokenES:
             def mget(self, **kw):
