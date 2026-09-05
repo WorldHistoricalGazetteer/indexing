@@ -1344,10 +1344,20 @@ pack of 3,535 rows in the same shape.
 `gotw-eb`'s own words: nothing has been sent, no specialist has committed, and
 the return rate is unknown — *"It could be 30 rows or 2,414. If v8's schedule
 depends on this arriving, that dependency is currently unfunded and Stephen
-should be the one to decide it."* **That is correct and it is recorded here as
-SG's decision to take, not ours.** v8's historic-orthography target must
-therefore be designed to stand on the LHPN Welsh pairs alone, with the Chinese
-pack as upside.
+should be the one to decide it."* **That was correct at the time it was written.**
+
+✅ **SG HAS SINCE TAKEN IT: the return is "in hand, completed, in a matter of
+days" (5 Sep).** So the dependency is funded and the pack is expected before
+training data is generated.
+
+⚠ **It still blocks nothing, and the design must not start assuming it.** The
+harness is source-agnostic by inspection (§6.3), so an LHPN-only run is a
+first-class shape rather than a degraded two-source one — which means a shortfall
+in the return rate costs coverage, not correctness. **What the pack buys is a
+CJK historic stratum in the evaluation.** Without it, v8 could only claim
+improvement on Welsh↔English historic orthography; with it, the claim extends to
+Chinese transcription and can be *checked* against 1,166 coordinate-anchored
+rows. Keep the target standing on the LHPN pairs and let the pack widen it.
 
 ### Four constraints on using it, from the party that built it
 
