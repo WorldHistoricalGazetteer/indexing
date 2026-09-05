@@ -2257,9 +2257,31 @@ tgn start.earliest                      0   <- start-only/end-only branches neve
 Getty release, term-dated           9,450   concepts
 ```
 
-🛑 **Getty dates 9,450 concepts; ~2,712 places carry a real date. The gap — order
-6–7 k places — is the defect and is what the patch addresses.** Not 2.99 M, not
+🛑 **Getty dates 9,450 concepts; 2,712 places carry a real date. The gap is
+6,738 places** — the defect, and what the patch addresses. Not 2.99 M, not
 22.3 M, not 1.71 M.
+
+✅ **Eligibility checked, because the subtraction assumed it.** `gotw-eb` pointed
+out that `9,450 − 2,712` silently assumes every Getty-dated concept is *eligible*
+to land — if any were filtered upstream for unrelated reasons the gap would be
+smaller and the patch would appear to underperform against its own target. That is
+this document's own rule aimed back at it, and it was checked rather than argued:
+
+```
+patch place_ids present in the index    9,623 of 9,623   100%
+...of the toponym_spans subset          9,450 of 9,450   100%
+
+of those 9,450:  already real  2,712  ·  2026 stamp  5,887  ·  neither  851
+                 would gain a real date           6,738
+```
+
+`5,887 + 851 = 6,738`, reconciling exactly with the subtraction. **So the
+subtraction was sound — but only because eligibility turned out to be total, which
+was an assumption and is now a measurement.**
+
+**This gives `place#244` a falsifiable acceptance criterion:** the dry run must
+report **6,738** documents to modify. A materially different number is a reason to
+**stop**, not to proceed.
 
 ⚠ **This also contradicts the audit's "0 of 1,712,662 carrying a real term
 date"**, which was the evidence for widening the issue. It is 2,712, not 0.
