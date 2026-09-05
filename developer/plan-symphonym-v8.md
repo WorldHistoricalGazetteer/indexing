@@ -2614,7 +2614,48 @@ different **set** where a boundary case crosses the top-N cutoff.
 uniform score perturbation produces, and production's self-consistency follows
 because its own tombstones are constant within a run.
 
-⚠ **Recorded as a MECHANISM WITH CONSISTENT EVIDENCE, not a proven cause.** The
+✅ **THE CAUSAL STEP IS NOW DEMONSTRATED — by a session trying to refute it.**
+`indexing-04` believed *"a snapshot stores live documents only"* was wrong: a
+snapshot copies Lucene segment files, deletions live in `.liv` files inside those
+segments, so tombstones *ought* to survive a restore. Plausible, and false.
+Measured on a throwaway ES under Slurm (job 11159785, ~30 s) — 2,000 docs, 600
+deleted, then snapshot → delete index → restore:
+
+```
+BEFORE   docs.count 1400   docs.deleted 1200   segments 3
+AFTER    docs.count 1400   docs.deleted    0   segments 1
+```
+
+**Tombstones are gone on restore.** So a restored index genuinely carries
+different term statistics: `docFreq`/`docCount` no longer count the deleted docs,
+IDF differs per shard, scoring differs. Production's 14,169,759 deletes in
+`places` all vanish in staging.
+
+⚠ **THE BAD EVIDENCE IT NEARLY SENT IS THE MORE USEFUL HALF.** Before measuring,
+it had what looked like support for the *opposite* conclusion: its snapshot of
+`places` measured **23.6 GiB against a live `store.size` of 23.6gb** — an exact
+match, read as *"the snapshot contains the deleted docs' data too"*. **Worthless.**
+Store size does not track deletions at all; in the controlled test it **GREW**,
+86.8kb → 133.8kb, *while* deletes went from 1,200 to zero. **A number that
+matched, an explanation that fitted, and no causal connection between them** —
+which would have talked this session off a correct mechanism using a coincidence.
+
+⚠ **What it settles and does not.** It establishes the step: restore drops
+tombstones, therefore term statistics differ. It does **not** establish that this
+is the *whole* of the 99.33% / 97.66% gap — there may be more than one
+contributor. **It removes an objection rather than closing the question**, and
+`gotw-eb`'s shape-split remains the decider.
+
+🛑 **AND IT CUTS AGAINST DOING ANYTHING — `indexing-04`'s point, which this
+document had missed.** If restore drops tombstones, then expunging deletes from
+**production** makes *production resemble staging*, not the reverse. **Aligning
+them by merging production means I/O on the volume production serves from, in
+order to make the source look like the replica.** That is the wrong direction of
+travel, and belongs in front of SG *alongside* the triage guidance rather than
+after it.
+
+⚠ **Originally recorded as a MECHANISM WITH CONSISTENT EVIDENCE, not a proven
+cause.** The
 decisive test is cheap and uses the existing harness: **if this is IDF, divergence
 concentrates in the request shapes with a lexical component and is near-absent in
 pure phonetic KNN** — a per-vector cosine is unaffected by another document's
