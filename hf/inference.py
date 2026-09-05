@@ -194,6 +194,14 @@ class UniversalEncoder(nn.Module):
 # CANONICAL-BLOCK What it does NOT do: a vendored copy carries the ORIGINAL's stamp, so
 # CANONICAL-BLOCK checking your own copy detects local modification, not that upstream has
 # CANONICAL-BLOCK moved. For that you must compare this value against upstream's.
+# CANONICAL-BLOCK THE CASE THAT DEFEATS THE TRIPWIRE, and it is the LIKELY one: edit the block
+# CANONICAL-BLOCK and correctly re-stamp it. The test below is then satisfied, this stamp is
+# CANONICAL-BLOCK honest, and a consumer checking only that upstream's stamp matches upstream's
+# CANONICAL-BLOCK block learns NOTHING. A consumer needs a SECOND witness -- the stamp value it
+# CANONICAL-BLOCK was ported from, recorded as a constant on its side -- and only that one
+# CANONICAL-BLOCK catches a legitimate upstream change. whg3 does this (2fe733d0c) and proved
+# CANONICAL-BLOCK all three modes fire, including the re-stamped one, which is the mode a
+# CANONICAL-BLOCK single-witness check silently passes.
 
 import unicodedata
 from typing import Dict, List, Optional, Tuple
