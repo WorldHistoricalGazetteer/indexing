@@ -1382,12 +1382,70 @@ lexical-only candidate list — otherwise a bad coordinate would silently produc
 pick-list for the wrong part of the world, which the reviewer could not detect.
 Those rows are still offered; the flags let us stratify them out.
 
-🛑 **A PARTIAL RETURN IS NOT A RANDOM SAMPLE.** The pack leads with the rows most
+### The override hazard — a resolvable anchor that names the wrong place
+
+🛑 **Found by `gotw-eb` while checking a claim rather than asserting it
+(`a17a4a6`).** A specialist picks *Changzhi* from the candidate list — so
+`chosen_whg_id` is set — then types *Changzhou* into the romanisation field
+because the option was close but wrong. **The id stays anchored to the place they
+REJECTED.** The row arrives with an anchor that resolves cleanly, looks verified,
+and names a different place from the one the answer is about.
+
+⚠ **This is `indexing-9c`'s exclusion defect (§6.3) arriving by a different
+door, and in its worse form.** Not *"no anchor"* but *"a confidently wrong
+anchor"*: the exclusion closure would run on the wrong place's co-referents, so
+the negative sampler could draw a genuine name of the query's own place **while
+believing it had excluded exactly that**. The empty case is at least detectable;
+this one is not.
+
+**The export now carries information rather than a decision** — flags, not
+filtering, the same rule asked for on coordinates:
+
+| field | meaning |
+|---|---|
+| `chosen_whg_id` | the picked option's `place_id` (unchanged) |
+| `chosen_whg_name` | the picked option's **name**, so it can be compared |
+| `overridden` | `true` when the typed romanisation differs from that name |
+
+**DECISION (ours to take, and taken here):**
+
+* **`overridden: false` with a non-null id** — the clean case. Anchored; reuse the
+  normal closure.
+* **`overridden: true`** — **do not trust `chosen_whg_id`.** But do not simply
+  discard the anchor either. **First attempt to resolve the typed modern form**,
+  which is `indexing-9c`'s own preferred route (§6.3, decision 1) and is what the
+  typed field is *for*: a modern romanisation is exactly the thing the index
+  should contain.
+* ⚠ **Accept a re-resolution only with a corroborating signal.** A name lookup
+  that returns one candidate may mean *"the index holds one place of that name"*
+  or *"our query was too narrow"* — and accepting it blindly re-creates the very
+  hazard, one door further along. Constrain by the row's `modern_province` /
+  `modern_region`, or by the printed coordinate where `coordinate_flags` is empty.
+  **No corroboration, or an ambiguous result → treat as unanchored**, use the
+  typed name as the pair, and let `allow_unanchored` handle it.
+* **Never drop the row.** `gotw-eb` is right that an override is usually a
+  *better* answer than the pick — it is a correction — just not an anchored one.
+
+🛑 **A PARTIAL RETURN IS NOT A RANDOM SAMPLE, AND THAT NOW BITES THE TRAIN SIDE
+TOO.** The pack leads with the rows most
 likely to be answered quickly — usable coordinates, stated hierarchy, hyphenated
 transcriptions — so **early returns are systematically the easy ones**. In the
 Chinese ordering, everything before row ~1,200 is coordinate-bearing and
 everything after is not. Any figure computed on a partial return must say so, and
 must not be presented as a corpus estimate.
+
+⚠ **`gotw-eb` sharpened this once told the pack is training data, and the
+sharpening is correct:** a partial return is not merely a biased *measurement*,
+it is a biased **training set** — systematically the places the book documented
+best. **Training on that alone teaches v8 the easy half of the
+historic-orthography problem and lets it look better than it is on the half that
+actually fails.** So the ~1,200 boundary must constrain the **TRAIN** side, not
+only the reported split.
+
+⚠ **And stratifying cannot manufacture what never arrives.** If only the easy half
+is ever returned, the honest response is not a cleverer split but a stated limit:
+**report the train set's composition beside the test set's, and do not claim
+corpus-level improvement from a corpus-biased sample.**
 
 🛑 **THE DELIVERY IS NOT AGREED, AND V8's SCHEDULE MUST NOT ASSUME IT.**
 `gotw-eb`'s own words: nothing has been sent, no specialist has committed, and
