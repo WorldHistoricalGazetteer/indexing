@@ -2654,6 +2654,50 @@ order to make the source look like the replica.** That is the wrong direction of
 travel, and belongs in front of SG *alongside* the triage guidance rather than
 after it.
 
+### The shape-split ran — the predicted concentration is there
+
+`gotw-eb`, n=594, three request shapes, same production-vs-itself control:
+
+```
+exact/lexical   n=200   order 96.00%   set 99.00%
+phonetic        n=200   order 99.00%   set 99.50%
+phonetic+cc     n=194   order 98.45%   set 99.48%
+production vs ITSELF    order 100.00%  set 100.00%
+
+order disagreements:  lexical 8/200 (4.0%)  ·  vector-led pooled 5/394 (1.3%)
+                      ratio 3.2x  ·  Fisher exact p = 0.0397
+```
+
+✅ **The prediction was directional and PRE-REGISTERED**, not found by looking, and
+its causal step was demonstrated independently by `indexing-04`. That combination
+is worth more than the p-value alone.
+
+🛑 **RECORD IT AS `gotw-eb` FRAMED IT — "consistent, with the predicted
+directional concentration observed", NOT established.** Its own words:
+*"one test, 8 events against 5, and if it had come out at p = 0.07 I would be
+telling you the same physical story with a different adjective."* That sentence is
+the reason to trust the result, and it must travel with it.
+
+⚠ **3.2x is a FLOOR, not an estimate.** This gateway's phonetic mode is *blended*
+rather than pure KNN, so both vector-led arms retain a lexical component and the
+contrast is diluted. `phonetic+cc` sitting between the two (1.55%) is the ordering
+you would expect if the country filter changes which shard-level statistics
+matter — offered as a **pattern, not a result**.
+
+🛑 **WHAT IT CANNOT SETTLE, and this is the limitation that matters.** The four
+set-level differences (2 lexical, 1 phonetic, 1 phonetic+cc) are far too few to
+split by shape — **and set differences are the ones that actually change a
+reconciliation decision.** So the shape evidence is about **ORDER**, and *"the
+same cause drives the set differences"* is an **assumption, not a measurement**.
+Whether tombstones account for the whole gap stays **unestablished**; the question
+is now narrowed to *"does the ordering perturbation also explain the boundary
+crossings"*, which n=594 cannot answer and which would need thousands of queries.
+
+✅ **Settled practically:** `gotw-eb` stays on the production gateway (2.99
+places/s, ~9.6 h projected), staging gateway stopped, both artefacts committed —
+so if alignment ever becomes available this is one `sbatch` and one `srun`, not
+another afternoon.
+
 ⚠ **Originally recorded as a MECHANISM WITH CONSISTENT EVIDENCE, not a proven
 cause.** The
 decisive test is cheap and uses the existing harness: **if this is IDF, divergence
