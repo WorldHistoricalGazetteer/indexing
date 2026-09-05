@@ -204,6 +204,26 @@ class Positive:
     partner: str
     partner_lang: str
     partner_script: str
+    #: Where this pair came from. "co-attestation" means both names are
+    #: toponyms of `place_id` in the live index, which is what makes the
+    #: co-reference exclusion in `negatives` possible at all. An EXTERNAL pack
+    #: (LHPN Welsh<->English historic forms, a GOTW transcription set) has no
+    #: `place_id` to exclude around, and that is not a smaller version of the
+    #: same thing — see `has_place`. Defaults so that corpora written before
+    #: this field existed still load.
+    source: str = "co-attestation"
+
+    @property
+    def has_place(self) -> bool:
+        """Whether this pair is anchored to a place the index can resolve.
+
+        The co-reference exclusion is keyed on `place_id`; for a pair with none,
+        a `.get(place_id, ())` returns an empty forbidden set and the exclusion
+        SILENTLY DOES NOTHING — the signature fault of this repository, wearing
+        the benchmark's clothes. Callers must branch on this rather than let a
+        missing key mean "nothing to exclude".
+        """
+        return bool(self.place_id)
 
     @property
     def script_pair(self) -> tuple[str, str]:
@@ -211,8 +231,18 @@ class Positive:
 
 
 def cross_script_pairs(place: dict, *, max_per_place: int,
-                       rng: random.Random) -> tuple[list[Positive], int]:
+                       rng: random.Random,
+                       require_cross_script: bool = True) -> tuple[list[Positive], int]:
     """Every cross-script name pair of one place, capped, plus how many were cut.
+
+    ⚠ `require_cross_script` drops same-script pairs, and that default is right
+    for the cross-script target and WRONG for historic orthography, which is
+    usually same-script — Welsh<->English forms are both LATIN. It is a
+    parameter rather than a hard-coded filter so the exclusion is a decision the
+    caller makes, not one buried in a list comprehension. It cannot rescue
+    historic forms on its own, though: a historic spelling is typically ABSENT
+    from the index, which is the whole complaint, so co-attestation cannot
+    generate those pairs at any setting. They need an external pack.
 
     Returns ``(pairs, n_dropped)``. The drop count is returned rather than
     discarded because the cap is the one place this construction can silently
@@ -243,7 +273,7 @@ def cross_script_pairs(place: dict, *, max_per_place: int,
     pairs = [Positive(place_id, namespace, a, al, asc, b, bl, bsc)
              for i, (a, al, asc) in enumerate(entries)
              for (b, bl, bsc) in entries[i + 1:]
-             if asc != bsc]
+             if bsc != asc or not require_cross_script]
     if len(pairs) <= max_per_place:
         return pairs, 0
     dropped = len(pairs) - max_per_place
@@ -259,12 +289,23 @@ def summarise_positives(pairs: list[Positive]) -> dict:
     """
     ns = Counter(p.namespace for p in pairs)
     sp = Counter("→".join(sorted(p.script_pair)) for p in pairs)
-    places = len({p.place_id for p in pairs})
+    src = Counter(p.source for p in pairs)
+    # Count only REAL places. Pairs from an external pack share the empty
+    # place_id, so counting distinct ids would fold every one of them into a
+    # single phantom "place" and quietly deflate pairs_per_place.
+    places = len({p.place_id for p in pairs if p.has_place})
+    unanchored = sum(1 for p in pairs if not p.has_place)
     top_ns, top_n = (ns.most_common(1) or [("", 0)])[0]
     return {
         "n_pairs": len(pairs),
         "n_places": places,
-        "pairs_per_place": round(len(pairs) / places, 2) if places else 0.0,
+        "by_source": dict(src.most_common()),
+        # Pairs with no resolvable place, i.e. no co-reference exclusion is
+        # possible for them. Reported next to the total so the two are never
+        # read as one population.
+        "n_unanchored": unanchored,
+        "pairs_per_place": round(
+            sum(1 for p in pairs if p.has_place) / places, 2) if places else 0.0,
         "by_namespace": dict(ns.most_common()),
         "by_script_pair": dict(sp.most_common()),
         "dominant_namespace": top_ns,

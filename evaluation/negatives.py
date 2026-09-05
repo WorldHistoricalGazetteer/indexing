@@ -100,8 +100,22 @@ class HaystackIndex:
         return None
 
 
+class ExclusionImpossible(AssertionError):
+    """A positive carries no place, so no co-reference exclusion can be computed.
+
+    Raised rather than proceeding with an empty forbidden set. An external
+    positive pack (LHPN historic forms, a transcription set) has no `place_id`,
+    and `forbidden.get(place_id, set())` would return empty and read exactly
+    like "this place has no co-referents" — the absent input treated as
+    nothing-to-do. The caller must supply an exclusion for those pairs, or pass
+    `allow_unanchored=True` to state deliberately that they are going in
+    without one, in which case the count is reported.
+    """
+
+
 def build_negatives(positives, haystack: HaystackIndex, forbidden_for,
-                    rng: random.Random) -> tuple[list[Pair], dict]:
+                    rng: random.Random, *,
+                    allow_unanchored: bool = False) -> tuple[list[Pair], dict]:
     """One matched negative per positive, plus a census of what could not be matched.
 
     `forbidden_for(positive) -> set[str]` supplies the co-reference closure's
@@ -111,6 +125,17 @@ def build_negatives(positives, haystack: HaystackIndex, forbidden_for,
     drawn is a script pair with no AUC, and it must be visible as such rather
     than appearing as a smaller sample of the same measurement.
     """
+    unanchored = [p for p in positives if not getattr(p, "has_place", True)]
+    if unanchored and not allow_unanchored:
+        raise ExclusionImpossible(
+            f"{len(unanchored):,} of {len(positives):,} positives carry no "
+            f"place_id, so the co-reference exclusion cannot be computed for "
+            f"them and every negative drawn against them would be unfiltered. "
+            f"First example: {unanchored[0].query!r} ~ {unanchored[0].partner!r} "
+            f"(source {unanchored[0].source!r}). Supply an exclusion for these "
+            f"pairs, or pass allow_unanchored=True to accept it deliberately — "
+            f"the census then reports how many went in without one.")
+
     pairs: list[Pair] = []
     unmatched: dict[str, int] = defaultdict(int)
     matched: dict[str, int] = defaultdict(int)
@@ -133,6 +158,10 @@ def build_negatives(positives, haystack: HaystackIndex, forbidden_for,
                           candidate_script=pos.partner_script, label=0))
     census = {
         "positives": len(positives),
+        # Not a footnote: these are the pairs whose negatives were drawn with NO
+        # co-reference exclusion, so a "negative" among them may be a genuine
+        # name of the query's place and the model is penalised for being right.
+        "unanchored_no_exclusion": len(unanchored),
         "negatives": sum(matched.values()),
         "unmatched_positives": sum(unmatched.values()),
         "matched_by_script_pair": dict(sorted(matched.items())),

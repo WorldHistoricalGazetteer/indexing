@@ -184,7 +184,18 @@ def main() -> int:
           f"{len(co_names):,} resolved", flush=True)
 
     def forbidden_for(pos: Positive) -> set[str]:
-        names = set(own_names.get(pos.place_id, ()))
+        # `own_names` is keyed by a place that WAS resolved from the index; a
+        # miss means the mget did not return it, not that the place has no
+        # names. Distinguishing the two matters because a silent empty set here
+        # disables the exclusion for that pair and nothing downstream can tell.
+        if pos.place_id not in own_names:
+            raise SystemExit(
+                f"ABORT: place {pos.place_id!r} produced a positive but did not "
+                f"come back from the places index, so its own names cannot be "
+                f"excluded from the negative pool. Proceeding would draw "
+                f"unfiltered negatives for it and report a normal-looking "
+                f"census. Re-run the build, or drop that place explicitly.")
+        names = set(own_names[pos.place_id])
         for q in closure.get(pos.place_id, ()):
             names |= co_names.get(q, set())
         return names

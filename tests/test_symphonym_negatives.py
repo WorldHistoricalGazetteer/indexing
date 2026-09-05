@@ -111,5 +111,76 @@ class NegativeSamplerTest(unittest.TestCase):
                                  length_band(pos.candidate))
 
 
+class ExternalPositiveSourceTest(unittest.TestCase):
+    """A positive that is NOT co-attested must not silently lose its exclusion.
+
+    v8's scope now includes historic orthography, whose pairs come from external
+    packs (LHPN Welsh<->English, a GOTW transcription set) rather than from
+    shared `place_id`. Those pairs have no place to exclude around, and
+    `forbidden.get(place_id, set())` would return empty and read exactly like
+    "this place has no co-referents". A negative drawn without an exclusion can
+    be a genuine name of the query's place, which penalises the model for being
+    RIGHT and shows up only as a lower AUC.
+    """
+
+    @staticmethod
+    def _external(n=10):
+        return [Positive(place_id="", namespace="lhpn",
+                         query=f"Kaerdyf{i:02d}", query_lang="cy",
+                         query_script="LATIN",
+                         partner=f"Cardiff{i:02d}", partner_lang="en",
+                         partner_script="LATIN", source="lhpn-historic")
+                for i in range(n)]
+
+    def _hay(self):
+        return HaystackIndex([{"name": f"Placename{i:02d}", "lang": "en",
+                               "script": "LATIN"} for i in range(300)])
+
+    def test_unanchored_positives_are_refused_by_default(self):
+        from evaluation.negatives import ExclusionImpossible
+        with self.assertRaises(ExclusionImpossible) as ctx:
+            build_negatives(self._external(), self._hay(), lambda p: set(),
+                            random.Random(0))
+        self.assertIn("lhpn-historic", str(ctx.exception))
+
+    def test_unanchored_positives_are_allowed_deliberately_and_counted(self):
+        pairs, census = build_negatives(self._external(), self._hay(),
+                                        lambda p: set(), random.Random(0),
+                                        allow_unanchored=True)
+        self.assertEqual(census["unanchored_no_exclusion"], 10)
+        self.assertEqual(census["negatives"], 10)
+
+    def test_a_co_attested_set_is_still_accepted_without_the_flag(self):
+        """The control: the guard must not fire on the ordinary case."""
+        pairs, census = build_negatives(_positives(20), HaystackIndex(_haystack()),
+                                        lambda p: set(), random.Random(0))
+        self.assertEqual(census["unanchored_no_exclusion"], 0)
+
+    def test_same_script_pairs_are_generable_when_asked_for(self):
+        """Historic orthography is usually SAME script — Welsh and English are
+        both Latin — so the cross-script filter must be a parameter, not a
+        hard-coded assumption."""
+        from evaluation.corpus import cross_script_pairs
+        place = {"place_id": "gn:1", "toponyms": [
+            {"toponym_id": "Cardiff@en"}, {"toponym_id": "Caerdydd@cy"},
+            {"toponym_id": "Кардифф@ru"}]}
+        cross, _ = cross_script_pairs(place, max_per_place=99, rng=random.Random(0))
+        allp, _ = cross_script_pairs(place, max_per_place=99, rng=random.Random(0),
+                                     require_cross_script=False)
+        self.assertEqual(len(cross), 2)      # both Cyrillic pairings only
+        self.assertEqual(len(allp), 3)       # plus Cardiff ~ Caerdydd
+        self.assertTrue(all(p.script_pair[0] != p.script_pair[1] for p in cross))
+        self.assertTrue(any(p.script_pair == ("LATIN", "LATIN") for p in allp))
+
+    def test_source_defaults_so_old_corpora_still_load(self):
+        """positives.jsonl written before `source` existed must still parse."""
+        old = {"place_id": "gn:1", "namespace": "gn", "query": "a",
+               "query_lang": "en", "query_script": "LATIN", "partner": "b",
+               "partner_lang": "ru", "partner_script": "CYRILLIC"}
+        p = Positive(**old)
+        self.assertEqual(p.source, "co-attestation")
+        self.assertTrue(p.has_place)
+
+
 if __name__ == "__main__":
     unittest.main()
