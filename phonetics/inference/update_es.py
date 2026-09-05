@@ -34,6 +34,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from processing.settings import ES_HOST
+from processing.device import configure_cpu_threads, resolve_device
 from processing.utilities import create_checkpoint_snapshot
 
 try:
@@ -210,11 +211,14 @@ def run_compute(args):
     else:
         logger.info("Cache disabled (--no-cache); recomputing every embedding")
 
-    logger.info(f"Loading model from {args.checkpoint}...")
+    device = resolve_device(args.device, purpose="symphonym embedding compute")
+    if device == "cpu":
+        configure_cpu_threads()
+    logger.info(f"Loading model from {args.checkpoint} on {device}...")
     encoder = ToponymEncoder.from_checkpoint(
         args.checkpoint,
         args.vocab_dir,
-        device=args.device
+        device=device
     )
 
     logger.info(f"Connecting to DuckDB at {duckdb_path}...")
@@ -672,7 +676,13 @@ def main():
                            help='Model checkpoint path')
     p_compute.add_argument('--vocab-dir', required=True,
                            help='Vocabulary directory')
-    p_compute.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    # Was `'cuda' if torch.cuda.is_available() else 'cpu'`, evaluated at PARSER
+    # BUILD time and therefore invisible in --help and in the recorded argv: the
+    # same command line meant different hardware on different hosts and nothing
+    # said so. 'auto' defers the choice to `resolve_device`, which announces it.
+    p_compute.add_argument('--device', default='auto',
+                           help="auto (default) | cuda | cuda:N | cpu; an "
+                                "explicit 'cuda' aborts rather than falling back")
     p_compute.add_argument('--cache-db',
                            help='Override the persistent Symphonym cache DuckDB path '
                                 '(default: settings.SYMPHONYM_CACHE_DB)')

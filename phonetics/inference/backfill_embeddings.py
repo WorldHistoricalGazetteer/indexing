@@ -44,6 +44,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from processing.device import configure_cpu_threads, resolve_device
+
 EMBEDDING_DIM = 128
 DEFAULT_ES_PASSWORD_FILE = "/ix1/ishi/es/config/elastic.password"
 
@@ -158,7 +160,10 @@ def _stream_batches(path: str, size: int):
 
 
 def cmd_compute(args) -> None:
-    model = _load_model(args.device, args.model_dir)
+    device = resolve_device(args.device, purpose="backfill embeddings")
+    if device == "cpu":
+        configure_cpu_threads()
+    model = _load_model(device, args.model_dir)
     print(f"[compute] streaming {args.inp} (batch={args.batch_size})")
 
     out = Path(args.out)
@@ -249,7 +254,10 @@ def main() -> None:
     pc = sub.add_parser("compute", help="input.jsonl → embeddings.jsonl (run on CRC GPU)")
     pc.add_argument("--in", dest="inp", required=True)
     pc.add_argument("--out", required=True)
-    pc.add_argument("--device", default="cuda", help="cuda (default) or cpu")
+    pc.add_argument("--device", default="auto",
+                    help="auto (default: GPU if visible, else CPU) | cuda | "
+                         "cuda:N | cpu. An explicit 'cuda' aborts rather than "
+                         "falling back — see processing/device.py.")
     pc.add_argument("--model-dir", help="override Symphonym model dir (else gateway resolver)")
     pc.add_argument("--batch-size", type=int, default=1024)
     pc.set_defaults(func=cmd_compute)
