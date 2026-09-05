@@ -1,12 +1,47 @@
 # gateway/config.py
-"""Gateway configuration, loaded from .env"""
+"""Gateway configuration, loaded from .env then .env.local"""
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+# Two layers, in the same order and with the same precedence as
+# ``processing/settings.py`` and ``clustering/config.py``: ``.env`` holds the
+# shared, committed defaults; ``.env.local`` is gitignored and holds per-host
+# overrides and secrets, so ``override=True`` lets it win.
+#
+# This module read ONLY ``.env`` until 5 Sep 2026, and it is the gateway's sole
+# source of environment: ``_common.sh`` sources both files but WITHOUT ``set -a``,
+# so nothing it reads is exported and none of it reaches this process. A host that
+# needed to override a gateway setting therefore had to edit the TRACKED ``.env``
+# — which is what happened with ``SYMPHONYM_MODEL_DIR`` (place#242), and that edit
+# then blocked ``git pull`` on the deployed checkout, because the incoming commit
+# touched the same file. A deployment that cannot fast-forward is a deployment
+# that silently does not happen: the staging-restore fix sat committed and
+# undeployed until a peer session hit the very bug it fixes.
+_repo_root = Path(__file__).parent.parent
+load_dotenv(_repo_root / ".env")
+
+# The override layer is OPTIONAL and must never be able to stop the gateway
+# starting. ``load_dotenv`` does not tolerate an unreadable path — it propagates
+# PermissionError — and on this deployment ``.env.local`` is mode 660
+# stg135:ishi while the gateway runs as ``gazetteer``. That works today only
+# because gazetteer's primary group IS ishi; a host where it is not would have
+# turned this convenience into an import-time crash with no log line explaining
+# it. Absent-but-optional is fine and silent; present-but-unreadable is a real
+# misconfiguration and says so on stderr (i.e. into the gateway's nohup.out)
+# rather than being swallowed.
+_env_local = _repo_root / ".env.local"
+if _env_local.exists():
+    if os.access(_env_local, os.R_OK):
+        load_dotenv(_env_local, override=True)
+    else:
+        print(
+            f"WARNING: {_env_local} exists but is not readable by "
+            f"uid {os.geteuid()}; per-host overrides are NOT applied.",
+            file=sys.stderr,
+        )
 
 # ES backend (internal, localhost only)
 ES_INTERNAL_PORT = int(os.getenv("PROD_ES_INTERNAL_PORT", "9201"))
