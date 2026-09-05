@@ -1377,6 +1377,70 @@ per-row validity flags rather than pre-filtered content. We can drop rows; we
 cannot un-drop them, and §7.1 above is what happens when a cleaning rule is
 applied upstream of the people who need to see what it removed.
 
+## 6.3 What the second target broke in the benchmark code — found before it ran
+
+Adding historic orthography (§6.1) invalidated assumptions in three places in
+`evaluation/`. `indexing-9c` found and fixed them (`b1cbbd3`) rather than
+discovering them in a training run. **One of them is this campaign's signature
+fault occurring inside the tool built to detect it.**
+
+🛑 **The silent one.** `build_corpus.forbidden_for` does
+`own_names.get(pos.place_id, ())` and `closure.get(pos.place_id, ())`. A pair with
+**no `place_id`** — which is every externally-supplied historic pair — returns
+empty from both, and **an empty forbidden set is indistinguishable from "this
+place has no co-referents"**. Every negative drawn against an LHPN pair would
+have been unfiltered, so a "negative" could be a genuine name of the query's own
+place. That **penalises the model for being right**, and surfaces only as a lower
+AUC: no error, no warning, a census that looks normal. *Absent input treated as
+nothing-to-do.*
+
+**Fixed:** `build_negatives` raises `ExclusionImpossible`, naming the first
+offending pair and its source; `allow_unanchored=True` accepts them
+*deliberately*; and the census reports `unanchored_no_exclusion` **beside** the
+totals, so the two populations can never be read as one. `forbidden_for` also
+now aborts when a place produced a positive but did not come back from the index,
+rather than reading an `mget` miss as "no names".
+
+⚠ **The one that would have produced nothing at all.** `cross_script_pairs`
+hard-filtered `asc != bsc` inside a list comprehension, dropping **every
+same-script pair**. Welsh↔English are both `LATIN`, so an LHPN pack routed
+through it would have yielded **zero pairs and looked like a data problem**. Now
+`require_cross_script`, a decision the caller makes.
+
+🛑 **But no parameter substitutes for the external pack.** Co-attestation cannot
+generate a pair whose historic half is not in the index, at any setting. That is
+§6.1's point restated from the code side, and the docstring now says so.
+
+**Bookkeeping:** `Positive` gains `source` and `has_place` (defaulted, so
+positives written before the change still load); the manifest reports positives
+by source; and `pairs_per_place` divides by **anchored pairs only** — counting
+distinct `place_id`s would have folded every external pair into a single phantom
+"place" and deflated the ratio.
+
+### Two decisions handed to whoever builds the LHPN pack
+
+1. **What is the exclusion for an unanchored pair?** `allow_unanchored=True` is
+   honest but weak: those negatives are drawn from the whole haystack with
+   nothing filtered. **If LHPN rows carry a modern place name that resolves in
+   the index, look it up and reuse the normal closure** — at which point the
+   pairs stop being unanchored at all. Try that before the flag.
+2. **The per-script-pair reporting axis stops discriminating.** Every LHPN pair
+   lands in one `LATIN→LATIN` cell alongside ordinary same-script
+   co-attestation, so historic orthography would be **averaged with whatever else
+   is Latin-to-Latin**. `source` is now on the `Positive`, so the fix is to report
+   by `(script_pair, source)`. Deferred deliberately: the pack's shape decides
+   whether that is the right key.
+
+### An addition to the retrain's acceptance criterion
+
+⚠ **Measure the geometry at the corpus size it will be judged at, and state the
+size.** `nn_gap` at 6,000 names passes comfortably for a model that is twice over
+the threshold at 1M, so **a v8 evaluated on a small sample could clear the gate
+and still saturate in production**. Effective rank is stable across sizes and is
+safe to quote at any *n*; the neighbourhood statistics are not. This is the
+practical form of §8.2's `n^-0.22` finding and it belongs in the gate, not just
+in the discussion.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
