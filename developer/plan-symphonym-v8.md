@@ -975,6 +975,35 @@ The common defence is not more care. It is to make the check's *default* and its
 *subject* impossible to confuse — read the source rather than reconstruct it, and
 never write the interpretation of a command's output above the output itself.
 
+### 5.10b A correct number applied to the wrong comparison
+
+Advising `indexing-04` on verifying the ES snapshot, this session wrote: *do not
+use `_cat/indices`' 361,746,797 — the real figure is 51,187,900 places.* True for
+**sizing** the corpus. **Wrong as a snapshot-verification predicate**, and
+dangerously so: a snapshot counts Lucene documents exactly as `_cat/indices`
+does, nested toponyms and geometries included, so it reports the 361.7M-shaped
+figure too. Checking a good snapshot against 51,187,900 would have looked like
+**catastrophic loss of 86% of the corpus**.
+
+The correct comparison is snapshot against the *live index's* `docs.count` — like
+against like. **The number is misleading in one direction and load-bearing in the
+other**, and the advice inverted which was which.
+
+🛑 **This is the campaign's signature fault committed inside advice about
+verification**: a correct measurement attached to the wrong comparison, producing
+a confident wrong conclusion that *looks like* diligence. It is distinct from the
+self-confirming measurements in §5.10 — nothing here was mis-measured. The number
+was right; the predicate was wrong.
+
+**Related, and found the same way:** this session reported the latest snapshot as
+covering the live indices. It covers **one** — `promote-h3ccode-20260805t120000z`
+holds `places` only; `toponyms` was last captured by
+`promote-temporal-20260731t160000z`. The conclusion (everything after 6 Aug
+unprotected) stood, but anyone reaching for "the last snapshot" to recover
+toponyms would have found none in it. **The `indices=1` was printed in this
+session's own query output and not read** — the third time today evidence on
+screen lost to a summary of it.
+
 ### 5.11 Verification design — lessons that cost nothing to keep
 
 **A ratio-preserving failure is invisible to any ratio-based check.** The
@@ -1411,6 +1440,46 @@ understated it badly. Measured on their corpus: **2,121 of 8,713 processed place
 "canton of Amatrice", "prov. of Abruzzo Ultra". Anyone applying the
 space/CJK/non-NFC re-run filter to a *container* population should expect a
 majority, not a minority.
+
+### 7.3b The backup that the re-embed made urgent — done
+
+✅ **`prod-manual-20260905t1931z`, SUCCESS, 22/22 shards, 0 failures** (31.7 min),
+covering `places_h3ccode-20260805t120000z` (23.6 GiB) and
+`toponyms_temporal-20260731t160000z` (50.1 GiB). Verified by listing the repo,
+not by the PUT response. Latest prior snapshot was **6 August**, so the 2 Sep
+`h3_cover` remediation, the 3 Sep MultiPoint fix and the 5 Sep re-embed of
+100,960 documents had been unprotected.
+
+**SG chose a third option neither this document nor `indexing-04` had listed**: a
+new `prod_repo` at `/ix1/ishi/es/snapshots/prod`, inside the existing `path.repo`
+allowlist so no ES restart was needed. `staging_repo` stays `readonly` and
+untouched, `cluster_exchange` keeps its handoff purpose. The reasoning is the
+good part: **SLM retention can only prune snapshots it created itself, so making
+`staging_repo` writable would have put 53 snapshots and 401 GB within retention's
+reach.**
+
+SLM policy `prod-weekly` now exists — cron `0 0 2 ? * SUN`, keep 8 (min 4,
+expire 120d), scoped to `prod_repo`, indices given as the **aliases** so it
+follows future cutovers. ⚠ **The cron is UTC. First run is 02:00 UTC on 6 Sep —
+22:00 EDT on the server's clock, 03:00 BST on SG's.** Three timezones in a
+project where run-ids-UTC-versus-hosts-EDT has already misattributed a regression
+once.
+
+⚠ **SLM was never disabled** — `operation_mode` was already `RUNNING` with
+`total_snapshots_taken: 0`. There was no fault to find; there was simply no
+policy.
+
+🛑 **STILL OPEN, and explicitly not answered:** *does ES validate `path.repo` at
+start-up such that a wedged `/ix1` blocks boot?* ES has been up 5d11h and did not
+restart during either of today's wedges, so the logs say nothing either way.
+Settling it on prod means restarting during an outage. **It is cheaply answerable
+on a throwaway ES with `path.repo` pointed at an unreachable path — a staging
+experiment, not a production one.**
+
+*Unrelated but recorded so it is not misread later: `toponyms` `store.size` fell
+59.8 gb → 49.8 gb during the backup window. Not loss — `docs.count` identical at
+72,703,777, `docs.deleted` 292,493, 38 background merges reclaiming deletes left
+by the re-embed. Heap 33% of 28 gb, so not a repeat of the HNSW merge OOM.*
 
 ### 7.4 place#163 — and a reason to re-examine the scoping decision
 
