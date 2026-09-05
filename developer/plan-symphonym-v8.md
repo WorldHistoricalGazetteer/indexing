@@ -1874,6 +1874,35 @@ better than mine: I was guarding against a field that is EMPTY; the field is
 populated and wrong for the purpose. *"The question is not whether the flag is
 there — it is whether the thing it flags is what you mean."*
 
+> 🛑 **`place#244` IS CLOSED (not-planned, 5 Sep) — DO NOT ACT ON IT.** SG closed
+> it because the premise did not survive measurement: `attested_at` is the
+> deliberate, documented encoding and the 2026 attestation was intentional, so the
+> "inert filter / placeholder" framing does not stand. The backfill ran against
+> production with no measurable change and no damage, so **nothing needs
+> reverting**. ⚠ This session edited `#244`'s title, banner and acceptance
+> criterion publicly, and **those edits now sit on a closed issue** — everything
+> load-bearing was carried into **[`place#246`](https://github.com/WorldHistoricalGazetteer/place/issues/246),
+> which is the sole authority and does not reference `#244` at all.**
+>
+> **`place#246`, standalone, five items:** ① `osm-places.py` never reads
+> `start_date`/`end_date` while `ohm-places.py` does · ② three independent
+> `datetime.now().year` implementations · ③ `"in": null` written into stored
+> timespans · ④ **`places` and `toponyms` disagree about TGN's name inventory —
+> 1,277,683 of 2,991,143 tgn places (42.7%) have an EMPTY `toponyms[]` in
+> `places`** · ⑤ Getty dates 9,450 concepts, the index holds 2,712, and the
+> backfill structurally cannot land them because of ④.
+>
+> 🛑 **SG's directive, carried as a block above the audit so it cannot read as
+> advice: every item must be resolved in the INGESTION CODE whether or not the
+> data is also patched. The two are not alternatives, and no item closes on a
+> patch alone.** Anchored to `postmortem-ingestion-faults.md` rather than asserted
+> — eleven of sixteen registered faults recur because the data was repaired and
+> the producer was not. ⚠ Item ⑤ carries a **verify-first exception**:
+> `tgn_temporal.timespan` was already rewritten for place#164 and may be correct
+> with the live index simply predating it, so the script must be *run* before it
+> is called broken — and where a script fix proves unnecessary, that is closed on
+> **evidence**, not assumption.
+
 ## 6.6 ~~`toponyms.timespans` is EMPTY~~ — 🛑 **RETRACTED: the zero was a query bug**
 
 🛑 **STRUCK 5 Sep. `toponyms.timespans` is populated on 23,796,980 places, not 0.**
