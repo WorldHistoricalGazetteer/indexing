@@ -1412,6 +1412,63 @@ understated it badly. Measured on their corpus: **2,121 of 8,713 processed place
 space/CJK/non-NFC re-run filter to a *container* population should expect a
 majority, not a minority.
 
+### 7.4 place#163 — and a reason to re-examine the scoping decision
+
+**`place#163` (OPEN): "consider retraining Symphonym on LHPN Welsh/English
+name-variant pairs", gated on `place#161` (RCAHMW licensing, paused 30 Jul,
+outreach drafted and never sent).** It is a reminder issue, explicitly not a task
+and not authorisation to acquire data. But its content bears directly on D-D's
+label design and on the 5 Sep scoping decision.
+
+What it found, from ~30k sampled LHPN records (2 of ~14 county filters, so
+indicative not corpus-wide):
+
+* Only **~5.5%** of records carry a populated `HeadName`, i.e. are clustered to a
+  canonical form — *"don't extrapolate 700k records → 700k useful pairs."*
+* Within that subset, candidate variant pairs pass `generate_pairs.py`'s own
+  similarity gate at **80.5–86.7%**, against the existing `cy`/`en` co-attested
+  pairs in the corpus which are **mostly literal translations** (`Efrog`/`York`,
+  `Teyrnas Prydain Fawr`/`Kingdom of Great Britain`) and score near zero.
+* The surviving pairs are **Welsh orthography ↔ English clerk transliteration**:
+  `Llanddona`/`Seynt Dona`, `Llandegfan`/`Landegvan`, `Aberffraw`/`Abberfray`.
+  Driven by *how the sound of a name got written down by non-Welsh-speaking
+  scribes across centuries*, not by translation.
+
+🛑 **THAT IS THE SAME PHENOMENON AS GOTW's `Keang-su`/Jiangsu.** Both are
+historic-orthography variation — a name's sound recorded by a scribe working in
+another convention. Both were de-scoped on 5 Sep by "cross-script phonetic
+matching, and only that", because both are **same-script**.
+
+**Three measurements taken since that decision point the same way:**
+
+1. **GOTW: 16,486 of its corpus (14.2%)** sits in regions where 1856
+   transcription conventions do not reach a modern index — an upper bound, but an
+   order of magnitude above the 2.1% China figure the decision was taken against
+   (§7.2).
+2. **place#163: the LHPN pairs pass at 80.5–86.7%** where the corpus's existing
+   Welsh pairs score near zero. A ready-made source of exactly this signal, if
+   licensing ever clears.
+3. **The cross-script alphabetic pairs are already solved.** `London ~ Лондон`
+   scores **1.000** under anyascii-romanised Levenshtein (§4.5). Where the
+   baseline fails is CJK↔Latin at 0.125 — and D-B, a Japanese reading table, was
+   ruled out by the same decision.
+
+⚠ **So "optimise for cross-script phonetic matching" may in practice mean
+"optimise for Chinese and Korean", while ruling out the two problem classes that
+have measured demand behind them and that most distinguish a HISTORICAL gazetteer
+from a modern geocoder.** That is not an argument that the decision was wrong on
+the information available on 5 Sep — it is an argument that three subsequent
+measurements point one way and it is cheap to revisit **before** training data is
+regenerated, which D-0 requires anyway.
+
+**What would settle it:** the retrieval benchmark's per-script-pair breakdown.
+If v7 already matches romanised Levenshtein on Cyrillic/Greek/Arabic↔Latin and
+loses only on CJK, then the scoping question is not rhetorical — it is a choice
+between a narrow data-hungry target and a broad one with two consumers waiting.
+
+*(`place#163` remains gated on `place#161` regardless; nothing here authorises
+acquiring LHPN data.)*
+
 ## 8. Scale of likely improvement — and what cannot be claimed
 
 **Package 1, measured, no retraining:** multi-word self-retrieval goes from
