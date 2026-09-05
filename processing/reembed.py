@@ -275,6 +275,14 @@ def stratum_of(name: str, script: str | None) -> str:
         return "multi-word"
     if unicodedata.normalize("NFC", name) != name:
         return "not-NFC"
+    if is_candidate(name, script):
+        # D4: single-word, already NFC, non-romanised, and still a candidate —
+        # so it carries a digit or a punctuation mark. Split out because the
+        # bucket it used to fall into is called "control", and a stratum named
+        # control must contain only documents that CANNOT change. The first
+        # partial census reported 184 changes in "control", which read as a
+        # contradiction and was in fact this mislabelling.
+        return "punctuated"
     return "control"
 
 
@@ -426,11 +434,16 @@ def cmd_stage(args) -> None:
                 f"stage again. Staging a tree without the code it runs would send "
                 f"every task back to the working tree.")
 
-    (run_dir / "staged_commit.json").write_text(json.dumps({
+    marker = json.dumps({
         "commit": sha, "requested": args.commit, "dirty_at_stage": bool(dirty),
         "staged_at": datetime.now(timezone.utc).isoformat(),
         "code_dir": str(code_dir),
-    }, indent=2))
+    }, indent=2)
+    # Written into the code tree AND beside the run. The copy inside the code
+    # tree is the one `_git_commit` trusts, because it travels with the code it
+    # names and cannot go stale while the code moves.
+    (code_dir / "staged_commit.json").write_text(marker)
+    (run_dir / "staged_commit.json").write_text(marker)
     print(f"[stage] {sha[:12]} → {code_dir}")
     print(f"[stage] run every task with `cd {code_dir}` — NOT from {repo}")
 
@@ -884,8 +897,18 @@ def _git_commit(run_dir: Path | None = None) -> str:
     it exists — the commit is a property of the archive, not of wherever the
     archive was unpacked.
     """
-    if run_dir is not None:
-        staged = Path(run_dir) / "staged_commit.json"
+    # The CODE tree first, because the commit is a property of the code being
+    # executed and not of the directory the outputs go in. This ordering is a
+    # bug fix: the run's shard directory held a COPY of staged_commit.json made
+    # early on, the authoritative one beside it was updated when the code was
+    # re-staged, and 98 shards recorded the superseded commit while running the
+    # newer code. The provenance field was confidently wrong — exactly the
+    # failure the field exists to prevent, arriving through a stale copy rather
+    # than through a missing file. `stage` now writes the marker INTO the code
+    # tree, where it cannot be separated from what it describes.
+    for candidate in ((_repo_root(),) if run_dir is None
+                      else (_repo_root(), Path(run_dir))):
+        staged = candidate / "staged_commit.json"
         if staged.exists():
             try:
                 commit = json.loads(staged.read_text()).get("commit")

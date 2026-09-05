@@ -73,10 +73,23 @@ class TestCandidateAndControl(unittest.TestCase):
                 self.assertFalse(reembed.is_candidate(name, "LATIN")
                                  and reembed.is_control(name, "LATIN"))
 
+    def test_the_control_stratum_contains_only_things_that_cannot_change(self):
+        """A stratum called "control" must be exactly the non-candidates.
+
+        It was not: D4 names fell into it, and the first partial census showed
+        184 changes in a bucket whose whole meaning is that it cannot change.
+        """
+        for name in ("London", "Москва", "Gherke", "SO-10731", "New York",
+                     "東京", "O'Brien"):
+            with self.subTest(name=name):
+                in_control = reembed.stratum_of(name, "LATIN") == "control"
+                self.assertEqual(in_control, not reembed.is_candidate(name, "LATIN"))
+
     def test_every_name_lands_in_exactly_one_stratum(self):
         cases = [("東京", "CJK", "CJK"), ("서울", "HANGUL", "HANGUL"),
                  ("New York", "LATIN", "multi-word"),
                  (unicodedata.normalize("NFD", "Åre"), "LATIN", "not-NFC"),
+                 ("SO-10731", "LATIN", "punctuated"),
                  ("London", "LATIN", "control")]
         for name, script, expected in cases:
             with self.subTest(name=name):
@@ -336,6 +349,19 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         # report ITS OWN commit, not the unrelated HEAD it happens to sit under.
         (self.dir / "staged_commit.json").write_text(json.dumps({"commit": "e" * 40}))
         self.assertEqual(reembed._git_commit(self.dir), "e" * 40)
+
+    def test_the_code_trees_marker_beats_a_stale_copy_beside_the_run(self):
+        """A real defect, not a hypothetical: 98 shards recorded a superseded
+        commit because the run directory held an early COPY of the marker while
+        the code was re-staged past it. The commit belongs to the code, so the
+        copy travelling with the code wins."""
+        import unittest.mock as mock
+        code = self.dir / "code"
+        code.mkdir()
+        (code / "staged_commit.json").write_text(json.dumps({"commit": "a" * 40}))
+        (self.dir / "staged_commit.json").write_text(json.dumps({"commit": "b" * 40}))
+        with mock.patch.object(reembed, "_repo_root", return_value=code):
+            self.assertEqual(reembed._git_commit(self.dir), "a" * 40)
 
     def test_the_required_unicode_table_is_stated_not_sampled(self):
         """`pin` normally runs on pitt (13.0.0) and compute on CRC (14.0.0).
