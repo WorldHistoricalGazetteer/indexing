@@ -95,10 +95,21 @@ def main() -> int:
           f"per script pair) against {len(hay_names):,} haystack names", flush=True)
     check_partners_present(queries, set(hay_names))
 
-    first = {}
-    for i, n in enumerate(hay_names):
+    # WHICH haystack entry is "the" partner. 41,109 names appear more than once
+    # in this corpus (same string, different language tag; max multiplicity 10),
+    # and the model embeds `lang` too, so those are genuinely different vectors.
+    # Prefer the entry whose language matches the positive's, falling back to
+    # the first occurrence of the name. Measured residual: 137 of 74,205
+    # positives (0.18%) have a duplicated partner name, so under pessimistic tie
+    # handling their rank can be depressed by at most 9 places — equally for
+    # every scorer. Stated rather than corrected further, because the correction
+    # would cost a per-query mask over a million rows.
+    by_name_lang, first = {}, {}
+    for i, (n, l) in enumerate(zip(hay_names, hay_langs)):
+        by_name_lang.setdefault((n, l), i)
         first.setdefault(n, i)
-    target = np.asarray([first[q.partner] for q in queries])
+    target = np.asarray([by_name_lang.get((q.partner, q.partner_lang),
+                                          first[q.partner]) for q in queries])
 
     V = (np.load(args.vectors) if args.vectors
          else embed_names(model, hay_names, hay_langs))

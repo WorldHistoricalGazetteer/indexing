@@ -71,6 +71,25 @@ DEFAULT_THRESHOLDS = {
     "p50_cosine_max": 0.80,
     # The 200th neighbour must be measurably worse than the 1st, or a k=200 KNN
     # is returning ties.
+    #
+    # ⚠ CORPUS-SIZE DEPENDENT, AND A SMALL CORPUS UNDERSTATES THE DEFECT.
+    # Saturation is a density effect, so the same model measured over more
+    # vectors looks worse — correctly. Symphonym v7, one 1.05M-name corpus
+    # sub-sampled, measured 5 Sep 2026:
+    #
+    #     n            1st nbr   200th nbr    gap
+    #     6,000         0.8772     0.5666    0.3106   passes comfortably
+    #     40,000        0.9187     0.7206    0.1980
+    #     200,000       0.9426     0.8036    0.1390
+    #     1,053,229     0.9623     0.8627    0.0995   twice the threshold
+    #
+    # The gap roughly halves per 30x of corpus and is heading for this
+    # threshold. The live `toponyms` index is 72.7M — 69x this corpus — and
+    # `gateway/es_helpers.knn_pass_quality` measured ">0.93 for the 200 nearest
+    # neighbours of anything" against it on 2026-08-20, which is what this curve
+    # extrapolates to and is irreconcilable with the 6,000-name figure alone.
+    # So a PASS here is evidence only at the n it was measured at. Report n
+    # beside it, and never compare gaps across corpus sizes.
     "nn_gap_min": 0.05,
 }
 
@@ -164,7 +183,12 @@ def measure_geometry(vectors: np.ndarray,
     look adequate.
     """
     th = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
-    V = np.asarray(vectors, dtype=np.float64)
+    # float32, not float64. Every quantity here is a cosine or a ratio of
+    # singular values, accurate in float32 to ~1e-7 — six orders of magnitude
+    # below the tightest threshold in the gate — and float64 doubles the cost of
+    # every intermediate. At n = 1M the float64 path reached 15 GB RSS and was
+    # OOM-killed twice before this was measured rather than assumed.
+    V = np.asarray(vectors, dtype=np.float32)
     if V.ndim != 2:
         raise ValueError(f"expected (N, D), got {V.shape}")
     n, d = V.shape
@@ -177,8 +201,18 @@ def measure_geometry(vectors: np.ndarray,
     norms = np.linalg.norm(V, axis=1, keepdims=True)
     V = V / np.where(norms == 0, 1.0, norms)
 
-    s = np.linalg.svd(V, compute_uv=False)
-    ev = s ** 2
+    # Singular values from the D x D Gram matrix, not from an SVD of the N x D
+    # one. The eigenvalues of `V.T @ V` are the squared singular values of `V`
+    # exactly — no approximation — and this is O(N x D^2) work landing in a
+    # 128 x 128 array, where `np.linalg.svd` on a 1,053,229 x 128 float64 matrix
+    # allocates a LAPACK workspace big enough to be OOM-killed on a 31 GB
+    # machine. It was, on the first run of this. ⚠ The kill arrived through a
+    # `| tail` whose own exit status is 0, so the run reported SUCCESS having
+    # produced two of its three results and written no output file — a pipe
+    # turning SIGKILL into exit 0 is the same shape as the hash of nothing.
+    gram = (V.T @ V).astype(np.float64)     # 128 x 128: promote the REDUCTION,
+    ev = np.clip(np.linalg.eigvalsh(gram)[::-1], 0.0, None)   # not the corpus
+    s = np.sqrt(ev)
     ev = ev / ev.sum()
     effective_rank = float(1.0 / np.sum(ev ** 2))     # participation ratio
 
@@ -195,17 +229,30 @@ def measure_geometry(vectors: np.ndarray,
         part = np.partition(C, -knn_k, axis=1)[:, -knn_k:]
     else:
         method = f"sampled(probe_rows={probe_rows:,}, pair_samples={pair_samples:,})"
-        i = rng.integers(0, n, pair_samples)
-        j = rng.integers(0, n, pair_samples)
-        keep = i != j
-        cos = np.einsum("ij,ij->i", V[i[keep]], V[j[keep]])
+        # Chunked, because `V[i]` for 5M indices materialises a 5M x D float64
+        # array — 5.1 GB at D=128, twice over. The first run of this at n=1M
+        # reached 13 GB RSS on a 31 GB machine doing nothing but gathering rows
+        # it was about to reduce away.
+        parts = []
+        for start in range(0, pair_samples, 500_000):
+            m = min(500_000, pair_samples - start)
+            i = rng.integers(0, n, m)
+            j = rng.integers(0, n, m)
+            keep = i != j
+            parts.append(np.einsum("ij,ij->i", V[i[keep]], V[j[keep]]))
+        cos = np.concatenate(parts)
         probe = rng.choice(n, size=min(probe_rows, n), replace=False)
         n_probe = len(probe)
         rows = []
         # The score block is len(block) x n float64; at n = 1M a 256-row block
         # is 2.1 GB. Size the block to the corpus so the peak stays ~0.5 GB
         # rather than depending on the caller's machine having headroom.
-        block_rows = max(16, min(256, int(64_000_000 / max(n, 1)) * 8 or 16))
+        # ~64M floats per score block, i.e. ~256 MB in float32 and the same
+        # again for `np.partition`'s copy. The first version of this line
+        # multiplied by 8 and clamped to 256, so it returned 256 for every
+        # corpus size and never shrank — the arithmetic looked adaptive and was
+        # constant.
+        block_rows = int(max(16, min(256, 64_000_000 // max(n, 1))))
         for start in range(0, n_probe, block_rows):
             block = probe[start:start + block_rows]
             sims = V[block] @ V.T

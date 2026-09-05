@@ -100,10 +100,32 @@ def ranks_from_scores(score_matrix: np.ndarray, target_idx: np.ndarray,
     return out
 
 
-def embed_names(model, names: list[str], langs: list[str], batch: int = 4096) -> np.ndarray:
-    vecs = [model.batch_embed(list(zip(names[i:i + batch], langs[i:i + batch])))
-            for i in range(0, len(names), batch)]
-    V = np.vstack(vecs).astype(np.float32)
+def embed_names(model, names: list[str], langs: list[str],
+                batch: int = 1024, min_batch: int = 32) -> np.ndarray:
+    """Embed and L2-normalise, halving the batch on CUDA OOM rather than dying.
+
+    The self-attention block allocates B x L x L, so peak memory depends on the
+    LONGEST NAME IN THE BATCH, not on the batch size alone — a batch of 4,096
+    that ran for a million toponyms died on a smaller set containing one long
+    name. A fixed batch is therefore a guess about the caller's GPU and the
+    corpus's tail simultaneously. Halving on OOM makes it neither: it costs one
+    wasted forward pass and removes a failure that otherwise strikes hours into
+    a run, after the expensive part.
+    """
+    import torch
+
+    out, i, cur = [], 0, batch
+    while i < len(names):
+        try:
+            out.append(model.batch_embed(list(zip(names[i:i + cur], langs[i:i + cur]))))
+        except torch.OutOfMemoryError:
+            if cur <= min_batch:
+                raise
+            torch.cuda.empty_cache()
+            cur //= 2
+            continue
+        i += cur
+    V = np.vstack(out).astype(np.float32)
     n = np.linalg.norm(V, axis=1, keepdims=True)
     return V / np.where(n == 0, 1.0, n)
 
