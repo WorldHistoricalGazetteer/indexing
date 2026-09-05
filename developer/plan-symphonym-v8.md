@@ -1,8 +1,8 @@
 # Plan — Symphonym v8
 
-> **Status:** 5 September 2026. **Package 1 is approved for rollout** (SG, this
-> session). Everything after it is an assessment plus an agenda of open
-> decisions — **not a schedule, and not approved.**
+> **Status:** 5 September 2026. **Package 1 is COMPLETE and deployed.** What
+> remains is the v8 question proper — the model, not its plumbing — and that is
+> an agenda of decisions, **not a schedule, and not approved.**
 > **Scope:** the phonetic embedding model (`phonetics/`, `hf/`,
 > `gateway/symphonym.py`) and the training data behind it. Every figure below
 > was measured locally against the shipped `hf/model.safetensors` +
@@ -20,8 +20,8 @@ architecture. Three things are wrong, in ascending order of cost to fix:
    embedded.** Multi-word toponyms retrieve their own indexed vector at rank 1
    only **65.7% of the time** (n=1,486 real names); CJK/Hangul/Kana queries are
    **anti-correlated** with their own documents (cos −0.30 for `東京`).
-   **This is a bug, not a design limit, and closing it needs no retraining.**
-   It is Package 1 and it is the only thing in this document scheduled to ship.
+   **This was a bug, not a design limit, and closing it needed no retraining.**
+   ✅ **Done** — Package 1, §5. It is not why you are reading this document.
 2. **The teacher's input representation has effective rank 4.37 of 192.** The
    PanPhon 8-bin pooled vector — the thing positives are clustered in and the
    thing the student is distilled toward — throws away almost everything. The
@@ -31,11 +31,25 @@ architecture. Three things are wrong, in ascending order of cost to fix:
    against a triplet margin of 0.3; phase-3 is 0.021. Almost every triplet is
    trivially satisfied and contributes no gradient.
 
-Findings 2 and 3 argue for a v8 retrain. They are **not scheduled here**,
-because the project has no benchmark that could resolve whether a retrain
-helped: the only ranking evaluation is 137 queries, on which v7 (R@1 0.852) is
-inside the noise band of plain Levenshtein (0.815) — and v7 is *worse* than v6
-(0.867). §6 sets out the decisions that need taking before any of it starts.
+Findings 2 and 3 are what v8 is *for*, and Package 1 did nothing about them.
+They are **still not scheduled**, because the project still has no benchmark that
+could resolve whether a retrain helped: the only ranking evaluation is 137
+queries, on which v7 (R@1 0.852) is inside the noise band of plain Levenshtein
+(0.815) — and v7 is *worse* than v6 (0.867).
+
+🛑 **Independent confirmation arrived 5 Sep, from a consumer rather than from
+this analysis.** The GOTW reconciliation project measured Symphonym against 1856
+English transcriptions of Qing province names and found the printed forms
+resolved to a usable container for **11 of 18**, one of them *wrongly* —
+`Keang-su` (Jiangsu) resolved to **GANSU at score 99.5**. Those queries tokenise
+**byte-identically** through the old and new paths (measured, 7 of 7), so
+Package 1 neither caused nor cured it. A confident wrong answer at 99.5 on a
+historic romanisation is finding 2 arriving in production: a rank-≈10 space
+cannot separate them, and the confidence scale faithfully reports a match the
+geometry cannot support.
+
+§6 sets out the decisions that need taking before any of it starts, and §5.12
+what Package 1 leaves behind that makes them cheaper.
 
 ---
 
@@ -377,7 +391,10 @@ broken.
 
 ## 5. PACKAGE 1 — make every tokeniser agree with the index as it stands
 
-**Approved. The only scheduled work in this document.**
+> ✅ **COMPLETE, 5 September 2026.** All six steps closed. Gateway deployed and
+> verified byte-exact; 100,960 of 72,703,777 documents re-embedded, 0 errors;
+> whg3 client shipped and verified by table diff. Kept in full because the
+> *method* is reusable and four of the findings below are open work for v8.
 
 ### 5.1 Scope discipline
 
@@ -393,7 +410,7 @@ force a re-embed of all 72.7M documents. They are §6 decisions, not this
 package. **If a change would alter the token ids of a single-word Latin name, it
 does not belong in Package 1.**
 
-### 5.2 The work
+### 5.2 The work, and how each step ended
 
 1. **`phonetics/tokenise.py`** — one canonical implementation, no dependency on
    torch or on the model, so every caller and every test can import it. It must
@@ -641,54 +658,6 @@ does not belong in Package 1.**
    vectors will diverge from the fixed gateway. Until it does, consider having
    the gateway ignore a client `query_vector` for affected scripts.
 
-### 5.2b Two hazards found while porting (both recorded, neither is a policy change)
-
-**H1 — the out-of-range-id rules agree by coincidence, not by construction.**
-The vocab file carries 7 characters whose ids are ≥ `len(char_to_id)` (113,280):
-`'̿'`→113280 and six others. Both paths already degrade them to `<UNK>`, but by
-different rules reading different sources — `CharacterVocabulary.get_char_id`
-tests `cid >= len(self.char_to_id)` (a property of the **vocab file**), while
-`hf/inference.py::_sanitize_vocab_ids` clamps against
-`char_embed.num_embeddings` (a property of the **checkpoint**). They agree only
-while those two numbers are equal, and today they are, at 113,280.
-
-⚠ **Forward hazard:** decision D-D proposes shrinking `char_embed` to the ~8,000
-emittable characters. A v8 checkpoint with a trimmed table against an untrimmed
-vocab file makes these two rules disagree **silently**, on exactly the rare
-characters no fixture covers. Package 1 reproduces the canonical rule; whoever
-takes D-D must make the two read one source.
-
-**H2 — whitespace-only input crashes the encoder, and Package 1 widens it.**
-Measured against today's unfixed code: `embed("")` already raises
-`RuntimeError: Cannot pack empty tensors`, and a batch containing one empty item
-raises `Length of all samples has to be greater than 0` — **one bad item poisons
-a whole batch**. Package 1 widens the crash from `""` alone to any whitespace-only
-input, because the canonical encoder *drops* non-`U+0020` whitespace where the
-gateway path emitted an `<UNK>`:
-
-```
-""      canonical []       gateway []        already crashes on both
-"\t"    canonical []       gateway [1]       OK today, crashes after
-"\n"    canonical []       gateway [1]       OK today, crashes after
-"\u00a0" canonical []      gateway [12589]   OK today, crashes after
-" "     canonical [2]      gateway [12588]
-```
-
-**Guard it, in the shared tokeniser, inside Package 1**: return `[UNK_ID]` when
-the id list is empty — `UNK`, not `SPACE`, because it means "input I cannot
-represent". It does **not** breach §5.1's scope rule: a guard that fires only on
-an empty result cannot alter the ids of any input producing ≥1 id, so it cannot
-touch a single-word Latin name and cannot force a reindex. Nor can it mismatch
-the index: `update_es.py` filters `name IS NOT NULL AND TRIM(name) != ''`, so no
-indexed document is whitespace-only. *(Caveat: DuckDB's `TRIM` strips spaces
-only, so a tab-only name would have survived that filter and crashed the run —
-since the rebuild completed, empirically none exist.)*
-
-Keep the deviation honest with two tests: canonical `==` `tokenise()` for every
-input producing a non-empty result, and a separate test pinning the documented
-deviation on empty-result input. Add `U+00A0` to the fixture — it diverges
-*inside* a real name, not only standalone.
-
 ### 5.3 Tests
 
 - **Contract test:** token sequences byte-identical across all entry points, over
@@ -708,7 +677,7 @@ deviation on empty-result input. Add `U+00A0` to the fixture — it diverges
 - ⚠ Run tests package-qualified (`python -m unittest tests.test_x`) or with
   `discover -s tests -t .`. **Never** `discover -s tests` — see CLAUDE.md.
 
-### 5.3b Exit criteria — MEASURED (`indexing-57`, commit `97a8b31`)
+### 5.4 Exit criteria — measured, not asserted
 
 Against the 4,000 live stored vectors rather than against the new code: query
 side = `hf/inference.py` (HEAD copy for *before*, working tree for *after*),
@@ -729,7 +698,18 @@ multi-word 66.7% reproduces this session's 65.7% MEHDIE figure on live data.
 🛑 **CJK/Kana/Hangul was 0.3% rank-1 and 8.5% top-200 before the fix. Those
 3.86M documents were not mis-ranked — they were unreachable.**
 
-### 5.2c D5 and D6 — two divergences found by the CLIENT, after D1–D4 were closed
+### 5.5 Exit criteria as written before the run
+
+- Contract test passes, and demonstrably fails against pre-change code.
+- Multi-word self-retrieval rank-1 **≥ 99%** on a held-out real-name corpus, up
+  from 65.7%.
+- `北京`~`Beijing`, `서울`~`Seoul` and `トウキョウ`~`Tokyo` all match their own
+  indexed documents.
+- Step 3's split is measured and recorded with its denominator.
+
+---
+
+### 5.6 D5 and D6 — divergences found by the CLIENT, after D1–D4 closed
 
 Both were found by `whg3-da` porting the canonical block to JavaScript — by
 someone re-implementing it rather than reading it. Neither is closed.
@@ -795,39 +775,7 @@ mixed-Unicode array produces artefact "differences" and writes them back.
 Freezing the table changes token→script mapping and implies a further re-embed,
 so it is a **Package 1 follow-up**, not a mid-flight change.
 
-### 5.2d A stratum label that outlived its predicate
-
-When **D4** names (digits/punctuation dominant) became candidates, `is_candidate`
-was updated and `stratum_of` was not. So a single-word, already-NFC, non-romanised
-name carrying a digit or hyphen — `SO-10731`, `SZ-1555`, `SMX-28308`, route and
-parcel codes — is a **candidate** by the predicate while landing in the bucket
-labelled **`control`**, whose whole meaning is "cannot change".
-
-This surfaced as 184 rewritten rows in a stratum that should be zero by
-construction, which is exactly the signal the verification was built to treat as
-an immediate fail. **The counts were never wrong; the label was.** Two independent
-routes proved it: `changed_non_candidate` is **0** across every shard, so every
-changed document is a candidate; and an exhaustive name-level sweep found
-**184 of 184 are D4 names, 0 ligatures, 0 unexplained**.
-
-Three lessons worth more than the fix (`cc47c67`, a separate `punctuated`
-stratum plus a test tying the stratum to the predicate so they cannot drift):
-
-* **A bucket name is an assertion, and it decays silently.** Nothing failed when
-  the predicate moved and the label did not — the data stayed correct and only
-  the *description* went stale, which is the form no test catches.
-* **Two candidate-set figures were in circulation for the same reason.** The
-  46.5M in this document is the OLD predicate; the corrected one is ~50.1M, D4
-  adding ~3.6M. A number computed before a predicate changed keeps being quoted
-  after.
-* ⚠ **Do not project the total from completed shards.** The change rate is not
-  flat — 72.59 per 100k for shards <80 against 85.67 for shards ≥80, an 18%
-  difference — and the completed set is `0..159 with gaps`, not a random subset.
-  Candidate share is stable across the same shards, so it is not obvious
-  composition drift. **The census must be a count, not an extrapolation**, and
-  this session's ~74,300 projection is withdrawn.
-
-### 5.2e D7 — the trap of a table that looks incomplete
+### 5.7 D7 — the trap of a table that looks incomplete
 
 **`GURMUKHI` is not in the canonical script table, and must not be.** Verified
 against the working tree:
@@ -898,7 +846,87 @@ generates from its own table": whg3's generated strings and ran them through the
 *(Naming: `indexing-57` first called this "D5". D5 was already the FB00–FB17
 precedence defect and D6 the interpreter Unicode version, so it is **D7**.)*
 
-### 5.2f Measurements that confirm the assumption they were made under
+### 5.8 Two hazards found while porting
+
+**H1 — the out-of-range-id rules agree by coincidence, not by construction.**
+The vocab file carries 7 characters whose ids are ≥ `len(char_to_id)` (113,280):
+`'̿'`→113280 and six others. Both paths already degrade them to `<UNK>`, but by
+different rules reading different sources — `CharacterVocabulary.get_char_id`
+tests `cid >= len(self.char_to_id)` (a property of the **vocab file**), while
+`hf/inference.py::_sanitize_vocab_ids` clamps against
+`char_embed.num_embeddings` (a property of the **checkpoint**). They agree only
+while those two numbers are equal, and today they are, at 113,280.
+
+⚠ **Forward hazard:** decision D-D proposes shrinking `char_embed` to the ~8,000
+emittable characters. A v8 checkpoint with a trimmed table against an untrimmed
+vocab file makes these two rules disagree **silently**, on exactly the rare
+characters no fixture covers. Package 1 reproduces the canonical rule; whoever
+takes D-D must make the two read one source.
+
+**H2 — whitespace-only input crashes the encoder, and Package 1 widens it.**
+Measured against today's unfixed code: `embed("")` already raises
+`RuntimeError: Cannot pack empty tensors`, and a batch containing one empty item
+raises `Length of all samples has to be greater than 0` — **one bad item poisons
+a whole batch**. Package 1 widens the crash from `""` alone to any whitespace-only
+input, because the canonical encoder *drops* non-`U+0020` whitespace where the
+gateway path emitted an `<UNK>`:
+
+```
+""      canonical []       gateway []        already crashes on both
+"\t"    canonical []       gateway [1]       OK today, crashes after
+"\n"    canonical []       gateway [1]       OK today, crashes after
+"\u00a0" canonical []      gateway [12589]   OK today, crashes after
+" "     canonical [2]      gateway [12588]
+```
+
+**Guard it, in the shared tokeniser, inside Package 1**: return `[UNK_ID]` when
+the id list is empty — `UNK`, not `SPACE`, because it means "input I cannot
+represent". It does **not** breach §5.1's scope rule: a guard that fires only on
+an empty result cannot alter the ids of any input producing ≥1 id, so it cannot
+touch a single-word Latin name and cannot force a reindex. Nor can it mismatch
+the index: `update_es.py` filters `name IS NOT NULL AND TRIM(name) != ''`, so no
+indexed document is whitespace-only. *(Caveat: DuckDB's `TRIM` strips spaces
+only, so a tab-only name would have survived that filter and crashed the run —
+since the rebuild completed, empirically none exist.)*
+
+Keep the deviation honest with two tests: canonical `==` `tokenise()` for every
+input producing a non-empty result, and a separate test pinning the documented
+deviation on empty-result input. Add `U+00A0` to the fixture — it diverges
+*inside* a real name, not only standalone.
+
+### 5.9 A stratum label that outlived its predicate
+
+When **D4** names (digits/punctuation dominant) became candidates, `is_candidate`
+was updated and `stratum_of` was not. So a single-word, already-NFC, non-romanised
+name carrying a digit or hyphen — `SO-10731`, `SZ-1555`, `SMX-28308`, route and
+parcel codes — is a **candidate** by the predicate while landing in the bucket
+labelled **`control`**, whose whole meaning is "cannot change".
+
+This surfaced as 184 rewritten rows in a stratum that should be zero by
+construction, which is exactly the signal the verification was built to treat as
+an immediate fail. **The counts were never wrong; the label was.** Two independent
+routes proved it: `changed_non_candidate` is **0** across every shard, so every
+changed document is a candidate; and an exhaustive name-level sweep found
+**184 of 184 are D4 names, 0 ligatures, 0 unexplained**.
+
+Three lessons worth more than the fix (`cc47c67`, a separate `punctuated`
+stratum plus a test tying the stratum to the predicate so they cannot drift):
+
+* **A bucket name is an assertion, and it decays silently.** Nothing failed when
+  the predicate moved and the label did not — the data stayed correct and only
+  the *description* went stale, which is the form no test catches.
+* **Two candidate-set figures were in circulation for the same reason.** The
+  46.5M in this document is the OLD predicate; the corrected one is ~50.1M, D4
+  adding ~3.6M. A number computed before a predicate changed keeps being quoted
+  after.
+* ⚠ **Do not project the total from completed shards.** The change rate is not
+  flat — 72.59 per 100k for shards <80 against 85.67 for shards ≥80, an 18%
+  difference — and the completed set is `0..159 with gaps`, not a random subset.
+  Candidate share is stable across the same shards, so it is not obvious
+  composition drift. **The census must be a count, not an extrapolation**, and
+  this session's ~74,300 projection is withdrawn.
+
+### 5.10 Measurements that confirm the assumption they were made under
 
 Three near-misses today shared a shape more dangerous than a check that returns
 nothing: each **returned a value**, and a value is far harder to doubt than a
@@ -922,7 +950,7 @@ The common defence is not more care. It is to make the check's *default* and its
 *subject* impossible to confuse — read the source rather than reconstruct it, and
 never write the interpretation of a command's output above the output itself.
 
-### 5.3c Verification design — two lessons that cost nothing to keep
+### 5.11 Verification design — lessons that cost nothing to keep
 
 **A ratio-preserving failure is invisible to any ratio-based check.** The
 re-embed's expected-count band (40k–350k changed) cannot detect a truncated run.
@@ -951,29 +979,103 @@ person who found it** — exit codes checked through a `grep` pipe, so `$?` was
 grep's and all three *failing* fixtures reported success. `set -o pipefail`
 belongs in the code, not in anyone's memory.
 
-### 5.4 Exit criteria
 
-- Contract test passes, and demonstrably fails against pre-change code.
-- Multi-word self-retrieval rank-1 **≥ 99%** on a held-out real-name corpus, up
-  from 65.7%.
-- `北京`~`Beijing`, `서울`~`Seoul` and `トウキョウ`~`Tokyo` all match their own
-  indexed documents.
-- Step 3's split is measured and recorded with its denominator.
+### 5.12 What Package 1 leaves behind — and why v8 is now cheaper
 
----
+Three assets, one liability, and a sequencing conclusion.
+
+**ASSET 1 — a proven corpus-scale re-embedding pipeline** (`processing/reembed.py`,
+`processing/reembed_canonical.sbatch`). Every v8 option ends in re-embedding
+72.7M documents, and that step no longer has to be designed. It has: 256-way
+sharding resumable under preemption; a `pin.json` recording tokeniser sha256,
+checkpoint sha256, git commit, python and unicodedata versions, asserted per
+shard **before a GPU is touched**; code staged out of the shared working tree so
+it cannot move under a running job; a `/vast` free-space floor above ES's
+flood-stage watermark; a materiality threshold; a positive control that aborts;
+a per-shard ledger with attempt counters; and independent read-back
+verification. It ran end-to-end at 72.7M for the first time on 5 Sep.
+
+**ASSET 2 — one canonical tokeniser** (`phonetics/tokenise.py`, vendored
+byte-identically into `hf/inference.py`, with a contract test). Four
+implementations became one definition. **v8 must not fork it again** — the entire
+cost of Package 1 was four copies drifting.
+
+**ASSET 3 — measurement method that earned its keep.** Recorded across §5.6–5.11
+and worth more than the findings: structural attribution over historical
+(recompute and compare, don't reconstruct provenance); `--scope all` over a
+predicate (it paid off three separate times, twice on findings nobody predicted);
+table diffs over behavioural corpora for equivalence claims; positive controls
+that abort rather than report; and the observation that a measurement returning a
+*value* is far harder to doubt than one returning nothing.
+
+**LIABILITY — four deferred fixes, each of which alone implies a full re-embed:**
+
+| | what | why deferred |
+|---|---|---|
+| **D-A** | NFKC + casefolding | changes what a correct index contains |
+| **D5** | `FB00–FB17` precedence — `ﬁ` scores ARMENIAN | fixing it changes token→script mapping |
+| **D6** | freeze the alpha table so `isalpha()` stops tracking the interpreter | same |
+| **D7** | the `GURMUKHI`/`.get(name, 0)` trap — see §5.7 | same |
+
+🛑 **THE SEQUENCING CONCLUSION, AND IT IS NEW: BATCH THEM.** Done separately
+these are **four** 72.7M re-embeds. Done inside v8's re-embed they are **zero**
+extra passes — the re-embed is happening anyway, the pipeline exists, and every
+one of them is a change to the same tokeniser the v8 model will be trained
+against. Doing any of them standalone would be paying four times for a trip
+already booked.
+
+⚠ **The corollary is a constraint on v8, not a convenience:** the v8 model must be
+trained on the tokenisation the v8 index will be written with. So D-A/D5/D6/D7
+must be settled **before** training data is regenerated, not after the model
+exists. That moves them from "open decisions someday" to **the first gate on v8**.
 
 ## 6. Open decisions — NOT scheduled
 
 Everything below needs discussion before it becomes work. Each is stated as the
-question to answer, not as a task.
+question to answer, not as a task. **The order changed after Package 1**: what was
+a loose set of independent questions now has a gate in front of it.
 
-**D-A · Do we adopt NFKC + casefolding?**
+---
+
+### D-0 · Settle the tokeniser BEFORE regenerating training data — the new first gate
+
+**Question: do we take D-A, D5, D6 and D7 together, inside v8's re-embed?**
+My recommendation: **yes, all four, and they must be decided first.**
+
+Reasoning is in §5.12. In short: each alone implies a 72.7M re-embed; v8 implies
+one anyway; and the v8 model must be *trained* on the tokenisation the v8 index
+will be *written* with, so these cannot be retrofitted after a model exists.
+Deciding them late is the one sequencing error that would force a second retrain.
+
+What each buys, all measured:
+
+* **D-A** — `London` vs `LONDON` is **0.2825** today, 1.0000 casefolded;
+  `Ｔｏｋｙｏ` vs `Tokyo` is 0.0166, 0.9914 under NFKC. Gazetteer sources carry
+  all-caps forms routinely.
+* **D5** — `ﬁ` (a *Latin* ligature) scores `ARMENIAN`. Wrong, reproduced
+  deliberately, and only fixable when the index is rewritten.
+* **D6** — removes a class of defect rather than an instance: `str.isalpha()`
+  makes the tokeniser's behaviour a property of whichever interpreter runs it.
+  Practical impact today is **0 of 200,000 names**, so this is hygiene — but it is
+  free hygiene if taken with the others.
+* **D7** — the `.get(name, 0)` trap resolved to **LATIN**, not a sentinel, and
+  embedded Punjabi as Latin. Already repaired by accident (§5.7); the durable fix
+  is to make detector and vocabulary share one source so it cannot recur.
+
+⚠ **Do NOT "fix" D5 or D7 by making the table more correct in isolation.** Both
+are reproduced deliberately because the index was written with them. They become
+fixable only in the same pass that rewrites the index.
+
+---
+
+**D-A · Do we adopt NFKC + casefolding?** *(folded into D-0 — kept for its
+measurements, no longer a standalone decision)*
 Measured: `London` vs `LONDON` scores **0.2825** today; casefolded, 1.0000.
 `Ｔｏｋｙｏ` vs `Tokyo` is 0.0166; under NFKC, 0.9914. Gazetteer sources
-routinely carry all-caps forms. **Cost:** it changes what a correct index
-contains, so it forces a re-embed of all 72.7M documents — and it should
-probably be bundled with a retrain rather than paid for twice. *Question: is
-this worth a standalone 72.7M re-embed, or does it wait for v8?*
+routinely carry all-caps forms. **Cost:** it forces a re-embed of all
+72.7M documents. ✅ **Answered by D-0: it waits for v8 and rides that re-embed.**
+It was never worth a standalone pass, and Package 1 confirmed the pass will
+exist.
 
 **D-B · What is the CJK/Japanese romanisation policy?**
 Applying romanisation at inference to the *current* weights, no retraining:
@@ -986,7 +1088,20 @@ Japanese worth a reading table, and does the Chinese/Korean result change how we
 weight CJK in the corpus?* This is a data task, not a model one.
 
 **D-C · Do we build a benchmark that can fail?**
-My recommendation: **yes, and before anything else in this list.** Nothing in
+My recommendation: **yes, and before anything else except D-0.**
+
+🛑 **Two evaluation sets now exist that did not on 5 Sep morning, and neither
+came from this analysis.** Use them rather than starting from nothing:
+
+* **GOTW Qing provinces** — 1856 English transcriptions against modern forms,
+  18 queries with known answers, currently **11 of 18** resolving to a usable
+  container and **`Keang-su` → GANSU at 99.5** as a confident wrong answer. Small,
+  but it is a real downstream task with a real failure, and it is exactly the
+  historic-romanisation gap the model is supposed to close.
+* **The re-embed census** — per-script change rates over all 72,703,777 documents
+  (§5.2), and with them a positive-control pattern (22.6M rows, min pass
+  0.999957) and a structural attribution method that both generalise to
+  evaluating a *new* model against an old index. Nothing in
 D-D or D-E can be evaluated without it, and §4.5 shows the current evaluation
 would not have caught v7 shipping below v6. Minimum shape: a retrieval benchmark
 over ≥1M real toponyms with recall@{1,10,100,200} and MRR *per script pair*
@@ -1011,6 +1126,13 @@ Also: shrink `char_embed` to the ~8,000 characters that can actually be emitted
 and spend the freed 6.7M parameters on the encoder, which has 1.02M.
 *Question: does this happen, and does D-C gate it?*
 
+⚠ **The cost model changed on 5 Sep, in v8's favour.** The step everyone flinches
+at — re-embedding 72.7M documents — is now built, proven at full scale, resumable
+under preemption and free of GPU-allocation queueing. What remains genuinely
+expensive is regenerating training data and the three GPU training phases. **Do
+not let the re-embed be quoted as a reason not to retrain; it is the part that is
+solved.**
+
 **D-E · What dimension does v8 ship at?**
 Only answerable after a v8 checkpoint exists. Measure its effective rank first:
 restored to ≳60, keep 128-d; still ≲20, ship 64-d and halve the HNSW cost.
@@ -1026,6 +1148,13 @@ matching. What that is worth **end-to-end** cannot be stated, because no
 end-to-end retrieval benchmark exists — that is D-C. It is a bug fix with a
 large measured local effect, and the honest characterisation is "the search
 stops failing in a way it should never have failed", not a percentage.
+
+**Package 1's own outcome, for calibration:** it fixed the plumbing and touched
+nothing about model quality. 46.5M documents are now queried in the tokenisation
+they were written in, and ~3.9M CJK/Kana/Hangul went from unreachable (0.3%
+rank-1 self-retrieval) to 100%. That is a large, real, measured improvement in
+*retrieval* — and it moved the `Keang-su → GANSU` failure not at all. **The two
+are independent, and only the second is what v8 is about.**
 
 **D-D (the retrain): no numeric forecast is defensible today.** Anyone quoting
 "+X% recall" before D-C exists is quoting nothing. What *can* be said:
