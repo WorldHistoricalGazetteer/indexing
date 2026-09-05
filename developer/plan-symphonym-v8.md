@@ -119,7 +119,8 @@ Package 1 must close all of these and **nothing else**.
 | D3 | lang tag `.lower().strip()` before lookup | applied | **not applied** | must close |
 | D4 | script detection | `script_detection.detect_script` | `hf.inference._detect_script` | **must close** |
 | D5 | script-range precedence + table contents | later-entry-wins | *(client)* first-match-wins | **client-side** |
-| D6 | `str.isalpha()` tracks the INTERPRETER's Unicode version | index writer 14.0.0 | gateway 13.0.0 | **open** |
+| D6 | `str.isalpha()` tracks the INTERPRETER's Unicode version | index writer 14.0.0 | gateway 13.0.0 | hygiene |
+| D7 | **GURMUKHI is absent from the script table** — Punjabi scores `OTHER` | absent, deliberately | a porter would ADD it | **client-side** |
 
 D3 is new and narrow: `LanguageVocabulary.encode` lowercases and strips;
 `_tokenise` does a raw dict lookup. The lang vocabulary contains **no** entries
@@ -456,7 +457,8 @@ does not belong in Package 1.**
 
    | | docs | 95% CI |
    |---|---|---|
-   | **Candidate (tokenises differently)** | **46,483,973 (63.9%)** | 45.91M – 47.06M |
+   | ~~Candidate, OLD predicate (D1/D2 only)~~ | ~~46,483,973 (63.9%)~~ | superseded |
+   | **Candidate, CORRECTED predicate (incl. D4)** | **~50.1M (~69%)** | measured in-run |
    | — of which D1 scripts, exact from the agg | 4,169,618 | exact |
    | — space-bearing or non-NFC, other 16 scripts | 42,314,355 | 41.74M – 42.89M |
    | **Not a candidate — bit-identical, untouched** | ~26,220,000 (36.1%) | |
@@ -487,7 +489,52 @@ does not belong in Package 1.**
    not the majority. What survives is the narrower and still-decisive claim:
    the re-embed set is not the candidate set (see step 4).
 
-4. 🛑 **"THE RE-EMBED SET" HAS BEEN USED IN TWO INCOMPATIBLE SENSES ACROSS THIS
+4. ✅ **DONE — 100,960 documents rewritten, 0 errors** (`indexing-57`). Counts,
+   not extrapolation, over all 72,703,777 examined:
+
+   | stratum | changed | of examined | rate |
+   |---|---|---|---|
+   | multi-word | 99,767 | 42,408,064 | 0.2353% |
+   | `control` *(D4 names under the stale label, §5.2d)* | 527 | 26,120,402 | 0.0020% |
+   | CJK | 428 | 3,240,684 | 0.0132% |
+   | KATAKANA | 49 | 358,111 | 0.0137% |
+   | HANGUL | 41 | 416,894 | 0.0098% |
+   | HIRAGANA | 0 | 153,929 | 0 |
+   | **not-NFC** | **148** | **5,693** | **2.5997%** — worst by rate |
+   | **TOTAL** | **100,960** | **72,703,777** | **0.1389%** |
+
+   Positive control **22,623,343 rows, min pass rate 0.999957, zero failing
+   shards**. Write verified by independent read-back, **300 of 300 across 12
+   random shards**.
+
+   🛑 **5,875,266 documents differed by exactly ONE int8 step and were NOT
+   rewritten.** Without a materiality threshold the write would have been **58×
+   larger and almost entirely quantisation noise**. Evidence it is set right: of
+   231 rewritten rows in one shard, **zero** sat above cosine 0.999 — if noise
+   were leaking through that band would be crowded; it is empty.
+
+   ⚠ **And the verification would have caught its absence.** The no-threshold
+   run projected **380,217** changed — above this document's own worst-credible
+   ceiling of ~352,000 — so it would have tripped the independent
+   stop-and-investigate rather than passing quietly. Both halves are worth
+   keeping: the guard was necessary, *and* the check that would have caught a
+   missing guard worked. A defect the reviewer would have caught is the only kind
+   whose absence you can measure.
+
+   *Estimation history, for the record: this quantity was predicted at 5,700 →
+   26,960 → 113,646 → ~64k–91k. The answer is 100,960. Every revision moved on
+   arithmetic rather than evidence, and the run measured what four estimates
+   could not.*
+
+   **Authorisation, recorded because a decision nobody can point to is a decision
+   that gets reconstructed:** SG authorised twice and explicitly — dry run, then
+   a question about whether `--execute` used the safest mode (which prompted the
+   resumability, canary, error-ceiling and read-back work), then **"run the
+   canary"**, then a reported result of 2,142 documents at 0 errors with a 20-of-20
+   read-back, then **"run the rest"**. The intermediate stop is the point: it made
+   the second authorisation a decision rather than momentum.
+
+   🛑 **"THE RE-EMBED SET" HAS BEEN USED IN TWO INCOMPATIBLE SENSES ACROSS THIS
    CAMPAIGN — they differ by four orders of magnitude. Read this before acting on
    any number.**
 
@@ -713,6 +760,13 @@ Cypro-Minoan 97, Tangsa 79, Vithkuqi 70, Latin Ext-G 31, Arabic Extended-B 30,
 Toto 30, Ethiopic Ext-B 28, Old Uyghur 18, other 132. **Zero of 5,307 sampled
 live toponyms contain any** — a denominator, not a proof, across 72.7M documents.
 
+✅ **D6's PRACTICAL impact on the live corpus is ZERO, measured 5 Sep: 0 of
+200,000 real names classify differently under 13.0.0 vs 14.0.0** (`indexing-13`).
+That supersedes this session's 0-of-5,307. The 515-codepoint divergence is real
+and the mechanism below is correct — but it is **hygiene, not a live defect**.
+Do not delete this section: it is the reason the re-embed pins its interpreter,
+and a pin whose justification has been deleted is a pin someone removes.
+
 ⚠ **A D6 test only discriminates if the codepoint is alphabetic at 14.0.0 AND
 inside a named script range.** The obvious choice — a newly-added codepoint such
 as U+0870 — is **inert**: Arabic starts at 0x08A0, so U+0870 falls outside every
@@ -740,6 +794,64 @@ the index writer's 14.0.0, asserted per shard alongside the tokeniser SHA, or a
 mixed-Unicode array produces artefact "differences" and writes them back.
 Freezing the table changes token→script mapping and implies a further re-embed,
 so it is a **Package 1 follow-up**, not a mid-flight change.
+
+### 5.2d A stratum label that outlived its predicate
+
+When **D4** names (digits/punctuation dominant) became candidates, `is_candidate`
+was updated and `stratum_of` was not. So a single-word, already-NFC, non-romanised
+name carrying a digit or hyphen — `SO-10731`, `SZ-1555`, `SMX-28308`, route and
+parcel codes — is a **candidate** by the predicate while landing in the bucket
+labelled **`control`**, whose whole meaning is "cannot change".
+
+This surfaced as 184 rewritten rows in a stratum that should be zero by
+construction, which is exactly the signal the verification was built to treat as
+an immediate fail. **The counts were never wrong; the label was.** Two independent
+routes proved it: `changed_non_candidate` is **0** across every shard, so every
+changed document is a candidate; and an exhaustive name-level sweep found
+**184 of 184 are D4 names, 0 ligatures, 0 unexplained**.
+
+Three lessons worth more than the fix (`cc47c67`, a separate `punctuated`
+stratum plus a test tying the stratum to the predicate so they cannot drift):
+
+* **A bucket name is an assertion, and it decays silently.** Nothing failed when
+  the predicate moved and the label did not — the data stayed correct and only
+  the *description* went stale, which is the form no test catches.
+* **Two candidate-set figures were in circulation for the same reason.** The
+  46.5M in this document is the OLD predicate; the corrected one is ~50.1M, D4
+  adding ~3.6M. A number computed before a predicate changed keeps being quoted
+  after.
+* ⚠ **Do not project the total from completed shards.** The change rate is not
+  flat — 72.59 per 100k for shards <80 against 85.67 for shards ≥80, an 18%
+  difference — and the completed set is `0..159 with gaps`, not a random subset.
+  Candidate share is stable across the same shards, so it is not obvious
+  composition drift. **The census must be a count, not an extrapolation**, and
+  this session's ~74,300 projection is withdrawn.
+
+### 5.2e D7 — the trap of a table that looks incomplete
+
+**`GURMUKHI` is not in the canonical script table, and must not be.** Verified
+against the working tree:
+
+```
+19 scripts: ARABIC ARMENIAN BENGALI CJK CYRILLIC DEVANAGARI GEORGIAN GREEK
+            GUJARATI HANGUL HEBREW HIRAGANA KANNADA KATAKANA LATIN MALAYALAM
+            TAMIL TELUGU THAI          GURMUKHI: ABSENT
+
+'ਅੰਮ੍ਰਿਤਸਰ' Amritsar -> OTHER        'दिल्ली' Delhi -> DEVANAGARI
+'ਲੁਧਿਆਣਾ'  Ludhiana -> OTHER        'ঢাকা'  Dhaka -> BENGALI
+```
+
+⚠ **This is a trap, not an oversight. `GUJARATI` is in the table and `GURMUKHI`
+is not**, so anyone porting the tokeniser reads it as a bug and adds Punjabi —
+after which every Punjabi name diverges from the index. The corpus was embedded
+with Gurmukhi scoring `OTHER`, so *correct* means *identical*, as with D5.
+
+⚠ **A differential corpus generated from the porter's OWN table cannot catch
+this** — the Gurmukhi cases would never be generated. It is only findable by
+comparing the tables themselves, or from the index's census.
+
+*(Naming: `indexing-57` first called this "D5". D5 was already the FB00–FB17
+precedence defect and D6 the interpreter Unicode version, so it is **D7**.)*
 
 ### 5.3c Verification design — two lessons that cost nothing to keep
 
