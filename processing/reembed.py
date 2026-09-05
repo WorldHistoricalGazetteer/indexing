@@ -126,6 +126,35 @@ def _es_client(es_host: str, password_file: str | None):
     return Elasticsearch(es_host, **kwargs)
 
 
+#: Refuse to start, or to continue, below this much free space on the output
+#: volume. `/vast/ishi` is 1 TB SHARED WITH PRODUCTION ELASTICSEARCH, whose
+#: flood-stage watermark is min(5%, 100GB) and therefore fires at ~51 GB free.
+#: Crossing it does not fail this job — it puts every ES index into READ-ONLY,
+#: which is a production outage caused by a background task. The floor sits well
+#: above the watermark so the job dies first and prod does not notice.
+#:
+#: This run needs ~8 GB of export and less again of diffs, against ~187 GB of
+#: usable headroom, so the guard is not expected to fire. It exists because a
+#: preempted array is requeued, and a requeued task that does not skip its own
+#: completed output writes more copies than anyone budgeted for.
+DEFAULT_MIN_FREE_GB = 80.0
+
+
+def check_free_space(path: Path, min_free_gb: float, context: str) -> float:
+    """Free GB at `path`, aborting below the floor. One statvfs; call it often."""
+    import shutil
+
+    free_gb = shutil.disk_usage(path).free / (1024 ** 3)
+    if free_gb < min_free_gb:
+        raise SystemExit(
+            f"ABORT ({context}): {free_gb:.1f} GB free on {path}, below the "
+            f"{min_free_gb:.0f} GB floor. That volume is shared with production "
+            f"Elasticsearch, whose flood-stage watermark puts every index into "
+            f"READ-ONLY at ~51 GB free. Stopping this job is cheap; a prod outage "
+            f"caused by a background task is not.")
+    return free_gb
+
+
 def shard_paths(base: Path, kind: str, shard_id: int) -> tuple[Path, Path, Path]:
     """``(final, temp, done)`` for one shard.
 
@@ -377,6 +406,9 @@ def cmd_export(args) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    free_gb = check_free_space(out_dir, args.min_free_gb, "export start")
+    print(f"[export] {free_gb:.1f} GB free on {out_dir} "
+          f"(floor {args.min_free_gb:.0f} GB)")
     total = es.count(index=args.index)["count"]
     print(f"[export] {args.index}: {total:,} toponyms; {args.slices} slices "
           f"(~{total // max(args.slices, 1):,} each)")
@@ -395,6 +427,7 @@ def cmd_export(args) -> None:
             if shard_is_complete(out_dir, "shard", slice_id):
                 print(f"[export]   shard {slice_id:04d}: already complete, skipping")
                 continue
+            check_free_space(out_dir, args.min_free_gb, f"before shard {slice_id:04d}")
             final, temp, done = shard_paths(out_dir, "shard", slice_id)
             t0 = time.time()
             rows, written = [], 0
@@ -661,6 +694,9 @@ def cmd_compute(args) -> None:
 
     pin = load_pin(in_dir)
     block_hash = verify_tokeniser(pin)      # before the GPU, before the weights
+    free_gb = check_free_space(in_dir, args.min_free_gb, "compute start")
+    print(f"[compute] {free_gb:.1f} GB free on {in_dir} "
+          f"(floor {args.min_free_gb:.0f} GB)")
     model = _load_model(args.device, args.model_dir)
     repo = _repo_root()
     model_dir = Path(args.model_dir) if args.model_dir else (repo / "hf")
@@ -715,6 +751,7 @@ def cmd_compute(args) -> None:
           f"{control['rows']:,} rows at cos >= {CONTROL_MIN_COSINE} "
           f"(mean {control['mean_cos']:.5f}, min {control['min_cos']:.5f})")
 
+    check_free_space(in_dir, args.min_free_gb, f"before writing shard {args.shard_id:04d}")
     final, temp, done = shard_paths(in_dir, "diff", args.shard_id)
     schema = pa.schema([("toponym_id", pa.string()),
                         ("embedding", pa.list_(pa.int8(), EMBEDDING_DIM))])
@@ -1002,6 +1039,9 @@ def main() -> None:
     pe.add_argument("--keep-alive", default="30m")
     pe.add_argument("--throttle", type=float, default=0.0,
                     help="seconds between search pages, to pace live prod ES")
+    pe.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB,
+                    help="abort below this much free space; /vast is shared with "
+                         "production ES, which goes READ-ONLY at ~51 GB free")
     pe.add_argument("--limit", type=int, default=0, help="stop after N rows per slice (smoke test)")
     pe.set_defaults(func=cmd_export)
 
@@ -1015,6 +1055,9 @@ def main() -> None:
                     help="'all' embeds every row (the candidate predicate then only "
                          "labels strata); 'candidates' embeds the candidate set plus "
                          "the controls")
+    pc.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB,
+                    help="abort below this much free space; /vast is shared with "
+                         "production ES, which goes READ-ONLY at ~51 GB free")
     pc.add_argument("--force", action="store_true", help="recompute a completed shard")
     pc.set_defaults(func=cmd_compute)
 

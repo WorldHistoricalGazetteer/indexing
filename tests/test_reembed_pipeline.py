@@ -156,6 +156,38 @@ class TestPositiveControlGate(unittest.TestCase):
         self.assertGreater(reembed.check_positive_control(cosines)["pass_rate"], 0.99)
 
 
+class TestFreeSpaceGuard(unittest.TestCase):
+    """/vast is shared with production ES, which goes READ-ONLY at ~51 GB free.
+
+    The guard's job is to make this job die before prod notices, so it is tested
+    at a floor it must fail — asserting only that it passes on a healthy disk
+    would be a check that cannot fail.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_it_passes_with_room(self):
+        free = reembed.check_free_space(self.dir, 0.001, "test")
+        self.assertGreater(free, 0)
+
+    def test_it_aborts_when_the_volume_is_too_full(self):
+        with self.assertRaises(SystemExit) as ctx:
+            # A floor no real filesystem clears: the guard must fire on the
+            # value, not on some property of the test environment.
+            reembed.check_free_space(self.dir, 10 ** 9, "test")
+        message = str(ctx.exception)
+        self.assertIn("READ-ONLY", message)
+        self.assertIn("test", message)
+
+    def test_the_floor_sits_above_the_flood_stage_watermark(self):
+        # ES floods at ~51 GB free on this 1 TB volume. A floor at or below that
+        # would abort only after the outage it exists to prevent.
+        self.assertGreater(reembed.DEFAULT_MIN_FREE_GB, 51)
+
+
 class TestThePinStopsAMixedRun(unittest.TestCase):
     """Preempt requeues a task at an arbitrary later time, into whatever the
     working tree then holds. HEAD named three different tokenisers in 91 minutes
