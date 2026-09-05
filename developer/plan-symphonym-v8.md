@@ -2323,6 +2323,67 @@ on cross-script pairs the baseline cannot cheat.**
 A corpus-wide retrieval average is dominated by an artefact of how the labels
 were made.
 
+### 8.3b THE CORPUS IS THE BEST-DOCUMENTED SIXTH OF THE INDEX — every §8 figure is an upper bound
+
+🛑 **`indexing-9c`, `b327ac1`. This is the third instance of one pattern, and the
+only one that is PERMANENT.** A place enters the evaluation corpus only if it
+carries names in **two or more scripts** — which is a fact about **how well
+documented it is**, not about the matching problem. Over 20,000 randomly sampled
+live places:
+
+```
+qualifying (>=2 scripts)    3,179   mean 6.45 toponyms/place   median 3
+not qualifying             16,821   mean 1.67 toponyms/place   median 1
+qualify rate 15.90%                 prominence ratio 3.9x
+```
+
+**So every retrieval figure in §8 — R@200 ≈ 0.48 included — is measured on the
+best-documented sixth of the corpus and is an UPPER BOUND.** The true rate over
+all places is worse. ⚠ The namespace mix inverts as well (`osm` is 45% of
+non-qualifying places against 22% of qualifying), so this is **not a uniform
+thinning of one population**.
+
+🛑 **It is not fixable by sampling differently, and nobody should try.**
+Co-attestation cannot produce a cross-script pair for a place with one name, so
+**the conditioning IS the positive source.** Unlike the romanisation artefact
+(§8.3), which is confined to a stratum, and unlike the ordering bias (§6.2),
+which a position column will let us measure — this one is **permanent and
+reportable only**.
+
+### The pattern, named — three instances in one evaluation
+
+| # | Confound | Reporting axis it hides behind | Fixable? |
+|---|---|---|---|
+| 1 | 35.1% of CJK↔Latin positives romanise byte-identically (§8.3) | per-script-pair | stratum-confined |
+| 2 | Pack ordered easiest-first (§6.2) | per-script-pair | measurable, given a position column |
+| 3 | Corpus requires ≥2 scripts — the best-documented 15.9% | per-script-pair | **permanent** |
+
+🛑 **All three are invisible for the SAME structural reason: the confound is
+orthogonal to the reporting axis, so it shifts every cell in the same
+direction.** No cell stands out, nothing looks anomalous, and **adding cells
+cannot help** — the breakdown is not under-resolved, it is *structurally blind*.
+**Inspecting output at any granularity fails.**
+
+✅ **THE TECHNIQUE THAT DOES WORK, and it is the transferable result of this whole
+exercise:**
+
+> **Ask what had to be true of a record for it to ENTER the corpus at all, then
+> ask whether that property correlates with difficulty. Selection criteria, not
+> results.**
+
+**Operationally:** for every filter, join and cap in the corpus builder, state
+what it selects *for*, and measure the surviving population against the excluded
+one on a difficulty proxy. `indexing-9c` found instance 3 exactly that way — it
+had documented the ≥2-scripts requirement as a *mechanism* and never asked what it
+*selected for*.
+
+⚠ **This is why an approximate stratification axis is worse than none.** If the
+`~1,200` coordinate-bearing boundary is only approximately derivable, a
+stratification on it silently mixes the strata — and since coordinate-bearing
+correlates with how well the book documented a place, that is **this same pattern
+with a different filter**. An approximate axis used as an exact one *looks like
+control*.
+
 ### 8.4 What must not be quoted without its caveat
 
 * **R@200 is ~0.48 for EVERY method**, including the oracle-ish baseline. **Half
