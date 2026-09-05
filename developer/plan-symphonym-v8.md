@@ -2283,6 +2283,62 @@ was an assumption and is now a measurement.**
 report **6,738** documents to modify. A materially different number is a reason to
 **stop**, not to proceed.
 
+### 🛑 THE APPLY RAN, REPORTED SUCCESS, AND CHANGED NOTHING — the criterion earned itself
+
+SG authorised it. It reported `ok=9,623 not-indexed=0 errors=0` in 6 s, and **all
+six field counts and all seven filter counts are identical before and after**,
+with a refresh in between. **The write completing and the fix happening turned out
+to be different events**, which is precisely what the criterion was written to
+separate. Had the closing condition still been *"re-measure and see if it looks
+better"*, this would have closed as fixed.
+
+⚠ **No damage**, checked specifically — a patched doc (`_version 3`) is
+byte-identical in its timespans to an unpatched control (`_version 2`), including a
+pre-existing `"in": null` the original ingest wrote and this run did not introduce.
+*"Reported success and changed nothing" and "reported success and quietly broke
+something" look identical from outside.*
+
+**ROOT CAUSE — and it is architectural, not a patch bug.** The patch keys spans by
+toponym **name** and writes into `places`. Verified independently against
+production:
+
+```
+tgn:7011929   places.toponyms[] (1): ['Dorchester']
+              toponyms index    (9): Dorchecestre · Dorcic · Dorkecestre ·
+                                     Dorchestre · Dorciccaestrae · Dorkecestr ...
+tgn:7027627   places (2): Orton, Orton on the Hill
+              toponyms (4): + Wortone
+tgn:7026383   places (1): Aldworth        toponyms (2): + Elleorde
+```
+
+🛑 **The historic forms exist — in the `toponyms` INDEX, not in the `places`
+nested array. "In the index" is two things, and they disagree about TGN's name
+inventory.**
+
+🛑 **And re-keying the patch cannot fix it.** `_temporal_filter` reads
+`places.toponyms.timespans`, so the date filter can only ever see the names
+`places` holds — the **modern** ones. A correctly-keyed patch would date
+`Dorchester` and leave `Dorchestre` undated, **inverting the intent**: the whole
+value of Getty's term-level dates is that they date the *historic* variants.
+Also 2,816 of 9,623 targets have an **empty** `toponyms[]`, so there is nothing to
+key against at all.
+
+⚠ **This partly overturns §6.8's decoupling claim** — `indexing-9c`'s statement
+that the 40,937 pairs are constructible from the live index **still holds, but
+only via the `toponyms` index**. It had treated "the index" as one store; it is
+two. The decoupling conclusion survives; the reason given for it was imprecise.
+
+**`place#244` is NOT closed**, correctly: the instruction to close came with an
+acceptance criterion attached, and the criterion fails. Closing would certify a fix
+that does not exist. The structural choice — backfill `places.toponyms[]`, move
+what the filter reads, or accept modern-names-only dating — is SG's.
+
+📋 **`place#246`** raised for the ingestion inconsistencies found on the way: OSM
+never reading `start_date`/`end_date` while OHM does (sized honestly as
+**unmeasured**), three independent `datetime.now().year` implementations, the
+`"in": null` writes, and this name-inventory mismatch — each tagged patchable or
+needing re-ingestion.
+
 ⚠ **This also contradicts the audit's "0 of 1,712,662 carrying a real term
 date"**, which was the evidence for widening the issue. It is 2,712, not 0.
 
