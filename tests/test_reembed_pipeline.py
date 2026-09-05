@@ -498,9 +498,25 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
              "checkpoint": "ckpt", "git_commit": "c" * 40}))
 
     def _complete_shard(self, i, tokeniser="a" * 64, checkpoint="ckpt",
-                        examined=10, changed=1, non_candidate_changed=0):
+                        examined=10, changed=1, non_candidate_changed=0,
+                        parquet_rows=None):
+        """Write a shard the way a real compute task does.
+
+        The data file used to be `b""` — an empty file standing in for a
+        parquet. That made every test here unable to reach a whole class of
+        fault: a marker and a data file that DISAGREE. `parquet_rows` exists so
+        one test can make them disagree deliberately; by default the file
+        carries exactly the `changed_total` the marker claims.
+        """
+        import pyarrow as pa
+        import pyarrow.parquet as pq
         final, _, done = reembed.shard_paths(self.dir, "diff", i)
-        final.write_bytes(b"")
+        n = changed if parquet_rows is None else parquet_rows
+        pq.write_table(pa.table({
+            "toponym_id": pa.array([f"n{i}_{j}@en" for j in range(n)], pa.string()),
+            "embedding": pa.array([[0] * reembed.EMBEDDING_DIM for _ in range(n)],
+                                  pa.list_(pa.int8(), reembed.EMBEDDING_DIM)),
+        }), final)
         done.write_text(json.dumps({
             "shard": i, "shard_id": i, "status": "complete",
             "changed_total": changed, "examined_count": examined,
@@ -545,6 +561,25 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         for i in range(3):
             self._complete_shard(i)
         reembed.cmd_apply(self._args())   # dry-run: no ES client is built
+
+    def test_a_marker_that_disagrees_with_its_own_parquet_aborts(self):
+        """The race hazard, made concrete.
+
+        `shard_paths` gives every process a unique temp name and both rename
+        onto the same final path, so two tasks working one shard — a requeue
+        racing its original, or a deliberate CPU-array/GPU-array race — can
+        leave a marker written by one and data written by the other. That is
+        benign while both computed the same thing and a CPU task and a GPU task
+        do not: this run already counts one-int8-step differences as hardware
+        quantisation noise. Every count downstream would then describe a file
+        that is not the one being applied.
+        """
+        self._complete_shard(0)
+        self._complete_shard(1, changed=3, parquet_rows=5)
+        self._complete_shard(2)
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.cmd_apply(self._args())
+        self.assertIn("different processes", str(ctx.exception))
 
     def test_a_double_counted_shard_aborts(self):
         """Every shard present and the denominator still wrong.

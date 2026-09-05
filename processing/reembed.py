@@ -88,6 +88,10 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Stdlib-only at module scope on purpose (`processing.device` imports torch
+# lazily): export and apply run on pitt, which has neither torch nor conda.
+from processing.device import configure_cpu_threads, describe_device, resolve_device
+
 EMBEDDING_DIM = 128
 
 # /vast, NOT /ix1. `/ix1` is a hard NFS mount: when it wedges, a read of the
@@ -635,6 +639,18 @@ def _canonical_block_hash(path: Path) -> str:
             f"The file is missing or truncated; this is a producer failure, not a "
             f"version mismatch.")
     block = text[text.index(BEGIN_MARKER):text.index(END_MARKER) + len(END_MARKER)]
+    # THE CONVENTION, and there is exactly one: sha256 over the block INCLUDING
+    # both marker lines and EXCLUDING every line beginning "# CANONICAL-BLOCK".
+    # The block carries its own sha256 in those lines (`0cf0a88`) so a repo that
+    # vendors it — whg3 and London_Customs_Accounts both do — can identify its
+    # copy without this repo on disk; a stamp cannot include itself, so the
+    # stamp lines come out before hashing. Until this line existed, reembed
+    # hashed WITH them and the embedded stamp excluded them: two conventions for
+    # hashing one block, each internally consistent, disagreeing with nothing to
+    # notice. That is the fault the stamp was added to prevent, so reembed
+    # follows the stamp's rule rather than keeping a private one.
+    block = "\n".join(line for line in block.split("\n")
+                      if not line.startswith("# CANONICAL-BLOCK"))
     digest = hashlib.sha256(block.encode("utf-8")).hexdigest()
     if digest == SHA256_OF_NOTHING:
         raise SystemExit(f"ABORT: the canonical block in {path} hashed to the hash "
@@ -788,7 +804,10 @@ def cmd_compute(args) -> None:
     free_gb = check_free_space(in_dir, args.min_free_gb, "compute start")
     print(f"[compute] {free_gb:.1f} GB free on {in_dir} "
           f"(floor {args.min_free_gb:.0f} GB)")
-    model = _load_model(args.device, args.model_dir)
+    device = resolve_device(args.device, purpose=f"reembed shard {args.shard_id:04d}")
+    if device == "cpu":
+        configure_cpu_threads()
+    model = _load_model(device, args.model_dir)
     repo = _repo_root()
     model_dir = Path(args.model_dir) if args.model_dir else (repo / "hf")
 
@@ -879,6 +898,9 @@ def cmd_compute(args) -> None:
         "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
         "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID", ""),
         "hostname": os.uname().nodename,
+        # WHICH device, not which was requested. A rate that looks wrong in the
+        # ledger is otherwise unattributable after the shard has been written.
+        "device": describe_device(device),
         "started_utc": started,
         "finished_utc": datetime.now(timezone.utc).isoformat(),
         "output_path": str(final),
@@ -1042,6 +1064,26 @@ def cmd_apply(args) -> None:
             raise SystemExit(
                 f"ABORT: shard {i:04d} used checkpoint {str(meta.get('checkpoint'))[:24]} "
                 f"against the pinned {pin['checkpoint'][:24]}. Same reasoning.")
+        # The parquet and the .done marker can come from DIFFERENT PROCESSES.
+        # `shard_paths` gives each process a unique temp name and both then
+        # `os.replace` onto the same final path, so two tasks working one shard
+        # — a requeue racing its original, or a deliberate CPU-array/GPU-array
+        # race — can interleave as A.parquet, B.parquet, B.done, A.done, leaving
+        # a marker written by one and data written by the other. That is benign
+        # while both computed the same thing, and a CPU task and a GPU task do
+        # NOT: this run already counts documents differing by exactly one int8
+        # step as hardware quantisation noise. So the meta's `changed_total`
+        # would describe a shard that is not the one about to be applied, and
+        # every count downstream of it would be quietly about the wrong file.
+        rows = pq.read_metadata(shard_paths(in_dir, "diff", i)[0]).num_rows
+        if rows != meta["changed_total"]:
+            raise SystemExit(
+                f"ABORT: shard {i:04d}'s marker says {meta['changed_total']:,} "
+                f"changed documents but its parquet holds {rows:,}. The marker "
+                f"and the data were written by different processes (marker: job "
+                f"{meta.get('slurm_job_id')} attempt {meta.get('attempt')} on "
+                f"{meta.get('hostname')}). Recompute that shard with --force "
+                f"rather than applying counts that describe a different file.")
         metas.append(meta)
         total += meta["changed_total"]
 
@@ -1269,7 +1311,13 @@ def main() -> None:
     pc = sub.add_parser("compute", help="one shard → differences (run on a CRC GPU)")
     pc.add_argument("--in-dir", required=True)
     pc.add_argument("--shard-id", type=int, required=True)
-    pc.add_argument("--device", default="cuda")
+    pc.add_argument("--device", default="auto",
+                    help="auto (default: GPU if one is visible, else CPU, "
+                         "announced either way) | cuda | cuda:N | cpu. "
+                         "An explicit 'cuda' is a DEMAND and aborts if no GPU "
+                         "is present — it never falls back silently, because a "
+                         "CPU shard inside a GPU-sized wall clock is reported as "
+                         "a TIMEOUT, not as a missing device.")
     pc.add_argument("--model-dir")
     pc.add_argument("--batch-size", type=int, default=1024)
     pc.add_argument("--scope", choices=("all", "candidates"), default="all",
