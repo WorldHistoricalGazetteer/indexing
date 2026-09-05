@@ -1253,6 +1253,66 @@ Do **not** revisit int8 (§3, negative finding).
 
 ---
 
+### 7.1 What no embedding can fix — a ceiling measured from outside
+
+⚠ **Some of the apparent retrieval failure is MISSING DOCUMENTS, not bad
+embeddings, and no v8 can recover it.** GOTW measured this while building a
+transcription-alias table (`gotw-eb`, 5 Sep): constraining 150 Chinese places to
+their correct province — i.e. *fixing* the parent resolution completely — cut
+leaf hits from **150 to 86**, because the leaf places are largely absent from the
+index. Their alias table takes the Qing provinces from **11/18 to 18/18** on
+parentage and changes leaf geolocation not at all.
+
+**Query expansion cannot conjure a document that is not there, and neither can a
+better embedding.** Any v8 claim of "improved recall" must therefore be measured
+against documents that *exist* — which is what the ≥1M retrieval benchmark does
+by construction, and is one more reason it precedes the retrain.
+
+### 7.2 The de-scoping's real exposure, and a cheaper lever than a model
+
+`Keang-su → GANSU` was reported as a Chinese problem. It is not. Measured over
+GOTW's corpus:
+
+```
+China                              2,414   2.1%
+non-Latin-script country (proxy)  16,486  14.2%
+  RU 3,535 · IN 3,210 · CN 2,414 · GR 1,167 · IR 767 · EG 524 · JP 483 · PK 403
+```
+
+The 19th-century transcription-convention problem applies equally to the book's
+renderings of Russian, Indian, Greek, Persian, Arabic and Japanese names. **14.2%
+is an upper bound on exposure, not a measured failure rate** — only the Chinese
+admin names have been tested — but it is the number that belongs in a scope
+conversation, and it is an order of magnitude above the figure that prompted the
+de-scoping.
+
+🛑 **The cheaper lever is a rule-based transcription-convention mapping, not a
+model.** `‑hyen`/`‑heen` → xian, `‑fu` → fu, `keang` → jiang, `‑pih` → bei,
+emitted as additional `variants`. The economics are the gateway's own
+`derive_name_forms`: a variant is scored at `VARIANT_SCORE_WEIGHT` and folded
+into the same pool, **so a wrong derived form costs almost nothing while a right
+one rescues the query**. GOTW has ~30 hand-curated admin aliases working today
+and reports that hand-curation does not scale past admin names (18 provinces
+tractable, ~2,400 leaf toponyms not).
+
+⚠ **If such a mapping were a GAZETTEER-side asset rather than a per-project one
+it would serve every historical corpus WHG ingests.** That is a different piece
+of work from Symphonym and nobody is asking for it — recorded here because it is
+the only lever identified today that addresses a whole problem class more cheaply
+than a retrain would address a fraction of it.
+
+### 7.3 A correction to advice this session gave
+
+Advising GOTW on which of its results needed re-running after the tokeniser fix,
+this session wrote *"if any of your queries contain a space"*. That framing
+understated it badly. Measured on their corpus: **2,121 of 8,713 processed places
+(24.3%)** and **2,866 of 5,405 cached admin-parent resolutions (53%)**.
+
+⚠ **Admin and container names are far more space-heavy than headwords** —
+"canton of Amatrice", "prov. of Abruzzo Ultra". Anyone applying the
+space/CJK/non-NFC re-run filter to a *container* population should expect a
+majority, not a minority.
+
 ## 8. Scale of likely improvement — and what cannot be claimed
 
 **Package 1, measured, no retraining:** multi-word self-retrieval goes from
