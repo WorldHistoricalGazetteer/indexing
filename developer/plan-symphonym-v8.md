@@ -1516,6 +1516,26 @@ WHG id or an explicit "absent from the index"**, with labels drawn from evidence
 **independent of the index** — the book's own printed coordinates and printed
 variant forms — so it cannot be circular.
 
+**Design points worth stealing for our own benchmark** — this side fought the
+same independence battle with Epitran and did not arrive at all of these:
+
+* **Labels never consult `score` or `confidence`.** Both are recorded for every
+  candidate and neither is used to decide — so **the set cannot confirm what it
+  was built from**. That is the property we had to reject Epitran to get.
+* **Asymmetric radii: 25 km to assert a match, 60 km to assert absence.** Both
+  err toward `review`, because *a wrong gold label silently corrupts every
+  experiment scored against it, whereas an unlabelled row costs only effort.*
+* **`absent` is measured, not inferred.** It means: the book says where the place
+  is, and a deliberately broad search — no containment, both modes, all printed
+  variants, size 20 — finds nothing of that name within 60 km. **It explicitly
+  does NOT mean "our cascade missed it".**
+* **The `neither` tail is deliberately included** (stratified 60/20/rest across
+  coords / variants / neither). *A set built only from coordinate-bearing places
+  would measure the easy half and flatter everything scored against it.*
+* **`review` is reported as a split, never silently counted as either.** Only
+  `match` and `absent` are asserted; the remainder is the honest one and needs a
+  human before this is a gold standard rather than a strong prior.
+
 🛑 **The "absent" labels matter directly to v8.** §8's retrieval run found
 **R@200 ≈ 0.48 for every method tested**, including a near-oracle baseline: half
 the true partners unreachable in the top 200 of a million by *any* technique.

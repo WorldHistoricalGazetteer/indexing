@@ -320,8 +320,33 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
         done
     done
 
+    # --- Guard: a snapshot that satisfies the SELECTION predicate can still be
+    # useless for the RESTORE. The predicate above keys on `places*` only (see
+    # REQUIRED_PREFIX), so the newest snapshot containing places wins even when it
+    # contains nothing else. On 2026-09-05 the newest such snapshot in
+    # `staging_repo` was places-only and six weeks stale, and a consumer that
+    # restored it would have got a staging ES whose phonetic passes silently
+    # returned nothing — every query "working", every phonetic result empty,
+    # because the toponyms index carrying the Symphonym vectors was simply absent.
+    # Fail loudly here instead: an empty result set is the hardest kind of wrong
+    # answer to notice.
+    if [ "${RESTORE_PLACES_ONLY:-0}" != "1" ]; then
+        if ! echo "$RESTORE_INDICES" | grep -q "toponyms"; then
+            echo "ERROR: snapshot '$LATEST_SNAPSHOT' in repo '$STAGING_REPO_NAME'" >&2
+            echo "       contains NO toponyms index, and --places-only was not requested." >&2
+            echo "       Indices in it: ${ALL_SNAPSHOT_INDICES:-<none>}" >&2
+            echo "       Restoring this would give a staging ES where every phonetic" >&2
+            echo "       query returns nothing while appearing to work." >&2
+            echo "       Fix: point STAGING_REPO_NAME at the repo holding a current" >&2
+            echo "       snapshot of BOTH indices, or pass --places-only if that is" >&2
+            echo "       genuinely what you want." >&2
+            exit 1
+        fi
+    fi
+
     # --- Restore from snapshot ---
     echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
+    echo "  From repository:   $STAGING_REPO_NAME"
     echo "  Concrete indices: $RESTORE_INDICES"
     # Start restore WITHOUT wait_for_completion so ES remains responsive
     curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore" \
