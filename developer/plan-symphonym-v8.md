@@ -2184,6 +2184,13 @@ for the evaluation stratum as a justification for a production write.
 
 ### What the patch actually fixes — the date filter is INERT on TGN today
 
+📋 **Filed as [`place#244`](https://github.com/WorldHistoricalGazetteer/place/issues/244)
+and handed to `indexing-9c`** (bug / API / coding-agent). Its tasks: check this
+section's mode analysis adversarially, audit the other namespaces for the same
+placeholder pattern, **report and pause for authorisation before applying**, then
+re-measure the table below to demonstrate the filter discriminates — and close on
+that evidence rather than on the write completing.
+
 The remaining argument for `apply` is the temporal search filter, so here is what
 that filter does on TGN **right now**, measured against production. Every TGN
 toponym carries the placeholder `{start:{latest:2026}, end:{earliest:2026}}` —
