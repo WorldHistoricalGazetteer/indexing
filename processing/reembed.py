@@ -212,12 +212,18 @@ def _finish_shard(final: Path, temp: Path, done: Path, meta: dict) -> None:
 
 ROMANISED_SCRIPTS = frozenset({"CJK", "HIRAGANA", "KATAKANA", "HANGUL"})
 
-#: D5. Scripts the PRE-FIX detector recognised and the canonical one does not.
+#: D7. Scripts the PRE-FIX detector recognised and the canonical one does not.
+#: (D5 is the FB00-FB17 precedence defect and D6 the interpreter's Unicode
+#: version — both separate, both in developer/plan-symphonym-v8.md.)
 #:
 #: `hf/inference.py`'s old table carried GURMUKHI (U+0A00-U+0A7F);
 #: `phonetics/utils/script_detection.py` — the table the index was written
 #: with, and the one now vendored — has no Gurmukhi entry at all, so Punjabi
-#: names score OTHER. A document embedded by the backfill therefore carries a
+#: names score OTHER. GUJARATI is in the table and GURMUKHI is not, so a
+#: re-implementer reads the absence as a bug and "fixes" it — and a differential
+#: corpus generated from the implementer's OWN table can never catch that,
+#: because it would not generate the cases.
+#: A document embedded by the backfill therefore carries a
 #: GURMUKHI script id that the canonical tokeniser can never reproduce, while
 #: nothing about the NAME marks it out: single word, already NFC, no digits, and
 #: both detectors agree on OTHER today because only one of them ever disagreed.
@@ -270,7 +276,7 @@ def is_candidate(name: str, script: str | None) -> bool:
     if any(not c.isalpha() and c != " "
            and unicodedata.category(c)[0] != "M" for c in name):
         return True
-    # D5, above.
+    # D7, above.
     return any(any(lo <= ord(c) <= hi for lo, hi in LEGACY_ONLY_SCRIPT_RANGES)
                for c in name)
 

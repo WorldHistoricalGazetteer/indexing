@@ -178,7 +178,7 @@ class TestD4NamesAreCandidates(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(reembed.is_candidate(name, "LATIN"))
 
-    def test_gurmukhi_names_are_candidates_d5(self):
+    def test_gurmukhi_names_are_candidates_d7(self):
         """The divergence only the full census could find.
 
         The pre-fix detector knew GURMUKHI; the canonical one does not, so
