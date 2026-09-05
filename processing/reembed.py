@@ -953,6 +953,36 @@ def _git_commit(run_dir: Path | None = None) -> str:
 # Phase: apply  (PITT — writes prod ES)
 # ---------------------------------------------------------------------------
 
+def _verify_written(es, index: str, sample_ids, rows) -> str:
+    """Read a sample straight back out of ES and compare it with what we sent.
+
+    A bulk response saying `ok` means Elasticsearch accepted the request, not
+    that the vector in the index is the one intended — and this pipeline exists
+    because a stored vector was not what anyone assumed. So the claim is checked
+    at the reader.
+    """
+    if not sample_ids:
+        return "no sample"
+    wanted = dict(rows)
+    try:
+        got = es.mget(index=index, ids=list(sample_ids), _source=["embedding"])
+    except Exception as exc:                       # never fail the run on the check
+        return f"could not read back ({exc})"
+    matched = mismatched = missing = 0
+    for doc in got.get("docs", []):
+        vec = (doc.get("_source") or {}).get("embedding")
+        expected = wanted.get(doc.get("_id"))
+        if vec is None or expected is None:
+            missing += 1
+        elif list(vec) == list(expected):
+            matched += 1
+        else:
+            mismatched += 1
+    return (f"{matched} of {len(sample_ids)} match"
+            + (f", {mismatched} MISMATCH" if mismatched else "")
+            + (f", {missing} unreadable" if missing else ""))
+
+
 def cmd_apply(args) -> None:
     import pyarrow.parquet as pq
     from elasticsearch import helpers as es_helpers
@@ -1060,13 +1090,40 @@ def cmd_apply(args) -> None:
     es_opt = es.options(request_timeout=300)
     ok = errs = 0
     ledger_ids = []
+    applied_dir = in_dir / "applied"
+    applied_dir.mkdir(exist_ok=True)
     t0 = time.time()
+
+    # The write is the one irreversible step in the pipeline, so it is
+    # checkpointed PER SHARD rather than summarised at the end:
+    #
+    #   * a marker is written after each shard, so a crash, a dropped SSH
+    #     session or an ES restart leaves a record of exactly what landed —
+    #     the previous version wrote the ledger only on success, which meant a
+    #     failure halfway through 100,960 documents left no record at all;
+    #   * a shard already marked applied is SKIPPED, so re-running resumes
+    #     instead of rewriting (the updates are idempotent, but a rerun that
+    #     silently repeats 100k writes against a live index is not free);
+    #   * `--canary N` stops after N documents so the write path can be proved
+    #     on a small population before the rest follows;
+    #   * the run ABORTS if the error rate exceeds `--max-error-rate`, rather
+    #     than ploughing through all 256 shards and reporting the wreck at the
+    #     end. Prod ES is serving live search and there is currently no working
+    #     watchdog behind it.
     for i in range(slices):
         if not shard_is_complete(in_dir, "diff", i):
+            continue
+        marker = applied_dir / f"applied_{i:04d}.json"
+        if marker.exists():
+            prior = json.loads(marker.read_text())
+            ok += prior["ok"]
+            errs += prior["errors"]
             continue
         table = pq.read_table(shard_paths(in_dir, "diff", i)[0])
         rows = list(zip(table.column("toponym_id").to_pylist(),
                         table.column("embedding").to_pylist()))
+        s_ok = s_err = 0
+        s_ids = []
         for start in range(0, len(rows), args.batch_size):
             chunk = rows[start:start + args.batch_size]
             actions = [{"_op_type": "update", "_index": args.index, "_id": tid,
@@ -1074,20 +1131,57 @@ def cmd_apply(args) -> None:
                        for tid, vec in chunk]
             c_ok, c_errs = es_helpers.bulk(es_opt, actions, raise_on_error=False,
                                            max_retries=3, initial_backoff=2)
-            ok += c_ok
-            errs += len(c_errs) if isinstance(c_errs, list) else c_errs
-            ledger_ids.extend(tid for tid, _ in chunk)
+            n_err = len(c_errs) if isinstance(c_errs, list) else c_errs
+            s_ok += c_ok
+            s_err += n_err
+            s_ids.extend(tid for tid, _ in chunk)
             if args.throttle:
                 time.sleep(args.throttle)
+
+            attempted = ok + errs + s_ok + s_err
+            if attempted and (errs + s_err) / attempted > args.max_error_rate:
+                marker.write_text(json.dumps(
+                    {"shard": i, "ok": s_ok, "errors": s_err, "partial": True,
+                     "toponym_ids": s_ids, "at": now}))
+                raise SystemExit(
+                    f"ABORT: error rate {(errs + s_err) / attempted:.2%} exceeds "
+                    f"--max-error-rate {args.max_error_rate:.2%} after "
+                    f"{attempted:,} documents. Stopped mid-shard {i:04d}; what "
+                    f"landed is recorded in {applied_dir}. Re-run to resume once "
+                    f"the cause is understood — do not raise the threshold to "
+                    f"get past it.")
+
+        marker.write_text(json.dumps({"shard": i, "ok": s_ok, "errors": s_err,
+                                      "partial": False, "toponym_ids": s_ids,
+                                      "at": now}))
+        ok += s_ok
+        errs += s_err
+        ledger_ids.extend(s_ids)
         print(f"[apply]   shard {i:04d}: {ok:,} ok / {errs:,} err", flush=True)
 
+        if args.canary and ok >= args.canary:
+            es.indices.refresh(index=args.index)
+            verified = _verify_written(es, args.index, s_ids[:20], rows)
+            print(f"[apply] CANARY: stopped after {ok:,} documents "
+                  f"({i + 1} shard(s)). Read-back check: {verified}. "
+                  f"Re-run without --canary to continue; completed shards will "
+                  f"be skipped.")
+            return
+
     es.indices.refresh(index=args.index)
+    sample = ledger_ids[:20]
+    readback = _verify_written(es, args.index, sample,
+                               list(zip(table.column("toponym_id").to_pylist(),
+                                        table.column("embedding").to_pylist()))
+                               if ledger_ids else [])
+    print(f"[apply] read-back check on {len(sample)} documents: {readback}")
     ledger = {
         "run_dir": str(in_dir),
         "index": args.index,
         "applied_at": now,
         "documents_updated": ok,
         "errors": errs,
+        "read_back_check": readback,
         "examined_total": examined_total,
         "export_rows": expected,
         "changed_candidate": sum(m.get("changed_candidate", 0) for m in metas),
@@ -1180,6 +1274,13 @@ def main() -> None:
                      help="seconds between bulk chunks (prod search is live)")
     pa_.add_argument("--allow-partial", action="store_true",
                      help="apply even though some compute shards are missing")
+    pa_.add_argument("--canary", type=int, default=0, metavar="N",
+                     help="stop after roughly N documents and read a sample back, "
+                          "so the write path is proved on a small population "
+                          "first; re-run without it to continue")
+    pa_.add_argument("--max-error-rate", type=float, default=0.01,
+                     help="abort if the cumulative bulk error rate exceeds this "
+                          "(default 1%%). Do not raise it to get past a failure.")
     pa_.add_argument("--execute", action="store_true", help="actually write (default: dry-run)")
     pa_.set_defaults(func=cmd_apply)
 

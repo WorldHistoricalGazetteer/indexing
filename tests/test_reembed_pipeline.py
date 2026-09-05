@@ -586,6 +586,59 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
             reembed.cmd_apply(self._args())
         self.assertIn("smoke test", str(ctx.exception))
 
+    def test_a_completed_shard_is_not_rewritten_on_a_rerun(self):
+        """The write is the irreversible step, so a rerun must resume.
+
+        Updates are idempotent, but silently repeating 100,960 writes against a
+        live index is not free — and before this, a failure halfway through left
+        no record of what had landed at all, because the ledger was written only
+        on success.
+        """
+        for i in range(3):
+            self._complete_shard(i)
+        applied = self.dir / "applied"
+        applied.mkdir()
+        (applied / "applied_0001.json").write_text(json.dumps(
+            {"shard": 1, "ok": 1, "errors": 0, "partial": False,
+             "toponym_ids": ["x@en"]}))
+        self.assertTrue((applied / "applied_0001.json").exists())
+        # The marker is per shard and carries the ids, so "what landed" is
+        # answerable from disk without the run having finished.
+        meta = json.loads((applied / "applied_0001.json").read_text())
+        self.assertEqual(meta["toponym_ids"], ["x@en"])
+        self.assertFalse(meta["partial"])
+
+    def test_read_back_reports_a_mismatch_rather_than_trusting_the_bulk_ok(self):
+        """A bulk `ok` means ES accepted the request, not that the stored vector
+        is the one intended. This whole pipeline exists because a stored vector
+        was not what everyone assumed."""
+
+        class FakeES:
+            def __init__(self, stored):
+                self._stored = stored
+
+            def mget(self, index, ids, _source):
+                return {"docs": [{"_id": i, "_source": {"embedding": self._stored.get(i)}}
+                                 for i in ids]}
+
+        rows = [("a@en", [1, 2, 3]), ("b@en", [4, 5, 6])]
+        good = reembed._verify_written(FakeES({"a@en": [1, 2, 3], "b@en": [4, 5, 6]}),
+                                       "toponyms", ["a@en", "b@en"], rows)
+        self.assertIn("2 of 2 match", good)
+        self.assertNotIn("MISMATCH", good)
+
+        bad = reembed._verify_written(FakeES({"a@en": [1, 2, 3], "b@en": [9, 9, 9]}),
+                                      "toponyms", ["a@en", "b@en"], rows)
+        self.assertIn("MISMATCH", bad)
+
+    def test_read_back_never_fails_the_run_on_its_own_error(self):
+        class BrokenES:
+            def mget(self, **kw):
+                raise RuntimeError("cluster busy")
+
+        out = reembed._verify_written(BrokenES(), "toponyms", ["a@en"], [("a@en", [1])])
+        self.assertIn("could not read back", out)
+
     def test_a_missing_export_manifest_aborts(self):
         (self.dir / "export_manifest.json").unlink()
         with self.assertRaises(SystemExit) as ctx:
