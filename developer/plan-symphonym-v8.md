@@ -2130,6 +2130,32 @@ scripts:  LATIN 3,565 · GREEK 4 · CYRILLIC 2 · ARABIC 2 · CJK 1 · HANGUL 1
   **`gotw-eb`'s verdict stands unchanged: the specialist spend is justified.** This
   is European Latin-script historic orthography and answers a different question.
 
+### 🛑 40,937 IS NOT A SAMPLE SIZE — do not quote it as one
+
+`gotw-eb` flagged that within-place pairs are not independent observations; they
+share a referent, a source, a cataloguer and usually an etymology.
+`Dorchestre / Dorcic / Dorkecestre / Dorocine` is **one place's naming history seen
+four ways, not four independent samples.** Measured concentration:
+
+```
+top  0.5% of places (   17)  ->  20,872 pairs   51.0%
+top  1.0% of places (   35)  ->  30,914 pairs   75.5%
+top  5.0% of places (  178)  ->  34,636 pairs   84.6%
+top 50.0% of places (1,782)  ->  39,154 pairs   95.6%
+
+largest single place -> 1,891 pairs (62 dated names)
+```
+
+🛑 **Seventeen places produce over half the corpus. One produces 1,891 pairs.**
+The effective N is **3,565 places, not 40,937 pairs**, and even that is dominated
+by a handful of exhaustively-catalogued entries.
+
+**Required:** report **per-place** performance, or **cluster-bootstrap** the
+confidence interval with the place as the unit. Never treat pairs as independent.
+⚠ This is `rewt-c7`'s 32,850-rows/13,002-geometries trap in the form that is
+harder to catch — it produces a **plausible** number rather than an obviously
+inflated one, and 40,937 would have been quoted without hesitation.
+
 ⚠ **`apply` HAS NOT BEEN RUN and is not mine to run** — it writes to the live
 `places` index and needs SG's authorisation. Note also (`indexing-9c`) that the
 backfill's *own* purpose is the **temporal search filter** and the clustering
