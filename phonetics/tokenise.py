@@ -56,6 +56,18 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 # --- BEGIN CANONICAL TOKENISER ---
+# CANONICAL-BLOCK v1 sha256=9a879b4cc312902c2447baf6671fca9886fe5ba2d2584cc6ce16bc054405a47f
+# CANONICAL-BLOCK Convention, stated because the same block has been hashed two different
+# CANONICAL-BLOCK ways elsewhere and nothing ever compared them: sha256 over this block
+# CANONICAL-BLOCK INCLUDING both marker lines and EXCLUDING every line beginning
+# CANONICAL-BLOCK "# CANONICAL-BLOCK". Recompute with that rule or you will get a different
+# CANONICAL-BLOCK answer and no error.
+# CANONICAL-BLOCK What this DOES: identifies which version of the block a copy carries, for
+# CANONICAL-BLOCK a consumer who does not have the indexing repo on disk (whg3 and
+# CANONICAL-BLOCK London_Customs_Accounts both vendor this block).
+# CANONICAL-BLOCK What it does NOT do: a vendored copy carries the ORIGINAL's stamp, so
+# CANONICAL-BLOCK checking your own copy detects local modification, not that upstream has
+# CANONICAL-BLOCK moved. For that you must compare this value against upstream's.
 
 import unicodedata
 from typing import Dict, List, Optional, Tuple

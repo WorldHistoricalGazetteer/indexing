@@ -61,10 +61,33 @@ BEGIN = "# --- BEGIN CANONICAL TOKENISER ---"
 END = "# --- END CANONICAL TOKENISER ---"
 
 
+STAMP_SENTINEL = "# CANONICAL-BLOCK"
+
+
 def _vendored_block(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     start, stop = text.index(BEGIN), text.index(END) + len(END)
     return text[start:stop]
+
+
+def _stamp_excluded(block: str) -> str:
+    """The block as the stamp's own convention defines it.
+
+    The stamp is a sha256 of the block it lives inside, so it cannot include
+    itself. Every line beginning ``# CANONICAL-BLOCK`` is removed before hashing.
+    This is stated in the block and enforced here because the SAME block has been
+    hashed two different ways elsewhere -- once with the marker lines included and
+    once with them split off -- and nothing ever compared the two answers.
+    """
+    return "\n".join(l for l in block.split("\n")
+                     if not l.startswith(STAMP_SENTINEL))
+
+
+def _declared_stamp(block: str) -> str:
+    for line in block.split("\n"):
+        if line.startswith(STAMP_SENTINEL) and "sha256=" in line:
+            return line.split("sha256=", 1)[1].strip().split()[0]
+    raise AssertionError("no CANONICAL-BLOCK sha256 stamp found in the block")
 
 
 def _load_hf_inference():
@@ -195,6 +218,41 @@ class VocabFixture(unittest.TestCase):
 
 class TestVendoredCopyIsIdentical(unittest.TestCase):
     """`hf/` cannot import the repo, so the copies are checked, not assumed."""
+
+    def test_the_stamp_matches_the_block_it_stamps(self):
+        """The tripwire: edit the block, forget the stamp, and this fails.
+
+        Without this the stamp is decoration that rots silently -- and a stale
+        version identifier is worse than none, because a consumer trusts it.
+        """
+        import hashlib
+        for rel in ("phonetics/tokenise.py", "hf/inference.py"):
+            block = _vendored_block(REPO / rel)
+            declared = _declared_stamp(block)
+            computed = hashlib.sha256(
+                _stamp_excluded(block).encode("utf-8")).hexdigest()
+            self.assertEqual(
+                declared, computed,
+                f"{rel}: the CANONICAL-BLOCK stamp says {declared[:16]} but the "
+                f"block hashes to {computed[:16]}. The block was edited and the "
+                f"stamp was not updated -- recompute it EXCLUDING every line "
+                f"beginning '{STAMP_SENTINEL}'.")
+
+    def test_the_stamp_is_identical_in_both_copies(self):
+        a = _declared_stamp(_vendored_block(REPO / "phonetics" / "tokenise.py"))
+        b = _declared_stamp(_vendored_block(REPO / "hf" / "inference.py"))
+        self.assertEqual(a, b, "the two vendored copies declare different stamps")
+
+    def test_the_stamp_check_can_fail(self):
+        """Prove the tripwire fires, rather than trusting that it would."""
+        import hashlib
+        block = _vendored_block(REPO / "phonetics" / "tokenise.py")
+        tampered = block.replace("def encode_lang", "def encode_lang_TAMPERED", 1)
+        self.assertNotEqual(tampered, block, "tamper target not present")
+        self.assertNotEqual(
+            _declared_stamp(block),
+            hashlib.sha256(_stamp_excluded(tampered).encode("utf-8")).hexdigest(),
+            "a tampered block produced the declared stamp -- the check is inert")
 
     def test_blocks_are_byte_identical(self):
         repo = _vendored_block(REPO / "phonetics" / "tokenise.py")
