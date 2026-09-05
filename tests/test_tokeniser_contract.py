@@ -121,6 +121,12 @@ SHAPES = [
     "L",                        # single character
     "​London",             # zero-width space (not whitespace to strip())
     "London Bridge",       # non-breaking space INSIDE a name
+    # Majority non-alphabetic. These are the inputs the two SCRIPT detectors
+    # disagree on (D4), and the class a corpus of historical gazetteer names
+    # contains none of — 0 of 6,013 MEHDIE names carry a digit, against
+    # 8.18% of live ones.
+    "S4630", "Q85423919", "GR-9408", "2038年1月5日の日食",
+    "1995년 칸 영화제",
 ]
 
 # Inputs the canonical preprocessing reduces to nothing at all — empty, or
@@ -138,6 +144,23 @@ UNAFFECTED = ["London", "Paris", "Москва", "Αθήνα", "القاهرة",
 # Names the gateway was tokenising differently from the index.
 AFFECTED = ["New York", "Bury St Edmunds", "東京", "北京", "서울",
             "トウキョウ", "とうきょう", "London Bridge"]
+
+
+# The classes of input on which the pre-change gateway and the index writer
+# could differ, derived by reading the two implementations rather than sampled
+# from a corpus. Every equivalence assertion below is only worth as much as the
+# fixture's coverage of these, so the coverage is asserted, not assumed.
+DIVERGENCE_CLASSES = {
+    "D1 CJK (romanised)":    lambda t: canonical.detect_script(t) == "CJK",
+    "D1 Kana (romanised)":   lambda t: canonical.detect_script(t) in
+                                       ("HIRAGANA", "KATAKANA"),
+    "D1 Hangul (decomposed)": lambda t: canonical.detect_script(t) == "HANGUL",
+    "D1 not already NFC":    lambda t: unicodedata.normalize("NFC", t) != t,
+    "D2 contains a space":   lambda t: " " in t,
+    "D3 lang tag by case":   None,   # a property of the tag, not the name
+    "D4 majority non-alpha": lambda t: bool(t) and
+                                       sum(not c.isalpha() for c in t) / len(t) > 0.5,
+}
 
 
 def _random_corpus(chars, n=3000, seed=0):
@@ -434,6 +457,71 @@ class TestTheFixIsLoadBearing(VocabFixture):
             ids.append(cid if 0 <= cid < self.model_vocab_size else unk)
         return ids
 
+    # `hf.inference._detect_script` as it stood before the fix — the table
+    # copied whole, in its original order, not trimmed to what these tests
+    # happen to use. Every character is counted, so a space (0x20) or a digit
+    # (0x30-0x39) falls outside its LATIN range 0x41-0x7A and lands in OTHER.
+    # Checked against the real pre-change function (`git archive HEAD
+    # hf/inference.py`) over 4,000 live toponyms: 0 disagreements. A
+    # reimplementation nobody compared to the original would be a straw man,
+    # and a straw man always loses.
+    LEGACY_SCRIPT_RANGES = [
+        ("LATIN", [(0x0041, 0x007A), (0x00C0, 0x024F), (0x1E00, 0x1EFF)]),
+        ("CYRILLIC", [(0x0400, 0x04FF), (0x0500, 0x052F)]),
+        ("ARABIC", [(0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF),
+                    (0xFE70, 0xFEFF)]),
+        ("CJK", [(0x4E00, 0x9FFF), (0x3400, 0x4DBF), (0x20000, 0x2A6DF),
+                 (0xF900, 0xFAFF)]),
+        ("HANGUL", [(0xAC00, 0xD7AF), (0x1100, 0x11FF), (0x3130, 0x318F)]),
+        ("HIRAGANA", [(0x3041, 0x3096)]),
+        ("KATAKANA", [(0x30A1, 0x30FA), (0x31F0, 0x31FF)]),
+        ("DEVANAGARI", [(0x0900, 0x097F)]),
+        ("BENGALI", [(0x0980, 0x09FF)]),
+        ("GUJARATI", [(0x0A80, 0x0AFF)]),
+        ("GURMUKHI", [(0x0A00, 0x0A7F)]),
+        ("TAMIL", [(0x0B80, 0x0BFF)]),
+        ("TELUGU", [(0x0C00, 0x0C7F)]),
+        ("KANNADA", [(0x0C80, 0x0CFF)]),
+        ("MALAYALAM", [(0x0D00, 0x0D7F)]),
+        ("THAI", [(0x0E00, 0x0E7F)]),
+        ("GEORGIAN", [(0x10A0, 0x10FF)]),
+        ("ARMENIAN", [(0x0530, 0x058F)]),
+        ("HEBREW", [(0x0590, 0x05FF), (0xFB1D, 0xFB4F)]),
+        ("GREEK", [(0x0370, 0x03FF), (0x1F00, 0x1FFF)]),
+    ]
+
+    def _legacy_script(self, text):
+        counts = {}
+        for char in text:
+            cp = ord(char)
+            for name, ranges in self.LEGACY_SCRIPT_RANGES:
+                if any(lo <= cp <= hi for lo, hi in ranges):
+                    counts[name] = counts.get(name, 0) + 1
+                    break
+            else:
+                counts["OTHER"] = counts.get("OTHER", 0) + 1
+        if not counts:
+            return "OTHER"
+        return max(counts, key=counts.__getitem__)
+
+    def test_d4_the_script_detectors_disagree_on_digit_heavy_names(self):
+        """The divergence the plan first recorded as "verified equivalent".
+
+        27 of 4,000 live names disagree (0.68%), and in every one of the 27 the
+        canonical detector matches the document's stored ``script`` field.
+        """
+        for text in ("S4630", "Q85423919", "GR-9408",
+                     "2038年1月5日の日食", "1995년 칸 영화제"):
+            with self.subTest(text=text):
+                self.assertEqual(self._legacy_script(text), "OTHER")
+                self.assertNotEqual(canonical.detect_script(text), "OTHER")
+
+    def test_d4_does_not_reach_an_ordinary_name(self):
+        for text in ("London", "Москва", "東京", "서울"):
+            with self.subTest(text=text):
+                self.assertEqual(self._legacy_script(text),
+                                 canonical.detect_script(text))
+
     def test_the_affected_names_really_did_tokenise_differently(self):
         for text in AFFECTED:
             with self.subTest(text=text):
@@ -450,6 +538,26 @@ class TestTheFixIsLoadBearing(VocabFixture):
                 self.assertEqual(
                     self._legacy_char_ids(text),
                     canonical.encode_chars(text, self.char_to_id))
+
+    def test_the_fixture_can_reach_every_divergence(self):
+        """A corpus that cannot reach a boundary says nothing about it.
+
+        The check this replaces ran correctly over 6,029 real toponyms and
+        reported 0 disagreements between the two script detectors — from a
+        corpus in which **0.00% of names contained a digit**, against 8.18% of
+        live ones. It could not have failed. A zero is evidence about the
+        corpus until the corpus is shown to contain the inputs that would
+        produce a one.
+        """
+        for label, predicate in DIVERGENCE_CLASSES.items():
+            if predicate is None:
+                continue
+            with self.subTest(divergence=label):
+                reached = [t for t in CORPUS if predicate(t)]
+                self.assertTrue(
+                    reached,
+                    f"no fixture input can reach {label} — every equivalence "
+                    f"assertion over this corpus passes without testing it")
 
     def test_the_gateway_used_to_emit_the_literal_space_row(self):
         self.assertIn(12588, self._legacy_char_ids("New York"))
