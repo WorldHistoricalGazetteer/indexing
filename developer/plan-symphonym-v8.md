@@ -1075,7 +1075,74 @@ quarter of the measured rate — a fallback that "works" while being silently 4�
 slower than it needed to be. *Referred to `indexing-9c` (5 Sep) to measure on CRC
 and to argue both ways on whether a shared routing utility is worth one home.*
 
-## 6. Open decisions — NOT scheduled
+## 6. DECISIONS TAKEN — 5 September 2026 (SG)
+
+Four settled in interview. They are recorded here as decisions, with what each
+one closes and what it leaves open.
+
+| | decision |
+|---|---|
+| **v8 scope** | **Benchmark first, then decide.** No GPU committed until an evaluation exists that could show a retrain helped. |
+| **Optimise for** | **Cross-script phonetic matching** — and *only* that. Historic romanisations, typo robustness and exonyms are explicitly not v8's target. |
+| **Evaluation** | **Full**: retrieval over ≥1M with recall@k per script pair against Levenshtein / Jaro-Winkler / double-metaphone; discrimination with matched negatives reporting AUC; plus a geometry gate on the checkpoint. |
+| **D-A/D5/D6/D7** | **Bundle into v8's re-embed.** No standalone pass. |
+
+**What "cross-script only" closes.** It settles D-D's label design before D-D is
+taken: positives come from **co-attestation of the same `place_id` across
+gazetteers plus the hard-link overlay**, which is exactly the cross-script signal.
+It also rules out spending on a `ja` kanji reading table (D-B) and on
+transliteration/typo augmentation beyond what cross-script needs. And it means
+GOTW's `Keang-su → GANSU` is **not** a v8 acceptance criterion — worth telling
+`gotw-de`, which is holding a design conclusion on it.
+
+⚠ **A TENSION IN THESE ANSWERS, STATED SO IT IS DELIBERATE.** "Benchmark first"
+means v8 is at minimum a month out and may not happen at all; "bundle into v8"
+therefore leaves D-A/D5/D6/D7 unfixed for that whole period, and permanently if
+v8 does not proceed. I flagged this and measured the cost before accepting it:
+
+* **All-caps exposure is far smaller than I implied.** Of 2,796 sampled
+  Latin-script names with ≥3 Latin letters, **9 are entirely upper-case
+  (0.32%)** — and they are acronyms (`CICS`, `OPM`, `WNXT`), not gazetteer
+  formatting. Extrapolated: ~194,000 of 60.1M Latin documents.
+* My first attempt said 0.63% and was **an artefact of my own filter** — it
+  counted CJK names containing a Latin fragment (`秋田空港TB`) as "all-caps".
+* ⚠ **The residual risk is on the QUERY side and is not measurable from the
+  index.** A user typing `LONDON` gets 0.2825 against the indexed `London`.
+  Query casing is user behaviour; nothing in the corpus can size it.
+
+**So the decision stands on a smaller index-side defect than my framing
+suggested, and an unmeasured query-side one.** Revisit if v8 slips past a
+quarter, or if a contributed dataset arrives in upper case.
+
+## 7. What is now scheduled, and what is closed
+
+**SCHEDULED — D-C, the benchmark. This is the next work and the only work.**
+Nothing else in this section proceeds until it exists. Confirmed by SG 5 Sep:
+*"the casefold problem can wait, let's press on with v8"*.
+
+| | status after 5 Sep |
+|---|---|
+| **D-0** bundle the tokeniser fixes | ✅ **Resolved** — into v8's re-embed, no standalone pass |
+| **D-A** NFKC + casefolding | ⏸ **Closed, waiting** — rides D-0; measured exposure ~194k of 60.1M Latin docs |
+| **D-B** CJK/Japanese romanisation policy | 🛑 **Ruled out** — "cross-script only" does not buy a `ja` kanji reading table |
+| **D-C** an evaluation that can fail | ▶ **SCHEDULED — full scope** |
+| **D-D** retrain, objective and labels | ⏸ **Gated on D-C** — but its label design is now settled (below) |
+| **D-E** what dimension v8 ships at | ⏸ **Unanswerable** until a v8 checkpoint exists |
+
+**D-D's labels are settled even though D-D is not taken.** "Optimise for
+cross-script phonetic matching, and only that" determines the positive-pair
+definition: **co-attestation of the same `place_id` across gazetteers, plus the
+hard-link overlay's `sameAs` edges**. That is the cross-script signal, it is free,
+and it replaces the HDBSCAN-over-PanPhon clustering that made the current labels
+circular (§4.1). What it does *not* buy: a Japanese reading table, transliteration
+augmentation beyond cross-script, or exonym coverage.
+
+⚠ **`Keang-su → GANSU` is therefore NOT a v8 acceptance criterion.** GOTW is
+holding a design conclusion on that failure; it must be told that historic
+romanisation was explicitly de-scoped, so it plans around the gap rather than
+waiting for it to close.
+
+### The cards below are kept for their measurements, not as live questions
 
 Everything below needs discussion before it becomes work. Each is stated as the
 question to answer, not as a task. **The order changed after Package 1**: what was
@@ -1186,7 +1253,7 @@ Do **not** revisit int8 (§3, negative finding).
 
 ---
 
-## 7. Scale of likely improvement — and what cannot be claimed
+## 8. Scale of likely improvement — and what cannot be claimed
 
 **Package 1, measured, no retraining:** multi-word self-retrieval goes from
 65.7% to 100% by construction, and 3.86M documents move from anti-correlated to
@@ -1220,7 +1287,7 @@ are independent, and only the second is what v8 is about.**
 
 ---
 
-## 8. The pending IPA / PanPhon recomputation
+## 9. The pending IPA / PanPhon recomputation
 
 The campaign deferred recomputing IPA and PanPhon "pending any retraining".
 **Recommendation: do not recompute `panphon_embedding` at all — and do not
@@ -1246,7 +1313,7 @@ Deciding D-D before scheduling the recompute avoids paying for it twice. This is
 
 ---
 
-## 9. Housekeeping found on the way
+## 10. Housekeeping found on the way
 
 Not part of Package 1; do not fold these in.
 
