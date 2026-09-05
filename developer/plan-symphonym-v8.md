@@ -2031,8 +2031,14 @@ reports nothing wrong because the step never ran* — and both cost real work to
 **Symptom.** `gotw-eb` ran `es -staging-start`, was told `STAGING ES READY`, and
 was silently restored from the **6 August places-only snapshot** — no toponyms
 index at all. The fix for exactly that (`d8a82f6` + `ba9a89c`, which aborts when
-toponyms is absent and restores from a read-only `prod_repo`) had been committed
-and pushed **hours earlier** and was not deployed.
+toponyms is absent and restores from `prod_repo`) had been committed and pushed
+**hours earlier** and was not deployed.
+
+⚠ **`prod_repo` is read-only in STAGING's cluster state only — never say "the
+read-only repo".** In the **production** cluster it is registered **writable and
+must stay so**: SLM `prod-weekly` writes to it. `indexing-04` flagged this
+because someone tidying up on the strength of the shorthand would silently kill
+the weekly backup, and a missing weekly backup is invisible until it is needed.
 
 **Mechanism, which is the part worth keeping.** `gateway/config.py` read only
 `.env`, and it is the gateway process's *sole* source of environment:
@@ -2063,6 +2069,52 @@ future restart now reads the same value from the per-host file.
 ⚠ **The generalisation to check elsewhere:** *any* local modification to a
 tracked file on a deployed checkout is a silent embargo on every future
 deployment of every commit that touches it.
+
+### 12.1b The first fix left the same door open one room along
+
+`indexing-04` verified the fix **behaviourally** rather than statically — running
+the selection predicate against real repository contents — and confirmed it fires
+on the input that caused the incident (6 Aug, places-only → abort) and passes on
+the new one (5 Sep, places + toponyms → proceed). It then found the case the
+guard did **not** cover: *no usable snapshot at all*.
+
+Three mechanisms collaborated, all in `processing/es_staging.sbatch`: a bare
+`except: pass` in the listing probe, a `2>/dev/null`, and a `|| true`. Any failure
+to read the repository — unregistered, `/ix1` wedged, an ES error body, malformed
+JSON — produced an empty `LATEST_SNAPSHOT`, fell through to `create_indices`, and
+printed `STAGING ES READY`. **`set -e` does not catch it**, because the
+registration was `curl … | python3 -m json.tool` and an ES *error* is valid JSON:
+the pipeline's status is `json.tool`'s, and it exits 0.
+
+🛑 **The first fix made this MORE likely, not less.** It moved the source from
+`staging_repo` (53 snapshots, long established) to `prod_repo` — which holds
+**one** snapshot, is ninety minutes old, and lives on `/ix1`, the mount that
+wedged twice on 5 Sep.
+
+**Fixed** in the same file: the registration response is checked for
+`acknowledged: true`; the listing distinguishes *unreadable* from *readable and
+empty* and reports its denominator (`53 snapshot(s) present, 0 SUCCESS with a
+'places' index` is a different problem from `0 present`); and an explicitly
+configured `RESTORE_REPO_NAME` that yields nothing is an **error**, not an
+invitation to start a fresh site — `SKIP_SNAPSHOT_RESTORE=1` remains the way to
+ask for an empty one, and it short-circuits earlier so the branch is unreachable
+by accident.
+
+**Demonstrated, not asserted**, against six payload shapes through the shipped
+probe text. The new code returns `OK` / `EMPTY` / abort correctly for all six.
+The old code returned **exit 0 and "empty indices" for five of the six** —
+including the ES error body and the malformed response. That is the discriminating
+comparison: the guard is load-bearing because the thing it replaces demonstrably
+passed everything.
+
+⚠ **`prod_repo` holds exactly one snapshot and staging now depends on it.** SLM
+retention (`min_count 4`, `max_count 8`) only ever deletes snapshots SLM itself
+created, so `prod-manual-20260905t1931z` is a permanent floor — deliberate, but
+manual snapshots accumulate and nothing prunes them. Also: **SLM silently
+discards a `timezone` field**, returning `acknowledged:true` without storing it,
+so the schedule is UTC-only and will drift an hour when EDT ends on 1 November.
+`indexing-04` caught that only by comparing `next_execution_millis` across two
+policies identical but for that field.
 
 ### 12.2 In a shared working tree, "I have not pushed yet" is not a durable fact
 

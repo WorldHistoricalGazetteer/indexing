@@ -238,14 +238,33 @@ echo
 if [ -n "${RESTORE_SNAPSHOT_DIR:-}" ] && [ -n "${RESTORE_REPO_NAME:-}" ] \
    && [ "$RESTORE_REPO_NAME" != "$STAGING_REPO_NAME" ]; then
     echo "Registering restore-source repository '$RESTORE_REPO_NAME' (readonly)..."
-    curl -s -X PUT "$ES_URL/_snapshot/$RESTORE_REPO_NAME" \
+    # The response is CHECKED for acknowledged:true. Piping a PUT into
+    # `python3 -m json.tool` verifies only that ES replied with well-formed JSON,
+    # and an ES *error* is well-formed JSON — so the pipeline exits 0, `set -e`
+    # sees nothing wrong, and an unregistered repo sails on to look like an empty
+    # one. /ix1 wedged twice on 2026-09-05 and RESTORE_SNAPSHOT_DIR lives there,
+    # so this is the likely failure, not a theoretical one.
+    REG_RESPONSE=$(curl -sS --max-time 60 -X PUT "$ES_URL/_snapshot/$RESTORE_REPO_NAME" \
         -H 'Content-Type: application/json' -d "{
       \"type\": \"fs\",
       \"settings\": {
         \"location\": \"$RESTORE_SNAPSHOT_DIR\",
         \"readonly\": true
       }
-    }" | python3 -m json.tool
+    }") || {
+        echo "ERROR: could not reach ES to register '$RESTORE_REPO_NAME'." >&2
+        exit 1
+    }
+    echo "$REG_RESPONSE" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    sys.exit('ERROR: repository registration returned non-JSON: %s' % e)
+if d.get('acknowledged') is not True:
+    sys.exit('ERROR: repository registration NOT acknowledged: %s' % json.dumps(d)[:400])
+print('  registration acknowledged')
+" || exit 1
     echo
 fi
 
@@ -309,27 +328,64 @@ SOURCE_REPO="${RESTORE_REPO_NAME:-$STAGING_REPO_NAME}"
 
 # Find the latest successful snapshot whose indices include a places* entry,
 # and output its name plus the full list of concrete indices it contains.
-SNAPSHOT_INFO=$(curl -s "$ES_URL/_snapshot/$SOURCE_REPO/_all" | python3 -c "
-import sys, json
+# "Could not read the repository" and "the repository holds nothing suitable" are
+# DIFFERENT ANSWERS and used to collapse into the same empty string: a bare
+# `except: pass`, a `2>/dev/null` and a `|| true` between them. Every failure —
+# repo unregistered, /ix1 wedged, ES error body, malformed JSON — became "no
+# snapshots", which fell through to creating EMPTY indices and printing
+# "STAGING ES READY". That is the same signature as the bug this file was edited
+# to fix: a required input is absent, something plausible is substituted, and the
+# stage reports success. Found by indexing-04 after the first fix shipped.
+SNAPSHOT_RAW=$(curl -sS --max-time 120 "$ES_URL/_snapshot/$SOURCE_REPO/_all") || {
+    echo "ERROR: could not query repository '$SOURCE_REPO' on $ES_URL." >&2
+    exit 1
+}
+
+SNAPSHOT_INFO=$(printf '%s' "$SNAPSHOT_RAW" | REQUIRED_PREFIX="$REQUIRED_PREFIX" SOURCE_REPO_LABEL="$SOURCE_REPO" python3 -c "
+import os, sys, json
+
 try:
     data = json.load(sys.stdin)
-    snapshots = data.get('snapshots', [])
-    prefix = '${REQUIRED_PREFIX}'
-    valid = [s for s in snapshots
-             if s['state'] == 'SUCCESS'
-             and any(idx == prefix or idx.startswith(prefix + '_')
-                     for idx in s['indices'])]
-    if valid:
-        latest = max(valid, key=lambda x: x['start_time'])
-        # Line 1: snapshot name  Line 2: comma-separated concrete indices
-        print(latest['snapshot'])
-        print(','.join(latest['indices']))
-except:
-    pass
-" 2>/dev/null || true)
+except Exception as e:
+    sys.exit('ERROR: repository listing was not JSON (%s). Repo unregistered, or ES unreachable.' % e)
 
-LATEST_SNAPSHOT=$(echo "$SNAPSHOT_INFO" | head -1)
-ALL_SNAPSHOT_INDICES=$(echo "$SNAPSHOT_INFO" | sed -n '2p')
+if isinstance(data, dict) and 'error' in data:
+    sys.exit('ERROR: Elasticsearch refused the repository listing: %s'
+             % json.dumps(data['error'])[:400])
+
+snapshots = data.get('snapshots')
+if snapshots is None:
+    sys.exit('ERROR: repository listing had no snapshots key: %s' % json.dumps(data)[:400])
+
+prefix = os.environ['REQUIRED_PREFIX']
+valid = [s for s in snapshots
+         if s.get('state') == 'SUCCESS'
+         and any(idx == prefix or idx.startswith(prefix + '_')
+                 for idx in s.get('indices', []))]
+
+# Report the DENOMINATOR: 'none matched' is not interpretable without knowing how
+# many were examined, and 'repo has 53 snapshots, none usable' is a different
+# problem from 'repo is empty'.
+sys.stderr.write('  repository %r: %d snapshot(s) present, %d SUCCESS with a %r index\\n'
+                 % (os.environ.get('SOURCE_REPO_LABEL', '?'), len(snapshots), len(valid), prefix))
+
+if not valid:
+    print('EMPTY')
+else:
+    latest = max(valid, key=lambda x: x['start_time'])
+    print('OK')
+    print(latest['snapshot'])
+    print(','.join(latest['indices']))
+") || exit 1
+
+SNAPSHOT_STATUS=$(echo "$SNAPSHOT_INFO" | head -1)
+if [ "$SNAPSHOT_STATUS" = "OK" ]; then
+    LATEST_SNAPSHOT=$(echo "$SNAPSHOT_INFO" | sed -n '2p')
+    ALL_SNAPSHOT_INDICES=$(echo "$SNAPSHOT_INFO" | sed -n '3p')
+else
+    LATEST_SNAPSHOT=""
+    ALL_SNAPSHOT_INDICES=""
+fi
 
 if [ -n "$LATEST_SNAPSHOT" ]; then
     # Filter snapshot indices to those matching our desired prefixes
@@ -432,6 +488,20 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
     done
     echo
 else
+    # An explicitly configured restore source that yields nothing is an ERROR, not
+    # an invitation to start a fresh site. SKIP_SNAPSHOT_RESTORE=1 has already
+    # short-circuited above, so reaching here means a restore WAS wanted. Creating
+    # empty indices and announcing STAGING ES READY is how gotw-eb came to work
+    # against a places-only 6 August snapshot without being told.
+    if [ -n "${RESTORE_REPO_NAME:-}" ]; then
+        echo "ERROR: restore source '$SOURCE_REPO' yielded no usable snapshot," >&2
+        echo "       and RESTORE_REPO_NAME is explicitly configured." >&2
+        echo "       Refusing to substitute EMPTY indices for the data you asked for." >&2
+        echo "       If an empty staging site is what you want, ask for it:" >&2
+        echo "         SKIP_SNAPSHOT_RESTORE=1  (es -staging-start --no-snapshot)" >&2
+        exit 1
+    fi
+
     # --- Create empty indices ---
     echo "No complete snapshots found - creating empty indices..."
     cd "$REPO_DIR"
