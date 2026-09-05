@@ -1749,6 +1749,70 @@ deposit equally**. It is §11's standing item — *date it or derive it* — and
 needs a decision rather than a value, because a hard-coded count is stale the
 moment the next re-ingest runs.
 
+## 6.5 CORRECTION — the historic forms are NOT all missing from the index
+
+🛑 **This session claimed, repeatedly and to two peers, that "co-attestation
+cannot produce a historic pair, because the historic form is usually not in the
+index at all". Measured against production, that is HALF WRONG**, and the half
+that is wrong changes what the specialist pack is for.
+
+```
+historic form     docs | modern form    docs | SHARED place_ids
+  Peking            40 | Beijing          90 |  5   gn:1816670, gn:2038349
+  Nanking           10 | Nanjing          62 |  7
+  Canton            60 | Guangzhou        68 |  6
+  Tientsin           9 | Tianjin          72 |  5
+  Amoy               3 | Xiamen           46 |  2   gn:1790645, wd:Q68744
+  Tiflis            25 | Tbilisi         112 |  5
+  ---------------------------------------------------------------
+  Keang-su           0 | Jiangsu          57 |  0   <- the 1856 pack's forms
+  Chang-Che-Hyen     0 | Changzhi         29 |  0
+```
+
+**The well-known historic romanisations are already in the corpus and already
+co-attested to the same `place_id` as their modern form.** What is absent is the
+*obscure tail* — which is exactly what an 1856 gazetteer contains.
+
+### What that changes
+
+1. ✅ **There is a free, unlabelled historic-orthography training corpus already
+   in the index**, harvestable by co-attestation with no specialist involvement:
+   Latin-script variants co-attested with a non-Latin-script place, where the
+   variant is not the modern romanisation.
+2. 🛑 **For TRAINING, the historic label is not required.** `(Peking, Beijing)` is
+   a useful positive pair whether or not anything calls it historic. **The label
+   matters for evaluation stratification, not for the objective.** This is the
+   distinction the earlier framing missed entirely.
+3. ⚠ **So the pack's value is narrower and sharper than "supplies the missing
+   pairs":** it supplies (a) the **hard tail**, which genuinely is absent, and
+   (b) **labelled evaluation data**, which nothing in the index provides.
+
+### GeoNames `isHistoric` — present, populated, and not what we mean
+
+Measured over the full `alternateNamesV2` (19,036,500 rows):
+
+```
+isHistoric == 1        43,380   (0.23%)
+  ...with a from/to     8,428
+top languages   en 10,448 · (none) 6,750 · ru 3,763 · de 2,530 · fr 2,389
+                zh: ABSENT from the top 20
+```
+
+🛑 **And it does not flag the forms we need.** Of 19 `Peking` rows, **0** are
+flagged historic; `Tiflis` 0 of 12; `Nanking` 0 of 3; `Amoy` 0 of 2.
+
+⚠ **`isHistoric` IS read by our ingest and then discarded** — `settings.py:564`
+names the column, `geonames-toponyms.py` uses only `from`/`to`. **Wiring it up
+would gain almost nothing**, which is worth recording so nobody spends a day on
+it: the flag is real, populated, well-documented, and marks a different thing.
+The `ru` entries are Cyrillic *renamings* (`Сталин`, `Кешишкенд`) — historic
+**names**, not historic **romanisations**.
+
+**This is `rewt-c7`'s warning arriving exactly as predicted**, and its framing was
+better than mine: I was guarding against a field that is EMPTY; the field is
+populated and wrong for the purpose. *"The question is not whether the flag is
+there — it is whether the thing it flags is what you mean."*
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
