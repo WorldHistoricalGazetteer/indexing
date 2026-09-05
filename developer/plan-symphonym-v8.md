@@ -2215,7 +2215,66 @@ for the evaluation stratum as a justification for a production write.
 
 ### What the patch actually fixes — the date filter is INERT on TGN today
 
-🛑 **SCOPE CORRECTED — 22.3 M places, and TGN is not the largest offender.**
+## 🛑 SCOPE CORRECTED TWICE — the shape is not a bug, and the defect is ~7 k places
+
+**The number moved 2.99 M → 22.3 M → ~7 k in three hours. Every intermediate
+figure was published before it was checked, including by this session.**
+
+🛑 **`{start:{latest:Y}, end:{earliest:Y}}` is NOT a placeholder shape.** It is
+`processing.temporal.attested_at(Y)` — *verified by reading it*, not relayed:
+
+> *"The source records the place as it was at `year` … Definitely alive at
+> `year`; possibly alive at any time, since neither outer bound is asserted.
+> **This is the correct encoding for a dated snapshot.**"*
+
+**So the same bytes carry OPPOSITE verdicts depending on what the source means,
+and the meaning is not visible in the data at all:**
+
+* **`osm` 20,581,812 — CORRECT, and NOT part of this defect.** OSM is a
+  current-map snapshot: every feature genuinely *is* attested at the dump year and
+  its earlier bounds genuinely *are* unknown. `possibly[1500,1600]` passing is
+  **the filter behaving correctly on uninformative data**, which is not the same
+  as being inert on wrong data. Same for `nl` (4,362).
+* **`tgn`'s undated branch is deliberate too.** `tgn_temporal.timespan(None,
+  None)` → `attested_at(PLACEHOLDER_YEAR)`, commented *"Undated: all we know is
+  Getty listed it in this release"* — itself a place#164 rewrite that fixed a
+  **worse** encoding (the old one claimed each place "existed only in 2025",
+  excluding the whole gazetteer from every historical filter). Whether that is
+  right for a *historical* gazetteer of extinct places is a **design question**,
+  not a defect.
+
+### What is actually wrong, measured with a validated query
+
+Doubly-nested (`toponyms` → `toponyms.timespans`), positive control `wd`
+`start.in` = 1,177,263:
+
+```
+tgn total                       2,991,143
+tgn attested_at(2026)           1,712,662   deliberate
+tgn real start.in                   2,712   real dates that DID land
+tgn start.latest != 2026                0
+tgn start.earliest                      0   <- start-only/end-only branches never fired
+Getty release, term-dated           9,450   concepts
+```
+
+🛑 **Getty dates 9,450 concepts; ~2,712 places carry a real date. The gap — order
+6–7 k places — is the defect and is what the patch addresses.** Not 2.99 M, not
+22.3 M, not 1.71 M.
+
+⚠ **This also contradicts the audit's "0 of 1,712,662 carrying a real term
+date"**, which was the evidence for widening the issue. It is 2,712, not 0.
+
+### Filed separately, unmeasured
+
+`authorities/osm-places.py` has **no reference to `start_date`/`end_date`** and
+calls `_attestation_timespans()` unconditionally; `ohm-places.py` parses both (7
+references). Public taginfo reports 19,338,154 OSM objects with `start_date` —
+but across **all ~9 bn OSM objects**, not the ~20.6 M named place features we
+ingest, **so the overlap with our corpus is unknown.** Settling it needs a PBF
+scan on Slurm, not an inference from a global count.
+
+⚠ ~~**SCOPE CORRECTED — 22.3 M places, and TGN is not the largest offender.**~~
+*(superseded above; retained because it was published)*
 `indexing-9c`'s namespace audit found **`osm` carrying 20,581,812 uniform
 placeholders**, byte-for-byte the TGN shape. Total affected **22,298,836**:
 `osm` 20,581,812 · `tgn` 1,712,662 · `nl` 4,362. Real dates: `gb` 1,174,027,
