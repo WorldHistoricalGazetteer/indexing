@@ -551,7 +551,15 @@ async def _linked_container_ids(ids: list[str]) -> list[str]:
     region, while the co-referent record in another gazetteer has the boundary —
     e.g. ``gn:3017382`` (France, point) ``sameAs`` ``wd:Q142`` (France, polygon).
     Following the identity edge gives the user the boundary they meant, without
-    inventing one. Best-effort: a missing/locked store just yields no upgrade.
+    inventing one.
+
+    Best-effort **and bounded**: a missing, locked, or *unresponsive* store
+    yields no upgrade within a few seconds. Before place#241 the third case had
+    no exit at all — this is the path a ``contained_in`` scope takes whenever no
+    container has a polygon of its own, so a wedged ``/ix1`` hung exactly the
+    requests ``linked-polygon`` exists to serve. The bound lives in
+    ``hard_link_expansion``; ``store_degraded()`` says whether it fired, so the
+    caller can distinguish "no co-referent" from "could not look".
     """
     import asyncio
 
@@ -1155,18 +1163,43 @@ def build_scope_info(
                     "applied a coarse repr_point-in-bounds filter instead.",
         )
 
+    message = (
+        "None of the containment place_ids resolved to a usable geometry "
+        "(not even a representative point), so the requested scope could not "
+        "be applied. No results are returned rather than unscoped ones."
+        if contained_in else
+        "The supplied bounds contained no usable geometry, so the requested "
+        "scope could not be applied."
+    )
+    if contained_in and _hard_link_store_degraded():
+        # Do not report a store we could not read as a store that held nothing
+        # (place#241). The scope still fails closed — that part is right — but
+        # the reason on the wire has to be the true one, because "this place has
+        # no boundary" and "we could not reach the boundaries" call for
+        # different actions from whoever reads it.
+        message += (" NOTE: the hard-link store is currently unresponsive, so a "
+                    "point-only container could not borrow a co-referent's "
+                    "boundary; this scope may resolve once it recovers.")
+
     return ScopeInfo(
         requested=True,
         applied=False,
         mode="none",
         containers_unresolved=[
             _strip_place_prefix(p) for p in (contained_in or []) if p],
-        message=(
-            "None of the containment place_ids resolved to a usable geometry "
-            "(not even a representative point), so the requested scope could not "
-            "be applied. No results are returned rather than unscoped ones."
-            if contained_in else
-            "The supplied bounds contained no usable geometry, so the requested "
-            "scope could not be applied."
-        ),
+        message=message,
     )
+
+
+def _hard_link_store_degraded() -> bool:
+    """Whether the hard-link store is currently being skipped for hanging.
+
+    Imported lazily and defensively: ``build_scope_info`` is on the response
+    path of every scoped request and must not acquire a new import-time
+    dependency, nor fail because a diagnostic is unavailable.
+    """
+    try:
+        from .hard_link_expansion import store_degraded
+        return store_degraded()
+    except Exception:  # pragma: no cover — a diagnostic must never break a response
+        return False

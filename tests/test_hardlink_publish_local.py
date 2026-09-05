@@ -3,8 +3,8 @@
 `ship_to_pitt` rsyncs over ssh to the Pitt VM. That cannot work from a CRC
 compute node: the VM is firewalled from them on **both** 9200 and 22 (verified
 6 Aug 2026 — `curl` exit 28, `ssh` connect timeout). It is also unnecessary:
-`/ix1` is mounted on the compute nodes *and* on the VM, and
-`PITT_HARDLINK_DIR` (`/ix1/ishi/hardlinks`) is where the gateway reads its
+the shared volume is mounted on the compute nodes *and* on the VM, and
+`PITT_HARDLINK_DIR` (`/vast/ishi/hardlinks` since place#241) is where the gateway reads its
 batch overlay. The "ship" is a rename within one filesystem — which is exactly
 what the remote `mv` did.
 

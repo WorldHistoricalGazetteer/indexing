@@ -3,13 +3,15 @@
 
 Covers the union of the two stores (batch overlay + live-delta), dedup by the
 overlay UNIQUE key, in-set vs bounded 1-hop classification, and best-effort
-resilience when a store is absent. Both DB paths are monkeypatched to temp files
-so the real overlay directory is never touched.
+resilience when a store is absent **or unresponsive** (place#241). Both DB paths
+are monkeypatched to temp files so the real overlay directory is never touched.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -50,10 +52,15 @@ class TestHardLinkExpansion(unittest.TestCase):
         self._orig_live = hle.LIVE_DB_PATH
         hle.BATCH_DB_PATH = self.batch
         hle.LIVE_DB_PATH = self.live
+        # The guards are module-level and remember a trip across tests.
+        hle.BATCH_GUARD.reset()
+        hle.LIVE_GUARD.reset()
 
     def tearDown(self):
         hle.BATCH_DB_PATH = self._orig_batch
         hle.LIVE_DB_PATH = self._orig_live
+        hle.BATCH_GUARD.reset()
+        hle.LIVE_GUARD.reset()
         self.tmp.cleanup()
 
     # -- basics -----------------------------------------------------------
@@ -141,3 +148,89 @@ class TestHardLinkExpansion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnresponsiveStore(unittest.TestCase):
+    """A store that hangs must degrade, not block the request (place#241).
+
+    ``/ix1`` is a hard NFS mount: when it wedges, ``Path.exists()`` and
+    ``sqlite3.connect`` block in uninterruptible sleep instead of raising, so
+    the ``try/except`` best-effort guard never fired and every request touching
+    the overlay hung. Simulated here by a ``_connect_ro`` that blocks on an
+    Event which is never set — like the syscall, it cannot be interrupted.
+    """
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.batch = base / "batch" / "hard_links.sqlite"
+        self.live = base / "live" / "hard_links_live.sqlite"
+        self._orig = (hle.BATCH_DB_PATH, hle.LIVE_DB_PATH, hle._connect_ro)
+        hle.BATCH_DB_PATH = self.batch
+        hle.LIVE_DB_PATH = self.live
+        # Short budgets so the test is quick; the mechanism is budget-agnostic.
+        self._orig_budgets = [(g.timeout, g.cooldown)
+                              for g in (hle.BATCH_GUARD, hle.LIVE_GUARD)]
+        for guard in (hle.BATCH_GUARD, hle.LIVE_GUARD):
+            guard.reset()
+            guard.timeout, guard.cooldown = 0.3, 30.0
+
+        self.release = threading.Event()
+        self.entered = threading.Event()
+        self.addCleanup(self.release.set)
+
+        real_connect = hle._connect_ro
+
+        def wedged_batch(path):
+            """Block forever for the batch overlay; serve the live-delta normally."""
+            if Path(path) == self.batch:
+                self.entered.set()
+                self.release.wait(30)
+                return None
+            return real_connect(path)
+
+        hle._connect_ro = wedged_batch
+
+    def tearDown(self):
+        hle.BATCH_DB_PATH, hle.LIVE_DB_PATH, hle._connect_ro = self._orig
+        for guard, (timeout, cooldown) in zip((hle.BATCH_GUARD, hle.LIVE_GUARD),
+                                              self._orig_budgets):
+            guard.reset()
+            guard.timeout, guard.cooldown = timeout, cooldown
+        self.tmp.cleanup()
+
+    def test_wedged_batch_store_does_not_block_and_live_delta_still_answers(self):
+        _write(self.batch, [_row("gn:1", "wd:Q1", sid="never-read")])
+        _write(self.live, [_row("gn:1", "wd:Q2", sid="contributor:7")])
+
+        started = time.monotonic()
+        edges = hle.expand_hard_links(["gn:1", "wd:Q1", "wd:Q2"])
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 3.0, "the wedged store was not bounded")
+        self.assertTrue(self.entered.wait(1), "the batch store was never opened")
+        sources = {e.source for e in edges}
+        # Presence AND absence in one assertion pair: the healthy store still
+        # answered (so the harness really ran), the wedged one contributed
+        # nothing (so it really was skipped).
+        self.assertIn("contributor:7", sources)
+        self.assertNotIn("never-read", sources)
+
+    def test_wedged_store_is_reported_as_degraded_not_as_empty(self):
+        _write(self.batch, [_row("gn:1", "wd:Q1")])
+        self.assertFalse(hle.store_degraded())
+        hle.expand_hard_links(["gn:1"])
+        # The distinction the whole issue turns on: an empty edge list from an
+        # unreachable store must be distinguishable from one that holds no links.
+        self.assertTrue(hle.store_degraded())
+        stats = {s["label"]: s for s in hle.store_stats()}
+        self.assertEqual(stats["hard-link batch overlay"]["timeouts"], 1)
+        self.assertFalse(stats["hard-link live-delta"]["degraded"])
+
+    def test_second_request_costs_nothing_while_the_store_is_wedged(self):
+        _write(self.batch, [_row("gn:1", "wd:Q1")])
+        hle.expand_hard_links(["gn:1"])          # trips the breaker
+        started = time.monotonic()
+        hle.expand_hard_links(["gn:1"])          # must not pay the timeout again
+        self.assertLess(time.monotonic() - started, 0.1)
+        self.assertEqual(hle.BATCH_GUARD.stats()["short_circuits"], 1)

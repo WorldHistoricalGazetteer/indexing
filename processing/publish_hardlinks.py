@@ -4,9 +4,12 @@
 The ship-to-Pitt path in ``submit_hardlinks_slurm`` rsyncs over ssh, which
 cannot work from a CRC compute node: the Pitt VM is firewalled from them on
 **both** 9200 and 22 (verified 6 Aug 2026 — ``curl`` exit 28, ``ssh`` connect
-timeout). It is also unnecessary — ``/ix1`` is mounted on the compute nodes and
-on the VM, and ``PITT_HARDLINK_DIR`` is where the gateway reads its batch
-overlay — so publication is a rename within one filesystem.
+timeout). It is also unnecessary — the shared volume is mounted on the compute
+nodes and on the VM, and ``PITT_HARDLINK_DIR`` is where the gateway reads its
+batch overlay — so publication is a copy into that directory plus a rename
+within it. Since place#241 that directory defaults to ``/vast/ishi/hardlinks``:
+``/ix1`` is a hard mount whose wedge hung the gateway's reads, so it is out of
+the serving path.
 
 Three steps, in the same order and with the same semantics as the ssh path:
 
@@ -29,7 +32,7 @@ not have to be repeated just to publish it.
 Usage::
 
     python -m processing.publish_hardlinks --run-id <RUN_ID> \\
-        --db-path /ix1/ishi/hardlinks/hard_links_<RUN_ID>.sqlite \\
+        --db-path /vast/ishi/hardlinks/hard_links_<RUN_ID>.sqlite \\
         --cutoff 2026-08-06T18:23:55.168502+00:00 [--execute]
 """
 
@@ -46,7 +49,6 @@ from clustering.sqlite_overlay import (
     publish_local,
 )
 from processing.settings import (
-    IX1_BASE,
     IX3_BASE,
     PITT_HARDLINK_DIR,
     PITT_HARDLINK_FILENAME,
@@ -112,7 +114,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--db-path", help="Harvested overlay (default: "
-                                      "$IX1/hardlinks/hard_links_<run_id>.sqlite)")
+                                      "$IX3/hardlinks/hard_links_<run_id>.sqlite)")
     ap.add_argument("--target-dir", default=PITT_HARDLINK_DIR)
     ap.add_argument("--target-filename", default=PITT_HARDLINK_FILENAME)
     ap.add_argument("--live-db", default=DEFAULT_LIVE_DB)
@@ -124,8 +126,11 @@ def main() -> int:
                     help="Publish (default: report only)")
     args = ap.parse_args()
 
+    # Build artefacts live beside the published overlay on /vast: the harvest
+    # is a ~40-minute compute job and a wedged /ix1 would strand it too
+    # (place#241), which is why the run-scoped builds already land there.
     db_path = (Path(args.db_path) if args.db_path
-               else Path(IX1_BASE) / "hardlinks" / f"hard_links_{args.run_id}.sqlite")
+               else Path(IX3_BASE) / "hardlinks" / f"hard_links_{args.run_id}.sqlite")
 
     result = publish(
         run_id=args.run_id,

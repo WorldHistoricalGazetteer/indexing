@@ -278,7 +278,15 @@ WHG_HTTP_INITIAL_BACKOFF = float(os.getenv("WHG_HTTP_INITIAL_BACKOFF", "2.0"))
 # Pitt-side filesystem path that hosts the live SQLite hard-link database.
 # `processing/submit_hardlinks_slurm.py` ships into this directory; the
 # gateway opens `<filename>` from this directory read-only at search time.
-PITT_HARDLINK_DIR = os.getenv("PITT_HARDLINK_DIR", "/ix1/ishi/hardlinks")
+#
+# ⚠️ On `IX3_BASE` (/vast flash), NOT `IX1_BASE`, since place#241: `/ix1` is a
+# hard NFS mount, and when it wedged on 5 Sep 2026 every gateway request that
+# opened this overlay hung instead of degrading. The serving path must not
+# depend on it. `gateway.hard_link_expansion.BATCH_DB_PATH` defaults to the
+# same location and moved in the same commit — reader and writer have to change
+# together, or the gateway reads a file nobody publishes to. Compute nodes and
+# the VM both mount /vast, so `publish_local`'s copy-then-rename still works.
+PITT_HARDLINK_DIR = os.getenv("PITT_HARDLINK_DIR", f"{IX3_BASE}/hardlinks")
 PITT_HARDLINK_FILENAME = os.getenv("PITT_HARDLINK_FILENAME", "hard_links.sqlite")
 PITT_HARDLINK_REMOTE_USER = os.getenv("PITT_HARDLINK_REMOTE_USER", "")
 PITT_HARDLINK_REMOTE_HOST = os.getenv("PITT_HARDLINK_REMOTE_HOST", "")

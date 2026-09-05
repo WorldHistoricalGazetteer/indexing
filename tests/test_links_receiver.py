@@ -6,10 +6,15 @@ and ``whg3/api/crc_client.py``: idempotent INSERT OR IGNORE into a *live-delta*
 SQLite, idempotent DELETE by the UNIQUE key, and 422 on rows that violate the
 canonical hard-link contract. The live-delta path is monkeypatched to a temp file
 so the real overlay directory is never touched.
+
+Also covers the place#241 bound: a store that stops answering must produce a
+503 within seconds, not an open-ended hang.
 """
 
 from __future__ import annotations
 
+import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -47,12 +52,14 @@ class TestLinksReceiver(unittest.TestCase):
         # Point the live-delta DB at a temp file; _connect() reads this module
         # global at call time, so patching it here is sufficient.
         links.LIVE_DB_PATH = Path(self.tmp.name) / "sub" / "live.sqlite"
+        links.WRITE_GUARD.reset()
         app = FastAPI()
         app.include_router(links.router)
         self.client = TestClient(app)
 
     def tearDown(self):
         links.LIVE_DB_PATH = self._orig_path
+        links.WRITE_GUARD.reset()
         self.tmp.cleanup()
 
     def test_post_inserts_and_creates_db(self):
@@ -111,3 +118,60 @@ class TestLinksReceiver(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnresponsiveStore(unittest.TestCase):
+    """A wedged live-delta must 503, not hang the request (place#241).
+
+    ``_BUSY_TIMEOUT_MS`` bounds lock contention inside a filesystem that is
+    answering; it does nothing when the filesystem itself stops answering. The
+    guard is what covers that, and the response has to say the write was *not
+    confirmed* — an abandoned worker may still complete it — rather than that it
+    failed.
+    """
+
+    def setUp(self):
+        self._orig_budget = (links.WRITE_GUARD.timeout, links.WRITE_GUARD.cooldown)
+        links.WRITE_GUARD.reset()
+        links.WRITE_GUARD.timeout, links.WRITE_GUARD.cooldown = 0.3, 30.0
+        self.release = threading.Event()
+        self.entered = threading.Event()
+        self.addCleanup(self.release.set)
+
+        self._orig_connect = links._connect
+
+        def wedged():
+            self.entered.set()
+            self.release.wait(30)
+            raise AssertionError("unreachable in the test's lifetime")
+
+        links._connect = wedged
+        app = FastAPI()
+        app.include_router(links.router)
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        links._connect = self._orig_connect
+        links.WRITE_GUARD.reset()
+        links.WRITE_GUARD.timeout, links.WRITE_GUARD.cooldown = self._orig_budget
+
+    def test_post_returns_503_instead_of_hanging(self):
+        started = time.monotonic()
+        r = self.client.post("/api/links", json=_row())
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(r.status_code, 503)
+        self.assertLess(elapsed, 3.0, "the wedged write was not bounded")
+        self.assertTrue(self.entered.wait(1), "the store was never opened")
+        # The write is unknown, not failed — the wording must not overclaim.
+        self.assertIn("not confirmed", r.json()["detail"])
+
+    def test_delete_returns_503_instead_of_hanging(self):
+        r = self.client.request("DELETE", "/api/links", json=_KEY)
+        self.assertEqual(r.status_code, 503)
+
+    def test_validation_still_precedes_the_store(self):
+        """A 422 must not need the store — the contract check is local."""
+        r = self.client.post("/api/links", json=_row(relation_type="bogus"))
+        self.assertEqual(r.status_code, 422)
+        self.assertFalse(self.entered.is_set())

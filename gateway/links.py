@@ -57,6 +57,7 @@ from pydantic import BaseModel, Field
 from processing.staging_contract import validate_hard_link_row
 from clustering.sqlite_overlay import _INSERT_SQL, _row_tuple, initialise_schema
 
+from .bounded_io import IoGuard
 from .config import IX3_BASE
 
 logger = logging.getLogger("gateway.links")
@@ -68,17 +69,38 @@ router = APIRouter(prefix="/api", tags=["Links"])
 # Configuration
 # ---------------------------------------------------------------------------
 
-# The live-delta DB — a SECOND SQLite the batch ``ship_to_pitt`` swap never
-# touches. Defaults to fast /vast flash (``IX3_BASE``); the batch overlay lives
-# on /ix1, so this is a distinct file the batch swap never rewrites. The gateway
-# runs as ``gazetteer`` (group ``ishi``) and ``/vast/ishi`` is group-writable,
-# so ``_connect`` can create the dir + file on first use. Override per-deployment
-# via ``HARD_LINK_LIVE_DB``.
+# The live-delta DB — a SECOND SQLite the batch publish never touches. Defaults
+# to fast /vast flash (``IX3_BASE``). Since place#241 the batch overlay defaults
+# to the same directory (it moved off the hard-mounted /ix1), so the two are now
+# neighbours — but they remain distinct *files*, which is the whole point: the
+# batch publish replaces ``hard_links.sqlite`` by rename and must never rewrite
+# the file a live writer holds open. The gateway runs as ``gazetteer`` (group
+# ``ishi``) and ``/vast/ishi`` is group-writable, so ``_connect`` can create the
+# dir + file on first use. Override per-deployment via ``HARD_LINK_LIVE_DB``.
 LIVE_DB_PATH = Path(os.getenv(
     "HARD_LINK_LIVE_DB", f"{IX3_BASE}/hardlinks/hard_links_live.sqlite"))
 
 # SQLite busy timeout for the (low-volume, one-per-contributor-action) writes.
 _BUSY_TIMEOUT_MS = int(os.getenv("HARD_LINK_LIVE_BUSY_TIMEOUT_MS", "5000"))
+
+# Wall-clock bound on the whole write (mkdir + connect + schema + statement).
+# A SQLite busy timeout only bounds lock contention *inside* a responding
+# filesystem; it does nothing when the filesystem itself stops answering, which
+# is how place#241 hung the read side. ``/vast`` is flash and healthy today, but
+# "the mount is fine" is a fact about today, not a property of the code — and an
+# unbounded write here holds the request open for as long as the mount is out.
+_WRITE_TIMEOUT_S = float(os.getenv("HARD_LINK_LIVE_IO_TIMEOUT_S", "5.0"))
+_WRITE_COOLDOWN_S = float(os.getenv("HARD_LINK_LIVE_IO_COOLDOWN_S", "30.0"))
+WRITE_GUARD = IoGuard("hard-link live-delta write",
+                      timeout=_WRITE_TIMEOUT_S, cooldown=_WRITE_COOLDOWN_S)
+
+#: 503 body when the live-delta could not be reached. Deliberately does NOT say
+#: the write failed: an abandoned thread may still complete it once the mount
+#: recovers, and both statements are idempotent, so the honest report is that
+#: the outcome is unknown and the call may be retried.
+_UNAVAILABLE = ("The hard-link live-delta store did not respond within "
+                f"{_WRITE_TIMEOUT_S:.0f}s; the assertion was not confirmed. "
+                "Safe to retry — the write is idempotent.")
 
 # These rows are always contributor-sourced (the receiver only handles the
 # contributor forward path); authority links are harvested in batch, not here.
@@ -174,6 +196,20 @@ def _ensure_group_writable() -> None:
             pass
 
 
+def _guarded(fn, *args):
+    """Run one live-delta statement under the write deadline.
+
+    Raises ``HTTPException(503)`` rather than returning a default: a write that
+    could not be confirmed must not be reported to Django as a completed one.
+    """
+    outcome = WRITE_GUARD.run(fn, *args, default=None)
+    if not outcome.ok:
+        logger.warning("live-delta write unavailable (%s) after %.2fs",
+                       outcome.status, outcome.elapsed)
+        raise HTTPException(503, _UNAVAILABLE)
+    return outcome.value
+
+
 def _insert_row(row: dict) -> bool:
     """INSERT OR IGNORE one validated row. Returns True if a new row was inserted,
     False if it already existed (idempotent duplicate)."""
@@ -201,7 +237,8 @@ def _delete_row(place_a: str, place_b: str, relation_type: str, source_id: str) 
 
 
 @router.post("/links", status_code=201,
-             responses={422: {"description": "Invalid hard-link row"}})
+             responses={422: {"description": "Invalid hard-link row"},
+                        503: {"description": "Live-delta store unreachable"}})
 async def post_link(body: LinkRow) -> dict:
     """Create/publish one contributor hard-link assertion (idempotent).
 
@@ -224,14 +261,15 @@ async def post_link(body: LinkRow) -> dict:
     except ValueError as exc:
         raise HTTPException(422, str(exc))
 
-    inserted = await asyncio.to_thread(_insert_row, row)
+    inserted = await asyncio.to_thread(_guarded, _insert_row, row)
     logger.info("link %s %s %s..%s inserted=%s",
                 row["relation_type"], row["source_id"],
                 row["place_a"], row["place_b"], inserted)
     return {"inserted": inserted}
 
 
-@router.delete("/links", status_code=200)
+@router.delete("/links", status_code=200,
+               responses={503: {"description": "Live-delta store unreachable"}})
 async def delete_link(body: LinkKey) -> dict:
     """Revoke one contributor hard-link assertion by its UNIQUE key.
 
@@ -240,7 +278,8 @@ async def delete_link(body: LinkKey) -> dict:
     ``{"deleted": 0}`` with a 2xx, matching Django's best-effort contract.
     """
     deleted = await asyncio.to_thread(
-        _delete_row, body.place_a, body.place_b, body.relation_type, body.source_id)
+        _guarded, _delete_row,
+        body.place_a, body.place_b, body.relation_type, body.source_id)
     logger.info("link revoke %s %s %s..%s deleted=%s",
                 body.relation_type, body.source_id,
                 body.place_a, body.place_b, deleted)

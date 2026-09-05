@@ -33,6 +33,18 @@ into plan §1.
 Both files are opened **read-only, best-effort**: a missing / mid-swap / locked
 file is skipped, never fatal — hard-link edges are additive enrichment, exactly
 like the (soon-retired) cluster lookup.
+
+"Best-effort" now includes the failure that has no exception (place#241)
+--------------------------------------------------------------------------
+The original guard covered the failures that *raise*. A hard-mounted NFS
+filesystem that wedges does not raise: ``Path.exists()`` and ``sqlite3.connect``
+block in uninterruptible sleep and never return, so ``try/except`` never fired
+and the request hung — 45 s+ for ``include_hard_links``, and for any
+``contained_in`` scope whose container had no polygon and took the
+``linked-polygon`` co-referent path through ``gateway/spatial.py``. Every
+filesystem touch below therefore happens inside an :class:`IoGuard` deadline
+(``gateway/bounded_io.py``), and the two stores hold **separate** guards so a
+wedged batch overlay never disables a healthy live-delta.
 """
 
 from __future__ import annotations
@@ -44,7 +56,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from .config import IX1_BASE
+from .bounded_io import IoGuard, Outcome
+from .config import IX3_BASE
 from .links import LIVE_DB_PATH
 
 logger = logging.getLogger("gateway.hard_link_expansion")
@@ -54,11 +67,30 @@ logger = logging.getLogger("gateway.hard_link_expansion")
 # Configuration
 # ---------------------------------------------------------------------------
 
-# The batch overlay the clustering pipeline ships to Pitt. Matches
-# ``processing.settings.PITT_HARDLINK_DIR`` / ``PITT_HARDLINK_FILENAME``
-# (``/ix1/ishi/hardlinks/hard_links.sqlite``). Override via ``HARD_LINK_BATCH_DB``.
+# The batch overlay the clustering pipeline publishes. Matches
+# ``processing.settings.PITT_HARDLINK_DIR`` / ``PITT_HARDLINK_FILENAME``.
+# Override via ``HARD_LINK_BATCH_DB``.
+#
+# ⚠️ Defaults to ``IX3_BASE`` (/vast flash), NOT ``IX1_BASE``, since place#241:
+# ``/ix1`` is a hard NFS mount whose wedge took the serving path down with it,
+# and nothing in the query path should depend on it. The publisher default
+# (``processing.settings.PITT_HARDLINK_DIR``) moved in the same commit — reader
+# and writer must be changed together or the gateway reads a file nobody
+# updates. ``publish_local`` copies into the target dir and renames within it,
+# so the build may still land anywhere.
 BATCH_DB_PATH = Path(os.getenv(
-    "HARD_LINK_BATCH_DB", f"{IX1_BASE}/hardlinks/hard_links.sqlite"))
+    "HARD_LINK_BATCH_DB", f"{IX3_BASE}/hardlinks/hard_links.sqlite"))
+
+# Wall-clock budget for one store read (open + query + close) and how long a
+# store is skipped after it overruns. Per-store guards: a wedged overlay must
+# not disable the live-delta, which is on different storage.
+_IO_TIMEOUT_S = float(os.getenv("HARD_LINK_IO_TIMEOUT_S", "3.0"))
+_IO_COOLDOWN_S = float(os.getenv("HARD_LINK_IO_COOLDOWN_S", "60.0"))
+
+BATCH_GUARD = IoGuard("hard-link batch overlay",
+                      timeout=_IO_TIMEOUT_S, cooldown=_IO_COOLDOWN_S)
+LIVE_GUARD = IoGuard("hard-link live-delta",
+                     timeout=_IO_TIMEOUT_S, cooldown=_IO_COOLDOWN_S)
 
 # SQLite bind-variable safety: keep each IN() list well under the 999-variable
 # floor of older SQLite builds. A chunk binds 2×_ID_CHUNK vars (place_a IN … OR
@@ -102,7 +134,11 @@ def _connect_ro(path: Path) -> sqlite3.Connection | None:
     Uses a ``file:…?mode=ro`` URI so a WAL reader coexists with the live-delta's
     writer (``gateway/links.py``) and never creates the file. Any error — missing
     file, mid-atomic-swap, permissions — is logged and skipped (the edge payload
-    is best-effort enrichment)."""
+    is best-effort enrichment).
+
+    ⚠️ Both the ``exists()`` probe and the ``connect()`` can block forever on a
+    wedged hard mount, so this must only ever be called from inside an
+    :class:`~gateway.bounded_io.IoGuard` — see :func:`_read_store`."""
     if not path.exists():
         return None
     try:
@@ -132,6 +168,43 @@ def _query_touching(conn: sqlite3.Connection, ids: list[str]) -> list[tuple]:
     return rows
 
 
+def _read_store(path: Path, ids: list[str]) -> list[tuple]:
+    """Open, query and close one store — the whole filesystem interaction.
+
+    Every touch of ``path`` lives in here, and nothing else touches it, so that
+    wrapping this one call in a deadline bounds all of it. Splitting the open
+    from the query would leave the ``exists()``/``connect()`` — precisely the
+    calls that hang on a wedged mount — outside the bound.
+    """
+    conn = _connect_ro(path)
+    if conn is None:
+        return []
+    try:
+        return _query_touching(conn, ids)
+    finally:
+        conn.close()
+
+
+def _read_store_bounded(guard: IoGuard, path: Path, ids: list[str]) -> Outcome:
+    """:func:`_read_store` under ``guard``'s deadline; ``[]`` when it can't run."""
+    return guard.run(_read_store, path, ids, default=[])
+
+
+def store_degraded() -> bool:
+    """True while either hard-link store is being skipped for hanging.
+
+    Exposed so a caller can *say so* instead of reporting a store it could not
+    read as a store that held nothing — the distinction place#241 is about.
+    ``gateway/spatial.py`` uses it to qualify a failed-closed scope message.
+    """
+    return BATCH_GUARD.degraded or LIVE_GUARD.degraded
+
+
+def store_stats() -> list[dict]:
+    """Per-store guard counters (calls, timeouts, skips, stuck threads)."""
+    return [BATCH_GUARD.stats(), LIVE_GUARD.stats()]
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -157,8 +230,10 @@ def expand_hard_links(
     Edges are deduped across both stores by the overlay UNIQUE key
     ``(place_a, place_b, relation_type, source_id)``; the batch overlay wins ties
     (it is scanned first, ``setdefault`` keeps the first-seen row). Returns a
-    deterministic, sorted list. Never raises — any store error yields fewer (or
-    zero) edges.
+    deterministic, sorted list. Never raises **and never blocks indefinitely** —
+    a store that errors, is missing, or hangs (place#241) yields fewer (or zero)
+    edges within :data:`_IO_TIMEOUT_S`. Ask :func:`store_degraded` whether the
+    empty answer means "no links" or "could not read".
     """
     id_set = {pid for pid in place_ids if pid}
     if not id_set:
@@ -167,16 +242,10 @@ def expand_hard_links(
     ids = list(id_set)
     # UNIQUE-key → row, deduping the two stores. Batch overlay scanned first.
     seen: dict[tuple, tuple] = {}
-    for path in (BATCH_DB_PATH, LIVE_DB_PATH):
-        conn = _connect_ro(path)
-        if conn is None:
-            continue
-        try:
-            for row in _query_touching(conn, ids):
-                key = (row[0], row[1], row[2], row[4])  # a, b, relation_type, source_id
-                seen.setdefault(key, row)
-        finally:
-            conn.close()
+    for guard, path in ((BATCH_GUARD, BATCH_DB_PATH), (LIVE_GUARD, LIVE_DB_PATH)):
+        for row in _read_store_bounded(guard, path, ids).value:
+            key = (row[0], row[1], row[2], row[4])  # a, b, relation_type, source_id
+            seen.setdefault(key, row)
 
     in_set: list[HardLinkEdge] = []
     one_hop_edges: list[HardLinkEdge] = []

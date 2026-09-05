@@ -374,10 +374,15 @@ def publish_local(
     ``ship_to_pitt`` rsyncs over ssh, which cannot work from a CRC compute
     node: the Pitt VM is firewalled from them on **both** 9200 and 22 (verified
     6 Aug 2026 — ``curl`` exit 28, ``ssh`` connect timeout). It is also
-    unnecessary. ``/ix1`` is mounted on the compute nodes *and* on the VM, and
-    ``PITT_HARDLINK_DIR`` (``/ix1/ishi/hardlinks``) is where the gateway reads
-    its batch overlay from. The "ship" is therefore a rename within one
-    filesystem, which is exactly what the remote ``mv`` was doing anyway.
+    unnecessary. The shared volume is mounted on the compute nodes *and* on the
+    VM, and ``PITT_HARDLINK_DIR`` is where the gateway reads its batch overlay
+    from. The "ship" is therefore a copy into that directory followed by a
+    rename within it, which is exactly what the remote ``mv`` was doing anyway.
+
+    ⚠️ That directory is ``/vast/ishi/hardlinks``, not ``/ix1/ishi/hardlinks``,
+    since place#241 — ``/ix1`` is a hard NFS mount and its wedge hung every
+    gateway request that opened the overlay. Both mounts are visible from the
+    compute nodes and the VM, so only the default moved.
 
     Preserves ship_to_pitt's atomicity guarantee: the copy lands on a hidden
     ``.incoming`` path first, so a partial write can never replace the live

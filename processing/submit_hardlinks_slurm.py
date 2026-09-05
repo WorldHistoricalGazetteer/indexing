@@ -33,7 +33,7 @@ Usage::
     python -m processing.submit_hardlinks_slurm --run-id <RUN_ID> [--dry-run]
     python -m processing.submit_hardlinks_slurm --run-id <RUN_ID> \
         --pitt-user whgadmin --pitt-host pitt-vm \
-        --pitt-dir /ix1/ishi/hardlinks
+        --pitt-dir /vast/ishi/hardlinks
 """
 
 from __future__ import annotations
@@ -56,7 +56,6 @@ _CONDA_SH = os.environ.get(
 sys.path.insert(0, str(_REPO))
 
 from processing.settings import (  # noqa: E402
-    IX1_BASE,
     IX3_BASE,
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -338,7 +337,8 @@ def submit(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     if db_path is None:
-        db_path = Path(IX1_BASE) / "hardlinks" / f"hard_links_{run_id}.sqlite"
+        # /vast, not /ix1 — see place#241 and processing.settings.PITT_HARDLINK_DIR.
+        db_path = Path(IX3_BASE) / "hardlinks" / f"hard_links_{run_id}.sqlite"
     if marker_path is None:
         marker_path = Path(STAGED_RUNS_DIR) / f"{run_id}.hardlink_ship.json"
 
