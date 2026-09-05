@@ -2180,6 +2180,26 @@ so the schedule is UTC-only and will drift an hour when EDT ends on 1 November.
 `indexing-04` caught that only by comparing `next_execution_millis` across two
 policies identical but for that field.
 
+✅ **The one-number backup health check, and it is portable.**
+**`_slm/stats.total_snapshots_taken` distinguishes "backups are HAPPENING" from
+"backups are CONFIGURED", and nothing else on the cluster does.** It reads **0**
+for a cluster whose SLM is *running* but has no policy — exactly the state
+production sat in for a month while every other indicator looked healthy. No
+history needed, no interpretation.
+
+**And `prod-weekly` is now proven rather than assumed.** `indexing-04` had put the
+**aliases** `places`/`toponyms` in `config.indices` and had no evidence SLM
+resolves them, so it executed the policy by hand instead of waiting for 02:00 —
+the cost of being wrong being a weekly backup that captures nothing, discovered by
+nobody. Result: `SUCCESS`, 22/22 shards, 0 failed, ~20 s, resolved to
+`places_h3ccode-20260805t120000z` + `toponyms_temporal-20260731t160000z`,
+**incremental cost ~0 GB** (the repo stayed at 66G, fully deduplicated), and
+`total_snapshots_taken` 0 → 1. ⚠ Relevant to the standing `/vast` capacity
+constraint: a **deduplicated** weekly is nearly free; a full one would not be.
+`prod_repo` therefore now holds **two** snapshots, so staging's "latest by
+start_time" selects the weekly — no behavioural difference, both carry places
+*and* toponyms.
+
 ### 12.2 In a shared working tree, "I have not pushed yet" is not a durable fact
 
 `indexing-9c` reported seven commits awaiting authorisation to push. SG
