@@ -231,7 +231,7 @@ def cmd_pin(args) -> None:
         "tokeniser_block_sha256": _canonical_block_hash(repo / "phonetics" / "tokenise.py"),
         "hf_inference_block_sha256": _canonical_block_hash(repo / "hf" / "inference.py"),
         "checkpoint": _checkpoint_hash(Path(args.model_dir) if args.model_dir else repo / "hf"),
-        "git_commit": _git_commit(),
+        "git_commit": _git_commit(out_dir),
         "pinned_at": datetime.now(timezone.utc).isoformat(),
     }
     if pin["tokeniser_block_sha256"] != pin["hf_inference_block_sha256"]:
@@ -239,6 +239,13 @@ def cmd_pin(args) -> None:
             "ABORT: phonetics/tokenise.py and hf/inference.py carry different "
             "canonical blocks. Re-vendor before pinning — pinning a tree that is "
             "already inconsistent pins the inconsistency.")
+    if pin["git_commit"] in ("unknown", "staged-tree-no-git"):
+        raise SystemExit(
+            f"ABORT: cannot determine which commit this code came from. A pin "
+            f"whose provenance field says 'unknown' records nothing — it is the "
+            f"one field the whole run is answerable by. Write "
+            f"{out_dir / 'staged_commit.json'} with the staged sha (stage does "
+            f"this), or pin from a real checkout.")
     path = out_dir / PIN_FILE
     if path.exists():
         existing = json.loads(path.read_text())
@@ -704,7 +711,7 @@ def cmd_compute(args) -> None:
         "pinned_tokeniser_sha256": pin["tokeniser_block_sha256"],
         "checkpoint": _checkpoint_hash(model_dir),
         "pinned_checkpoint": pin["checkpoint"],
-        "git_commit": _git_commit(),
+        "git_commit": _git_commit(in_dir),
         "pinned_git_commit": pin["git_commit"],
         "seconds": round(time.time() - t0, 1),
         "written_at": datetime.now(timezone.utc).isoformat(),
@@ -717,10 +724,32 @@ def cmd_compute(args) -> None:
           f"of {len(keep):,} embedded → {final}")
 
 
-def _git_commit() -> str:
+def _git_commit(run_dir: Path | None = None) -> str:
+    """The commit this code came from — including when there is no repository.
+
+    A staged tree is an extracted archive with no `.git`, so `git rev-parse`
+    there reports the CRC checkout's HEAD if one happens to be above it, or
+    nothing at all. Either is worse than useless in a provenance record: the
+    first is confidently wrong. `stage` writes the resolved sha into
+    `staged_commit.json` beside the run, and that file is authoritative whenever
+    it exists — the commit is a property of the archive, not of wherever the
+    archive was unpacked.
+    """
+    if run_dir is not None:
+        staged = Path(run_dir) / "staged_commit.json"
+        if staged.exists():
+            try:
+                commit = json.loads(staged.read_text()).get("commit")
+                if commit:
+                    return commit
+            except (ValueError, OSError):
+                pass
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"],
-                              cwd=_repo_root(),
+        root = _repo_root()
+        if not (root / ".git").exists():
+            # An extracted archive. Saying so beats reporting an unrelated HEAD.
+            return "staged-tree-no-git"
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
                               capture_output=True, text=True, timeout=10,
                               check=True).stdout.strip()
     except Exception:
@@ -861,7 +890,7 @@ def cmd_apply(args) -> None:
         "changed_by_stratum": changed,
         "shards": metas,
         "pin": pin,
-        "git_commit": _git_commit(),
+        "git_commit": _git_commit(in_dir),
         "toponym_ids": ledger_ids,
     }
     ledger_path = in_dir / "ledger.json"

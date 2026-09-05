@@ -184,6 +184,21 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
                          else self._write_pin() and reembed.load_pin(self.dir),
                          self._write_pin())
 
+    def test_a_pin_with_no_provenance_is_refused(self):
+        """The staged tree has no .git, and a blank provenance field is worse
+        than no file: the pin is the one thing the whole run is answerable by."""
+        import unittest.mock as mock
+        with mock.patch.object(reembed, "_git_commit", return_value="unknown"):
+            with self.assertRaises(SystemExit) as ctx:
+                reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None))
+        self.assertIn("records nothing", str(ctx.exception))
+
+    def test_the_staged_commit_file_is_authoritative_over_any_repo_above_it(self):
+        # An extracted archive unpacked underneath some other checkout must
+        # report ITS OWN commit, not the unrelated HEAD it happens to sit under.
+        (self.dir / "staged_commit.json").write_text(json.dumps({"commit": "e" * 40}))
+        self.assertEqual(reembed._git_commit(self.dir), "e" * 40)
+
     def test_repinning_a_moved_tree_aborts(self):
         self._write_pin(tokeniser_block_sha256="d" * 64, hf_inference_block_sha256="d" * 64)
         with self.assertRaises(SystemExit) as ctx:
