@@ -1244,8 +1244,10 @@ quarter, or if a contributed dataset arrives in upper case.
 
 ## 7. What is now scheduled, and what is closed
 
-**SCHEDULED — D-C, the benchmark. This is the next work and the only work.**
-Nothing else in this section proceeds until it exists. Confirmed by SG 5 Sep:
+✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
+split verdict: v7 wins discrimination with a separated interval and loses
+retrieval, and one mechanism explains both. **D-D is therefore now live, and §8.6
+is the recommendation.** Confirmed by SG 5 Sep:
 *"the casefold problem can wait, let's press on with v8"*.
 
 | | status after 5 Sep |
@@ -1253,8 +1255,8 @@ Nothing else in this section proceeds until it exists. Confirmed by SG 5 Sep:
 | **D-0** bundle the tokeniser fixes | ✅ **Resolved** — into v8's re-embed, no standalone pass |
 | **D-A** NFKC + casefolding | ⏸ **Closed, waiting** — rides D-0; measured exposure ~194k of 60.1M Latin docs |
 | **D-B** CJK/Japanese romanisation policy | 🛑 **Ruled out** — "cross-script only" does not buy a `ja` kanji reading table |
-| **D-C** an evaluation that can fail | ▶ **SCHEDULED — full scope** |
-| **D-D** retrain, objective and labels | ⏸ **Gated on D-C** — but its label design is now settled (below) |
+| **D-C** an evaluation that can fail | ✅ **DONE — §8** |
+| **D-D** retrain, objective and labels | ▶ **LIVE — the gate is lifted; see §8.6** |
 | **D-E** what dimension v8 ships at | ⏸ **Unanswerable** until a v8 checkpoint exists |
 
 **D-D's labels are settled even though D-D is not taken.** "Optimise for
@@ -1538,7 +1540,147 @@ between a narrow data-hungry target and a broad one with two consumers waiting.
 *(`place#163` remains gated on `place#161` regardless; nothing here authorises
 acquiring LHPN data.)*
 
-## 8. Scale of likely improvement — and what cannot be claimed
+## 8. THE BENCHMARK RAN — a split verdict, 5 September
+
+All three gates, against **1,053,229 real names** with 8,713 queries and 148,410
+balanced pairs (`indexing-9c`). The answer is more useful than "adequate" or
+"inadequate".
+
+| gate | result |
+|---|---|
+| **1 · geometry** | **FAIL** — effective rank **11.08 of 128**, stable at 11.00/11.07/11.07/11.08 across 6k→1.05M. A property of the space, not the sample. |
+| **2 · discrimination** | **v7 WINS**, and the margin is real |
+| **3 · retrieval** | **v7 LOSES** to romanised edit distance at every k except a tie at 200 |
+
+**Discrimination** — 74,205 positives, balanced, corpus passes
+`check_negative_matching` unmodified:
+
+| scorer | AUC | AP | covered |
+|---|---|---|---|
+| **symphonym_v7** | **0.9324** | **0.9503** | 100.0% |
+| double_metaphone_romanised | 0.9063 | 0.9249 | 99.0% |
+| levenshtein_romanised | 0.9002 | 0.9257 | 100.0% |
+| jaro_winkler_romanised | 0.8918 | 0.9218 | 100.0% |
+| double_metaphone *(raw)* | 0.7160 | 0.7288 | **0.2%** |
+| levenshtein_raw | 0.5482 | 0.5632 | 100.0% |
+
+Paired bootstrap, 1,000 resamples: v7 − levenshtein_romanised **+0.0322, CI
+[+0.0306, +0.0338] — SEPARATED**. Unlike MEHDIE's 0.852-vs-0.815 inside a 3.1pp
+SE, **this margin exists**. It is also only ~3pp.
+
+**Retrieval** — 8,713 queries, pool k=200:
+
+| scorer | R@1 | R@10 | R@100 | R@200 | MRR |
+|---|---|---|---|---|---|
+| jaro_winkler_romanised | **0.0776** | 0.3146 | 0.4195 | 0.4491 | 0.1673 |
+| levenshtein_romanised | 0.0729 | **0.3230** | **0.4414** | 0.4768 | **0.1674** |
+| symphonym_v7 | 0.0662 | 0.2942 | 0.4359 | 0.4766 | 0.1461 |
+
+### 8.1 One mechanism, not three complaints
+
+**v7 separates a pair it is shown (AUC 0.932) and cannot rank a true partner out
+of a million (R@10 0.294).** That is exactly what a rank-11-of-128 space with a
+200th-neighbour cosine of 0.8627 predicts: enough structure for a pairwise
+decision, not enough to order a large candidate pool. 🛑 **The gateway's k=200
+KNN is the ranking case, so the failing metric is the operational one.**
+
+### 8.2 ✅ The density hypothesis is confirmed, quantitatively
+
+| n | 1st nbr | 200th nbr | gap |
+|---|---|---|---|
+| 6,000 | 0.8772 | 0.5666 | 0.3106 |
+| 40,000 | 0.9187 | 0.7206 | 0.1981 |
+| 200,000 | 0.9426 | 0.8036 | 0.1390 |
+| 1,053,229 | 0.9623 | 0.8627 | 0.0996 |
+
+Fitting: **gap ∝ n^−0.22, halving per ~23× of corpus.** Extrapolated to the live
+72,703,777 the gap is 0.039, implying a 200th-neighbour cosine of **~0.923** —
+against `knn_pass_quality`'s recorded *"the 200 nearest neighbours of anything sit
+above cosine 0.93"* on the live index. **The two measurements were never in
+conflict; they describe different densities.**
+
+⚠ **Consequence for the gate: a PASS on `nn_gap_min` is evidence only at the n it
+was taken at.** A small corpus understates this defect.
+
+### 8.3 🛑 A THIRD OF ONE STRATUM IS SOLVED BY CONSTRUCTION — and it corrects §4.5
+
+**35.1% of CJK↔LATIN positives (6,731 of 19,192) are byte-identical after
+romanisation**, because the Latin label was itself produced by transliteration
+upstream. On that stratum `levenshtein_romanised` scores **1.000 by
+construction** — it is a **near-oracle, not a baseline**, and the comparison is
+transliteration against transliteration.
+
+| stratum | identical after romanisation | v7 R@10 vs lev_rom |
+|---|---|---|
+| CJK ↔ LATIN | **35.1%** | −0.33 |
+| THAI ↔ LATIN | 0.3% | −0.30 |
+| CYRILLIC ↔ ARABIC | 0.1% | **+0.26 … +0.35** |
+
+**Where romanisation is LOSSY — an Arabic abjad dropping its vowels,
+`kstnw-del-rwbledw` against `kastano-del-robledo` — v7 wins by +0.26 to +0.35.**
+Its five biggest wins are CYRILLIC→ARABIC, DEVANAGARI→ARABIC, ARABIC→CYRILLIC,
+LATIN→DEVANAGARI, LATIN→TELUGU. Its five biggest losses are LATIN↔CJK,
+LATIN↔THAI, LATIN→HANGUL — **every one a script whose Latin partner label is a
+romanisation.**
+
+⚠⚠ **THIS REFUTES AN ARGUMENT THIS DOCUMENT MADE.** §4.5 inferred from a single
+hand-picked pair (`London ~ Лондон` scoring 1.000) that *"cross-script in practice
+narrows to CJK"*. **The benchmark says the opposite**: CJK is where the baseline
+is a near-oracle by artefact and v7 is *worst*; v7's value is in non-Latin ↔
+non-Latin, where romanisation loses information. A generalisation from one
+example, contradicted by 8,713 queries. **The scoping decision of 5 Sep is
+therefore better supported than §7.4 suggested — v7 demonstrably earns its place
+on cross-script pairs the baseline cannot cheat.**
+
+⚠ **Latin-involving and non-Latin↔non-Latin pairs must be reported separately.**
+A corpus-wide retrieval average is dominated by an artefact of how the labels
+were made.
+
+### 8.4 What must not be quoted without its caveat
+
+* **R@200 is ~0.48 for EVERY method**, including the oracle-ish baseline. **Half
+  the true partners are unreachable in the top 200 of a million by any technique
+  tested.** Some is exonyms, included deliberately. Nobody should read v7's
+  number as though 1.0 were attainable.
+* **The retrieval gap is ~0.03 MRR and sits inside the artefact above.** Do not
+  spend a GPU on "v7 loses retrieval" alone.
+* **The geometry result is the strongest evidence and needs no corpus at all.**
+
+### 8.5 A pipe turned SIGKILL into exit 0
+
+`np.linalg.svd` on a 1,053,229 × 128 matrix was **OOM-killed at 15 GB and the run
+reported success** — `python … | tail -50`, so the pipeline's status was `tail`'s.
+Two of three results, no output file, "completed, exit code 0". **The
+hash-of-nothing shape in a new costume**, and the fourth pipe-related failure of
+the day. Fixed by taking eigenvalues of the 128×128 Gram matrix (the squared
+singular values), verified bit-identical against the SVD at 6k and 40k rather
+than assumed.
+
+### 8.6 The recommendation D-C was built to produce
+
+**Retrain — but for the geometry, not for the retrieval number.**
+
+* The retrieval delta is ~0.03 MRR and sits inside the romanisation artefact
+  (§8.3). **It is not a reason to spend a GPU.**
+* The **rank-11-of-128** result is. It needs no corpus, it replicated across four
+  sample sizes and two independent implementations, and it is the single
+  mechanism that explains both gates: enough structure to score a pair, not
+  enough to order a pool of a million. **It is also a defect that no amount of
+  better training DATA fixes** — it is what the objective and the distillation
+  produced, so only §4.2's changes address it.
+* The measurable success criterion is therefore **effective rank ≥ 40 of 128 with
+  R@10 at or above `levenshtein_romanised` on the non-Latin↔non-Latin strata** —
+  the strata where the baseline cannot cheat. Not corpus-wide retrieval, which is
+  dominated by an artefact.
+
+⚠ **And the honest alternative, which the benchmark also supports:** if the
+operational need is *pairwise scoring* rather than *ranking a pool*, v7 is
+already ahead of every free baseline with a separated interval, and the money is
+better spent on D-0's tokeniser fixes and a transcription-convention mapping
+(§7.2) than on a retrain. **The benchmark was built to be able to say that, and
+on discrimination it does.**
+
+## 9. Scale of likely improvement — and what cannot be claimed
 
 **Package 1, measured, no retraining:** multi-word self-retrieval goes from
 65.7% to 100% by construction, and 3.86M documents move from anti-correlated to
@@ -1572,7 +1714,7 @@ are independent, and only the second is what v8 is about.**
 
 ---
 
-## 9. The pending IPA / PanPhon recomputation
+## 10. The pending IPA / PanPhon recomputation
 
 The campaign deferred recomputing IPA and PanPhon "pending any retraining".
 **Recommendation: do not recompute `panphon_embedding` at all — and do not
@@ -1598,7 +1740,7 @@ Deciding D-D before scheduling the recompute avoids paying for it twice. This is
 
 ---
 
-## 10. Housekeeping found on the way
+## 11. Housekeeping found on the way
 
 Not part of Package 1; do not fold these in.
 
