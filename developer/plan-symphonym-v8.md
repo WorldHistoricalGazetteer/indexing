@@ -1337,8 +1337,57 @@ coordinates where usable, volume + page. To be filled by a specialist:
 pair, and — for the 1,166 with usable coordinates — an anchor by which the pair
 can be *checked* rather than trusted.
 
-**Size offered:** 2,414 Chinese rows (30 sorted to the top as a pilot); a Russian
-pack of 3,535 rows in the same shape.
+**Size offered: 2,413 Chinese rows** (30 sorted to the top as a pilot) and
+**3,534 Russian** — *not* 2,414 / 3,535. Two rows were the same place recorded
+twice, byte-identical in headword, text and hierarchy, differing only in a SQLite
+rowid; the id below identified them as one thing.
+
+### The join key, and why the obvious one is wrong
+
+🛑 **Join on `id`. NEVER on `place_id`.** `place_id` is GOTW's SQLite rowid,
+carried only so *they* can join to today's working DB — a re-parse renumbers it.
+
+```
+id = sha1(volume_filename | A-Z-only headword | page_start)[:16]
+   + sha1(entry_text)[:6] + ":" + ordinal_within_entry      e.g. ee32a88eebf5cd8f23eb89:1
+```
+
+⚠ **The entry-text digest is not decoration.** The obvious key — the review
+signature `sig(volume, headword, page)` — is stable across a re-parse but **not
+unique**: the book prints the same headword twice on one page often enough to
+matter (two different `CHANG-CHU-FU`, one in Kyang-su and one in Fokyen;
+`ARCHANGEL` the city and `ARCHANGEL` the government). Measured: **13 Chinese and
+34 Russian ids collided, 94 rows.** *A key that is right 98% of the time silently
+merges two different places and nothing complains* — for a train/test split that
+is worse than an unstable key, because the contamination is invisible.
+
+### Return shape — a browser UI, not a CSV
+
+SG asked for a review UI rather than a spreadsheet, live at
+`worldhistoricalgazetteer.github.io/gazetteer-of-the-world/toponyms/`: the
+specialist **picks from places the index actually holds** near each entry's
+printed coordinates, with the 1856 entry text and a map alongside. Recognition
+rather than typing, which should raise the return rate.
+
+It exports **one JSON object with a `rows` array** (not JSONL — a browser
+download is naturally one file). Per row: `id`, `place_id`, `headword`,
+`printed_hierarchy`, `printed_variants`, `printed_lat`, `printed_lon`, `volume`,
+`page`, `coordinate_flags` (per failure mode, empty when usable), `answered`,
+`skipped`, `chosen_whg_id`, `confident`, and the three language fields. Every
+offered row is present, including untouched and unanswerable ones.
+
+⚠ **A corrupt coordinate produces a weaker row, not a wrong one.** The UI applies
+the cleaning rule at generation time, so a flagged row gets no map pin and a
+lexical-only candidate list — otherwise a bad coordinate would silently produce a
+pick-list for the wrong part of the world, which the reviewer could not detect.
+Those rows are still offered; the flags let us stratify them out.
+
+🛑 **A PARTIAL RETURN IS NOT A RANDOM SAMPLE.** The pack leads with the rows most
+likely to be answered quickly — usable coordinates, stated hierarchy, hyphenated
+transcriptions — so **early returns are systematically the easy ones**. In the
+Chinese ordering, everything before row ~1,200 is coordinate-bearing and
+everything after is not. Any figure computed on a partial return must say so, and
+must not be presented as a corpus estimate.
 
 🛑 **THE DELIVERY IS NOT AGREED, AND V8's SCHEDULE MUST NOT ASSUME IT.**
 `gotw-eb`'s own words: nothing has been sent, no specialist has committed, and
