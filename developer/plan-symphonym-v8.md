@@ -841,17 +841,86 @@ against the working tree:
 'ਲੁਧਿਆਣਾ'  Ludhiana -> OTHER        'ঢাকা'  Dhaka -> BENGALI
 ```
 
-⚠ **This is a trap, not an oversight. `GUJARATI` is in the table and `GURMUKHI`
-is not**, so anyone porting the tokeniser reads it as a bug and adds Punjabi —
-after which every Punjabi name diverges from the index. The corpus was embedded
-with Gurmukhi scoring `OTHER`, so *correct* means *identical*, as with D5.
+⚠ **D7 is not "Gurmukhi was never there" — it is "Gurmukhi WAS in the legacy
+table and the canonical table dropped it".** `hf/inference.py` at `bb50f38`
+line 179 carried `("GURMUKHI", [(0x0A00, 0x0A7F)])`. The canonical table has 19
+scripts and no such entry. whg3's pre-fix table carried it too — a faithful copy
+of the legacy one, not an independent mistake.
 
-⚠ **A differential corpus generated from the porter's OWN table cannot catch
-this** — the Gurmukhi cases would never be generated. It is only findable by
-comparing the tables themselves, or from the index's census.
+🛑 **The consequence is a second, independent defect that the tokeniser rewrite
+repaired BY ACCIDENT.** The legacy lookup was `script_to_id.get(name, 0)` — and
+**0 is LATIN's id, not a sentinel**. So a script the DETECTOR could name but the
+20-entry VOCABULARY could not represent silently became **Latin**:
+
+```
+legacy    detect('ਅੰਮ੍ਰਿਤਸਰ') -> 'GURMUKHI' -> .get('GURMUKHI', 0) -> 0  == LATIN
+canonical detect('ਅੰਮ੍ਰਿਤਸਰ') -> 'OTHER'    -> encode_script       -> 19 == OTHER
+```
+
+Twelve prod documents were identified as backfill-written by matching a
+script-id-0 recomputation at **cosine 1.0000** — an identification, not a
+similarity. Nothing in Package 1 was looking for this; it surfaced only because
+`--scope all` embedded 26.2M documents nobody thought needed embedding and twelve
+of them refused to behave. **The lesson is not that the rewrite was good — it is
+that the corpus-wide census was.**
+
+✅ **No un-rewritten population remains, verified 5 Sep: 237 of 237 real
+Gurmukhi-bearing documents from the live index match canonical `OTHER(19)`; zero
+match legacy `LATIN(0)`.** Structural, not lucky — `--scope all` examined every
+document, and a script-id change is far above the one-int8-step noise band, so
+none could have slipped past.
+
+⚠ **The trap remains for re-implementers. `GUJARATI` is in the table and
+`GURMUKHI` is not**, so a porter reads the absence as a bug and adds Punjabi.
+The corpus was embedded with Gurmukhi scoring `OTHER`, so *correct* means
+*identical*, as with D5.
+
+⚠ **Only a direct table comparison detects it, and the reason is an asymmetry
+worth internalising:**
+
+* a script **missing** from the range table is behaviourally detectable — it has
+  a vocab id, so text moves from `THAI(12)` to `OTHER(19)`;
+* a script **extra** in the range table is **invisible** — it has no vocab id, so
+  the fallback lands on `OTHER`, which is where it already was.
+
+🛑 **Two proposed mutation tests for D7 were checks that could not fail**, and
+both were proposed by people spending the day telling each other to prove a guard
+fires. "Add GURMUKHI to a copy of the table and confirm the Punjabi cases fail"
+produces **0 of 6,271 mismatches** — measured — because the vocabulary has no
+GURMUKHI key, so the id is `OTHER` either way. Use the table diff; it is proven
+to fire in both directions (`+GURMUKHI` → extra, `−THAI` → missing).
+
+⚠ A differential corpus is also blind here, but by a subtler route than "it
+generates from its own table": whg3's generated strings and ran them through the
+*canonical* Python — its **character pools simply contained zero Gurmukhi**,
+0 of 15,853 and 0 of 35. Seed such pools from the **union of both tables**.
 
 *(Naming: `indexing-57` first called this "D5". D5 was already the FB00–FB17
 precedence defect and D6 the interpreter Unicode version, so it is **D7**.)*
+
+### 5.2f Measurements that confirm the assumption they were made under
+
+Three near-misses today shared a shape more dangerous than a check that returns
+nothing: each **returned a value**, and a value is far harder to doubt than a
+blank.
+
+* **A probe default mistaken for the code's.** This session "verified" the
+  script-id fallback by running `s2i.get(name, 0)` and reported that `GURMUKHI`
+  resolves to 0 and `OTHER` to 19, therefore they differ. **The `0` was the
+  probe's own default, not the code's** — which is `get(SCRIPT_OTHER, 0)`, i.e.
+  19. It happened to reproduce the *legacy* behaviour exactly, so it read as
+  confirmation of the very thing it had assumed, and it nearly overturned a
+  correct finding *with a measurement attached*.
+* **A grep's union read as a partition** (`whg3-5b`, its own report).
+* **A caption believed over its own output.** Checking whether the legacy table
+  contained `GURMUKHI`, this session wrote a "nothing above = it doesn't" caption
+  beneath the grep — and the grep had printed the entry immediately above it.
+  The cheapest failure of the day and the least excusable: the evidence was on
+  screen.
+
+The common defence is not more care. It is to make the check's *default* and its
+*subject* impossible to confuse — read the source rather than reconstruct it, and
+never write the interpretation of a command's output above the output itself.
 
 ### 5.3c Verification design — two lessons that cost nothing to keep
 
