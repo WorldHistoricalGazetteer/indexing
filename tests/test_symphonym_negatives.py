@@ -172,6 +172,35 @@ class ExternalPositiveSourceTest(unittest.TestCase):
         self.assertTrue(all(p.script_pair[0] != p.script_pair[1] for p in cross))
         self.assertTrue(any(p.script_pair == ("LATIN", "LATIN") for p in allp))
 
+    def test_the_unanchored_census_separates_its_sources(self):
+        """MUTATION: two unanchored populations of very different quality.
+
+        Under the GOTW ingest spec the unanchored set is no longer one thing. A
+        row that never had an anchor and a row whose anchor a specialist
+        REJECTED — whose typed correction then failed re-resolution — are not
+        the same evidence: the second is a correction, i.e. one of the better
+        answers in the pack. A single scalar averages them, which is the
+        "two populations readable as one" failure the census exists to prevent.
+        """
+        never = [Positive(place_id="", namespace="lhpn", query=f"Q{i}",
+                          query_lang="cy", query_script="LATIN",
+                          partner=f"P{i}", partner_lang="en",
+                          partner_script="LATIN", source="lhpn-historic")
+                 for i in range(7)]
+        rejected = [Positive(place_id="", namespace="gotw", query=f"R{i}",
+                             query_lang="zh", query_script="LATIN",
+                             partner=f"S{i}", partner_lang="en",
+                             partner_script="LATIN",
+                             source="gotw-override-unresolved")
+                    for i in range(3)]
+        hay = HaystackIndex([{"name": f"Name{i:03d}", "lang": "en",
+                              "script": "LATIN"} for i in range(300)])
+        _, census = build_negatives(never + rejected, hay, lambda p: set(),
+                                    random.Random(0), allow_unanchored=True)
+        self.assertEqual(census["unanchored_no_exclusion"], 10)
+        self.assertEqual(census["unanchored_by_source"],
+                         {"gotw-override-unresolved": 3, "lhpn-historic": 7})
+
     def test_source_defaults_so_old_corpora_still_load(self):
         """positives.jsonl written before `source` existed must still parse."""
         old = {"place_id": "gn:1", "namespace": "gn", "query": "a",

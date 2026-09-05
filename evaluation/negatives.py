@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from evaluation.discrimination import Pair, length_band
 
@@ -161,7 +161,20 @@ def build_negatives(positives, haystack: HaystackIndex, forbidden_for,
         # Not a footnote: these are the pairs whose negatives were drawn with NO
         # co-reference exclusion, so a "negative" among them may be a genuine
         # name of the query's place and the model is penalised for being right.
+        #
+        # Broken down by source, because this population stopped being
+        # homogeneous. It used to mean one thing — "no place_id" — and under the
+        # GOTW ingest spec it will hold at least three: a row that never had an
+        # anchor, a row whose anchor was REJECTED by a specialist and whose
+        # typed correction could not be re-resolved with corroboration, and a
+        # row that re-resolved ambiguously. The middle group are corrections,
+        # i.e. the HIGHER-quality answers, so a single scalar would average the
+        # best rows in the pack together with the ones nobody could place. One
+        # count is exactly the "two populations readable as one" failure this
+        # census exists to prevent.
         "unanchored_no_exclusion": len(unanchored),
+        "unanchored_by_source": dict(
+            sorted(Counter(p.source for p in unanchored).items())),
         "negatives": sum(matched.values()),
         "unmatched_positives": sum(unmatched.values()),
         "matched_by_script_pair": dict(sorted(matched.items())),
