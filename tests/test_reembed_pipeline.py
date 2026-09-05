@@ -83,6 +83,88 @@ class TestCandidateAndControl(unittest.TestCase):
                 self.assertEqual(reembed.stratum_of(name, script), expected)
 
 
+class TestTheMaterialDifferenceCriterion(unittest.TestCase):
+    """Byte-inequality is not difference, and measuring that mattered.
+
+    The first real shard reported 1,364 documents "changed" of which 1,163
+    differed by exactly one int8 step — the index was written on different
+    hardware, so a component near a rounding boundary lands on either side of
+    it. Byte-equality would have rewritten ~85% of the population for nothing
+    and inflated the census sixfold.
+    """
+
+    def test_the_threshold_sits_in_a_measured_empty_gap(self):
+        # max|delta| == 1: 1,163 docs, cos >= 0.999876
+        # max|delta| == 2: 0 docs           <- the criterion lives here
+        # max|delta| >= 3:   201 docs, cos <= 0.996868
+        self.assertEqual(reembed.MATERIAL_DELTA, 2)
+
+    def test_one_step_of_noise_is_not_a_difference(self):
+        stored = np.zeros(128, dtype=np.int8)
+        recomputed = stored.copy()
+        recomputed[7] = 1
+        delta = int(np.abs(recomputed.astype(np.int16) - stored.astype(np.int16)).max())
+        self.assertLess(delta, reembed.MATERIAL_DELTA)
+
+    def test_a_real_tokenisation_difference_is(self):
+        # 'SO-10731' measured at max|delta| 11, cosine 0.938.
+        stored = np.zeros(128, dtype=np.int8)
+        recomputed = stored.copy()
+        recomputed[7] = 11
+        delta = int(np.abs(recomputed.astype(np.int16) - stored.astype(np.int16)).max())
+        self.assertGreaterEqual(delta, reembed.MATERIAL_DELTA)
+
+    def test_noise_on_every_component_is_still_noise(self):
+        # The criterion is max, not sum: 128 components each off by one is the
+        # same rounding story 128 times, not a different vector.
+        stored = np.zeros(128, dtype=np.int8)
+        recomputed = np.ones(128, dtype=np.int8)
+        delta = int(np.abs(recomputed.astype(np.int16) - stored.astype(np.int16)).max())
+        self.assertLess(delta, reembed.MATERIAL_DELTA)
+
+
+class TestD4NamesAreCandidates(unittest.TestCase):
+    """The predicate missed a class that `--scope all` caught in production."""
+
+    def test_digit_heavy_names_are_candidates(self):
+        # Measured differing at cosine 0.938 / 0.943 while the predicate called
+        # them non-candidates.
+        for name in ("SO-10731", "SZ-1555", "Q85423919", "GR-9408"):
+            with self.subTest(name=name):
+                self.assertTrue(reembed.is_candidate(name, "LATIN"))
+
+    def test_any_punctuation_makes_a_name_a_candidate(self):
+        # Deliberately over-inclusive: including a document that turns out to
+        # match costs one comparison; excluding one that does not costs a defect
+        # nobody looks for again.
+        for name in ("Stratford-upon-Avon", "O'Brien", "St. Ives"):
+            with self.subTest(name=name):
+                self.assertTrue(reembed.is_candidate(name, "LATIN"))
+
+    def test_combining_marks_do_not_make_a_name_a_candidate(self):
+        """A Thai vowel sign is not alphabetic but IS Thai.
+
+        It sits inside the Thai block, so the legacy detector counted it as
+        THAI exactly as the canonical one reaches THAI from the letters — the
+        two agree. Treating every non-alphabetic character as D4 would have
+        pulled most of the Thai, Devanagari and Arabic corpus into the candidate
+        set and shrunk the control that vouches for the weights.
+        """
+        for name in ("กรุงเทพ", "मुंबई", "কলকাতা", "ਅੰਮ੍ਰਿਤਸਰ"):
+            with self.subTest(name=name):
+                self.assertFalse(reembed.is_candidate(name, "THAI"))
+
+    def test_plain_names_are_still_not_candidates(self):
+        # If this ever inverts, the run embeds the whole index for nothing and
+        # the non-candidate control disappears.
+        for name in ("London", "Москва", "Αθήνα", "Gherke"):
+            with self.subTest(name=name):
+                self.assertFalse(reembed.is_candidate(name, "LATIN"))
+
+    def test_a_d4_name_is_never_a_control(self):
+        self.assertFalse(reembed.is_control("SO-10731", "LATIN"))
+
+
 class TestQuantiserMatchesTheIndexWriter(unittest.TestCase):
     def test_identical_to_update_es_on_real_embeddings(self):
         rng = np.random.default_rng(0)

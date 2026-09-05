@@ -95,6 +95,28 @@ EMBEDDING_DIM = 128
 # was written. `gateway/config.py:34` prefers the same /vast copy.
 DEFAULT_ES_PASSWORD_FILE = "/vast/ishi/es/config/elastic.password"
 
+#: A component-wise difference of 1 is quantisation noise, not a difference.
+#:
+#: Both vectors are int8 quantisations of some float32 vector. The index was
+#: written on different hardware from the one recomputing it, so fp32
+#: accumulation differs in the last bits and a component sitting near a rounding
+#: boundary lands on either side of it. That is not a defect and rewriting it
+#: would be a large pointless write to a live index.
+#:
+#: The value is not a chosen threshold — it is read off an empty gap. Over
+#: shard 0000 (283,609 documents, 1,364 differing by any amount):
+#:
+#:     max|delta| == 1   n=1,163   cosine >= 0.999876
+#:     max|delta| == 2   n=0                              <- nothing here
+#:     max|delta| >= 3   n=  201   cosine <= 0.996868
+#:
+#: Two independent statistics separate the same two populations with nothing in
+#: between: no document differs by exactly 2, and the cosine band
+#: (0.996868, 0.999876) is empty. A structural discriminator, per
+#: `~/.claude/memory/structural_beats_historical_discriminator.md`, rather than a
+#: number someone picked.
+MATERIAL_DELTA = 2
+
 #: The int8 quantisation floor. Two vectors that agree before quantisation
 #: cannot disagree by more than this after it.
 CONTROL_MIN_COSINE = 0.9996
@@ -207,7 +229,29 @@ def is_candidate(name: str, script: str | None) -> bool:
         return True
     if " " in name:
         return True
-    return unicodedata.normalize("NFC", name) != name
+    if unicodedata.normalize("NFC", name) != name:
+        return True
+    # D4. The pre-fix gateway's script detector counted EVERY character, while
+    # the canonical one counts only `str.isalpha()`, so any digit or punctuation
+    # mark shifts the balance between them and can change the script id — which
+    # changes the vector without changing a single character token.
+    #
+    # This clause was missing, and `--scope all` found it: shard 0000 turned up
+    # 'SO-10731' and 'SZ-1555' as documents that genuinely differ (cosine 0.938
+    # and 0.943, max|delta| 11 and 12) while the predicate called them
+    # non-candidates. Deliberately over-inclusive — it fires on any hyphen or
+    # apostrophe — because the cost of including a document that turns out to
+    # match is one comparison, and the cost of excluding one that does not is a
+    # defect nobody looks for again.
+    #
+    # Combining MARKS are excluded: a Thai vowel sign is not alphabetic, but it
+    # sits inside the Thai block, so the legacy detector counted it as THAI just
+    # as the canonical one reaches THAI from the letters. The two agree and
+    # 'กรุงเทพ' is not a D4 name. Digits and punctuation are the shifting class,
+    # because they fall outside every script range and the legacy detector
+    # counted them as OTHER.
+    return any(not c.isalpha() and c != " "
+               and unicodedata.category(c)[0] != "M" for c in name)
 
 
 def is_control(name: str, script: str | None) -> bool:
@@ -727,6 +771,7 @@ def cmd_compute(args) -> None:
     # non-zero count here refutes the candidate predicate itself rather than
     # reporting a repair. Expected exactly 0.
     changed_candidate = changed_non_candidate = 0
+    noise = {}
     started = datetime.now(timezone.utc).isoformat()
     t0 = time.time()
     for start in range(0, len(keep), args.batch_size):
@@ -741,7 +786,11 @@ def cmd_compute(args) -> None:
                 b = stored[i].astype(np.float32)
                 denom = float(np.linalg.norm(a) * np.linalg.norm(b)) or 1.0
                 control_cos.append(float(np.dot(a, b) / denom))
-            if not np.array_equal(quant[row], stored[i]):
+            delta = int(np.abs(quant[row].astype(np.int16)
+                                - stored[i].astype(np.int16)).max())
+            if delta and delta < MATERIAL_DELTA:
+                noise[stratum] = noise.get(stratum, 0) + 1
+            if delta >= MATERIAL_DELTA:
                 changed[stratum] = changed.get(stratum, 0) + 1
                 if is_candidate(names[i], scripts[i]):
                     changed_candidate += 1
@@ -797,6 +846,13 @@ def cmd_compute(args) -> None:
         "rows_in_shard": len(ids), "embedded": len(keep),
         "changed_total": len(diffs),
         "examined_by_stratum": examined, "changed_by_stratum": changed,
+        # Documents that differ by exactly one int8 step: quantisation noise
+        # from recomputing on different hardware, NOT rewritten. Counted so the
+        # decision to exclude them is visible and checkable rather than implied
+        # by a criterion buried in the code.
+        "noise_by_stratum": noise,
+        "noise_count": sum(noise.values()),
+        "material_delta": MATERIAL_DELTA,
         "control": control,
         "tokeniser_block_sha256": block_hash,
         "pinned_tokeniser_sha256": pin["tokeniser_block_sha256"],
@@ -811,8 +867,10 @@ def cmd_compute(args) -> None:
     for stratum in sorted(examined):
         print(f"[compute]   {stratum:<12} changed {changed.get(stratum, 0):>7,} "
               f"of {examined[stratum]:>9,} examined")
-    print(f"[compute] shard {args.shard_id:04d} done: {len(diffs):,} differences "
-          f"of {len(keep):,} embedded → {final}")
+    print(f"[compute] shard {args.shard_id:04d} done: {len(diffs):,} MATERIAL "
+          f"differences (max|delta| >= {MATERIAL_DELTA}) of {len(keep):,} embedded; "
+          f"{sum(noise.values()):,} more differ by one int8 step and are "
+          f"quantisation noise, not rewritten → {final}")
 
 
 def _git_commit(run_dir: Path | None = None) -> str:
