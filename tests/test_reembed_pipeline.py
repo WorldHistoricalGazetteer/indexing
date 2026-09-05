@@ -380,6 +380,19 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         self.assertIn("NON-CANDIDATE", buf.getvalue())
         self.assertIn("predicate is", buf.getvalue())
 
+    def test_a_smoke_test_export_cannot_be_applied(self):
+        """--limit produces a deliberately partial export. Every internal check
+        would pass on it, because it is internally consistent — it is simply a
+        sample, and applying it would repair a sample and report a run."""
+        manifest = json.loads((self.dir / "export_manifest.json").read_text())
+        manifest["partial_limit"] = 20000
+        (self.dir / "export_manifest.json").write_text(json.dumps(manifest))
+        for i in range(3):
+            self._complete_shard(i)
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.cmd_apply(self._args())
+        self.assertIn("smoke test", str(ctx.exception))
+
     def test_a_missing_export_manifest_aborts(self):
         (self.dir / "export_manifest.json").unlink()
         with self.assertRaises(SystemExit) as ctx:

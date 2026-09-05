@@ -477,7 +477,13 @@ def cmd_export(args) -> None:
     (out_dir / "export_manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"[export] done: {written_total:,} exported + {skipped_total:,} skipped "
           f"= {written_total + skipped_total:,} of {total:,} in the index")
-    if written_total + skipped_total != total:
+    if args.limit:
+        print(f"[export] --limit {args.limit:,} was set, so this export is "
+              f"DELIBERATELY partial and is a smoke test, not a run. Its manifest "
+              f"must not be used as a denominator.")
+        manifest["partial_limit"] = args.limit
+        (out_dir / "export_manifest.json").write_text(json.dumps(manifest, indent=2))
+    elif written_total + skipped_total != total:
         print(f"[export] ⚠ {total - written_total - skipped_total:,} documents were "
               f"neither exported nor skipped. The PIT may have expired mid-scroll, or "
               f"the index changed under the run. `rows` is the denominator every "
@@ -812,6 +818,11 @@ def cmd_apply(args) -> None:
                          f"finish, so the shard set is unknown and 'all shards "
                          f"applied' cannot be asserted.")
     manifest = json.loads(export_manifest.read_text())
+    if manifest.get("partial_limit"):
+        raise SystemExit(
+            f"ABORT: this export was run with --limit {manifest['partial_limit']:,} "
+            f"and covers only {manifest['rows']:,} documents. It is a smoke test. "
+            f"Applying it would repair a sample and report a run.")
     slices = manifest["slices"]
 
     missing = [i for i in range(slices) if not shard_is_complete(in_dir, "diff", i)]
