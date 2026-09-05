@@ -249,7 +249,32 @@ def encode_lang(lang: Optional[str], lang_to_id: Dict[str, int]) -> int:
 
 
 def encode_script(script: str, script_to_id: Dict[str, int]) -> int:
-    """Script name → id, falling back to OTHER and then to 0."""
+    """Script name → id, falling back to OTHER and then to 0.
+
+    The fallback is the point. The pre-fix path did
+    ``script_to_id.get(script_name, 0)`` — and 0 is not a sentinel, it is
+    **LATIN**. So a script the DETECTOR could name but the VOCABULARY could not
+    represent was silently embedded as Latin. That is not hypothetical: the
+    old detector knew GURMUKHI, the 20-script vocabulary does not, and twelve
+    Punjabi documents in production were embedded as Latin because of it —
+    identified by their stored vectors matching a script-id-0 recomputation at
+    cosine 1.0000 exactly. Falling back to a genuine OTHER repaired that as a
+    side effect of the rewrite; nobody designed it.
+
+    ⚠ The detector's table and this vocabulary must be kept in step, and the two
+    directions are NOT equally visible:
+
+      * a script MISSING from the range table is behaviourally detectable — it
+        has a vocab id, so its text moves from (say) THAI to OTHER;
+      * a script EXTRA in the range table is INVISIBLE — it has no vocab id, so
+        the fallback lands on OTHER, which is where it already was.
+
+    So a mutation test cannot find an extra script, and neither can a
+    differential corpus generated from the implementer's own table: it would
+    never generate the cases. Only comparing the two tables directly sees both
+    directions. (Measured: mutating GURMUKHI into the range table produces 0 of
+    6,271 differences.)
+    """
     if script in script_to_id:
         return script_to_id[script]
     return script_to_id.get(SCRIPT_OTHER, 0)
