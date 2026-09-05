@@ -93,6 +93,11 @@ class GeometryReport:
     nn200_cosine: float
     nn_gap: float
     thresholds: dict
+    #: "exact" or "sampled(...)". Printed, because a neighbour cosine over
+    #: 5,000 probes against 1M is a different measurement from one over every
+    #: pair of 6,000, and the two must never be compared as if they were not.
+    method: str = "exact"
+    n_probe_rows: int = 0
     failures: list = field(default_factory=list)
 
     @property
@@ -105,7 +110,9 @@ class GeometryReport:
     def summary(self) -> str:
         verdict = "PASS" if self.passed else "FAIL"
         lines = [
-            f"[geometry] {verdict} — {self.n_vectors:,} vectors of dim {self.dim}",
+            f"[geometry] {verdict} — {self.n_vectors:,} vectors of dim {self.dim}"
+            f"  [{self.method}"
+            + (f", {self.n_probe_rows:,} probe rows]" if self.method != "exact" else "]"),
             f"  effective rank   {self.effective_rank:8.2f} of {self.dim}"
             f"   (min {self.thresholds['effective_rank_min']})",
             f"  ||mean vector||  {self.mean_norm:8.4f}"
@@ -127,14 +134,34 @@ class GeometryReport:
         return "\n".join(lines)
 
 
+#: Above this many vectors the exact N x N Gram matrix is not built. At 20,000
+#: it is already 3.2 GB in float64; at 1,000,000 it would be 8 TB. Below the
+#: threshold the exact path runs, so small corpora give bit-identical answers to
+#: the ones this module has always given.
+EXACT_MAX_VECTORS = 20_000
+
+
 def measure_geometry(vectors: np.ndarray,
                      thresholds: dict | None = None,
-                     knn_k: int = 200) -> GeometryReport:
+                     knn_k: int = 200,
+                     *, probe_rows: int = 5_000, pair_samples: int = 5_000_000,
+                     seed: int = 0) -> GeometryReport:
     """Measure, judge, and say which measurement failed which threshold.
 
     ``vectors`` is (N, D); it is L2-normalised here rather than assumed to be,
     because an un-normalised input silently changes every cosine below and the
     caller's model may or may not normalise.
+
+    TWO PATHS, and the report records which one ran. Up to `EXACT_MAX_VECTORS`
+    every pair is compared. Above it the SVD and the mean vector are still exact
+    — they cost nothing on a tall matrix — while the pairwise-cosine
+    distribution comes from `pair_samples` random pairs and the neighbourhood
+    statistics from `probe_rows` random rows scored against the WHOLE corpus.
+    That last point is the one that matters: neighbourhood saturation is a
+    DENSITY effect, so it must be measured against every candidate a query would
+    really compete with. Subsampling the corpus instead of the probes would
+    understate it, and understating it is the direction that makes a bad model
+    look adequate.
     """
     th = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
     V = np.asarray(vectors, dtype=np.float64)
@@ -155,14 +182,38 @@ def measure_geometry(vectors: np.ndarray,
     ev = ev / ev.sum()
     effective_rank = float(1.0 / np.sum(ev ** 2))     # participation ratio
 
-    C = V @ V.T
-    iu = np.triu_indices(n, 1)
-    cos = C[iu]
-
-    np.fill_diagonal(C, -2.0)
-    # Partition rather than sort: only the k largest per row are needed, and at
-    # N in the tens of thousands a full sort of every row is the dominant cost.
-    part = np.partition(C, -knn_k, axis=1)[:, -knn_k:]
+    rng = np.random.default_rng(seed)
+    if n <= EXACT_MAX_VECTORS:
+        method = "exact"
+        n_probe = n
+        C = V @ V.T
+        iu = np.triu_indices(n, 1)
+        cos = C[iu]
+        np.fill_diagonal(C, -2.0)
+        # Partition rather than sort: only the k largest per row are needed, and
+        # a full sort of every row is otherwise the dominant cost.
+        part = np.partition(C, -knn_k, axis=1)[:, -knn_k:]
+    else:
+        method = f"sampled(probe_rows={probe_rows:,}, pair_samples={pair_samples:,})"
+        i = rng.integers(0, n, pair_samples)
+        j = rng.integers(0, n, pair_samples)
+        keep = i != j
+        cos = np.einsum("ij,ij->i", V[i[keep]], V[j[keep]])
+        probe = rng.choice(n, size=min(probe_rows, n), replace=False)
+        n_probe = len(probe)
+        rows = []
+        # The score block is len(block) x n float64; at n = 1M a 256-row block
+        # is 2.1 GB. Size the block to the corpus so the peak stays ~0.5 GB
+        # rather than depending on the caller's machine having headroom.
+        block_rows = max(16, min(256, int(64_000_000 / max(n, 1)) * 8 or 16))
+        for start in range(0, n_probe, block_rows):
+            block = probe[start:start + block_rows]
+            sims = V[block] @ V.T
+            # A probe row is its own nearest neighbour; mask it, not the
+            # diagonal, because `probe` indexes into the full corpus.
+            sims[np.arange(len(block)), block] = -2.0
+            rows.append(np.partition(sims, -knn_k, axis=1)[:, -knn_k:])
+        part = np.vstack(rows)
     nn1 = float(part.max(axis=1).mean())
     nn_k = float(part.min(axis=1).mean())
 
@@ -177,7 +228,7 @@ def measure_geometry(vectors: np.ndarray,
         cosine_p50=float(np.percentile(cos, 50)),
         cosine_p99=float(np.percentile(cos, 99)),
         nn1_cosine=nn1, nn200_cosine=nn_k, nn_gap=nn1 - nn_k,
-        thresholds=th,
+        thresholds=th, method=method, n_probe_rows=n_probe,
     )
 
     if rep.effective_rank < th["effective_rank_min"]:

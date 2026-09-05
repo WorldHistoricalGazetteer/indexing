@@ -100,6 +100,48 @@ class GeometryGateFiresTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             measure_geometry(_unit(rng.standard_normal((50, D))), knn_k=200)
 
+    def test_the_sampled_path_agrees_with_the_exact_one(self):
+        """The scale path is a DIFFERENT computation and must be shown to give
+        the same answer, or a 1M-vector report is not comparable with a 6k one.
+
+        Same 12,000 vectors measured both ways: exact, and forced through the
+        sampled path by lowering the threshold. The neighbourhood statistics are
+        over random probes so they will not match to the last decimal; they must
+        match to within a tolerance far tighter than any threshold in the gate.
+        """
+        from evaluation import geometry as g
+        rng = np.random.default_rng(11)
+        V = _unit(rng.standard_normal((12_000, D)))
+        exact = measure_geometry(V, knn_k=200)
+        self.assertEqual(exact.method, "exact")
+        original = g.EXACT_MAX_VECTORS
+        try:
+            g.EXACT_MAX_VECTORS = 1_000
+            sampled = measure_geometry(V, knn_k=200, probe_rows=3_000,
+                                       pair_samples=2_000_000)
+        finally:
+            g.EXACT_MAX_VECTORS = original
+        self.assertTrue(sampled.method.startswith("sampled"))
+        self.assertEqual(sampled.effective_rank, exact.effective_rank)
+        self.assertEqual(sampled.mean_norm, exact.mean_norm)
+        for a, b, tol in ((exact.cosine_p50, sampled.cosine_p50, 0.01),
+                          (exact.nn1_cosine, sampled.nn1_cosine, 0.01),
+                          (exact.nn200_cosine, sampled.nn200_cosine, 0.01)):
+            self.assertAlmostEqual(a, b, delta=tol)
+        self.assertEqual(sampled.passed, exact.passed)
+
+    def test_the_sampled_path_still_fails_a_collapsed_space(self):
+        """MUTATION through the scale path. A guard that fires only on the
+        code path used by small corpora would pass every real 1M run."""
+        from evaluation import geometry as g
+        rng = np.random.default_rng(12)
+        basis = rng.standard_normal((8, D))
+        V = _unit(rng.standard_normal((30_000, 8)) @ basis)
+        rep = measure_geometry(V, probe_rows=2_000, pair_samples=1_000_000)
+        self.assertTrue(rep.method.startswith("sampled"))
+        self.assertFalse(rep.passed)
+        self.assertLess(rep.effective_rank, DEFAULT_THRESHOLDS["effective_rank_min"])
+
     def test_every_default_threshold_has_a_mutation_that_trips_it(self):
         """The column that exposed the hole in the last fixture: for each
         threshold, name the test above that violates it. A threshold with no
