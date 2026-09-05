@@ -2182,9 +2182,49 @@ stands or falls on the temporal search filter and the clustering `s.t` fuel — 
 purposes it was written for — and on nothing else.** No future reader can reach
 for the evaluation stratum as a justification for a production write.
 
+### What the patch actually fixes — the date filter is INERT on TGN today
+
+The remaining argument for `apply` is the temporal search filter, so here is what
+that filter does on TGN **right now**, measured against production. Every TGN
+toponym carries the placeholder `{start:{latest:2026}, end:{earliest:2026}}` —
+`start.earliest`, `start.in`, `end.latest` and `end.in` are all **absent**.
+
+`_temporal_filter` (`gateway/es_helpers.py:970`) reads
+`start.earliest ?? start.in` and `end.latest ?? end.in` in **`possibly`** mode,
+with `unbounded_passes=True`. **All four are missing, so both bounds take the
+"unbounded" branch and the place passes unconditionally:**
+
+```
+window          mode          tgn places matching
+1500-1600       possibly       1,713,388   (57.3%)
+ 800- 900       possibly       1,713,375   (57.3%)
+-500- -400      possibly       1,712,676   (57.3%)
+
+1500-1600       definitely         2,126   (0.1%)
+ 800- 900       definitely         2,300   (0.1%)
+-500- -400      definitely           110   (0.0%)
+```
+
+🛑 **The count moves by 13 places between the 16th century and the 9th, and by
+712 across two and a half millennia. In the DEFAULT mode the date filter is inert
+on TGN: 1.71 M places pass every window ever asked.** Not a subtle degradation —
+the filter is present, returns results, reports no error, and **discriminates
+nothing.**
+
+⚠ **And `definitely` mode fails in the opposite direction:** `start.latest` is
+present and equals 2026, so `2026 <= end_year` is false for any historical window
+and **2.99 M TGN places are silently excluded** from every query that asks for a
+definite date. **Both modes are wrong, in opposite directions, and neither
+announces it.**
+
+**That is what the patch repairs**, for the 9,450 concepts Getty actually dates.
+It does not make TGN fully datable — it replaces "uniformly meaningless" with
+"correct where known, absent where not", which the `undated` flag already handles.
+
 ⚠ **`apply` HAS NOT BEEN RUN and is not mine to run** — it writes to the live
 `places` index and needs SG's authorisation, now on a single ground rather than
-two.
+two. **But that single ground is a live search-correctness defect, not a
+nice-to-have.**
 
 ⚠ **`indexing-9c` nearly reported the exact opposite, via today's recurring trap.**
 Its first pass used `size: 3` and returned *"Samarobriva → (no tgn attestation)"*
