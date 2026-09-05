@@ -2030,6 +2030,44 @@ lost them in ingestion*. The survey's evidence points at the former (`term_dates
 is parsed and written correctly), but that is an inference from reading the code,
 not a measurement of the dump.
 
+### ⚠ A ceiling that fixes how the result may be read — computed BEFORE it lands
+
+`indexing-9c`, deliberately in advance: **TGN holds 3,167,601 toponym entries
+across 2,991,143 places — a mean of 1.06 names per place.** The surplus over
+one-name-per-place is **176,458**, and a *pair* requires a second name, so:
+
+> 🛑 **At most 176,458 TGN places — ≤ 5.9% — can contribute a pair at all.**
+
+That is a **rigorous ceiling, not an estimate**: it holds even if every surplus
+name lands on a distinct place, and the true figure is lower wherever one place
+holds three or more.
+
+**So the dated-term count cannot be read as a yield.** The chain a dated term must
+survive:
+
+```
+dated term                                  <- ALL that 11157269 measures
+  -> on a place that has ANOTHER name       <= 176,458 places  (hard ceiling)
+  -> the other name a DIFFERENT form, not a case/diacritic variant
+  -> the date MARKING it historic, not merely recording currency
+```
+
+Each later step is multiplicative and none is measured. **The reading is fixed in
+advance: a large count is NECESSARY AND NOT SUFFICIENT; a small count is
+DECISIVE.** If it returns hundreds, that closes the question *and* explains why
+`tgn_temporal_backfill` was written and never run — a result, not a
+disappointment.
+
+🛑 **What the ceiling does NOT bound, so nobody over-reads it.** It bounds
+**pairs**, not the value of the dates. **Term-level dates on single-name places
+are still worth having for the temporal search filter — which is what the backfill
+was actually written for.** Its docstring names the search temporal filter and the
+clustering `s.t` fuel; it names no benchmark. **The backfill's own purpose is
+untouched by any of this.** What is being bounded is its usefulness as a source of
+*evaluation pairs* — a use it was never designed for and that we invented today.
+⚠ Do not let *"TGN dates are weak for v8 pairs"* propagate as *"the TGN backfill
+is pointless"*.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
