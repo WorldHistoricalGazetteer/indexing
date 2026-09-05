@@ -1874,6 +1874,67 @@ better than mine: I was guarding against a field that is EMPTY; the field is
 populated and wrong for the purpose. *"The question is not whether the flag is
 there — it is whether the thing it flags is what you mean."*
 
+## 6.6 `toponyms.timespans` is EMPTY — 0 of 51.2M, with controls
+
+🛑 **`indexing-9c` measured the field that a historic-orthography evaluation
+stratum would most naturally come from, and it holds nothing.**
+
+```
+toponyms.timespans.start.in          0    of 51,187,900 places
+toponyms.timespans.start.earliest    0
+toponyms.timespans.end.in            0
+tgn places specifically              0    of 2,991,143
+
+CONTROLS -- because a zero is a claim about a query as much as about data
+  field mapped?          YES  six leaf fields, all `long`
+  query shape works?     YES  same nested exists on toponyms.toponym_id -> 49,848,837
+  can a populated
+  timespan be seen this
+  way at all?            YES  place-level timespans.start.in -> 82,508
+```
+
+**Not an unmapped field, not a broken query shape, not a field type the query
+cannot see.** Per-toponym dating is mapped, universally empty, and would be
+detectable if present. *(Three controls for one zero — the discipline
+`filters must report their denominator` asks for.)*
+
+✅ **This settles one thing outright, for everyone:** `toponyms.timespans` **cannot
+be used as a stratification axis today**, by anyone, for any namespace. If the
+historic-orthography evaluation stratum was going to come from per-toponym dates
+already in the index, **it cannot**.
+
+### But the code to fill it already exists and has never run
+
+* `authorities/tgn-places.py:178` — *"Term-level temporal: `<term_uri>`
+  estStart/estEnd YYYY → toponym timespan"*, builds a `term_dates` map, prints a
+  dated-terms count.
+* `processing/tgn_temporal_backfill.py` — written for exactly this, `--execute`
+  gated, two-step extract/apply, patches the live index with no re-ingest. Its own
+  docstring: *"TGN ingestion used a `[2025, 2025]` placeholder for every timespan.
+  The source actually holds sparse real dates."*
+
+⚠ **THIS HAS THE EXACT SHAPE OF `update_merge` AND THE POST-REBUILD ENRICHMENT
+GAPS: code that exists, was written deliberately, and never ran.** So the
+possibility that someone tried it and found the dates too sparse to matter is
+live, and must not be assumed away.
+
+🛑 **"TGN has dated variants" is currently a claim from a DOCSTRING, not a
+measurement.** The docstring says *sparse*, and sparse could be 200 or 200,000 —
+which is the difference between an evaluation stratum and a curiosity.
+
+**Being settled now.** The `extract` step reads the release
+(`/ix1/ishi/data/authorities/tgn/explicit.zip`, 1.15 GB) and **writes a patch file
+without touching any index**, so it is a pure measurement. Submitted to Slurm as
+job **11157269** (`htc`, not the pitt VM — a full streaming parse of a 1.15 GB
+release is not VM work). **Only `extract` is being run. `apply` is NOT, and needs
+its own authorisation.**
+
+⚠ **Why this matters to the source survey handed to `gotw-eb`:** if TGN's dates
+are real and numerous, **the lead is far shorter than an external acquisition** —
+no licence conversation, no specialist time, no download. It is running an
+existing module against a release already on disk. Worth knowing *before* anyone
+opens a conversation with Getty.
+
 ## 7. What is now scheduled, and what is closed
 
 ✅ **D-C IS DONE — the benchmark ran on 5 Sep. Results in §8.** It returned a
