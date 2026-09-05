@@ -207,3 +207,61 @@ def evaluate_pairs(pairs: list[Pair], scorer, name: str,
         by_script_pair={k: _cell(np.asarray(v)) for k, v in sorted(by_sp.items())},
         by_stratum={k: _cell(np.asarray(v)) for k, v in sorted(by_st.items())},
         notes=notes)
+
+
+# ---------------------------------------------------------------------------
+# Comparing two scorers, with an interval rather than two point estimates
+# ---------------------------------------------------------------------------
+
+def paired_bootstrap_auc_delta(scores_a: np.ndarray, scores_b: np.ndarray,
+                               labels: np.ndarray, *, resamples: int = 2_000,
+                               seed: int = 0, alpha: float = 0.05) -> dict:
+    """Confidence interval on AUC(a) - AUC(b), resampling PAIRS not scorers.
+
+    Two AUCs printed side by side invite "0.9324 beats 0.9002" and cannot
+    support it: the question is whether the difference survives resampling the
+    evaluation set, and the two scorers saw the SAME pairs, so their errors are
+    correlated. Resampling the pairs once and rescoring both on that resample —
+    a paired bootstrap — keeps that correlation and gives a much tighter, and
+    honest, interval than treating the two as independent samples.
+
+    The previous ranking evidence for v7 was 0.852 against 0.815 inside a 3.1pp
+    standard error, i.e. a difference that was never shown to exist. This is the
+    function that stops that being repeated.
+    """
+    from sklearn.metrics import roc_auc_score
+
+    a = np.asarray(scores_a, dtype=np.float64)
+    b = np.asarray(scores_b, dtype=np.float64)
+    y = np.asarray(labels)
+    if not (len(a) == len(b) == len(y)):
+        raise ValueError("paired bootstrap needs the same pairs scored by both")
+    if y.min() == y.max():
+        raise ValueError("one class only — no AUC to compare")
+
+    observed = float(roc_auc_score(y, a) - roc_auc_score(y, b))
+    rng = np.random.default_rng(seed)
+    n = len(y)
+    deltas, skipped = [], 0
+    for _ in range(resamples):
+        idx = rng.integers(0, n, n)
+        yy = y[idx]
+        if yy.min() == yy.max():
+            # A resample with one class has no AUC. Counted, not silently
+            # dropped: if it happens often the interval is being computed over
+            # fewer resamples than requested and the reader should know.
+            skipped += 1
+            continue
+        deltas.append(roc_auc_score(yy, a[idx]) - roc_auc_score(yy, b[idx]))
+    d = np.asarray(deltas)
+    lo, hi = np.percentile(d, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return {
+        "delta_auc": observed,
+        "ci_low": float(lo), "ci_high": float(hi),
+        "resamples": len(d), "resamples_requested": resamples,
+        "resamples_skipped_single_class": skipped,
+        "n_pairs": int(n),
+        # The decision the whole interval exists to support, stated rather than
+        # left to a reader comparing two numbers.
+        "separated": bool(lo > 0 or hi < 0),
+    }

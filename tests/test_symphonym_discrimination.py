@@ -131,5 +131,48 @@ class DiscriminationFiresTest(unittest.TestCase):
         self.assertTrue(res.notes)
 
 
+class PairedBootstrapTest(unittest.TestCase):
+    """The comparison must be able to say NO. That is the whole point of it.
+
+    v7's existing ranking evidence is 0.852 against 0.815 inside a 3.1pp
+    standard error — a difference never shown to exist, reported as if it had
+    been. A comparison that always separates would repeat that in the other
+    direction.
+    """
+
+    @staticmethod
+    def _set(n, gap, seed):
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        y = np.r_[np.ones(n // 2), np.zeros(n // 2)].astype(int)
+        a = y * (0.6 + gap) + rng.normal(0, 0.5, n)
+        b = y * 0.6 + rng.normal(0, 0.5, n)
+        return a, b, y
+
+    def test_a_real_difference_separates(self):
+        from evaluation.discrimination import paired_bootstrap_auc_delta
+        a, b, y = self._set(20_000, 0.9, 1)
+        r = paired_bootstrap_auc_delta(a, b, y, resamples=200)
+        self.assertTrue(r["separated"])
+        self.assertGreater(r["ci_low"], 0)
+
+    def test_no_difference_does_NOT_separate(self):
+        """MUTATION: two scorers that differ only by noise. The interval must
+        straddle zero — otherwise the test manufactures findings."""
+        from evaluation.discrimination import paired_bootstrap_auc_delta
+        a, b, y = self._set(2_000, 0.0, 2)
+        r = paired_bootstrap_auc_delta(a, b, y, resamples=200)
+        self.assertFalse(r["separated"])
+        self.assertLessEqual(r["ci_low"], 0.0)
+        self.assertGreaterEqual(r["ci_high"], 0.0)
+
+    def test_single_class_is_refused_not_scored(self):
+        import numpy as np
+        from evaluation.discrimination import paired_bootstrap_auc_delta
+        with self.assertRaises(ValueError):
+            paired_bootstrap_auc_delta(np.zeros(10), np.zeros(10),
+                                       np.ones(10, dtype=int), resamples=10)
+
+
 if __name__ == "__main__":
     unittest.main()

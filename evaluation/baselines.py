@@ -32,6 +32,30 @@ a statement about the alphabet, not about edit distance.
 place-name romanises to its Chinese reading and the romanised baselines are
 wrong on ja-CJK in a way that is not the baseline's fault. Counted separately
 rather than averaged in.
+
+⚠⚠ THE ROMANISED BASELINES ARE PARTLY MEASURING THE CORPUS'S OWN PROVENANCE,
+and this is the single most important thing to know before quoting them.
+Measured on the 5 Sep 2026 corpus: **35.1% of the 19,192 CJK<->LATIN positives
+have IDENTICAL romanised forms** — `anyascii`'s pinyin reproduces the Latin
+label exactly, because that label WAS produced by transliteration upstream. On
+that stratum `levenshtein_romanised` scores 1.000 by construction and is a
+near-oracle rather than a baseline. The comparison there is transliteration
+against transliteration, not an algorithm against a model.
+
+The contrast is the evidence. Same corpus, same code:
+
+    stratum                   identical after romanisation   v7 R@10 vs lev_rom
+    CJK   <-> LATIN                  35.1% (6,731/19,192)         -0.33
+    THAI  <-> LATIN                   0.3% (4/1,586)              -0.30
+    CYRILLIC <-> ARABIC               0.1% (1/1,450)              +0.26 to +0.35
+
+Where the Latin side is a romanisation of the other side, edit distance on
+romanised forms wins. Where BOTH sides are non-Latin and romanisation is lossy —
+an Arabic abjad drops the vowels, `kstnw-del-rwbledw` against
+`kastano-del-robledo` — the model wins by a wide margin. So report
+Latin-involving and non-Latin<->non-Latin pairs SEPARATELY; a corpus-wide
+average over them is dominated by the artefact and says almost nothing about
+phonetic matching.
 """
 from __future__ import annotations
 
