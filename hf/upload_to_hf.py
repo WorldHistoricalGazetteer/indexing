@@ -14,6 +14,8 @@ Usage
     python hf/upload_to_hf.py --repo YOUR_USERNAME/symphonym-v7 --dry-run
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
