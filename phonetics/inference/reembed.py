@@ -428,10 +428,27 @@ def cmd_export(args) -> None:
 # Phase: compute  (CRC GPU — no ES)
 # ---------------------------------------------------------------------------
 
+#: sha256 of the empty string. A hash pipeline that produced NOTHING still
+#: produces this, and two broken producers agree with each other perfectly — so
+#: it is rejected by name, as its own failure, rather than being allowed to
+#: read as a version mismatch. The two need different fixes at 3am.
+SHA256_OF_NOTHING = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
 def _canonical_block_hash(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise SystemExit(
+            f"ABORT: {path} is empty. Its hash would be {SHA256_OF_NOTHING[:12]} — "
+            f"the hash of nothing — which two failed producers agree on perfectly. "
+            f"The file is missing or truncated; this is a producer failure, not a "
+            f"version mismatch.")
     block = text[text.index(BEGIN_MARKER):text.index(END_MARKER) + len(END_MARKER)]
-    return hashlib.sha256(block.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(block.encode("utf-8")).hexdigest()
+    if digest == SHA256_OF_NOTHING:
+        raise SystemExit(f"ABORT: the canonical block in {path} hashed to the hash "
+                         f"of empty input. The producer failed; do not compare it.")
+    return digest
 
 
 def verify_tokeniser(pin: dict) -> str:

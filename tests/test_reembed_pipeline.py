@@ -200,6 +200,48 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         self.assertEqual(pin["tokeniser_block_sha256"], pin["hf_inference_block_sha256"])
 
 
+class TestTheHashGuardNamesTheRightFailure(unittest.TestCase):
+    """Three ways to have the wrong tokeniser; three different fixes.
+
+    The one that matters most is empty input. `git archive HEAD file | sha256sum`
+    prints e3b0c442... — the hash of nothing — when git fails, because the pipe
+    swallows its exit code. That is the hash of an EMPTY producer, and two
+    failed producers agree with each other perfectly, so a comparison of two
+    such hashes passes while proving nothing. The guard against drift must not
+    itself fail in the direction that passes.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_constant_really_is_the_hash_of_nothing(self):
+        import hashlib
+        self.assertEqual(hashlib.sha256(b"").hexdigest(), reembed.SHA256_OF_NOTHING)
+
+    def test_an_empty_file_is_a_producer_failure_not_a_version_mismatch(self):
+        empty = self.dir / "empty.py"
+        empty.write_text("")
+        with self.assertRaises(SystemExit) as ctx:
+            reembed._canonical_block_hash(empty)
+        message = str(ctx.exception)
+        self.assertIn("hash of nothing", message)
+        self.assertNotIn("pinned to", message)   # must NOT read as drift
+
+    def test_a_file_with_no_block_is_reported_as_pre_fix_code(self):
+        prefix = self.dir / "old.py"
+        prefix.write_text("def _detect_script(t):\n    return 'LATIN'\n")
+        with self.assertRaises(ValueError):
+            reembed._canonical_block_hash(prefix)
+
+    def test_a_real_block_hashes_to_something_that_is_not_nothing(self):
+        repo = Path(reembed.__file__).resolve().parents[2]
+        digest = reembed._canonical_block_hash(repo / "phonetics" / "tokenise.py")
+        self.assertNotEqual(digest, reembed.SHA256_OF_NOTHING)
+        self.assertEqual(len(digest), 64)
+
+
 class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
