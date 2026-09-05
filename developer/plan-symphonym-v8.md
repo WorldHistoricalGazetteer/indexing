@@ -1874,10 +1874,41 @@ better than mine: I was guarding against a field that is EMPTY; the field is
 populated and wrong for the purpose. *"The question is not whether the flag is
 there — it is whether the thing it flags is what you mean."*
 
-## 6.6 `toponyms.timespans` is EMPTY — 0 of 51.2M, with controls
+## 6.6 ~~`toponyms.timespans` is EMPTY~~ — 🛑 **RETRACTED: the zero was a query bug**
 
-🛑 **`indexing-9c` measured the field that a historic-orthography evaluation
-stratum would most naturally come from, and it holds nothing.**
+🛑 **STRUCK 5 Sep. `toponyms.timespans` is populated on 23,796,980 places, not 0.**
+`indexing-9c` retracted its own measurement: `timespans` is itself **`nested`
+inside** the `toponyms` nested field, and the query used a **single** `nested` on
+`toponyms` with `exists` on `toponyms.timespans.start.in` — **the wrong nesting
+depth, which matches nothing and returns 0 without error.** Correctly:
+
+```
+start.in       1,631,485      start.latest   23,796,980
+start.earliest   118,310      end.earliest   23,622,440
+end.in           436,371      end.latest         11,553
+```
+
+⚠ **THE THREE CONTROLS COULD NOT HAVE CAUGHT IT, AND THAT IS THE LESSON.**
+`toponyms.toponym_id` (49,848,837) sits at the **`toponyms`** depth; place-level
+`timespans.start.in` (82,508) is a **different field entirely**. **Both were
+correctly addressed, so both passed while the query under test was
+mis-addressed.**
+
+> **A control at a different nesting depth from the failing query is not a
+> control.** It testifies about a different query.
+
+⚠ Worse: the audit never tested `start.latest` or `end.earliest` — **the only two
+fields TGN actually populates** — so the two that mattered were exactly the two
+omitted. *"A zero with three witnesses"* is what this session called it, and the
+witnesses were testifying about something else.
+
+**What survives is narrower, and true for a different reason:** a **uniform 2026
+placeholder** is useless as a stratification axis — not through *absence* but
+through *uniformity*. Everything below about the placeholder stands; the claim of
+emptiness does not.
+
+~~🛑 **`indexing-9c` measured the field that a historic-orthography evaluation
+stratum would most naturally come from, and it holds nothing.**~~
 
 ```
 toponyms.timespans.start.in          0    of 51,187,900 places
