@@ -1258,7 +1258,7 @@ available before the benchmark, not as current scope.**
 | **Retrain?** | **YES — retrain to fix the geometry.** | §6 "benchmark first, then decide" — the benchmark decided. |
 | **Scope** | **Add historic orthography as a SECOND target**, alongside cross-script phonetic matching. | 🛑 §6 "Historic romanisations … explicitly not v8's target". That line is now **WRONG** and is superseded here. |
 | **Welsh data (`place#161`)** | **Cleared to use.** SG: *"I've had conversations with RCAHMW and they are very happy for us to use the data. I will formalise the licence later when v8 is ready for release."* | `place#161` "paused 30 Jul, outreach drafted and never sent". |
-| **Release gating** | Push `indexing-9c`'s seven commits; fix the published `config.json` defect; settle the `path.repo` boot question; take the pinyin list GOTW is assembling. | — |
+| **Release gating** | ✅ `indexing-9c`'s commits (already pushed) · ✅ published `config.json` fixed · ⏳ `path.repo` delegated to `indexing-04` · ✅ transcription pack funded (§6.2). | — |
 
 ### What "retrain for the geometry" commits us to
 
@@ -1483,6 +1483,47 @@ and still saturate in production**. Effective rank is stable across sizes and is
 safe to quote at any *n*; the neighbourhood statistics are not. This is the
 practical form of §8.2's `n^-0.22` finding and it belongs in the gate, not just
 in the discussion.
+
+## 6.4 The published deposit is fixed — and the repo was never wrong
+
+✅ **`docuracy/symphonym-v7` `config.json` now declares `num_scripts: 20`**
+(committed via the HF web editor, 5 Sep; SG authenticated, the edit and commit
+were made from this session).
+
+**The repo was already correct**, which is worth stating because the obvious
+assumption — that a published/repo divergence means the repo drifted — was wrong
+here. Verified before touching anything:
+
+```
+hf/vocab/script_vocab.json   script_to_id      20 entries
+hf/config.json               num_scripts       20
+hf/model.safetensors         script_embed.weight  [20, 16]
+PUBLISHED config.json        num_scripts       25   <- the only divergence
+```
+
+A **whole-file** diff, not a spot check: the published file differed from the repo
+copy in **exactly one field**, and the published file **contradicted itself** —
+its own `g2p.scripts_covered` already said `20`. Anyone building
+`UniversalEncoder` from the published config alone would allocate a 25-row script
+embedding and then fail to load the checkpoint, or silently mis-shape it.
+
+**Verified after committing by re-fetching the raw file**, not by trusting the
+editor: the published `config.json` is now **byte-identical** to `hf/config.json`
+and parses. The commit changed no weights and no vocabulary.
+
+🛑 **A SECOND DEFECT IS STILL LIVE IN BOTH COPIES, and was deliberately not fixed
+in the same commit** (it was outside what was authorised). The `index` block
+reports:
+
+```
+"total_toponyms": 66924548      live index: 72,703,777
+"embedding_coverage": 1.0
+```
+
+Since the two files are now byte-identical, **this is wrong in the repo and on the
+deposit equally**. It is §11's standing item — *date it or derive it* — and it
+needs a decision rather than a value, because a hard-coded count is stale the
+moment the next re-ingest runs.
 
 ## 7. What is now scheduled, and what is closed
 
