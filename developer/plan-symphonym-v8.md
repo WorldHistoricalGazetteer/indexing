@@ -1416,8 +1416,27 @@ admin names have been tested — but it is the number that belongs in a scope
 conversation, and it is an order of magnitude above the figure that prompted the
 de-scoping.
 
-🛑 **The cheaper lever is a rule-based transcription-convention mapping, not a
-model.** `‑hyen`/`‑heen` → xian, `‑fu` → fu, `keang` → jiang, `‑pih` → bei,
+🛑 **TESTED AND REFUTED, 5 Sep — do not carry this as an open recommendation.**
+`gotw-eb` built and measured the rule-based mapping this section proposed, and it
+does not survive:
+
+* **It is not Wade-Giles.** WG renders Jiangsu *Chiang-su*; the 1856 book prints
+  *Keang-su*. Wade's syllabary **postdates the edition**, so a standard WG table
+  maps none of the corpus's forms.
+* **The regular pattern is administrative generics, not syllables** — `-heen`/
+  `-hyen` xian 368, `-chu` zhou 229, `-fu` 212, `-ting` 60 = **36% of Chinese
+  headwords**. Stripping them measured **1 better / 8 equal / 0 worse** on a
+  nine-case test, with nearly everything at confidence 22 in both columns. **It
+  changes which wrong answer you get.**
+
+⚠ **This was the only "cheap lever" this document identified, and a consumer
+tested it to destruction within hours.** The text below is kept because the
+*reasoning* about variant economics is still sound and may apply to a different
+transformation — but the specific proposal is dead, and §7 decision C should be
+read as "is there a lever at all", not "build this one".
+
+**The original recommendation, retained for its reasoning:** a rule-based
+transcription-convention mapping, not a model. `‑hyen`/`‑heen` → xian, `‑fu` → fu, `keang` → jiang, `‑pih` → bei,
 emitted as additional `variants`. The economics are the gateway's own
 `derive_name_forms`: a variant is scored at `VARIANT_SCORE_WEIGHT` and folded
 into the same pool, **so a wrong derived form costs almost nothing while a right
@@ -1482,6 +1501,32 @@ experiment, not a production one.**
 59.8 gb → 49.8 gb during the backup window. Not loss — `docs.count` identical at
 72,703,777, `docs.deleted` 292,493, 38 background merges reclaiming deletes left
 by the re-embed. Heap 33% of 28 gb, so not a repeat of the HNSW merge OOM.*
+
+### 7.2b The real gap is evaluation, not transformation
+
+`gotw-eb`'s conclusion after testing four China proposals — alias table, generic
+stripping, radial pass, containment rejection — is worth more than any of them:
+**every one was assessed with proxies (confidence, hit counts, containment
+agreement), none of which measures correctness.** That is why it could not tell
+whether its own 150 → 86 was a loss or a gain, and why `Tang-Tu-Heen → Gushu`
+(Gushu being Dangtu's county seat, so arguably right) scored as a non-event.
+
+It is building a **hand-adjudicated set of Chinese places labelled with a correct
+WHG id or an explicit "absent from the index"**, with labels drawn from evidence
+**independent of the index** — the book's own printed coordinates and printed
+variant forms — so it cannot be circular.
+
+🛑 **The "absent" labels matter directly to v8.** §8's retrieval run found
+**R@200 ≈ 0.48 for every method tested**, including a near-oracle baseline: half
+the true partners unreachable in the top 200 of a million by *any* technique.
+**We cannot currently separate model failure from absent documents.** That set
+would convert §7.1's ceiling from an inference into a measurement, and it is the
+single most useful external contribution to the benchmark on offer.
+
+⚠ Note the shape it shares with our own labelling problem: we had to reject
+Epitran as a positive-pair labeller because it is v7's own front end (§6 D-0
+notes), i.e. the label would have sat inside the thing measured. Independence of
+the labeller is the property both efforts had to fight for.
 
 ### 7.4 place#163 — and a reason to re-examine the scoping decision
 
