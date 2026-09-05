@@ -57,7 +57,7 @@ set -u
 
 cd /vast/ishi/elastic
 
-python -u -m phonetics.inference.reembed compute \
+python -u -m processing.reembed compute \
     --in-dir "${RUN_DIR}" \
     --shard-id "${SHARD}" \
     --device cuda \

@@ -1,6 +1,6 @@
 """The canonical re-embed pipeline's gates — the parts that can be tested on a laptop.
 
-`phonetics/inference/reembed.py` recomputes 72.7M vectors on the preempt
+`processing/reembed.py` recomputes 72.7M vectors on the preempt
 partition and writes the differing ones back to a live index. Almost none of
 that can be exercised here, so these tests cover the parts where being wrong is
 silent: which names are candidates and which are controls, that the quantiser
@@ -26,7 +26,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from phonetics.inference import reembed
+from processing import reembed
 from phonetics.inference.update_es import quantize_embeddings_to_bytes
 
 
@@ -193,7 +193,7 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
     def test_pinning_the_real_tree_records_the_shipped_tokeniser(self):
         reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None))
         pin = reembed.load_pin(self.dir)
-        repo = Path(reembed.__file__).resolve().parents[2]
+        repo = Path(reembed.__file__).resolve().parents[1]
         self.assertEqual(pin["tokeniser_block_sha256"],
                          reembed._canonical_block_hash(repo / "phonetics" / "tokenise.py"))
         # The whole point: the two copies agree, and the run says WHICH one.
@@ -236,7 +236,7 @@ class TestTheHashGuardNamesTheRightFailure(unittest.TestCase):
             reembed._canonical_block_hash(prefix)
 
     def test_a_real_block_hashes_to_something_that_is_not_nothing(self):
-        repo = Path(reembed.__file__).resolve().parents[2]
+        repo = Path(reembed.__file__).resolve().parents[1]
         digest = reembed._canonical_block_hash(repo / "phonetics" / "tokenise.py")
         self.assertNotEqual(digest, reembed.SHA256_OF_NOTHING)
         self.assertEqual(len(digest), 64)
@@ -248,17 +248,24 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
         (self.dir / "export_manifest.json").write_text(json.dumps(
-            {"index": "toponyms", "slices": 3, "rows": 30, "index_total": 30}))
+            {"index": "toponyms", "slices": 3, "rows": 30, "skipped": 0,
+             "index_total": 30}))
         (self.dir / reembed.PIN_FILE).write_text(json.dumps(
             {"tokeniser_block_sha256": "a" * 64, "hf_inference_block_sha256": "a" * 64,
              "checkpoint": "ckpt", "git_commit": "c" * 40}))
 
-    def _complete_shard(self, i, tokeniser="a" * 64, checkpoint="ckpt"):
+    def _complete_shard(self, i, tokeniser="a" * 64, checkpoint="ckpt",
+                        examined=10, changed=1, non_candidate_changed=0):
         final, _, done = reembed.shard_paths(self.dir, "diff", i)
         final.write_bytes(b"")
         done.write_text(json.dumps({
-            "shard": i, "changed_total": 1, "examined_by_stratum": {"control": 10},
-            "changed_by_stratum": {"control": 1},
+            "shard": i, "shard_id": i, "status": "complete",
+            "changed_total": changed, "examined_count": examined,
+            "changed_count": changed, "changed_candidate": changed - non_candidate_changed,
+            "changed_non_candidate": non_candidate_changed,
+            "attempt": 0, "tokeniser_sha256": tokeniser,
+            "examined_by_stratum": {"control": examined},
+            "changed_by_stratum": {"control": changed},
             "tokeniser_block_sha256": tokeniser, "checkpoint": checkpoint}))
 
     def _args(self, **over):
@@ -295,6 +302,33 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         for i in range(3):
             self._complete_shard(i)
         reembed.cmd_apply(self._args())   # dry-run: no ES client is built
+
+    def test_a_double_counted_shard_aborts(self):
+        """Every shard present and the denominator still wrong.
+
+        On preempt a requeued task is routine; a task that completed twice and
+        was recorded once inflates `examined` while leaving `changed` correct,
+        so the run reads MORE complete than it is. No ratio-based check can see
+        that — only the absolute denominator.
+        """
+        for i in range(3):
+            self._complete_shard(i, examined=20)   # 60 examined, export wrote 30
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.cmd_apply(self._args())
+        self.assertIn("counted twice", str(ctx.exception))
+
+    def test_a_changed_non_candidate_is_reported_as_a_refuted_predicate(self):
+        # A non-candidate CANNOT change: it tokenises identically under both
+        # encoders. One that did means the predicate is wrong, not that a
+        # document was repaired.
+        for i in range(3):
+            self._complete_shard(i, non_candidate_changed=1)
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            reembed.cmd_apply(self._args())
+        self.assertIn("NON-CANDIDATE", buf.getvalue())
+        self.assertIn("predicate is", buf.getvalue())
 
     def test_a_missing_export_manifest_aborts(self):
         (self.dir / "export_manifest.json").unlink()

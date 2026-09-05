@@ -17,6 +17,12 @@ The question it asks is structural, not historical — *does this document's
 stored vector match what the canonical tokeniser produces for its name?* — so it
 needs no provenance field and cannot be fooled by a missing one.
 
+It lives in `processing/` and not in `phonetics/inference/` for a reason that is
+not filing: `phonetics/inference/__init__.py` imports `ToponymEncoder`, which
+imports **torch**, and the export and apply phases run on **pitt**, which has no
+torch and no conda env. A module in that package cannot be imported on the host
+where two of its three phases must run.
+
 Three phases, bridged by `/vast`, because prod ES is firewalled to **pitt**'s
 localhost while the GPUs are on **CRC** and neither host can reach the other's
 services:
@@ -56,15 +62,15 @@ Correctness gates — each has already caught something real
 Usage
 -----
     # 1. on pitt — reads prod ES, writes /vast
-    python -m phonetics.inference.reembed export \
+    python -m processing.reembed export \
         --es-host http://localhost:9201 --out-dir /vast/ishi/reembed/<run-id> --slices 64
 
     # 2. on a CRC GPU node, as a job array (see processing/reembed_canonical.sbatch)
-    python -m phonetics.inference.reembed compute \
+    python -m processing.reembed compute \
         --in-dir /vast/ishi/reembed/<run-id> --shard-id $SLURM_ARRAY_TASK_ID --device cuda
 
     # 3. on pitt — writes prod ES (dry-run by default)
-    python -m phonetics.inference.reembed apply \
+    python -m processing.reembed apply \
         --es-host http://localhost:9201 --in-dir /vast/ishi/reembed/<run-id> \
         --throttle 0.3 --execute
 """
@@ -199,7 +205,7 @@ PIN_FILE = "pin.json"
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[1]
 
 
 def cmd_pin(args) -> None:
@@ -298,7 +304,7 @@ def cmd_stage(args) -> None:
     # copy the PYTHONPATH happened to find, which is the shared working tree,
     # which is the thing staging exists to escape. Caught here rather than as an
     # ImportError on a GPU node an hour later.
-    for required in ("phonetics/inference/reembed.py", "phonetics/tokenise.py",
+    for required in ("processing/reembed.py", "phonetics/tokenise.py",
                      "hf/inference.py"):
         if not (code_dir / required).exists():
             raise SystemExit(
@@ -350,7 +356,7 @@ def cmd_export(args) -> None:
 
     pit = es.open_point_in_time(index=args.index, keep_alive=args.keep_alive)
     pit_id = pit["id"]
-    written_total = 0
+    written_total = skipped_total = 0
     try:
         for slice_id in range(args.slices):
             if shard_is_complete(out_dir, "shard", slice_id):
@@ -359,6 +365,7 @@ def cmd_export(args) -> None:
             final, temp, done = shard_paths(out_dir, "shard", slice_id)
             t0 = time.time()
             rows, written = [], 0
+            skipped_no_name = skipped_bad_vector = 0
             writer = pq.ParquetWriter(temp, schema, compression="zstd")
             try:
                 search_after = None
@@ -384,8 +391,17 @@ def cmd_export(args) -> None:
                         src = hit.get("_source", {})
                         name = src.get("name") or ""
                         emb = src.get("embedding")
-                        if not name.strip() or not emb or len(emb) != EMBEDDING_DIM:
-                            continue  # nothing to compare against
+                        # Counted, never silently dropped: `examined` downstream
+                        # is only a denominator if what fell out of it is known.
+                        # Measured 5 Sep 2026, both are 0 index-wide — which is
+                        # why the identity below has to be asserted rather than
+                        # assumed to stay true.
+                        if not name.strip():
+                            skipped_no_name += 1
+                            continue
+                        if not emb or len(emb) != EMBEDDING_DIM:
+                            skipped_bad_vector += 1
+                            continue
                         rows.append((hit["_id"], name, src.get("lang") or "und",
                                      src.get("script") or "", emb))
                     if len(rows) >= args.flush_rows:
@@ -405,10 +421,13 @@ def cmd_export(args) -> None:
                 writer.close()
             _finish_shard(final, temp, done, {
                 "slice": slice_id, "of": args.slices, "rows": written,
+                "skipped_no_name": skipped_no_name,
+                "skipped_bad_vector": skipped_bad_vector,
                 "index": args.index, "seconds": round(time.time() - t0, 1),
                 "written_at": datetime.now(timezone.utc).isoformat(),
             })
             written_total += written
+            skipped_total += skipped_no_name + skipped_bad_vector
             print(f"[export]   shard {slice_id:04d}: {written:,} rows "
                   f"({time.time() - t0:.0f}s)", flush=True)
     finally:
@@ -417,11 +436,20 @@ def cmd_export(args) -> None:
         except Exception as exc:  # a leaked PIT expires on its own
             print(f"[export] warning: could not close PIT ({exc})")
 
-    (out_dir / "export_manifest.json").write_text(json.dumps({
+    manifest = {
         "index": args.index, "slices": args.slices, "rows": written_total,
-        "index_total": total, "completed_at": datetime.now(timezone.utc).isoformat(),
-    }, indent=2))
-    print(f"[export] done: {written_total:,} rows of {total:,} in the index → {out_dir}")
+        "skipped": skipped_total, "index_total": total,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (out_dir / "export_manifest.json").write_text(json.dumps(manifest, indent=2))
+    print(f"[export] done: {written_total:,} exported + {skipped_total:,} skipped "
+          f"= {written_total + skipped_total:,} of {total:,} in the index")
+    if written_total + skipped_total != total:
+        print(f"[export] ⚠ {total - written_total - skipped_total:,} documents were "
+              f"neither exported nor skipped. The PIT may have expired mid-scroll, or "
+              f"the index changed under the run. `rows` is the denominator every "
+              f"downstream count is checked against, so this must be explained "
+              f"before compute starts.")
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +627,12 @@ def cmd_compute(args) -> None:
     print(f"[compute]   embedding {len(keep):,} of {len(ids):,} (scope={args.scope})")
 
     diffs, examined, changed, control_cos = [], {}, {}, []
+    # Broken out because the non-candidates are a TEST, not padding: a document
+    # that tokenises identically under both encoders cannot change, so any
+    # non-zero count here refutes the candidate predicate itself rather than
+    # reporting a repair. Expected exactly 0.
+    changed_candidate = changed_non_candidate = 0
+    started = datetime.now(timezone.utc).isoformat()
     t0 = time.time()
     for start in range(0, len(keep), args.batch_size):
         idx = keep[start:start + args.batch_size]
@@ -614,6 +648,10 @@ def cmd_compute(args) -> None:
                 control_cos.append(float(np.dot(a, b) / denom))
             if not np.array_equal(quant[row], stored[i]):
                 changed[stratum] = changed.get(stratum, 0) + 1
+                if is_candidate(names[i], scripts[i]):
+                    changed_candidate += 1
+                else:
+                    changed_non_candidate += 1
                 diffs.append((ids[i], quant[row].tolist()))
         if start and start % (args.batch_size * 50) == 0:
             print(f"[compute]   {start:,}/{len(keep):,} "
@@ -634,6 +672,29 @@ def cmd_compute(args) -> None:
         schema=schema)
     pq.write_table(table, temp, compression="zstd")
     meta = {
+        # Flat scalars first: a verifier should not have to sum a dict to learn
+        # whether a shard ran, and these are the fields that cannot be
+        # reconstructed after the fact.
+        "shard_id": args.shard_id,
+        "status": "complete",
+        "examined_count": len(keep),
+        "changed_count": len(diffs),
+        "changed_candidate": changed_candidate,
+        "changed_non_candidate": changed_non_candidate,
+        "tokeniser_sha256": block_hash,
+        # SLURM_RESTART_COUNT is how many times Slurm requeued THIS task. On
+        # preempt a non-zero value is routine, not a fault — but without it a
+        # shard that ran twice and was recorded once is indistinguishable from
+        # one that ran once, and a double-run inflates the denominator while
+        # leaving the changed count right, so the run reads MORE complete than
+        # it is.
+        "attempt": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
+        "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID", ""),
+        "hostname": os.uname().nodename,
+        "started_utc": started,
+        "finished_utc": datetime.now(timezone.utc).isoformat(),
+        "output_path": str(final),
         "shard": args.shard_id, "scope": args.scope,
         "rows_in_shard": len(ids), "embedded": len(keep),
         "changed_total": len(diffs),
@@ -659,7 +720,7 @@ def cmd_compute(args) -> None:
 def _git_commit() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"],
-                              cwd=Path(__file__).resolve().parents[2],
+                              cwd=_repo_root(),
                               capture_output=True, text=True, timeout=10,
                               check=True).stdout.strip()
     except Exception:
@@ -724,6 +785,23 @@ def cmd_apply(args) -> None:
     # run that writes only differences, so an empty shard is named rather than
     # summed away. The pin makes the wrong-code cause impossible; this makes the
     # remaining causes visible.
+    examined_total = sum(m["examined_count"] for m in metas)
+    expected = manifest["rows"]
+    if len(metas) == slices and examined_total != expected:
+        raise SystemExit(
+            f"ABORT: shards examined {examined_total:,} documents but the export "
+            f"wrote {expected:,}. Every shard is present, so this is not "
+            f"truncation — a shard has been counted twice (check `attempt` in the "
+            f"shard metas) or a shard read a file it did not write.")
+    non_candidate_changed = sum(m.get("changed_non_candidate", 0) for m in metas)
+    if non_candidate_changed:
+        print(f"[apply] ⚠ {non_candidate_changed:,} NON-CANDIDATE documents changed. "
+              f"Expected exactly 0: those names tokenise identically under both "
+              f"encoders, so they cannot change. Either the candidate predicate is "
+              f"wrong — and so is the 46,483,973 figure derived from it — or this "
+              f"run touched documents it had no business touching. Those are "
+              f"different diagnoses; do not apply until you know which.")
+
     empty = [m["shard"] for m in metas if m["changed_total"] == 0]
     print(f"[apply] {len(metas)} of {slices} shards; {total:,} documents differ")
     if empty:
@@ -775,6 +853,10 @@ def cmd_apply(args) -> None:
         "applied_at": now,
         "documents_updated": ok,
         "errors": errs,
+        "examined_total": examined_total,
+        "export_rows": expected,
+        "changed_candidate": sum(m.get("changed_candidate", 0) for m in metas),
+        "changed_non_candidate": non_candidate_changed,
         "examined_by_stratum": examined,
         "changed_by_stratum": changed,
         "shards": metas,
