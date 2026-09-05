@@ -67,10 +67,9 @@
   },
 
   "index": {
-    "total_toponyms": 66924548,
-    "embedding_coverage": 1.0,
     "quantization": "int8",
-    "ann_backend": "elasticsearch_hnsw"
+    "ann_backend": "elasticsearch_hnsw",
+    "_note": "total_toponyms, embedding_coverage, as_of and measured_from are DERIVED FROM THE LIVE INDEX by hf/upload_to_hf.py at publish time and are absent here deliberately. A hard-coded count is stale from the next re-ingest onwards: this file carried 66924548 at 100% coverage against a live 72703777."
   }
 }
 
