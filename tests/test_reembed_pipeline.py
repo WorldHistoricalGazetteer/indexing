@@ -18,6 +18,7 @@ does not fire on the good one. A gate that only ever passes is not a gate.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unicodedata
 import unittest
@@ -121,6 +122,29 @@ class TestShardsAreAtomic(unittest.TestCase):
         final, temp, done = reembed.shard_paths(self.dir, "shard", 7)
         final.write_text("looks finished")
         self.assertFalse(reembed.shard_is_complete(self.dir, "shard", 7))
+
+    def test_two_processes_do_not_share_a_temp_path(self):
+        """A requeued task can race the original on the same shard.
+
+        With one temp path per shard they would interleave writes and both
+        rename, leaving a file that is present, non-empty, marked done and
+        corrupt — worse than either task failing.
+        """
+        import unittest.mock as mock
+        _, temp_a, _ = reembed.shard_paths(self.dir, "diff", 7)
+        with mock.patch.dict(os.environ, {"SLURM_JOB_ID": "9999999"}):
+            _, temp_b, _ = reembed.shard_paths(self.dir, "diff", 7)
+        self.assertNotEqual(temp_a, temp_b)
+
+    def test_the_final_and_done_paths_are_stable_across_processes(self):
+        # Only the temp may vary: a shard's identity must not depend on which
+        # process wrote it, or resume would never find completed work.
+        import unittest.mock as mock
+        final_a, _, done_a = reembed.shard_paths(self.dir, "diff", 7)
+        with mock.patch.dict(os.environ, {"SLURM_JOB_ID": "9999999"}):
+            final_b, _, done_b = reembed.shard_paths(self.dir, "diff", 7)
+        self.assertEqual(final_a, final_b)
+        self.assertEqual(done_a, done_b)
 
     def test_finishing_renames_and_marks(self):
         final, temp, done = reembed.shard_paths(self.dir, "shard", 7)

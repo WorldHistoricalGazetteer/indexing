@@ -164,7 +164,14 @@ def shard_paths(base: Path, kind: str, shard_id: int) -> tuple[Path, Path, Path]
     final file would be silently adopted as complete.
     """
     final = base / f"{kind}_{shard_id:04d}.parquet"
-    return final, final.with_suffix(".parquet.tmp"), final.with_suffix(".done")
+    # The temp name is UNIQUE PER PROCESS, not per shard. Two tasks working the
+    # same shard at once — a requeued task racing the original, or a manual
+    # resubmission overlapping a running array — would otherwise interleave
+    # writes into one temp path and then both rename it. The result is a file
+    # that is present, non-empty, carries a .done marker and is corrupt, which
+    # is worse than either task simply failing.
+    temp = base / f".{kind}_{shard_id:04d}.{os.getpid()}.{os.environ.get('SLURM_JOB_ID', 'local')}.tmp"
+    return final, temp, final.with_suffix(".done")
 
 
 def shard_is_complete(base: Path, kind: str, shard_id: int) -> bool:
