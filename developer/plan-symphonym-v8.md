@@ -2227,11 +2227,29 @@ the cost of being wrong being a weekly backup that captures nothing, discovered 
 nobody. Result: `SUCCESS`, 22/22 shards, 0 failed, ~20 s, resolved to
 `places_h3ccode-20260805t120000z` + `toponyms_temporal-20260731t160000z`,
 **incremental cost ~0 GB** (the repo stayed at 66G, fully deduplicated), and
-`total_snapshots_taken` 0 → 1. ⚠ Relevant to the standing `/vast` capacity
-constraint: a **deduplicated** weekly is nearly free; a full one would not be.
-`prod_repo` therefore now holds **two** snapshots, so staging's "latest by
-start_time" selects the weekly — no behavioural difference, both carry places
-*and* toponyms.
+`total_snapshots_taken` 0 → 1. `prod_repo` therefore now holds **two** snapshots,
+so staging's "latest by start_time" selects the weekly — no behavioural
+difference, both carry places *and* toponyms.
+
+🛑 **SNAPSHOTS DO NOT TOUCH `/vast`, and an earlier draft of this paragraph said
+they bore on the `/vast` capacity constraint. They do not.** `prod_repo` is at
+`/ix1/ishi/es/snapshots/prod`, read from the live registration rather than from
+notes:
+
+```
+/ix1/ishi   5.0T  3.3T used  1.8T avail  66%   <- snapshots live HERE
+/vast/ishi  1.0T   799G used   226G avail 78%   <- ES data; untouched by snapshots
+```
+
+⚠ **The drift is the lesson, not the fact.** This session stated it *correctly*
+earlier the same day — *"Both repos are on /ix1, not /vast — so this does NOT
+consume the /vast headroom that prod ES needs"* — and then restated it from
+memory hours later as its opposite, carrying the authority of having been said
+before. `/vast` at 78% with 226 G free **is** genuinely tight and worth watching;
+it is just not what backup sizing bears on, and **pointing backup sizing at the
+wrong volume is how a real `/vast` problem gets attributed to a harmless one.**
+Caught by `indexing-04`, which re-read the registration instead of either
+session's notes. See `~/.claude/memory/claims-in-transit.md`.
 
 ### 12.2 In a shared working tree, "I have not pushed yet" is not a durable fact
 
