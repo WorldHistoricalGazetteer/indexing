@@ -37,8 +37,9 @@ import torch
 import torch.nn.functional as F
 
 from phonetics.models.models import UniversalEncoder, create_student
+from phonetics.tokenise import tokenise
 from phonetics.vocab.char_vocab import CharacterVocabulary, ScriptVocabulary, LanguageVocabulary
-from phonetics.utils.script_detection import Script, detect_script
+from phonetics.utils.script_detection import Script
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,15 @@ class ToponymEncoder:
         self.script_vocab = script_vocab
         self.lang_vocab = lang_vocab
         self.device = device
+
+        # `phonetics.tokenise` is deliberately free of the Script enum (it is
+        # vendored into hf/, which has no repo imports), so give it plain
+        # string keys. Script is a str-Enum whose name equals its value, so
+        # this is a re-keying, not a mapping.
+        self._script_name_to_id = {
+            script.value: script_id
+            for script, script_id in script_vocab.script_to_id.items()
+        }
 
         # Freeze model
         for param in self.model.parameters():
@@ -157,21 +167,25 @@ class ToponymEncoder:
         """
         Prepare a single toponym for encoding.
 
+        Goes through `phonetics.tokenise`, the one canonical implementation,
+        rather than through the vocabulary objects directly. The two are
+        equivalent by construction and `tests/test_tokeniser_contract.py`
+        holds them to it — the point of routing through the shared function is
+        that the gateway and the HuggingFace package cannot drift away from
+        whatever this path writes into the index. They had, for months
+        (`developer/plan-symphonym-v8.md` §2).
+
         Returns:
             Tuple of (char_ids, script_id, lang_id)
         """
-        # Detect script if not provided
-        if script is None:
-            script, _ = detect_script(name)
-
-        # Encode characters
-        char_ids = self.char_vocab.encode(name, script)
-
-        # Get script and language IDs
-        script_id = self.script_vocab.encode(script)
-        lang_id = self.lang_vocab.encode(lang)
-
-        return char_ids, script_id, lang_id
+        return tokenise(
+            name,
+            lang,
+            self.char_vocab.char_to_id,
+            self.lang_vocab.lang_to_id,
+            self._script_name_to_id,
+            script=script.value if script is not None else None,
+        )
 
     def encode(
             self,
