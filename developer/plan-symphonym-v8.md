@@ -539,6 +539,104 @@ and never summed:
   and it is the only stratum where the old gate was ever measuring what it
   claimed.
 
+### ✅ MEASURED 6 Sep — the per-stratum v7 baseline, and it BREAKS the gate it was built for
+
+`indexing-8b`, commit `4160977`; AP alongside each figure at
+`/vast/ishi/ipa-v8/logs/stratified_v7_baseline.json`. Existing corpus reused, no
+rebuild.
+
+✅ **Both corpus controls reproduce EXACTLY** — v7 **0.9324** and
+`levenshtein_romanised` **0.9002** against the recorded §8 figures. An unplanned
+control on the whole pipeline, and the reason the strata beside them are
+trustworthy.
+
+```
+                                   N      v7     lev   v7 margin
+CORPUS                       148,410  0.9324  0.9002    +0.0322
+gain_v7zero        [FLOOR]    16,164  0.9560  0.9031    +0.0529
+  / latin_involving           14,154  0.9555  0.9058    +0.0497
+  / non_latin_both             2,010  0.9592  0.8912    +0.0680
+gain_improved      [FLOOR]    60,672  0.9212  0.8771    +0.0441
+  / latin_involving           52,042  0.9302  0.8900    +0.0402
+  / non_latin_both             8,630  0.8594  0.8008    +0.0586   <- THE CELL
+contamination (sv)             2,054  0.9749  0.8619    +0.1130
+unchanged                     65,538  0.9348  0.9164    +0.0184
+excluded_quarantined           3,982  0.9735  0.9594    +0.0141
+```
+
+### 🛑 v7 SCORES **HIGHER** ON THE LANGUAGES IT HAD NO IPA FOR — so the GAIN gate cannot see what v8 adds
+
+**0.9560 on `gain_v7zero`, against 0.9348 on `unchanged`.** v7 discriminates
+*better* on the twenty languages it had **zero** IPA for than on languages it had
+IPA for.
+
+**The mechanism, and it is not a paradox.** Those toponyms were never in a
+positive pair — `generator.py:155` gates on `ipa IS NOT NULL` — so v7 **never
+trained on them at all**. 0.9560 is therefore **pure orthographic
+generalisation**: `ca`, `gl`, `ast`, `oc`, `vec` are Latin-script Romance
+languages whose pairs look like the Spanish and French pairs v7 *did* train on.
+⚠ **Its advantage there cannot be phonetic knowledge of those languages — it had
+none.**
+
+🛑 **THEREFORE A GATE ASKING "DID v8 IMPROVE `GAIN`?" IS INSENSITIVE TO WHAT v8
+ADDS.** It asks for a rise from 0.9560 with 0.0440 of room, on a metric driven by
+surface similarity rather than phonology. **v8 could deliver exactly the
+improvement it was built for and this gate would not show it.**
+
+⚠ **This is the gate-inherits-the-finding-order failure in a new place.** The
+stratification was right about **WHERE** to look and wrong about **WHAT** to look
+at. Stratifying by *which languages gained IPA* is not the same as stratifying by
+*where IPA is the operative signal*, and only measurement separated them.
+
+### ✅ THE GATE'S PRIMARY CELL IS `gain_improved / non_latin_both` — 0.8594
+
+Lowest in the table, **0.1406 of headroom**, and consistent with §8.3 placing
+v7's weakness in CJK↔Latin. But headroom is the weaker argument. **The principled
+one: it is the stratum where orthographic transfer CANNOT help.** Between two
+non-Latin scripts there is no shared surface for a character model to exploit, so
+**phonology is the only available mechanism** — which makes it the one cell where
+an IPA improvement must show if it is real. It is also where the input actually
+moved: `ja` 357,943 → 949,493 (**2.65×**), `zh` +276,524.
+
+**Choose the stratum where the mechanism v8 improves is the ONLY mechanism
+available** — not merely the weakest cell.
+
+### ⚠ AND THE CONTAMINATION STRATUM IS THE MOST INTERESTING CELL IN THE TABLE
+
+`sv` shows v7's **largest margin over the baseline anywhere**: **+0.1130**,
+against +0.0184 for `unchanged`. **Whatever v7 learned about Swedish is doing
+real work that edit distance cannot replicate.** v8 trains on ~109k *more*
+Swedish, **94.4% of it Wikidata labels whose tag records a wiki edition rather
+than the name.**
+
+🛑 **So the stratum flagged for degradation is the one with the most to lose, and
+what is at risk is a DEMONSTRATED capability rather than a hypothetical one.**
+⚠ **Gate it on the MARGIN, not the absolute.** 0.9749 → 0.9600 reads as a 1.5%
+slip; the same movement as a margin is **0.1130 → 0.0981, a 13% loss of the
+model's entire advantage.** The margin makes the loss legible; the absolute hides
+it.
+
+### ⚠ FEASIBILITY LIMIT, stated rather than worked around
+
+**8 of the 20 `v7zero` languages hold under 400 pairs** — `gl` 138, `vec` 207,
+`ast` 224, `oc` 222, `sk` 247, `nn` 294, `cy` 295, `sl` 326, `eu` 325. The
+**stratum aggregate is sound at 16,164**; per-*language* AUCs for those eight are
+not, and the code reports `N` and **`INSUFFICIENT`** rather than publishing a
+number.
+
+✅ **Targeted augmentation DECLINED (coordinator, 6 Sep).** It would require a
+corpus rebuild, which runs against production; the gate operates at stratum
+level, where N is ample; and per-language figures for eight small languages are
+not needed for any decision v8 has to make.
+
+✅ **Method notes worth keeping.** `quarantined` takes **precedence** in stratum
+assignment, so a `ceb`↔`en` pair is excluded rather than credited to `en`'s gain
+— `excluded_quarantined` scores **0.9735**, so folding it anywhere would have
+inflated that stratum. Latin-involving and non-Latin↔non-Latin are never
+averaged. Uncovered pairs are **excluded, not zeroed** — an earlier version
+coerced a `None` score to `0.0`, **scoring a pair the baseline declined to answer
+as maximally dissimilar**; caught and fixed before the reported run.
+
 ⚠ **The quarantined set is OUT of the gate entirely** — never routed in either
 generation, so it can neither gain nor regress, and including it would credit
 v8 with a 3.4M block it does not touch.
