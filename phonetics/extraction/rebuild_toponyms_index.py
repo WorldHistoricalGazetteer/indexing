@@ -2025,6 +2025,55 @@ def partial_update_es_from_db(
 
 # --- MAIN ---
 
+def _assert_rebuild_target_is_concrete(es, args) -> None:
+    """Refuse a full rebuild aimed at an alias — BEFORE the expensive steps run.
+
+    STEP 4 deletes ``--toponyms-index`` and recreates it. That argument defaults
+    to ``toponyms``, which in production is an ALIAS (currently pointing at
+    ``toponyms_temporal-20260731t160000z``, 72.7M docs), and ``scripts/
+    symphonym.sh``'s full-rebuild invocation does not override it. Two facts,
+    both measured against the live cluster on 6 Sep 2026:
+
+      * ``HEAD /toponyms`` returns 200, so ``indices.exists`` is true and the
+        delete branch IS entered;
+      * ``DELETE /<alias>`` is rejected by ES 9.0.0 with
+        ``illegal_argument_exception: The provided expression [...] matches an
+        alias, specify the corresponding concrete indices instead`` — the
+        concrete index survives.
+
+    So the corpus was never at risk of deletion; the cost is that the run dies
+    at STEP 4, having already spent STEPs 1-3 scanning 51.2M places, building
+    the vocabulary and computing IPA + PanPhon embeddings. That is hours of GPU
+    and CPU thrown away at the last step, for a condition knowable in the first
+    second — the fail-late shape the ingestion postmortem keeps recording.
+
+    A full rebuild should target a NEW dated concrete index and re-point the
+    alias afterwards (one atomic ``_aliases`` swap), which is how the current
+    generation was built. ``--partial-update`` is exempt: it updates documents
+    in place and never deletes, so aiming it at the alias is correct.
+    """
+    if args.partial_update or args.skip_es_index:
+        return
+    target = args.toponyms_index
+    try:
+        aliased = es.indices.get_alias(name=target)
+    except Exception:
+        return          # not an alias (404) — a concrete name, or ES said no
+    concrete = sorted(aliased.keys())
+    logger.error(
+        f"--toponyms-index '{target}' is an ALIAS for {', '.join(concrete)}, not a "
+        f"concrete index. STEP 4 would try to DELETE it, which Elasticsearch "
+        f"rejects, so this run would fail AFTER the extraction, vocabulary and "
+        f"embedding steps had completed."
+    )
+    logger.error(
+        f"Pass a new dated concrete index instead, e.g. "
+        f"--toponyms-index {target}_<runid>, then re-point the '{target}' alias "
+        f"onto it with a single _aliases swap once the rebuild has verified."
+    )
+    sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='v6 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
@@ -2173,6 +2222,7 @@ def main():
         if not es.ping():
             logger.error(f"Cannot connect to {args.es_host}")
             sys.exit(1)
+        _assert_rebuild_target_is_concrete(es, args)
     else:
         logger.info("Skipping ES connection (--skip-es-index set; staged-only mode)")
 
