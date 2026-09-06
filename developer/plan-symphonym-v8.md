@@ -2668,6 +2668,53 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## ✅ `place#247` CLOSED (6 Sep) — and why, as a mechanism not a tolerance
+
+SG closed it: the blocking question is answered and the residual does not touch
+what is blocked. **The decisive form of the argument is not "the difference is
+immaterial" — it is:**
+
+> **The divergence is confined to SCORING. `place#246`'s audit reads CONTENT.**
+
+🛑 **And that is a mechanism, not a hope** (`indexing-04`): **cosine similarity
+does not consult corpus statistics; BM25 does.** Hence KNN at 98.33% set / 97.50%
+order against BM25 at 90.00% / 36.67% on the same queries. #246 counts
+per-namespace timespan populations via aggregations, counts and filters — none of
+which consult `docCount`-derived term statistics.
+
+⚠ **Stated boundary: if #246, or anything else, grows a RELEVANCE-ORDERING
+assertion, this conclusion needs revisiting.** Comparing *ranked* results between
+clusters is outside what was established.
+
+**Deliberately dropped, not forgotten:** the forcemerge. 14,169,759 deleted docs
+in `places` (3.9%) is real dead weight and would permanently remove the
+divergence — but nothing is blocked on it and it is I/O against the serving
+volume. ✅ **SG's sequencing is what established it was unnecessary: holding
+Task 2 back did not cost time, it generated the evidence.** Re-raisable as
+low-priority housekeeping.
+
+**Harness preserved** at `/vast/ishi/verification/` — moved off `/tmp` on pitt,
+which was one reboot from gone: `fidelity.py` (documents by canonical-JSON sha256
+across both clusters, by `_id`), `corpussig2.py` (full-corpus aggregate signature
+**with the VACUOUS flag**), `cmp_staging.py` (the BM25-vs-KNN split),
+`diverge.py` (anatomy of one diverging query), `termstats.py` (`docFreq`/
+`docCount` via `explain`).
+
+🛑 **The `VACUOUS` flag is the reusable part, and it generalises past this
+issue.** *Any comparison of two empty results reports agreement*, and an
+aggregation on a **mis-pathed** field returns empty on **both** sides — so it
+reads as a pass while testing nothing. Two top-level aggs on nested `geometries`
+fields did exactly that and printed `IDENTICAL`.
+
+⚠ **An attribution error worth recording, since it nearly caused an action.**
+This session asked `indexing-04` to stop the staging Slurm job as "its" job. It is
+not: it had only ever read from it, and the job predates its involvement. **All
+sessions run as `stg135`, so the scheduler cannot distinguish us** — job ownership
+is not recoverable from Slurm here, and must be established by asking. Both
+sessions independently declined to cancel a job they did not start, which is the
+right instinct: *an idle allocation is a cheaper mistake than destroying 73.4 GB
+of restore someone still needs.*
+
 ## ✅ TASK 1 CLOSED — the `/ix1` snapshot IS faithful, demonstrated on content
 
 `indexing-04`, 6 Sep. **Content, not counts; full corpus, not a sample.**
