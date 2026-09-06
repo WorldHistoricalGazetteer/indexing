@@ -2561,6 +2561,45 @@ the romanised baseline is a near-oracle *by artefact* and v7 looks worst, and
 `東京`~`Tokyo` reaches only 0.51 because anyascii returns the *Mandarin* reading.
 **The hole and the weakness are in the same place.**
 
+### ✅ …AND THE READING TABLE IS PARTLY DERIVABLE FROM OUR OWN CORPUS
+
+**No CharsiuG2P update can fix the Kanji problem — but D-B may not need building
+from scratch either.** Measured against production:
+
+```
+lang=ja  script=CJK        465,177
+lang=ja  script=KATAKANA   335,158
+lang=ja  script=HIRAGANA   149,167
+lang=ja  script=LATIN            0
+
+sampled 400 kanji toponyms -> 671 distinct place_ids
+   of those places, 242 (36.1%) ALSO carry a KANA toponym
+```
+
+**The kana form attested to the same place IS the reading:**
+
+```
+字権現台      -> ごんげんだい            osm:n9166359786
+下本郷町      -> しもほんごうちょう        osm:n8882910734
+大字笠戸島     -> おおじかさどじま         osm:w131009536
+南六条十丁目   -> みなみ6じょう10ちょうめ    osm:n8653797201
+```
+
+🛑 **So D-B is a CO-ATTESTATION harvest for at least a third of the population,
+not a hand-built dictionary** — the same mechanism §6.5 established for historic
+forms, applied to a different problem.
+
+⚠ **Three caveats, none of which the 36.1% expresses.** It is a **sample of 400
+kanji toponyms → 671 places**, indicative and not corpus-wide — the exact shape of
+claim this document keeps having to retract, so treat it as a reason to measure
+properly rather than as the measurement. **Not every pair is a Japanese reading of
+a Japanese place**: `済州島 → チェジュ島` is Jeju, a Japanese rendering of a Korean
+name — still a valid phonetic pair, but a different phenomenon from `下本郷町 →
+しもほんごうちょう`, and a naive harvest conflates them. And **the remaining ~64%
+would still need an external source** — Japanese morphological dictionaries
+(UniDic, SudachiDict) carry place-name readings, which is a separate and larger
+question.
+
 ### 🛑 2. ByT5 truncation — every Charsiu route silently capped at ~13–15 IPA chars
 
 `_CharsiuWrapper` calls `model.generate(**inputs)` with **no length argument**.
