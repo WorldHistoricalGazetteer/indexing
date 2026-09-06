@@ -2668,6 +2668,55 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## ✅ ITEM 1 ANSWERED — the planet scan landed: 1.13%, concentrated in `historic=*`
+
+**Job 11168151, `htc-n77`, COMPLETED in 9 min 55 s** — on the **new** API, which
+is why it took ten minutes rather than hours. Nothing to restart.
+
+```
+ingested              20,622,228     <- matches the live index EXACTLY
+  node                 8,983,853
+  way                 10,078,955
+  relation             1,559,420
+seen (post C++ filter) 114,828,045
+
+start_date               226,468     1.098% of ingested
+end_date                  10,700     0.052%
+either                   232,343     1.127%
+  of which historic=*    132,841     58.6% of start_date
+```
+
+✅ **The pre-registered caution is SATISFIED.** `indexing-9c` recorded in advance
+that OHM's **21.99%** was an upper bound of the most generous kind — OHM exists to
+carry dates — and that a planet figure near it should be disbelieved. It came back
+at **1.13%, 19x lower**. The number is credible *because* it is far below OHM's.
+
+✅ **And `ingested` matching 20,622,228 exactly against the live index is
+assertion 1 already passing** — the new-API predicate is equivalent to the old
+one on the real corpus, not just on OHM.
+
+### 🛑 Material, but it does NOT justify a rebuild — and that changes the plan
+
+**232,343 documents of 20.6 M.** A full `osm` re-ingest for 1.13% is not
+proportionate. **But it is not nothing, and the concentration is what matters:
+132,841 are `historic=*`** — precisely the features a *historical* gazetteer's
+timeline exists to bound, and every one of them currently tiles as **unbounded**
+(`start = -9999, end = 9999`), visible at every year.
+
+**Consequences:**
+
+* **The code fix is mandatory and cheap** — `osm-places.py` must read the tags,
+  per #246's standing directive that no item closes on a patch alone.
+* **The data fix is a `_bulk` patch of 232,343 docs, not a 20.6 M re-ingest.**
+* 🛑 **So `osm` drops out of the rebuild set. It stays `tgn` alone.**
+* ⚠ **And the scope note fires:** the `FileProcessor` conversion was bundled with
+  item 1 because it rode free on a rebuild that is no longer happening. **It now
+  has to stand on its own merits** — which it does (20x on every future OSM
+  ingest, and OSM will be re-ingested eventually), but that is SG's call to make
+  knowingly rather than inherit.
+* **A retile of the OSM buckets is still required** for the 232,343 to become
+  time-bounded on the map — that part is unchanged and is user-visible.
+
 ## ✅ CONVERT BOTH HANDLERS — bundled with item 1, not sequenced before it
 
 **SG authorised converting `osm-places.py` and `ohm-places.py` to `FileProcessor`,
