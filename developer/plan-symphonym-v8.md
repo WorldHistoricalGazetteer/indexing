@@ -2668,6 +2668,62 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## ✅ CONVERT BOTH HANDLERS — bundled with item 1, not sequenced before it
+
+**SG authorised converting `osm-places.py` and `ohm-places.py` to `FileProcessor`,
+bundled with the item 1 date work.** Handed to `indexing-9c`. Neither is converted
+on `origin/main` yet.
+
+🛑 **This session argued for SEQUENCING and was wrong — the reason matters more
+than the conclusion.** The argument was: convert first, prove byte-identical, then
+make the date change, so any diff is attributable. **SG pushed back, and the
+separation rule exists for changes with OVERLAPPING diff signatures. These do not
+overlap:**
+
+| change | its ONLY possible signature |
+|---|---|
+| the conversion | **nothing at all** if correct; **missing or extra documents** if the C++ filter is not equivalent |
+| the date fix | **`timespans` changing**, on features carrying `start_date`/`end_date` |
+
+**Disjoint and independently detectable, so bundling costs no attribution** — while
+sequencing would have cost **a second full planet ingest** (20.6 M places from
+94 GB plus a staging cycle) to buy what the signatures already give free.
+
+⚠ **This session applied "separate your changes" without checking that its
+PRECONDITION held.** That is the week's own failure class arriving inside the
+reasoning about how to avoid it — a rule invoked where it does not apply is
+indistinguishable, from the inside, from a rule correctly applied.
+
+### The condition, which costs nothing
+
+**Assert the disjointness rather than assume it:**
+
+1. ingested document count **identical** to the pre-change run;
+2. all **non-`timespans`** content byte-identical;
+3. `timespans` changing **only** on features carrying `start_date`/`end_date`.
+
+🛑 **A FOURTH kind of difference is the signal to stop and separate them after
+all.** A check that can fail, and cheaper than the run it replaces.
+
+### The only quiet failure mode
+
+**A C++ filter not exactly equivalent to the Python predicate.** For **nodes**,
+`process_tags` keeps an object iff it carries ≥1 of our tag keys →
+`KeyFilter(*OUR_KEYS)`. For **ways** the Python test is `'name' in w.tags` →
+`KeyFilter('name')`, the right *superset*, with the existing check still running
+behind it. **Get either wrong and objects vanish silently — which assertion 1
+catches.**
+
+⚠ **Scope note:** this is a *performance* change riding on a *correctness* issue,
+and it rides free only because item 1 touches the same file. **If the planet scan
+finds the `start_date` overlap immaterial and `osm-places.py` needs no date fix,
+the conversion loses that ride** and becomes its own small piece of work — to be
+flagged to SG at that point, not quietly done anyway.
+
+**`ohm-places.py`: same edit, weaker case** (~3 min per run on 945 K places). Do it
+anyway — **leaving one of two identical handlers unconverted is exactly how item
+2's six copies accumulated.**
+
 ## OSM re-ingest ⇒ RETILE (user-visible), but do NOT refresh the PBF in the same pass
 
 **Three questions from SG, all checkable.**
