@@ -11,45 +11,74 @@
 
 ---
 
-## 0. The short version
+## 0. The short version — WHERE v8 STANDS (6 Sep 2026)
 
-**v7 is not measurably better than anyascii-romanised Levenshtein**, and the reason is not the
-architecture. Three things are wrong, in ascending order of cost to fix:
+**v7 is not measurably better than anyascii-romanised Levenshtein.** Three things
+were wrong; the first is fixed, and the other two are what v8 is for.
 
-1. **The gateway tokenises queries differently from the way the index was
-   embedded.** Multi-word toponyms retrieve their own indexed vector at rank 1
-   only **65.7% of the time** (n=1,486 real names); CJK/Hangul/Kana queries are
-   **anti-correlated** with their own documents (cos −0.30 for `東京`).
-   **This was a bug, not a design limit, and closing it needed no retraining.**
-   ✅ **Done** — Package 1, §5. It is not why you are reading this document.
-2. **The teacher's input representation has effective rank 4.37 of 192.** The
-   PanPhon 8-bin pooled vector — the thing positives are clustered in and the
-   thing the student is distilled toward — throws away almost everything. The
-   student inherits it: **effective rank 10.8 of 128**, with the singular-value
-   spectrum falling off a cliff at component 20.
-3. **The training objective is exhausted.** Phase-1 validation loss is 0.0056
-   against a triplet margin of 0.3; phase-3 is 0.021. Almost every triplet is
-   trivially satisfied and contributes no gradient.
+1. ✅ **The gateway tokenised queries differently from the way the index was
+   embedded** — CJK queries were *anti-correlated* with their own documents
+   (cos −0.30 for `東京`). **A bug, not a design limit; needed no retraining.**
+   Done, §5.
+2. 🛑 **The teacher's input representation has effective rank 4.37 of 192**, and
+   the student inherits it — **10.8 of 128**, spectrum falling off a cliff at
+   component 20.
+3. 🛑 **The training objective is exhausted** — phase-1 validation loss 0.0056
+   against a triplet margin of 0.3. Almost every triplet contributes no gradient.
 
-Findings 2 and 3 are what v8 is *for*, and Package 1 did nothing about them.
-They are **still not scheduled**, because the project still has no benchmark that
-could resolve whether a retrain helped: the only ranking evaluation is 137
-queries, on which v7 (R@1 0.852) is inside the noise band of romanised Levenshtein
-(0.815) — and v7 is *worse* than v6 (0.867).
+### ✅ SETTLED: the retrain is authorised, and what it targets
 
-🛑 **Independent confirmation arrived 5 Sep, from a consumer rather than from
-this analysis.** The GOTW reconciliation project measured Symphonym against 1856
-English transcriptions of Qing province names and found the printed forms
-resolved to a usable container for **11 of 18**, one of them *wrongly* —
-`Keang-su` (Jiangsu) resolved to **GANSU at score 99.5**. Those queries tokenise
-**byte-identically** through the old and new paths (measured, 7 of 7), so
-Package 1 neither caused nor cured it. A confident wrong answer at 99.5 on a
-historic romanisation is finding 2 arriving in production: a rank-≈10 space
-cannot separate them, and the confidence scale faithfully reports a match the
-geometry cannot support.
+**The benchmark that §0 once said did not exist has run (§8).** Split verdict: v7
+**wins discrimination** (AUC 0.9324 vs 0.9002, separated interval) and **loses
+retrieval** (R@10 0.294 vs 0.323), with **one mechanism behind both** — a space too
+dense to order a 200-deep pool.
 
-§6 sets out the decisions that need taking before any of it starts, and §5.12
-what Package 1 leaves behind that makes them cheaper.
+**SG authorised a retrain targeting the GEOMETRY** (finding 2). **Acceptance is the
+geometry gate plus NO REGRESSION on discrimination — explicitly not a retrieval
+win**, which §8.2's `n^−0.22` density scaling suggests may not be available at
+72.7M by any means.
+
+### ✅ SETTLED: what changed about the INPUT DATA
+
+| | before | now |
+|---|---|---|
+| **IPA coverage** | believed 54% | **was 0.00%; now 68.43%** (49,749,377 of 72,703,552) |
+| `ja`+CJK | silently unroutable | **465,177 of 465,177 covered** |
+| CharsiuG2P output | silently capped ~13–15 chars | uncapped; 1,043 rows (0.04%) are repetition loops, recorded as a residual |
+| `sv` / `ceb` labels | trusted | **Lsjbot contamination**; `ceb`/`war`/`min`/`vo` quarantined (3.4M). ⚠ **`sv` (1.8M) is INSIDE the already-routed baseline, so v7's own training data carries it** |
+
+🛑 **The remaining 31.6% is not a tuning problem.** 18,543,146 rows carry **no
+language at all**, and **87.43% of those are Latin script**. Country-based
+inference is **closed by arithmetic** — every script where it looked accurate is
+one where a constant beats it (§9c). Moving that gap needs **language
+identification from the string itself: a different project.**
+
+### 🛑 SETTLED: the historic-orthography target is a FINE-TUNE, not a second objective
+
+It was added as a co-equal second target on 5 Sep. **The data does not support
+that**, and this document is the reason it was oversold:
+
+```
+Welsh LHPN     14,863 pairs    (the 5.5% yield figure was 1.73% corpus-wide)
+TGN dated      40,937 pairs    (effective N 3,565 places; 17 places = 51%)
+Chinese             0          specialist review cancelled; 1908 Atlas dropped
+```
+
+**Against a v7 trained on ~31M toponyms this is a fine-tune and an evaluation
+stratum — not a co-equal training objective.** ⚠ **And it is EUROPEAN**: Welsh
+clerk transliteration and dated European variants. **Any v8 claim must say which
+historic orthography, and at what scale it was trained.**
+
+### What is still open
+
+* Whether to attempt **language ID from the string** for the 16.2M Latin no-lang
+  rows — a separate project, not a refinement.
+* **D-B, a Japanese reading table**, dismissed in §6 as "not cross-script" under a
+  scoping decision since superseded. §9b measured that **36.1%** of sampled
+  kanji-bearing places already carry the kana reading by co-attestation.
+* The **IPA→PanPhon** half: the pooled 192-d vector is **retired** (it is finding
+  2's bottleneck); per-segment features remain conditional on whether a teacher
+  survives the v8 design.
 
 ---
 
