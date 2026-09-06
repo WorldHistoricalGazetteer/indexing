@@ -2614,6 +2614,60 @@ different **set** where a boundary case crosses the top-N cutoff.
 uniform score perturbation produces, and production's self-consistency follows
 because its own tombstones are constant within a run.
 
+## What the 6 Sep TGN apply actually did — measured before/after, not inferred
+
+**The question: would restoring the 5 Sep snapshot lose anything?** Staging *is*
+the pre-apply state, so this is directly answerable — 400 of the 9,623 patched
+`place_id`s fetched from **both** clusters and compared as canonical-JSON sha256.
+
+```
+byte-identical            0 of 400        <- every doc differs
+fields differing:  indexed_at  400/400
+                   toponyms    105/400
+                   geometries   20/400
+```
+
+**But no date value changed.** The entire substantive diff is **explicit `null`
+sub-fields being stripped**:
+
+```
+before (staging)  {"start":{"in":800,"latest":null},"end":{"in":1500,"earliest":null}}
+after  (prod)     {"start":{"in":800},             "end":{"in":1500}}
+```
+
+The apply rewrote each doc through the temporal helper's `_clean()`, which drops
+nulls. **Values identical; keys removed.** And `indexed_at` was bumped on all
+9,623 to one batch timestamp, `2026-09-05T22:53:52.359526+00:00`.
+
+✅ **So: nothing material. Restoring the 5 Sep snapshot loses no data.** It would
+restore the `null` sub-fields — reverting a cosmetic cleanup — and restore honest
+**August** `indexed_at` values. ⚠ Arguably an *improvement*: `indexed_at` now
+claims 5 September for content last actually changed in August, so the field
+currently misreports freshness on 9,623 docs.
+
+⚠ **Incidental: this is `place#246` item 3 (`"in": null` in stored timespans)
+partially self-repairing.** The apply cleaned it on the ~30% of docs that had it.
+That is not a fix — the *writer* still emits nulls — and it makes the population
+non-uniform, which is worth knowing before item 3 is measured.
+
+### 🛑 Three attempts to answer one question, and the first two were wrong
+
+1. **`indexing-9c` reported the apply "changed nothing", comparing a patched doc
+   (`_version 3`) to a DIFFERENT unpatched doc (`_version 2`).** Comparing doc A
+   to doc B cannot establish whether A changed. **Right conclusion, invalid
+   method.**
+2. **This session then said "only `indexed_at` differs" from TWO documents.**
+   Wrong — `toponyms` differs in 105 of 400 and `geometries` in 20. *A claim about
+   a population resting on a two-item sample, again, in the hands of the session
+   that has spent the day cataloguing exactly that.*
+3. **The valid method is the same doc before and after, across a real sample, with
+   the differing FIELDS enumerated rather than a boolean.** Only then does the
+   answer hold — and only then is it clear the conclusion was right all along.
+
+⚠ **The conclusion survived all three attempts, which is precisely why nobody
+would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
+right after its evidence is withdrawn gets no second look.*
+
 ## ✅ TASK 1 CLOSED — the `/ix1` snapshot IS faithful, demonstrated on content
 
 `indexing-04`, 6 Sep. **Content, not counts; full corpus, not a sample.**
