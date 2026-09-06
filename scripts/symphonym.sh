@@ -31,8 +31,12 @@ do_rebuild_toponyms() {
     # Capture extra args (e.g., --limit 1000, --resume, --skip-es-index)
     PYTHON_ARGS="$@"
 
-    # Check staging is running (always required — rebuild reads from places
-    # index and writes to toponyms index)
+    # Check staging is running. Required as the WRITE target for the toponyms
+    # index — NOT as a source. The rebuild reads the STAGED tree
+    # (rebuild_toponyms_index.scan_places_staged), never the ES `places` index,
+    # so nothing here depends on staging holding a places generation. The old
+    # wording ("reads from places index") invites the opposite inference, and
+    # the staged-vs-ES distinction has already caused wrong diagnoses.
     if [ ! -f "$STAGING_INFO_FILE" ]; then
         echo "ERROR: No staging ES instance running"
         echo "Start one first with: source $0 -staging-start"
