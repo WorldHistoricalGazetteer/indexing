@@ -1,8 +1,9 @@
 # IPA recomputation — measurements, defects found, and the incremental design
 
-> **Status: measurement and build COMPLETE; the full-corpus run is NOT yet
-> submitted.** Everything below is measured against the live corpus on 6
-> September 2026, not planned or estimated. Raw artefacts in
+> **Status: RUN COMPLETE, 6 September 2026.** 72,703,552 rows in the store,
+> 49,749,377 carrying IPA — **68.428% coverage, from 0.00%**. All 4,015
+> shards present, every array task COMPLETED, all store audit checks passed.
+> Store: `/vast/ishi/ipa-v8/store/ipa.duckdb`. Raw artefacts in
 > `/vast/ishi/ipa-v8/logs/`; nothing was written outside that directory and the
 > new `phonetics/ipa/` package.
 >
@@ -304,11 +305,80 @@ store that records nothing.
 
 ---
 
+## 5.5 The run — what actually landed
+
+Submitted as three arrays, because the backends differ in cost by three orders
+of magnitude. Measured throughput (job 11168319, 1,500 real names per mode):
+`ceb-Latn` 44,235/s, `rus-Cyrl` 30,202/s, `cat-Latn` 30,100/s, `deu-Latn`
+17,154/s, `eng-Latn` 882/s, CharsiuG2P **26.4/s on CPU**. So the neural
+backend, at 5% of the rows, was ~90% of the cost and went to a GPU, where it
+measured **~150/s on an L40S — about 6x the CPU rate**.
+
+| array | where | tasks | shards |
+|---|---|---|---|
+| 11168459 | htc CPU | 60 | 454 epitran |
+| 11168460 | htc CPU | 40 | 3,539 terminal |
+| 3723706 | gpu l40s | 11 | 21 charsiu + 1 phonikud |
+
+**180 + 120 + 33 array tasks, all COMPLETED, zero tracebacks.** Shard output
+1.7 GB; `/vast/ishi` ended at 219 GB free of its 1 TB allocation.
+
+### Merge and audit
+
+```
+shards expected : 4,015     shards present : 4,015     MISSING : 0
+rows merged     : 72,703,552
+```
+
+| status | rows |
+|---|---:|
+| ok | 49,749,377 |
+| no_lang | 18,543,146 |
+| quarantined | 3,411,436 |
+| no_route | 866,948 |
+| non_language_tag | 126,394 |
+| echoed_input | 6,240 |
+| empty_output | 11 |
+
+`verify_store` — **ALL CHECKS PASSED**, each with a positive control in the
+same query so a zero cannot come from an empty predicate:
+
+- every inventory row present (72,703,552 of 72,703,552, **0 missing**), no
+  duplicate ids
+- `ok` rows all carry IPA (0 of 49,749,377 without); terminal rows carry none
+  (0 of 22,947,924 with)
+- quarantine applied: `ceb` **0 ok of 2,786,505**
+- ⚠ **the ja+CJK hole is closed: 465,177 of 465,177** — the population that
+  returned `None` from the shipped helper now all carry IPA
+- English routed: 10,270,813 of 10,271,605
+
+### ⚠ The truncation fix worked, and the cap still binds on 0.042%
+
+Charsiu output now has mean 22.5 bytes and max 256; the 13–15 character
+pile-up is gone. But `max_bytes = 256` is exactly the `max_new_tokens` ceiling,
+and "the maximum went up" is not evidence the cap stopped binding — that was
+the original bug's whole disguise. Measured: **1,043 rows (0.0419%)** sit at
+≥250 bytes.
+
+Inspecting them shows they are **model degeneration, not truncated IPA**:
+
+```
+zh  256 bytes  'deɴneɴkakioɯɾiɴçikːokɯɯɴdoɯkaideɴkeisaidaɴɕidaɴɕidaɴɕidaɴɕid'
+ko  256 bytes  'ɾjʌ̹nɦa̠ɡje̞o̞ɭʎimpʰik̚sʰa̠ikxɯɭna̠md͡ʑa̠na̠md͡ʑa̠na̠md͡ʑa̠n'
+```
+
+Autoregressive repetition loops on out-of-distribution input. Raising the cap
+would yield longer garbage, not better IPA. The Epitran control (no generation
+cap exists for it) reaches 343 bytes with 1,510 rows ≥250, so genuinely long
+IPA does exist and 256 is a real but rarely-binding limit. **Recorded rather
+than fixed: 1,043 rows of low-quality output, 0.042% of the neural share.**
+
+---
+
 ## 6. What is NOT done
 
-- **The full-corpus run has not been submitted.** Scope is confirmed as all
-  72.7M (not the gn/wd/tgn subset — restricting would compound the existing
-  `MIN_BIN_SIZE = 500` selection effect in the same direction).
+- **The 1,043 degenerate Charsiu rows are not flagged** in the store beyond
+  their length; they carry `status='ok'`.
 - **The `no_lang` 25.5% has no decision** (§3). Until it has, ceiling is ~72%
   gross / ~68% net of quarantine.
 - **Per-segment PanPhon features are not built**, per §10 — conditional on
