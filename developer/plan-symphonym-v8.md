@@ -2683,15 +2683,37 @@ CN true=en -> za  16,282      FR true=en -> fr  11,111
 ```
 
 **Those are English EXONYMS.** Inferring "German" for a German place is not wrong
-about the *place* — it is wrong about a *label that was never local*. And **the
-labelled rows are not a random sample of the unlabelled ones**: the no-lang
-population is **71.35% `osm`**, and OSM's `name` tag is the **local** name, an
-endonym. So the instrument may be **understating** accuracy on precisely the
-population that needs it.
+about the *place* — it is wrong about a *label that was never local*. So the
+labelled rows may not be a random sample of the unlabelled ones.
 
-⚠ **Fourth instance of §8.3b** — a corpus property read as a method property, this
-time inside the validation rather than the corpus. `indexing-8b` would have
-reported 32.4% as a clean refutation an hour earlier.
+🛑 **BUT THE SUPPORTING FIGURE WAS WRONG, AND ITS CORRECTION REVERSES THE
+ARGUMENT.** The claim was *"the no-lang population is 71.35% `osm`"*, with OSM's
+`name` tag being the local endonym — so the instrument would be **understating**
+accuracy. **71.35% was OSM's INTERNAL rate** (the share of `osm`'s own rows
+lacking a lang), **not the composition of the no-lang set.** By distinct toponym:
+
+```
+gn    10,598,144      <- the largest contributor, not osm
+osm    9,659,290
+tgn    1,398,787
+ohm      307,224
+whg      206,992      (overlapping; a toponym can attest in several namespaces)
+```
+
+⚠ **GeoNames' primary `name` field is frequently the international/English form**,
+which would make the no-lang set **MORE exonym-heavy, not less** — so the 32.40%
+may be **OVERSTATING** accuracy rather than understating it. `indexing-8b`
+retracted this against its own objection, unprompted.
+
+⚠ **The mechanism belongs in `postmortem-ingestion-faults.md`:** `count(*)` over a
+toponym ⋈ namespace join **is not a count of toponyms** — the join multiplies, by
+about 2× here — so a **per-namespace RATE was read as a POPULATION SHARE**. A
+correct computation over the wrong set; the same shape as
+`label_stopped_describing_the_set`.
+
+⚠ **Fourth instance of §8.3b either way** — a corpus property read as a method
+property, this time inside the *validation* rather than the corpus. The direction
+of the bias is now open, and the stratified job (11168563) decides it.
 
 ⚠ **And it cuts both ways: `US true=ceb → en`, 17,686 rows.** The Lsjbot labels are
 inside the GROUND TRUTH, so part of "truth" is the contamination we quarantined.
