@@ -2614,7 +2614,78 @@ different **set** where a boundary case crosses the top-N cutoff.
 uniform score perturbation produces, and production's self-consistency follows
 because its own tombstones are constant within a run.
 
-## 🛑 RETRACTED — THE TOMBSTONE EXPLANATION IS FALSE (6 Sep)
+## ✅ CAUSE FOUND AND MEASURED — and it is BM25, not KNN (6 Sep)
+
+`indexing-04`, and the finding is the opposite of what it predicted.
+
+**Live docs are identical** — 72,703,777 both sides, equal **shard for shard**
+(all 8 checked). What differs is deleted-doc counts, and the reason is that
+**production has MERGED since the snapshot while staging has not.** Deleted docs
+inflate `docCount` until merged; `docCount` drives BM25 IDF; **so scores differ in
+the 4th–6th decimal.**
+
+```
+MODE               SET IDENTICAL   ORDER IDENTICAL   MEAN JACCARD
+bm25_default              90.00%            36.67%         0.9881
+bm25_tiebroken            90.00%            36.67%         0.9881
+knn                       98.33%            97.50%         0.9993
+```
+*(120 production toponyms, vectors and names reused as queries against both.)*
+
+🛑 **THE DETERMINISTIC PATH DIVERGES MORE THAN THE APPROXIMATE ONE.**
+`indexing-04` predicted the reverse — HNSW traversal over different segment
+layouts (places 92 vs 90) as culprit, BM25 clean. **Wrong: cosine similarity does
+not depend on corpus statistics at all. BM25 does.**
+
+**Anatomy of one case**, so this is not only aggregates. Query `Bena`: 50 hits,
+prod tail all tied at **14.899352**, staging tail all tied at **14.888472**. A
+block tied *exactly at the top-K boundary* means **which** tied docs fall inside
+the cut differs — that is the set divergence. Elsewhere `Faringdon West` rank 21:
+prod `Faringdon@eo` 17.126087, staging `Faringdon@de` 17.125854 — same set,
+different order, scores genuinely **different, not tied**.
+
+⚠ **An explicit sort tiebreak does NOT fix it** — identical 90.00%/36.67% with and
+without. A tiebreak only helps when scores are *equal*; here they genuinely differ
+between clusters, so there is nothing to tie-break.
+
+### 🛑 This may make Task 3's target unachievable — SG's decision
+
+**100% set AND order agreement cannot be reached while production is live and
+merging**, because prod's `docCount` drifts continuously as merges reclaim deletes
+while staging's is frozen at snapshot time.
+
+⚠ **And the prod-vs-itself 100%/100% control does not establish otherwise.** It
+proves the **harness** is deterministic, not that a faithful restore would score
+100%. *A control that compares a thing to itself cannot distinguish "faithful
+copy" from "same physical segments"* — so the gate as written may be one **no
+correct restore can pass**, and the residual would be chased as a defect forever.
+
+**The practical routes:** quiesce production for the comparison; expunge deletes
+on **both** sides so `docCount == docs.count` and term statistics become
+comparable; or gate on **decisions** rather than exact ordering. ✅ **Note that
+this is precisely the data SG asked for before deciding the forcemerge** — the
+sequencing he chose produced it.
+
+### 🛑 RETRACTED — my relay of the direction-of-travel objection
+
+⚠ **This session put `indexing-04`'s objection in front of SG, and it is now
+withdrawn by its author.** It argued that expunging deletes from production would
+make *production resemble staging* — the wrong way round. **That rested on the
+false claim that restore drops tombstones.** Restore *preserves* them, so the
+argument does not hold, and **the correct framing is the opposite**: deleted docs
+are the **moving part**, and expunging them from both sides makes `docCount ==
+docs.count` and term statistics comparable. **That is forward, not backward.**
+
+🛑 **AND A CORRECTION TO THIS SESSION'S OWN RELAY OF AUTHORISATION.** This session
+told `indexing-04` that SG had authorised Task 2. **SG has since told it directly
+that Task 2 is NOT authorised**: Tasks 1 and 3 come first, and the forcemerge
+decision is to be made **with data**. `indexing-04` correctly held, checked with
+SG directly rather than acting on a relay, and asked that its retraction not be
+read as changing the permission. ⚠ **An inference from "the indices must be
+cleanly optimised" is not an authorisation, and relaying it as one was an
+over-reading.**
+
+## ~~🛑 RETRACTED — THE TOMBSTONE EXPLANATION IS FALSE (6 Sep)~~
 
 **Everything below about tombstones rests on a premise that was never checked at
 the scale it was applied to, and it is wrong.** Measured directly on the live
