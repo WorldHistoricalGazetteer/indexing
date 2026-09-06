@@ -4320,6 +4320,86 @@ improves **global geometry (recall into the pool) as well as fine ordering**,
 where a reranker is **capped at 0.477 by construction**. *The ceiling on
 reranking is bounded and known; the ceiling on fixing retrieval is not.*
 
+### 🛑 MEASURED — `OTHER` IS A TOTAL RETRIEVAL BLACKOUT, AND v8 DOES NOT REACH IT
+
+`indexing-17`, job 11170898, full ranks over all 1,053,229 haystack entries.
+✅ **Confirmed NOT a rediscovery** — this document records `OTHER`'s
+*composition* (§5.2 D7, §5.8, §5.9) and **nowhere its retrieval consequence.**
+
+```
+842 queries (9.7% of 8,713) involve the OTHER script bucket
+v7   R@200 = 1 of 842      R@1000 = 4 of 842  (0.0048)
+lev  R@1000 = 0.3872
+v7 median rank ~400,000–1,000,000 of 1,053,229  — at or below chance
+```
+
+`OTHER` is Myanmar, Ol Chiki, Gurmukhi, Tifinagh, Sinhala, Khmer, Mongolian,
+Tibetan, Oriya, Ethiopic, Lao, Bopomofo — **395,409 live toponyms.**
+
+⚠ **NOT a tokenisation gap**, checked before being claimed: `OTHER` is script id
+19 in `hf/vocab/script_vocab.json`, and the characters are in the 113,280-entry
+char vocab. **The model has simply never learned these scripts.**
+
+### 🛑 THE UNIFICATION — one mechanism, opposite outcomes, and the difference is SCRIPT SHARING
+
+`generator.py:155` gates positive pairs on `ipa IS NOT NULL`, so **a language
+with no IPA never enters a positive pair and is never trained on.** Two strata
+share that cause and land at opposite ends:
+
+* **`gain_v7zero`** — Latin-script European, no IPA, **0.9560**. Rescued by
+  **orthographic transfer** from the Spanish and French pairs v7 *did* see.
+* **`OTHER`** — non-Latin, no IPA, **~chance**. **Nothing to transfer from.**
+
+🛑 **Same cause, opposite outcome, and the difference is entirely whether the
+script was shared with trained data.** That is the sharpest available statement
+of what v7 actually learned, and it **predicts** that adding IPA to a
+previously-unrouted **non-Latin** language yields a large gain where adding it to
+a Latin-script European one yields almost none.
+
+🛑 **WHICH IS WHERE IT TURNS BAD FOR v8 AS PLANNED.** The twenty gain-stratum
+languages are **all Latin or Cyrillic** — `ga ca nb ce eu nan ast nn tt eo arz sh
+sl cy gl sk oc uz be vec`. **Not one is an `OTHER` script.** ⚠ **So the IPA
+recomputation that is v8's primary justification lands almost entirely where
+transfer already worked, and does not reach the 9.7% blackout at all.** And none
+of `my km lo si bo am ti or pa mn shn dz new` has a `SCRIPT_FIRST` or
+`NEURAL_ROUTES` entry (they may reach an installed Epitran mode via the `to_iso3`
+fallback — `/vast/ishi/ipa-strata-11169066.out` settles it empirically).
+
+### 🛑 §8's "v7 LOSES RETRIEVAL" IS AN ARTEFACT OF TWO UNSEPARATED STRATA
+
+| stratum | n | v7 R@10 | lev R@10 | Δ@10 | Δ@200 | Δ@1000 |
+|---|---|---|---|---|---|---|
+| latin-involving, excl OTHER | 3,276 (37.6%) | 0.3391 | 0.4380 | −0.0989 | −0.0611 | −0.0241 |
+| **non-Latin↔non-Latin, excl OTHER** | **4,595 (52.7%)** | **0.3164** | 0.2664 | **+0.0501** | **+0.1058** | **+0.1171** |
+| any OTHER | 842 (9.7%) | 0.0012 | 0.2150 | −0.2138 | −0.3230 | −0.3824 |
+| all excl OTHER | 7,871 (90.3%) | 0.3259 | 0.3378 | −0.0119 | **+0.0363** | +0.0583 |
+
+**Drop the 9.7% blackout and v7 OVERTAKES the baseline from k≈20 onward.**
+Median partner rank v7 **275** vs lev 289, and v7 is far better in the tail.
+**§8 measured only the half of the curve where v7 loses.**
+
+🛑 **AND §8.6's ACCEPTANCE CRITERION IS ALREADY MET BY THE MODEL IT WOULD
+REPLACE.** It reads *"effective rank ≥ 40 of 128 with R@10 at or above
+`levenshtein_romanised` on the non-Latin↔non-Latin strata"* — **v7 is at 0.3164
+vs 0.2664 there today.** ⚠ **An acceptance criterion the incumbent passes is a
+check that cannot fail, inside the gate itself** — the third instance of that
+shape today. Restate it against a **margin**, or at **R@1** where v7's lead is
+thinnest (+0.0246). The geometry half remains the real gate.
+
+✅ **Reranker ceiling, corpus-wide: R@10 0.294 → 0.482 (+0.187, +63%); on
+non-Latin↔non-Latin 0.316 → 0.521 (+0.205, +65%).** Real, worth building, capped
+by construction — **~48% of partners never enter the top 200 for any method
+tested.**
+
+⚠ **CAVEAT ON THESE NUMBERS, stated by the run that produced them.** 7 of 12
+pre-registered anchors missed by 0.003–0.005 in a consistent direction. The
+string baselines are deterministic functions of the query set, so this **cannot**
+be device or float ordering — **the query sample differs, and §8 recorded no
+seed.** Job 11170921 is sweeping seeds; **the seed-to-seed spread is the more
+valuable output, being the resolution of four decimal places §8 quoted with no
+error bar.** Nothing above depends on it: these deltas are 0.03–0.38 against a
+0.005 disagreement.
+
 ### 🛑 §8's EVIDENCE NO LONGER EXISTS — only the three rows quoted in this document
 
 There is **no `benchmark.json`, no `haystack_v7.npy` and no `[bench]` log
