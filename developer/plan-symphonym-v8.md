@@ -883,6 +883,62 @@ needs an orthographic classifier** (hyphenation + apostrophes), which is a
 flagged the caveat on the issue rather than acting on a connection it had not
 fully measured. **The right call.**
 
+### 🛑 THE REFRAME — v8's CASE HAS MOVED FROM ARCHITECTURE TO COVERAGE
+
+**v8's original case was "the geometry is collapsed".** What the day's measurements
+actually show is that **v7 is a competent SCRIPT-LEVEL ORTHOGRAPHIC model that has
+never seen a quarter of the corpus.** Three findings force that reading:
+
+* **Transfer is script-level.** Zero-IPA languages whose *script* was trained via
+  some other language reach R@200 **0.562**, median rank **74** — *above* the
+  corpus reference of 0.494/217. Where the script itself was never trained:
+  **0.003**, median rank **544,551**.
+* **v7's retrieval "loss" was two unseparated strata.** It **wins** where
+  phonology is the only signal (non-Latin↔non-Latin, 0.3164 vs 0.2664), **loses**
+  where surface similarity is (Latin-involving, 0.3382 vs 0.4319), and is **dead**
+  where it never trained.
+* **31.6% of the corpus cannot enter a training pair at all** (`generator.py:155`).
+
+⚠ **So the largest available wins are COVERAGE and ROUTING, not architecture** —
+and the programme has already proved it: **Project A delivered 172,210 rows with
+three edits and no retraining whatsoever.**
+
+### THE OPTIMISATION RANKING (put to SG, 6 Sep)
+
+**1. Script-aware blending — cheapest, and needs no retrain.** The gateway already
+blends lexical and phonetic passes; **it does not weight them by script pair.**
+The strata say edit distance should carry Latin-involving and the embedding should
+carry non-Latin↔non-Latin. A scoring change, not a training run. **Best
+gain-to-effort ratio in the programme on present numbers.**
+
+**2. Remove the IPA gate on pair selection — the biggest training lever.**
+`generator.py:155` excludes **31.6% of the corpus**, including all 395,409 dead-script
+rows. If v7's demonstrated strength is script-level *orthographic* generalisation,
+that gate buys less than it costs. Train on co-attestation directly and reject
+exonyms with romanised edit distance instead of PanPhon → **22.9M rows become
+trainable with no G2P at all**. ⚠ **Caveat that must be measured, not assumed:**
+romanisation is lossy exactly where the model is strongest (Arabic, CJK), so the
+substitute filter is weakest where it matters most.
+
+**3. Change the loss.** Validation loss 0.0056 against a margin of 0.3 means almost
+no triplet produces gradient. InfoNCE / multiple-negatives with in-batch and
+ANN-mined hard negatives is the fix — and the **only** change that improves
+**recall into the pool as well as ordering within it**.
+
+**4. Cross-encoder reranker.** Converts v7's pairwise strength into ranking.
+Measured ceiling **R@10 0.294 → 0.482 (+63%)**, ⚠ **capped by construction**: ~48%
+of partners never enter the top 200 for *any* method.
+
+**5–7, live but unranked:** romanisation as auxiliary supervision (needs no
+language tag, so it reaches the 18.5M untagged); **Wikidata's explicit
+transliteration properties** (P1814, P1705, P2440 — attested cross-script pairs in
+a namespace already ingested, possibly unused exactly as Getty's were); curriculum
+weighting, since a uniformly-sampled corpus is overwhelmingly Latin and that is
+where the model *loses*.
+
+🛑 **CONSIDERED AND SET ASIDE: a bigger model, more output dimensions, better
+PanPhon pooling.** The bottleneck is training signal and coverage, not capacity.
+
 ### What is still open
 
 * 🛑 **THE LARGEST BLOCK IS NOT ROUTING FAILURE — IT IS MISSING LANGUAGE TAGS,
@@ -4516,6 +4572,64 @@ and the reason no such route exists is that **those scripts are not values in th
 enum.** ⚠ **Splitting the enum and mapping the tags is a different and much
 smaller project than writing new G2P** — do not let the second's cost attach to
 the first's rows.
+
+### ✅ PROJECT A SHIPPED — 0 → 172,210 routable rows, three edits, no retraining
+
+`aef25b7`, measured on **all 395,409 real rows**, not sampled:
+
+```
+                                        before      after
+ok                                           0    172,210   +172,210
+no_route                               252,447     80,237   −172,210
+no_lang / non_language_tag / quarantined 142,962   142,962         +0
+```
+
+⚠ **The estimate was 182,490 and the truth is 172,210** — a script tag is
+**necessary but not sufficient**: the `(lang, script)` pair must *both* land on an
+installed mode. **Syriac is the clean demonstration — 961 rows, 1 routes**, because
+`aii-Syrc` needs lang `aii` and those rows are tagged `syr`/`arc`. Myanmar loses
+8,039 the same way, mostly Shan. ✅ **Carry forward: the addressable population is
+bounded by LANGUAGE tagging too, not only by script.**
+
+⚠ **`LANG_EXPECTED_SCRIPTS` needed NOTHING**, and the warning recorded here earlier
+was wrong: `is_script_mismatch` only fires when `script == Script.LATIN`, so a
+Myanmar row cannot trip it, and *adding* entries would have created a new class of
+drop for an unmeasured population. **The fourth would-be check-that-cannot-pass
+caught before shipping.**
+
+### ✅ THE RULE DRAFTS WORK — Myanmar 16.6% → 98.7%
+
+| mode | shipped | drafted |
+|---|---|---|
+| `mya-Mymr` | 16.6% | **98.7%** |
+| `sin-Sinh` | 71.7% | **100.0%** |
+| `cmn-Bopo` *(new)* | — | 100.0% residue |
+| `zgh-Tfng` *(new)* | — | 90.5% |
+
+**The independent-vowel diagnosis was the whole story**: `(က)ရပ်ကွက်` went from
+`(က)rp∅ကwက∅` to `(k)rpkwk`. Pack at `developer/epitran-drafts/` for network review.
+
+### 🛑 THREE DEFECT CLASSES A RESIDUE CHECK CANNOT SEE — ask the CONSUMER
+
+**Residue asks "did a rule fire?"; PanPhon asks "is the output usable?".** For
+Bopomofo those answers were **100.0% and 5.6%.**
+
+1. **ASCII `g` (U+0067) for IPA `ɡ` (U+0261)** — 38 rows, 28 files, **all six**
+   priority rule sets. PanPhon **rejects** it.
+2. **Literal `∅` (U+2205) for an empty field** — 15 rows, 10 files. Epitran's own
+   139 native maps use it **zero** times.
+3. **SILENTLY TRUNCATED IPA — 36 rows.** PanPhon does not error, it returns a
+   shorter segment list: `dʒʰ → dʒ` (7 files), `ɡʱ → ɡ`, `ʈʳ → ʈ`, `r̩ː → r̩`.
+   **The aspiration and breathy-voice contrasts in every Indic-derived map do not
+   survive to the consumer.** ⚠ Same shape as `ⁿɡ → ['ɡ']`, which silently drops
+   prenasalisation.
+
+⚠ **A method error worth keeping.** `pan-Guru` would not load — `ਸ਼` defined twice,
+Epitran rejecting one-to-many. The shipped file writes it **decomposed**
+(U+0A38 + U+0A3C), the draft added it **precomposed** (U+0A36); they render
+identically and **Unicode's composition exclusions mean NFC does not merge them.**
+**A codepoint-presence check is not a grapheme-presence check**, and the two
+diverge silently in exactly the scripts this work targets.
 
 ### 🛑 §8's "v7 LOSES RETRIEVAL" IS AN ARTEFACT OF TWO UNSEPARATED STRATA
 
