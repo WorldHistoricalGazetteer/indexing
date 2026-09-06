@@ -42,7 +42,7 @@ win**, which §8.2's `n^−0.22` density scaling suggests may not be available a
 
 | | before | now |
 |---|---|---|
-| **IPA coverage** | believed 54% | **was 0.00%; now 68.43%** (49,749,377 of 72,703,552) |
+| **IPA strings** | **31,113,585** at v7 training (54.02% of its 57.6M in-training-namespace corpus; 46.49% of its 66.9M total) — **then LOST from the surviving stores** | **49,749,377** = 68.43% of 72,703,552. **A gain of +18.6M over what v7 actually trained on** — the run *restored* as well as extended |
 | `ja`+CJK | silently unroutable | **465,177 of 465,177 covered** |
 | CharsiuG2P output | silently capped ~13–15 chars | uncapped; 1,043 rows (0.04%) are repetition loops, recorded as a residual |
 | `sv` / `ceb` labels | trusted | **Lsjbot contamination**; `ceb`/`war`/`min`/`vo` quarantined (3.4M). ⚠ **`sv` (1.8M) is INSIDE the already-routed baseline, so v7's own training data carries it** |
@@ -2784,13 +2784,35 @@ silently.** The unit tests were green throughout because they used a *synthetic*
 mode set. The regression test now omits `eng-Latn` deliberately, so it can only
 pass through the fix.
 
-## 9d. ✅ IPA RECOMPUTED — 0.00% → 68.43%, and two near-misses worth more than the number
+## 9d. ✅ IPA RECOMPUTED — 31.1M → 49.7M strings, and two near-misses worth more
+
+🛑 **"From 0.00%" IS THE WRONG BASELINE AND THIS DOCUMENT USED IT.** v7 was
+**demonstrably trained with IPA** — `coverage_stats.json` records **31,113,585**
+strings, and its own provenance line (`from_db_cache: 31,113,562`) says that run
+*inherited* them from a store that held them. **The 0.00% describes what survived
+on disk before this run, not what v7 had.** The current DuckDBs are the
+`temporal-20260731` generation and carry `ipa` NULL throughout, so the strings
+were lost between v7's training and now.
+
+**The honest comparison, with both denominators stated because the corpora
+differ:**
+
+```
+v7 training   31,113,585 IPA   = 54.02% of 57,593,810 in-training-namespace
+                               = 46.49% of 66,924,548 total corpus
+now           49,749,377 IPA   = 68.43% of 72,703,552 total corpus
+gain          +18,635,792 strings over what v7 actually trained on
+```
+
+**So the run RESTORED a capability that had been lost and EXTENDED it** — it did
+not create one from nothing. ⚠ And the two percentages are not directly
+comparable: 54.02% is of a *training-namespace subset* of a *smaller* corpus.
 
 `indexing-8b`. Store at `/vast/ishi/ipa-v8/store/ipa.duckdb`.
 
 ```
 rows in store        72,703,552
-carrying IPA         49,749,377   68.428%   (from 0.00%)
+carrying IPA         49,749,377   68.428%   (v7 trained on 31,113,585)
 
 ok           49,749,377      no_route            866,948
 no_lang      18,543,146      non_language_tag    126,394
@@ -3065,7 +3087,9 @@ also the rank-4.37 bottleneck of §3.
 So, when the recompute is eventually scheduled:
 
 - **Recompute the IPA strings** — the useful artefact, needed for any teacher or
-  auxiliary objective, and coverage is only 54%.
+  auxiliary objective. ⚠ Written when coverage was believed to be 54%; it is now
+  68.43% (§9d), and the 54% was v7's own training-time figure over a smaller
+  corpus.
 - **Recompute the per-segment PanPhon features** only if a teacher survives
   D-D's decision.
 - **Retire the 8-bin pooled 192-d vector.**
