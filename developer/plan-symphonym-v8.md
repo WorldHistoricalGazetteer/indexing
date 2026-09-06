@@ -4624,6 +4624,21 @@ Bopomofo those answers were **100.0% and 5.6%.**
    survive to the consumer.** ⚠ Same shape as `ⁿɡ → ['ɡ']`, which silently drops
    prenasalisation.
 
+⚠ **AND ONE "STRUCTURAL LIMIT" PUBLISHED HERE WAS HALF WRONG.** Bare modifiers
+were recorded as unfixable in a map file. Measured over all 79,716 Myanmar-bearing
+names, that splits: **ha-hto never follows the asat — 0 of 9,647** — so the
+sequencing explanation cannot apply, and it fails because **PanPhon rejects
+aspirated sonorants and accepts devoiced ones**. Myanmar ha-hto on a sonorant
+marks **devoicing**: `ရ`+`ှ` is `r̥`, not `rʰ`. **The shipped value was wrong, not
+merely unparseable — and wrong under both answers to the register question.**
+Fixed with **10 two-codepoint rules covering 99.8%**. The visarga case survives
+for **59.4%** (53,868 of 90,616 do follow the asat); the other 36,748 follow
+vowel signs that *do* emit and are a separate, unmeasured problem.
+⚠ **The lesson: *"a character map cannot express it"* was true of the MECHANISM
+and false of the CARDINALITY — 14 and 29 contexts, top-10 above 99%. A
+structural-impossibility claim needs a cardinality check before publication,
+because a thing flagged as inherent is the one nobody re-examines.**
+
 ⚠ **A method error worth keeping.** `pan-Guru` would not load — `ਸ਼` defined twice,
 Epitran rejecting one-to-many. The shipped file writes it **decomposed**
 (U+0A38 + U+0A3C), the draft added it **precomposed** (U+0A36); they render

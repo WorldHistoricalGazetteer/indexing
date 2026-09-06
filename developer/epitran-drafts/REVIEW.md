@@ -110,7 +110,59 @@ of one grapheme in the `Orth` column, and NFC is the rejected spelling in the
 `Phon` column. **Normalise both columns to NFD, and compare graphemes NFD-wise
 when checking for duplicates.**
 
-### 🛑 A LIMIT THAT CANNOT BE FIXED IN A MAP FILE — bare modifiers
+### 🛑 ONE "STRUCTURAL LIMIT" WAS HALF WRONG — and the half that was wrong was a CORRECTNESS bug
+
+⚠ **This section previously called both bare modifiers unfixable in a map file.
+Measured over all 79,716 Myanmar-bearing names, that splits:**
+
+```
+modifier          occurrences   distinct preceding chars   after ASAT   top-10 coverage
+ှ  ha-hto → ʰ           9,647                        14      0 (0.0%)            99.8%
+း  visarga → ː         90,616                        29   53,868 (59.4%)          99.0%
+```
+
+🛑 **Ha-hto never follows the asat — not once in 9,647.** It follows ordinary
+consonants (`ရ` 4,277, `လ` 1,583, medial `ွ` 1,363, `မ` 944…), so the base *does*
+emit and the sequencing explanation cannot be why it fails.
+
+**It fails because the value is WRONG.** PanPhon **accepts aspirated stops and
+rejects aspirated sonorants** — which is phonetics, not a quirk:
+
+```
+rʰ -> ['r']   *** aspiration silently dropped      r̥ -> ['r̥']  parses
+lʰ -> ['l']   ***                                   l̥ -> ['l̥']  parses
+kʰ -> ['kʰ']  parses (a stop MAY be aspirated)
+```
+
+**Myanmar ha-hto on a sonorant marks DEVOICING, not aspiration.** So `ရ` + `ှ` is
+not `rʰ`; it is `r̥` conservatively, `/ʃ/` in modern Burmese. ✅ **The shipped
+output was not merely unparseable — it was wrong, and wrong under BOTH answers to
+Q1**, so this one needs no register decision to be a defect. ⚠ It is also the
+**fourth instance of silent truncation**, found in the place we had stopped
+looking.
+
+✅ **Redrafted as 10 two-codepoint rules** (`ရှ`, `လှ`, `မှ`, `နှ`, `ငှ`, `ညှ`,
+`ဝှ`, `ယှ`, and the two medials) covering **99.8%** of occurrences, with the bare
+`ှ` rule now emitting nothing rather than a wrong and unparseable `ʰ`.
+
+**Q13 — which value for `ရှ` and `ယှ`?** Drafted `r̥` / `j̥`, consistent with this
+file's conservative register. **Modern Burmese realises both as /ʃ/.** Same
+decision as Q1 and it should be answered the same way.
+
+**The visarga limitation stands, for 59.4% of it.** `aː`, `iː`, `kː`, `nː` all
+parse, so `း` attaches fine whenever the preceding grapheme emits something; the
+53,868 following the asat are the genuine sequencing case. ⚠ **But 36,748 follow
+vowel signs that DO emit** (`ီ` 9,146, `ာ` 7,136, `ေ` 5,159…) — **a separate and
+probably smaller problem, not yet chased, and it must not be folded into the
+structural bucket without measurement.**
+
+⚠ **THE GENERAL LESSON.** *"A character map cannot express it"* was true of the
+**mechanism** and false of the **cardinality** — 14 and 29 contexts, both with
+top-10 coverage above 99%. **A structural-impossibility claim needs a cardinality
+check before it is published**, because a thing flagged as *inherent* is the one
+nobody re-examines.
+
+### The visarga case — genuinely a sequencing limit
 
 Two shipped rules map a Myanmar sign to a **bare modifier**: `ှ` → `ʰ` and `း` →
 `ː`. PanPhon parses `kʰ` and `aː` and `kʰaː`, but a modifier **alone** parses to
