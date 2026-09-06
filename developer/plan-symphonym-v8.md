@@ -4093,6 +4093,41 @@ only as good as the reasoning behind it.**
 toponyms are globally deduplicated, so any romanised form already present from
 another namespace is not a new id.
 
+### 🛑 THE `undscript` REBUILD WRITES DEFECTIVE IPA — bounded, but one artefact needs protecting
+
+Job **11170354**, running 6 Sep. `indexing-8b` verified **in the file the job is
+executing**, not inferred, that three known defects are live in its path — they
+were fixed in `phonetics/ipa/backends.py` and `routes.py`, **different modules**
+from `rebuild_toponyms_index.py`:
+
+* `:260` is still `self.model.generate(**inputs)` with **no `max_new_tokens`** —
+  the ByT5 20-byte-token truncation. Measured affected: **yue 80.0%, ko 71.7%,
+  ja 33.3%, zh 16.7%.**
+* `('ja', Script.CJK)` still absent from `EPITRAN_LANG_MAP` → **465,177 Kanji
+  toponyms get `None`.**
+* The map is still hand-written rather than derived from the 218 installed modes,
+  topping out near **50% instead of 68.4%**.
+
+✅ **Assessment: bounded and mostly reversible — let it finish.** It is a **new
+generation** (`toponyms-undscript-20260906T160000Z.db`) with the old
+`temporal-20260731` DB untouched; **stage-2 Symphonym embeddings are computed
+from the NAME STRING, not from IPA**, so the ~1h of GPU is uncorrupted; the
+structural point of the run (`@und` inventory, #250 romanisations) is unaffected;
+the backfill was always going to overwrite `ipa`; and killing it mid-`shutil.copy2`
+risks a **truncated** final file, which is worse than a complete defective one.
+⚠ Note the DB on disk at 12:49 is the **STEP 1 checkpoint** — the file is copied
+temp→final **twice** (`:2264`, then `:2327` after G2P).
+
+🛑 **THE PART THAT NEEDS PROTECTING IS NOT THE IPA — IT IS `coverage_stats.json`
+(`:2331`).** That artefact's staleness **already sent one brief out with a wrong
+premise today**, and a replacement generated from defective IPA will look
+authoritative *and* current, which is the worse failure. **Check whether `:2331`
+writes to the same path as the 2026-05-01 file
+(`/vast/ishi/elastic/zenodo/training_stats/coverage_stats.json`) that `04` used to
+reconstruct v7's per-language baseline — if so it is the only surviving record and
+must be copied aside first.** Either way the standing rule holds: **no IPA
+coverage figure may come from anywhere but `8b`'s store.**
+
 ### 🛑 STEP 5 IS A STAGING CAMPAIGN, NOT A JOB
 
 `scripts/symphonym.sh:34-50` **requires a staging ES and writes there.**
@@ -4195,10 +4230,26 @@ INDEX and end with one `_aliases` swap** — never the alias itself.
   separate Parquet that consumers must be re-pointed at is the same fault in a
   different hat: it depends on someone editing two `SELECT t.ipa` sites, and
   until they do, coverage is still zero.
-* **Write `ipa` only; leave `panphon_features` NULL** — deliberate, because §10
-  retires the pooled 192-d vector, and filling that column would manufacture an
-  input for a consumer we intend to remove. Recorded at the write site so the
-  next reader does not file it as an omission.
+* 🛑 **REVISED 6 Sep — the backfill must NULL `panphon_features` wherever it
+  writes `ipa`.** The original decision ("write `ipa` only, leave it NULL") rested
+  on the premise that the column **is** NULL. The `undscript` rebuild destroys
+  that premise: it **populates `panphon_features` from its own defective IPA**
+  (`generate()` with no `max_new_tokens`, no `('ja', CJK)` route). Overwriting
+  `ipa` and leaving the vector alone would give every row an `ipa` and a panphon
+  vector from **different computations** — individually plausible, jointly wrong,
+  and **undetectable**.
+
+  ✅ **And it is not really a deletion**, which is what settles it:
+  `panphon_features` is a **pure function of `ipa`**, recomputable at any time
+  from the column being written. Nulling forfeits nothing recoverable; leaving it
+  creates the one kind of damage a later correction cannot find. **A stale
+  derivation beside a corrected source is worse than an absent one** — absence is
+  legible, inconsistency is not. Consistent with §10, and it does not foreclose
+  the per-segment features §0 keeps conditional.
+
+  ⚠ **Record the nulling in the run's own output** ("N rows: `ipa` written,
+  `panphon_features` nulled") so the next reader sees a *decision* rather than a
+  gap — the same reason `no_lang` and `no_route` must not be one bucket.
 * **The store remains the SYSTEM OF RECORD; the backfill is lossy by
   construction.** A NULL `ipa` in the toponyms DuckDB flattens **seven** states
   into one — `no_lang`, `quarantined`, `no_route`, `non_language_tag`,
