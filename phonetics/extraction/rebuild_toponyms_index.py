@@ -567,6 +567,18 @@ LANG_EXPECTED_SCRIPTS: Dict[str, Set[Script]] = {
 }
 
 
+def _has_script_subtag(lang: str) -> bool:
+    """True when a BCP-47 tag carries an explicit ISO 15924 script subtag.
+
+    The script subtag is the second element and is exactly four alphabetic
+    characters — `zh-Latn`, `sr-Cyrl`, `ug-Arab`. A region (`en-GB`) is two
+    letters or three digits, and an extension (`x-notone`) is one character,
+    so neither is mistaken for one.
+    """
+    parts = lang.split("-")
+    return len(parts) > 1 and len(parts[1]) == 4 and parts[1].isalpha()
+
+
 def is_script_mismatch(lang: Optional[str], script: Script) -> bool:
     """
     Check if the detected script is inconsistent with the language tag.
@@ -583,6 +595,33 @@ def is_script_mismatch(lang: Optional[str], script: Script) -> bool:
     - "北京" with lang=zh and script=CJK (correct)
     """
     if not lang:
+        return False
+
+    # ⚠ A SOURCE-DECLARED SCRIPT IS NOT A MISMATCH (#250).
+    #
+    # The rule below exists to catch an UNDECLARED inconsistency — a bare `zh`
+    # name that is accidentally Latin. It cannot catch a DECLARED one, because
+    # the base-split on the next line destroys the declaration before the test
+    # runs: `zh-Latn-pinyin-x-notone` becomes `zh`, LATIN is not in that
+    # language's expected scripts, and the row is discarded for being exactly
+    # what its tag said it was.
+    #
+    # Getty publishes ~1.16M such forms in tgn alone (zh-Latn-pinyin-x-notone
+    # 632,401, zh-Latn 231,563, fa-Latn 128,276, ja-Latn 63,919, el-Latn 56,193,
+    # ru-Latn 30,405). None reached the store: `tgn lang=zh script=LATIN` was 0.
+    # `bo` is the control — Tibetan is absent from LANG_EXPECTED_SCRIPTS, so its
+    # 7,904 `bo-Latn` forms survived, which is what makes this the mechanism
+    # rather than a correlation with something upstream.
+    #
+    # These are native<->romanised pairs declared by the source on one subject,
+    # which is a cross-script positive set for a phonetic matcher.
+    #
+    # Alternative considered and rejected: require the declared subtag to MATCH
+    # the detected script, filtering when they disagree. That adds a new class
+    # of drop for a population nobody has measured, so the declaration is
+    # trusted outright — the conservative direction when the failure mode being
+    # fixed is silent data loss.
+    if _has_script_subtag(lang):
         return False
 
     lang_base = lang.lower().split('-')[0]  # Handle zh-Hans, etc.
