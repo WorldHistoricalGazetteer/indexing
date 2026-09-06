@@ -2930,7 +2930,71 @@ one is not.*
 lengths cost more through `lex_lookup`, and English is now the long pole of the
 run. A benchmark drawn from the head of a corpus measures the head.
 
-### ✅ The result that survives either way: accuracy is SCRIPT-dependent, not country-dependent
+## 🛑 CLOSED BY ARITHMETIC — country-based inference should not be used ANYWHERE
+
+**`indexing-8b` added the one column that settles it: the MAJORITY-CLASS rate.**
+
+```
+script      no-lang rows   agreement   majority-class   inference − constant
+LATIN         16,211,998      26.53%    23.38% (en)          +3.15
+CJK            1,036,998      76.48%    71.87% (zh)          +4.61
+CYRILLIC         640,825      36.28%    30.61% (ru)          +5.67
+ARABIC           332,828      44.27%    32.56% (fa)         +11.71
+HANGUL           107,038      50.69%    99.88% (ko)         -49.19
+THAI              37,988      91.23%    99.91% (th)          -8.68
+GREEK             33,988      65.48%    91.15% (el)         -25.67
+KATAKANA          22,521      11.45%    99.87% (ja)         -88.42
+ARMENIAN           3,909      48.01%    96.28% (hy)         -48.27
+HIRAGANA           4,536      99.40%    99.85% (ja)          -0.45
+```
+
+> 🛑 **EVERY SCRIPT WHERE INFERENCE LOOKED GOOD IS ONE WHERE A CONSTANT BEATS IT.**
+> Where it is accurate, a constant is *more* accurate. Where it beats a constant,
+> it is *not* accurate (26–44%). **So it should not be used anywhere.**
+
+**HIRAGANA 99.40% is not skill** — 99.85% of hiragana toponyms are labelled `ja`,
+so CLDR inference is fractionally **worse** than saying `ja` every time. Not
+near-tautological: **worse than tautological.**
+
+### 🛑 The rule this yields, and it is the most transferable finding of the campaign
+
+> **Any accuracy figure needs the MAJORITY-CLASS RATE beside it, or you cannot
+> tell skill from class imbalance.**
+
+⚠ **Fourth instance of §8.3b, and the second inside `indexing-8b`'s own document.**
+The script spread was reported twice as *"the most useful thing here"* and as
+surviving all three caveats. **It did survive them** — and was still measuring
+**script mono-nationality** rather than inference skill. *The caveats were about
+the LABEL; this one is about the BASELINE, and no amount of thinking about label
+quality would have surfaced it.*
+
+### ✅ A smaller rule that DOES survive — and it reverses the katakana reading
+
+**The majority-class column is itself the finding:** for mono-national scripts,
+*"assign the script's modal language"* is 99%+ correct. **And for choosing a G2P
+BACKEND that is the right question — whose phonology should read this string, not
+whose name it originally was.**
+
+🛑 **Katakana is the clean case and it inverts §9b's and §9c's earlier reading.** A
+katakana toponym is often a *foreign* name — but **Japanese phonology is still what
+should read it**, so `ja` is correct *for this purpose* even where it is wrong
+about origin. **The 11.45% was scoring it against the wrong question.**
+
+Scripts at ≥95% modal coverage (HANGUL, THAI, KATAKANA, HIRAGANA, ARMENIAN,
+GUJARATI, TAMIL, MALAYALAM, KANNADA, TELUGU) cover **177,318 no-lang rows** =
+0.956% of no-lang, **0.244% of corpus**. Coverage 68.428% → **68.672%**. Small,
+safe, cheap. **Not implemented** — ships with a provenance column and its measured
+rate if wanted.
+
+### 🛑 The realistic headroom, and the number for SG
+
+> **LATIN IS 87.43% OF ALL NO-LANG ROWS** (16,211,998 of 18,543,146).
+
+**The 18.5M gap is a Latin-script problem, and no script- or country-conditioned
+rule touches it.** Anything that moves it materially is **language identification
+from the string itself** — a different project, not a refinement of this one.
+
+### ~~The result that survives either way: accuracy is SCRIPT-dependent~~ — superseded above
 
 ```
 HIRAGANA 99.40%   THAI 91.23%   CJK 76.48%   GREEK 65.48%   HANGUL 50.69%
