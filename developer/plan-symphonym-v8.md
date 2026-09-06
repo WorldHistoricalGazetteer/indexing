@@ -2668,6 +2668,53 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## 📋 OSM RETILE — required, scheduled here, and user-visible
+
+**Decided by SG, 6 Sep.** `place#246` carries the ingestion half (code fix +
+`_bulk` patch of 232,343 docs); **the retile is a PUBLICATION step and is tracked
+here.**
+
+### Why it is required rather than optional
+
+Today **every** OSM feature tiles as unbounded. `generate_tiles.py:1154` says so
+in its own words: an attestation `{"start": {"latest": 2026}}` *"now gets
+`start = -9999, end = 9999` (unbounded: never hidden in possibly) plus
+`start_def = end_def = 2026`"*.
+
+🛑 **So the 232,343 patched documents change nothing a user can see until the
+OSM buckets are retiled.** The tile properties are **baked at generation time**,
+not read live from ES — so a patched index and a stale tileset disagree silently,
+with the map showing the older behaviour and nothing reporting the mismatch.
+
+**What changes when it lands:** 132,841 `historic=*` features stop appearing at
+every year and become correctly time-bounded. **That is the point of the item** —
+a historical gazetteer whose historic features ignore the timeline is the defect
+`place#164` exists to remove, and this is its OSM instance.
+
+### Sequence, and it is strict
+
+```
+1. fix osm-places.py            (code — mandatory, #246)
+2. _bulk patch 232,343 docs     (data — #246, NOT a re-ingest)
+3. retile the OSM buckets       (publication — here)
+4. verify on the MAP, not only in the index
+```
+
+⚠ **Step 4 is the one that gets skipped.** A patched index and a successful tile
+job are each necessary and neither is sufficient — **a tile job that reports
+success is not evidence it read the new data**, which is this repository's
+standing rule from the 7 August retile that streamed `poly=0` for every bucket and
+deployed. Check a known feature at a year outside its span.
+
+⚠ **Buckets:** `osm` and `osm_misc` both carry OSM features and both need it.
+`tgn` and `nl` share the same unbounded encoding but are **not** in scope here —
+`tgn` resolves through its own rebuild, `nl` is `attested_at(now)` and correct.
+
+⚠ **Do not bundle a PBF refresh.** The pinned `2026-07-20` planet stays. A refresh
+would make the verification unable to distinguish *"our fix worked"* from
+*"upstream moved"*, and would invalidate the 232,343 figure, which was measured
+against that exact file.
+
 ## ✅ ITEM 1 ANSWERED — the planet scan landed: 1.13%, concentrated in `historic=*`
 
 **Job 11168151, `htc-n77`, COMPLETED in 9 min 55 s** — on the **new** API, which
