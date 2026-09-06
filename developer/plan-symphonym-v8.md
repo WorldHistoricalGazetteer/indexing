@@ -82,9 +82,87 @@ never learned as anything.
 
 So the recomputation does not only improve what the teacher is *shown*; **it
 enlarges the set of toponyms eligible to be a training pair in the first
-place.** That is plausibly the larger of the two effects. It also reframes the
-selector question (below): the defect in PanPhon-based selection is **coverage,
-not circularity** — and leg 1 is what attacks it.
+place.** That is plausibly the larger of the two effects.
+
+### 🛑 THE CIRCULARITY QUESTION — asked by SG, and the answer is NOT "the AUC was good"
+
+**The worry, stated fairly.** PanPhon selects the training pairs *and* is the
+teacher's input representation, and the student distils from the teacher. So the
+student could be nothing but a compression of PanPhon's own similarity
+judgements, and a benchmark could confirm it while measuring nothing.
+
+**Why it is narrower than it looks.** Training positives are **not** "PanPhon
+says these two strings are close". `find_similar_in_place`
+(`es_knn_helper.py:87`) runs HDBSCAN over PanPhon embeddings **scoped within a
+single place** — so the *candidate set* is defined by the gazetteer's own
+co-reference assertion and PanPhon acts only as a **filter** on it, removing the
+exonyms (Ayers Rock / Uluru co-attest and are not phonetically related). The
+external anchor does the heavy lifting.
+
+✅ **And the benchmark's labels are phonetics-free — this is what actually
+settles it.** `evaluation/build_corpus.py` builds positives as *"cross-script
+name pairs of the same place"*, via `cross_script_pairs`, from the `places`
+index. **There is no IPA, no PanPhon and no embedding anywhere in the label
+construction**; the hard-link overlay is used only to stop true co-referents
+being drawn as negatives. So AUC **0.9324** is not measuring "v7 reproduces
+PanPhon" — it is measuring v7 against gazetteer-attested co-reference, which
+PanPhon had no hand in.
+
+⚠ **Stronger than mere independence:** the eval set *includes* pairs the training
+filter would have **rejected** — co-attested pairs that are phonetically
+distant. So it is if anything **harder** than the training distribution, not a
+memorisation check. ⚠ This is the `labeller_inside_the_thing_measured` trap
+(Epitran is v7's own teacher front end) and it does **not** apply here, because
+the eval touches no IPA at all — but it must be re-checked for any future gate
+that does.
+
+### 🛑 DO NOT SUBSTITUTE v7 AS THE PAIR SELECTOR
+
+Considered and **rejected**. The one-line reason: **v7 is not an alternative to
+PanPhon — it is PanPhon seen through a rank-10.8 bottleneck.** The teacher's
+input *is* PanPhon features and the student distils from the teacher, so
+substituting v7 does not introduce a second, independent opinion; it swaps the
+anchor for a lossy compression of the same one, and removes the only component
+in the loop with a basis outside WHG (articulatory phonology, whose failure modes
+are uncorrelated with the encoder's).
+
+🛑 **And it would sabotage leg 3 specifically.** v7 occupies **10.8 of 128**
+directions. As a selector it can only propose pairs that are close *within that
+subspace*, so any distinction living in the 117 collapsed directions can never
+enter the training set — **as a positive or as a hard negative**. v8 would be
+trained on data blind in exactly the directions v8 exists to repair. v7's
+confident errors (`Keang-su` → GANSU at 99.5) would arrive as **labels**, and
+self-training amplifies systematic error with nothing left pulling back.
+
+**The defect in PanPhon-based selection is COVERAGE, not circularity** — and leg
+1 is what attacks it.
+
+### A SECOND OPINION IN THE FILTER — worth measuring, and one candidate is free
+
+Two things follow from the above, and neither is a recommendation to act yet.
+
+**1. The threshold has never been measured, and it is doing real work.** Within a
+place, co-attested names are either phonetic variants/transliterations or
+genuinely different names (exonyms, renames). PanPhon separates them. ⚠ **So
+"loosen it" is NOT safe advice** — loosen too far and the model learns
+Uluru ≈ Ayers Rock, destroying the metric it exists to provide. The open question
+is empirical and unasked: **at each threshold, how many true phonetic variants
+are excluded, and how many exonyms admitted?**
+
+**2. There is one genuinely independent second opinion available, and it needs no
+IPA.** **anyascii romanisation + edit distance** — the benchmark's own baseline
+(AUC 0.9002). It is independent of PanPhon, independent of v7, and critically
+**requires neither a language tag nor an IPA transcription**, so it can propose
+positives for precisely the rows PanPhon can never reach: the 18.5M `no_lang`
+population and the 1.4M tgn `und` rows. A pair passing **either** filter would
+widen eligibility without adding circularity.
+
+⚠ **Its bias is known and must be stated with it:** `romanised_baseline_measures_provenance`
+— **35% of CJK↔Latin positives romanise to identical strings**, so edit distance
+is a near-oracle in that stratum and weak in non-Latin↔non-Latin. That is
+tolerable in a **union** second filter and would be disqualifying if it were
+allowed to dominate. **Any trial must stratify Latin-involving from
+non-Latin↔non-Latin before averaging anything.**
 
 ### 🛑 THE LSJBOT CLEANUP CLAIM IS WITHDRAWN — and the truth is worse
 
