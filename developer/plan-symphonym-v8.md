@@ -2728,9 +2728,46 @@ something supplied one, and rows lacking one may differ systematically *within t
 same namespace*. **An imputation cannot be fully validated on the labelled subset
 when being labelled is the thing that differs.**
 
+🛑 **It is worse than a caveat: it partly invalidates the check's DESIGN.** The
+stratification was built to decide between *"32.40% is real"* and *"32.40% is a
+selection artefact"*. **Neither reading is available from this instrument** —
+stratifying by namespace controls for one confound and leaves the one that does
+the damage. `indexing-8b`'s own objection was **unfalsifiable by its own method**,
+and it recorded that rather than reporting "measured 32.40%, refined per
+namespace".
+
+⚠ **And the bound is ONE-SIDED IN AN UNKNOWN DIRECTION.** If labelled rows are
+systematically more exonymic — an English label got supplied *because* an
+international form existed — true accuracy on the unlabelled population is
+**HIGHER** than measured. If labelledness instead tracks better-documented places,
+whose names are also more likely to be locally attested, it is **LOWER**. *"I
+cannot tell which from inside the corpus, and I am not going to argue for the
+flattering one."*
+
+### 🛑 The deeper problem: the metric scores AGREEMENT WITH A LABEL, not correctness
+
+> **`済州島 → チェジュ島` may carry a stored `lang` of `ja`. Inferring `ja` then
+> scores CORRECT — while being wrong about the name, which is Korean.**
+
+**So every accuracy figure in §9c is agreement-with-stored-label, not
+correctness-of-name**, and the two diverge exactly where the corpus is already
+wrong. `indexing-8b`'s 11.45% KATAKANA therefore **also absorbs cases where the
+stored lang is simply wrong**, unseparated — so it corroborates §9b's *mechanism*
+and **must not be quoted as the SIZE of it**.
+
+⚠ **This is the exonym problem in a second costume**, and it is the second
+independent reason to treat these as bounds rather than measurements.
+
 ✅ **Consequence, and it is unconditional:** any inferred `lang` ships with its
 **provenance flag and the measured error rate stamped beside it**, whatever the
 accuracy turns out to be — because the accuracy itself cannot be fully validated.
+*An unvalidatable number that travels with its own uncertainty is usable; a bare
+one is not.*
+
+⚠ **One more sample bias, self-caught:** the `eng-Latn` throughput benchmark of
+882/s came from **the first 1,500 English names — short and common**. Real name
+lengths cost more through `lex_lookup`, and English is now the long pole of the
+run. A benchmark drawn from the head of a corpus measures the head.
 
 ### ✅ The result that survives either way: accuracy is SCRIPT-dependent, not country-dependent
 
