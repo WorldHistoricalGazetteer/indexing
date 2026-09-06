@@ -12,7 +12,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
-from processing.temporal import attested_at, normalise_timespans
+from processing.temporal import attested_at, normalise_timespans, source_release_year
 
 #: Publication year of Index Villaris — the year its records attest.
 IV_YEAR = 1680
@@ -26,11 +26,7 @@ def _digitisation_year():
     next fetch. What the edition actually attests is "this is the place's name
     as of the edition" — one derived year, not a fabricated range.
     """
-    source_dir = Path(DATA_DIR) / 'authorities' / 'iv'
-    stamps = [p.stat().st_mtime for p in source_dir.glob('*')] if source_dir.is_dir() else []
-    if stamps:
-        return datetime.fromtimestamp(max(stamps)).year
-    return datetime.now().year
+    return source_release_year(Path(DATA_DIR) / 'authorities' / 'iv', label='iv')
 
 
 #: Attestation for the 1680 gazetteer's own names, and for its modern

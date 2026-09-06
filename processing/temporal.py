@@ -124,6 +124,64 @@ def _clean(ts: dict[str, Any]) -> list[dict[str, Any]]:
     return [out] if out else []
 
 
+def source_release_year(release: "str | Path | None" = None, *,
+                        glob: str = "*", label: str = "",
+                        quiet: bool = False) -> int:
+    """The year a source release was produced — the year `attested_at` should use.
+
+    ONE implementation, because there were SIX. `osm-places.py`, `tgn_temporal.py`,
+    `nativeland-places.py`, `dplace-places.py`, `indexvillaris-places.py` and
+    `wikidata-geoshapes.py` each grew their own mtime-then-`datetime.now().year`
+    fallback, differing only in how they locate the release — a single file, or
+    the newest member of a directory. Six copies of a convention is six places for
+    it to drift, and the drift is silent: the wrong year here does not fail, it
+    attests every record of a namespace to a year the source never claimed.
+
+    ⚠ Three of the six were found by the test that guards this, not by the audit
+    that prompted it — which had reported three. A grep for the pattern is worth
+    more than an inspection of the namespaces you already suspect.
+
+    ⚠ THE FALLBACK IS THE DANGEROUS PATH, so it announces itself. Falling back to
+    *today* means the corpus asserts "attested now" for a release that may be
+    years old — which is wrong in the direction nobody checks, because it makes
+    the data look fresher than it is. A caller that reaches the fallback should
+    see it in its log rather than discover it from a date filter later.
+
+    Callers with a better signal than an mtime — `osm` reads the PBF's
+    `osmosis_replication_timestamp`, which is the dump's own claim about itself —
+    should use it first and fall back to this.
+    """
+    from datetime import datetime
+    from pathlib import Path as _Path
+
+    if release is not None:
+        try:
+            path = _Path(release)
+            if path.is_dir():
+                # A release delivered as several files dates from its NEWEST
+                # member: an authority that ships a directory has no single
+                # artefact to stat, and the oldest file in it would date the
+                # release to whenever its least-updated part was written.
+                stamps = [q.stat().st_mtime for q in path.glob(glob) if q.is_file()]
+                if stamps:
+                    return datetime.fromtimestamp(max(stamps)).year
+                reason = f"{path} matched no files for glob {glob!r}"
+            elif path.exists():
+                return datetime.fromtimestamp(path.stat().st_mtime).year
+            else:
+                reason = f"{path} does not exist"
+        except Exception as exc:                      # unreadable, bad type, …
+            reason = f"{release!r} unreadable ({exc})"
+    else:
+        reason = "no release path given"
+    year = datetime.now().year
+    if not quiet:
+        print(f"WARN: {label or 'source'} release year falling back to the current "
+              f"year ({year}) — {reason}. Every undated record will be attested to "
+              f"{year}, which is a claim about the SOURCE, not about today.")
+    return year
+
+
 def attested_at(year: int | None) -> list[dict[str, Any]]:
     """The source records the place *as it was* at ``year``.
 

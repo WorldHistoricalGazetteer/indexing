@@ -25,7 +25,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
-from processing.temporal import attested_at
+from processing.temporal import attested_at, source_release_year
 
 NAMESPACE = "dp"
 
@@ -42,11 +42,8 @@ def _release_year():
     claimed every D-PLACE society existed *only* in 2025 (place#164) and went
     stale the moment a newer release was fetched. Read it from the release.
     """
-    source_dir = Path(DATA_DIR) / 'authorities' / 'dp'
-    stamps = [p.stat().st_mtime for p in source_dir.glob('*.geojson')] if source_dir.is_dir() else []
-    if stamps:
-        return datetime.fromtimestamp(max(stamps)).year
-    return datetime.now().year
+    return source_release_year(Path(DATA_DIR) / 'authorities' / 'dp',
+                              glob='*.geojson', label='dp')
 
 
 #: "Attested alive in the release year" — the D-PLACE snapshot records the

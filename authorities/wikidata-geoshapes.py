@@ -33,7 +33,7 @@ from processing.helpers import (
     enrich_geometry,
     select_h3_cover_geometry,
 )
-from processing.temporal import attested_at
+from processing.temporal import attested_at, source_release_year
 from processing.settings import (
     BATCH_SIZE,
     DATA_DIR,
@@ -61,10 +61,7 @@ def _observation_year() -> int:
     newer dump was fetched. The refs file is regenerated from each Wikidata
     dump, so its mtime dates the generation of shapes this run observes.
     """
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(GEOSHAPE_REFS_FILE)).year
-    except OSError:
-        return datetime.now().year
+    return source_release_year(GEOSHAPE_REFS_FILE, label='wd-geoshapes')
 
 
 #: Timespans asserting "attested alive in <observation year>" — started no

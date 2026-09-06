@@ -12,14 +12,18 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
-from processing.temporal import attested_at
+from processing.temporal import attested_at, source_release_year
 from datetime import datetime
 
 # Native Land is a PRESENT-DAY snapshot of territory/language/treaty extents:
 # it attests these exist now, and says nothing about when they began or ended.
 # Was `{'start': {'in': 2025}, 'end': {'in': 2025}}` = "existed only in 2025",
 # which excluded every nl record from any historical date range (place#164).
-_NL_ATTESTATION_YEAR = datetime.now().year
+# Native Land publishes no dated release artefact, so there is no mtime to
+# read and the fallback IS the answer here rather than a degraded path.
+# Routed through the shared helper anyway so the convention has one home,
+# and quiet because a warning that always fires teaches nobody anything.
+_NL_ATTESTATION_YEAR = source_release_year(None, label="nl", quiet=True)
 _NL_ATTESTED = attested_at(_NL_ATTESTATION_YEAR)
 
 NL_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'nl'), None)

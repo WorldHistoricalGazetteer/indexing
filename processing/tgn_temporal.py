@@ -38,19 +38,18 @@ _REL_END_RE = re.compile(r'#estEnd>\s+"([^"]+)"')
 def _default_release_year() -> int:
     """Year of the TGN release on disk, else the current year.
 
-    Was a hardcoded ``2025``. A literal here goes stale the moment a newer
-    ``explicit.zip`` is fetched, and then every undated TGN record is attested
-    to the wrong year — the same drift that made ``osm`` claim 2025 against a
-    2026 planet (place#164).
+    Was a hardcoded ``2025``, then a private mtime-and-fallback copy. Now
+    delegates to `processing.temporal.source_release_year`, which is the single
+    implementation of this convention — see its docstring for why three of them
+    existed and why the fallback announces itself.
     """
+    from processing.temporal import source_release_year
     try:
         from processing.settings import DATA_DIR
         release = Path(DATA_DIR) / "authorities" / "tgn" / "explicit.zip"
-        if release.exists():
-            return datetime.fromtimestamp(release.stat().st_mtime).year
     except Exception:
-        pass
-    return datetime.now().year
+        release = None
+    return source_release_year(release, label="tgn")
 
 
 #: Year the ingestion attests undated TGN records to (the release year).

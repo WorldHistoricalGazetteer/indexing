@@ -103,10 +103,12 @@ def resolve_attestation_year(pbf_path) -> int:
             return int(str(stamp)[:4])
     except Exception as exc:
         print(f"WARN: could not read replication timestamp from {pbf_path}: {exc}")
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(pbf_path)).year
-    except Exception:
-        return datetime.now().year
+    # The PBF header is the dump's own claim about itself and is preferred above.
+    # Everything below is the shared convention — see
+    # `processing.temporal.source_release_year` for why this was one of three
+    # private copies and why the final fallback announces itself.
+    from processing.temporal import source_release_year
+    return source_release_year(pbf_path, label="osm")
 
 
 def _attestation_timespans():
