@@ -251,17 +251,52 @@ earlier is **not** a contradiction: 59.9% is per-document toponyms, 40.1% is
 **distinct ids**, and a name on many places is one inventory row. The distinct
 figure is the one that sizes the top-up.
 
-🛑 **But `und` does not route.** `routes.py:164` `resolve()`: `und` is **not** in
-`NON_LANGUAGE_TAGS` (`{genitive, ar1, lauc}`) so it clears that gate;
-`('und','LATIN')` is in neither `SCRIPT_FIRST` nor `NEURAL_ROUTES`; it is not
-quarantined; `to_iso3('und')` returns `und` unchanged; and `und-Latn` is not an
-installed Epitran mode — so it falls to `return None, "no_route"` (`:190`).
-**All 1,398,790 land `no_route`.** They get an inventory row and an embedding
-(~30 s of L40S at 49k/s); they get **no IPA**.
+🛑 **But `und` does not route** — confirmed empirically by `indexing-8b` running
+the router rather than reading it: `resolve('und', script)` returns a terminal
+status in **all twenty scripts the corpus uses**; `und-Latn`, `und-Arab`,
+`und-Cyrl` and `und-Hans` are all absent from the 218 installed modes. ✅ **With
+positive controls in the same run** — `en`+LATIN → `eng-Latn`, `ca`+LATIN →
+`cat-Latn`, `ja`+CJK → `jpn` — so the router is not simply refusing everything,
+which is what makes the `und` result mean anything. **All 1,398,790 get an
+inventory row and an embedding (~30 s of L40S at 49k/s) and no IPA.**
 
-⚠ **Forecast `no_route` 866,948 → ~2.27M**, more than 2.6× and the largest
-movement in the status census since it was built. Predicted here **with its
-cause**, so the next `verify_store` run does not read it as damage.
+### ✅ AND `no_route` WAS THE WRONG BUCKET — a terminal status is a QUEUE LABEL
+
+🛑 **This document briefly forecast a 2.6× jump in `no_route`. That was wrong**,
+and the fix (`6c76e0b`) is better than the forecast it replaces. The two terminal
+statuses name **different future work**:
+
+```
+no_lang     the queue for LANGUAGE IDENTIFICATION
+no_route    the queue for ADDING A G2P BACKEND
+```
+
+`und` is ISO 639-2 for **undetermined** — semantically identical to an empty tag,
+and **no Epitran mode will ever be written for it.** Filing 1.4M rows under
+`no_route` puts them in a backend queue no backend can serve, and takes them out
+of the LID queue where they belong. `UNDETERMINED_TAGS = {und, mis, zxx}` now
+resolve to `no_lang`; `mul` stays quarantined for its own separate reason.
+
+```
+as traced        no_route     866,948 → ~2,265,738   (2.61×)
+as shipped       no_lang   18,543,146 → ~19,941,936  (+7.5%)
+                 no_route     866,948 → UNCHANGED
+```
+
+⚠ **The point is not tidiness.** The prose conclusion was *"these 1.4M join the
+`no_lang` wall rather than crossing it"* — **with the right bucket the census
+says that in numbers**, instead of needing a footnote to stop someone reading a
+2.6× jump as damage. A +7.5% movement in the largest existing bucket needs no
+defending. **File a terminal status by which future work could fix it, not by
+where the code happened to fall through.**
+
+✅ **32 tests pass, including the negative control that keeps it honest**: a
+*real but unsupported* language (`sw`, no installed mode) must **still** be
+`no_route` — without it the change would have collapsed the two buckets into one.
+
+🛑 **Nobody should add an `und-Latn` Epitran mode to make these route.** That
+manufactures a transcription from a **declared absence** of information — the
+same move as interpolating the Danube, and the standing prohibition covers it.
 
 **The fix is not wrong** — it stops `extract_namespace` discarding them, makes
 them searchable, and gets them embeddings, none of which was true yesterday.
