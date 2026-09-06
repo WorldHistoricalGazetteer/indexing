@@ -284,30 +284,35 @@ bo    NO       (absent from the dict)                  8,431
 
 🛑 **`bo` is the positive control that makes this mechanism rather than
 correlation.** Getty publishes 7,904 `bo-Latn` forms and **they survived** —
-purely because Tibetan is not one of the 38 languages enumerated. Had the cause
+purely because Tibetan is not one of the **34** languages enumerated. Had the cause
 been anything upstream (ingest, dedup, normalisation), Tibetan romanisations
 would have died with the Chinese ones. **They did not.**
 
 ### 🛑 THE FILTER IS ALREADY INCONSISTENT — which is what makes the exemption principled
 
 The rule as implemented is not *"we filter romanisations"*. It is **"we filter
-romanisations of the 38 languages someone enumerated"** — Tibetan, Ethiopic,
-Khmer, Lao and every other unlisted script keep theirs. Nothing about data
-quality, attestation, or the names themselves separates `bo-Latn` from
-`zh-Latn-pinyin`.
+romanisations of the 34 languages someone enumerated"** — Tibetan, Ethiopic,
+Khmer, Lao, Myanmar and Sinhala all keep theirs **by omission rather than by
+decision**. Nothing about data quality, attestation, or the names themselves
+separates `bo-Latn` from `zh-Latn-pinyin`.
 
-✅ **And the precedent already exists in the dict.** `'sr': {Script.CYRILLIC,
-Script.LATIN}` — the author *already accepted* that some languages' Latin forms
-are legitimate, and implemented it as a **hand-maintained exception**. The
-proposed exemption does not introduce a new principle; it **generalises an
-existing one from a hardcoded list to the data's own declaration.**
+✅ **And there is exactly ONE Latin exception in the dict — which is stronger
+than a precedent.** `'sr': {Script.CYRILLIC, Script.LATIN}  # Serbian uses both`
+is **1 of 34**, the only entry naming LATIN at all. So it is unambiguously an
+**ad-hoc concession, not a policy**. The author already accepted that some
+languages' Latin forms are legitimate and hand-maintained a single special case
+for it. ⚠ **The exemption therefore does not generalise a policy — it REPLACES a
+lone hardcoded special case with the data's own declaration.** Anyone defending
+the status quo has to explain why Serbian earns by hand what Getty states
+explicitly in the tag.
 
 ### THE FIX IS A NAMED EXEMPTION, NOT A REMOVAL
 
 **Exempt from `is_script_mismatch` any form whose language tag explicitly
 declares its script.** Where the tag says `-Latn`, the romanisation is
-**asserted, not erroneous** — and `sr`'s hardcoded `{CYRILLIC, LATIN}` shows the
-principle was already conceded, just not read from the data. The filter stays correct for its real purpose — an
+**asserted, not erroneous** — and `sr`, the dict's *only* LATIN entry, shows the
+principle was already conceded for one language by hand, just never read from the
+data. The filter stays correct for its real purpose — an
 *unmarked* `Beijing@zh` genuinely is a data error that would pollute the "what
 does Chinese look like" signal — and Getty's marked forms stop being collateral.
 **This is what would deliver the attested cross-script pairs to the selector.**
