@@ -335,5 +335,74 @@ class TestInventoryStalenessGuard(unittest.TestCase):
             stale_inventory_namespaces(str(self.inv), str(self.d / "nostaged")), [])
 
 
+class TestLangWitness(unittest.TestCase):
+    """The tgn empty-lang fix RE-KEYS toponyms (`X@` -> `X@und`), so an
+    inventory built after it has a large `und` population and few empty tags.
+    This is a SECOND witness, independent of the rebuild's own sidecar: the
+    sidecar is the producer's self-report and a correct re-stamp satisfies it
+    while the content is still wrong."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "inv.duckdb")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _build(self, rows):
+        """rows: list of (toponym_id, lang, namespace)"""
+        import duckdb
+        con = duckdb.connect(self.db)
+        con.execute("CREATE TABLE toponyms (toponym_id VARCHAR, name VARCHAR, "
+                    "lang VARCHAR, lang_variant VARCHAR, script VARCHAR, "
+                    "ipa VARCHAR, panphon_features BLOB)")
+        con.execute("CREATE TABLE toponym_namespaces (toponym_id VARCHAR, "
+                    "namespace VARCHAR)")
+        for tid, lang, ns in rows:
+            con.execute("INSERT INTO toponyms VALUES (?,?,?,NULL,'LATIN',NULL,NULL)",
+                        [tid, tid.split("@")[0], lang])
+            con.execute("INSERT INTO toponym_namespaces VALUES (?,?)", [tid, ns])
+        con.close()
+
+    def test_detects_inventory_built_before_the_fix(self):
+        from phonetics.ipa.plan import inventory_lang_witness
+        self._build([(f"n{i}@", "", "tgn") for i in range(6)]
+                    + [(f"m{i}@en", "en", "tgn") for i in range(4)])
+        w = inventory_lang_witness(self.db, "tgn")
+        self.assertEqual(w["total"], 10)
+        self.assertEqual(w["und"], 0)
+        self.assertEqual(w["empty_lang"], 6)
+        self.assertFalse(w["fix_appears_applied"])
+
+    def test_detects_inventory_built_after_the_fix(self):
+        from phonetics.ipa.plan import inventory_lang_witness
+        self._build([(f"n{i}@und", "und", "tgn") for i in range(6)]
+                    + [(f"m{i}@en", "en", "tgn") for i in range(4)])
+        w = inventory_lang_witness(self.db, "tgn")
+        self.assertEqual(w["und"], 6)
+        self.assertEqual(w["empty_lang"], 0)
+        self.assertTrue(w["fix_appears_applied"])
+
+    def test_counts_only_the_named_namespace(self):
+        # A gn-only `und` population must not make tgn look fixed.
+        from phonetics.ipa.plan import inventory_lang_witness
+        self._build([(f"g{i}@und", "und", "gn") for i in range(9)]
+                    + [(f"t{i}@", "", "tgn") for i in range(3)])
+        w = inventory_lang_witness(self.db, "tgn")
+        self.assertEqual(w["total"], 3)
+        self.assertEqual(w["und"], 0)
+        self.assertFalse(w["fix_appears_applied"])
+
+    def test_reports_both_counts_together(self):
+        """A zero must always arrive beside its non-zero, so it can never be
+        mistaken for a predicate that cannot match."""
+        from phonetics.ipa.plan import inventory_lang_witness
+        self._build([(f"n{i}@und", "und", "tgn") for i in range(2)])
+        w = inventory_lang_witness(self.db, "tgn")
+        self.assertIn("total", w)
+        self.assertIn("empty_lang", w)
+        self.assertEqual(w["total"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,84 @@ def stale_inventory_namespaces(inventory_db: str,
     return out
 
 
+
+def inventory_provenance(inventory_db: str,
+                         staged_root: str = STAGED_ROOT) -> List[dict]:
+    """What the REBUILD says it read, checked against what is there now.
+
+    Strictly stronger than comparing mtimes. `rebuild_toponyms_index` writes a
+    `.vocabulary_sources.json` sidecar recording the exact staged artefact each
+    namespace contributed (path, size, mtime), and
+    `processing.index_freshness.check_vocabulary` compares that against the
+    current artefact.
+
+    The case mtime ordering CANNOT catch: a rebuild run against a STALE
+    `final/`. That produces an inventory newer than everything, so an
+    mtime-ordering guard falls silent -- while the inventory carries the old
+    corpus. The fingerprint catches it, because the artefact it recorded is not
+    the artefact present now.
+
+    Returns the subset of results that should stop a run: stale, or unknown.
+    ⚠ "unknown" is NOT "fine". The live 4 Aug inventory has no sidecar at all,
+    so its provenance is unverifiable and must be treated as suspect rather
+    than assumed good.
+    """
+    try:
+        from processing.index_freshness import check_vocabulary
+    except Exception as exc:      # pragma: no cover - import environment
+        return [{"namespace": "*", "stale": False, "unknown": True,
+                 "basis": "import-failed", "detail": str(exc)[:160]}]
+    try:
+        results = check_vocabulary(inventory_db, Path(staged_root))
+    except Exception as exc:
+        return [{"namespace": "*", "stale": False, "unknown": True,
+                 "basis": "check-failed", "detail": str(exc)[:160]}]
+    return [r for r in results if r.get("stale") or r.get("unknown")]
+
+
+def inventory_lang_witness(inventory_db: str, namespace: str = "tgn") -> dict:
+    """A SECOND witness, independent of the producer's own bookkeeping.
+
+    The sidecar is written by the same process that builds the DB -- it is the
+    producer's self-report, and a correct re-stamp satisfies it while the
+    content is wrong. So check the content directly for a property only the new
+    corpus has.
+
+    `extract_namespace`, the places index's default_pipeline, DISCARDS any
+    toponym whose language tag is empty, and 59.9% of tgn's carried one (Getty
+    publishes untagged terms). The authority fix emits `lang or "und"`, which
+    RE-KEYS them: `Dorkecestre@` and `Dorkecestre@und` are different
+    toponym_ids. So an inventory built after the fix has a large `und`
+    population for tgn and few empty tags; one built before has the reverse.
+
+    Reports both counts in one query, so a zero always arrives with the
+    non-zero beside it and cannot be mistaken for a broken predicate.
+    """
+    import duckdb
+    con = duckdb.connect()
+    try:
+        con.execute(f"ATTACH '{inventory_db}' AS inv (READ_ONLY)")
+        row = con.execute("""
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE t.lang = 'und') AS und,
+                   count(*) FILTER (WHERE t.lang IS NULL OR trim(t.lang) = '') AS empty
+            FROM inv.toponyms t
+            WHERE EXISTS (SELECT 1 FROM inv.toponym_namespaces n
+                          WHERE n.toponym_id = t.toponym_id
+                            AND n.namespace = ?)
+        """, [namespace]).fetchone()
+    except Exception as exc:
+        return {"namespace": namespace, "error": str(exc)[:200]}
+    finally:
+        con.close()
+    total, und, empty = row
+    return {"namespace": namespace, "total": total, "und": und,
+            "empty_lang": empty,
+            "und_pct": round(100.0 * und / total, 3) if total else None,
+            "empty_pct": round(100.0 * empty / total, 3) if total else None,
+            "fix_appears_applied": bool(und > 0 and und > empty)}
+
+
 def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                retry_statuses: Optional[List[str]] = None,
                allow_quarantined: bool = False,
@@ -155,10 +233,14 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
             })
 
     stale = stale_inventory_namespaces(inventory_db)
+    provenance = inventory_provenance(inventory_db)
+    lang_witness = inventory_lang_witness(inventory_db)
 
     plan = {
         "run_id": run_id,
         "stale_inventory_namespaces": stale,
+        "inventory_provenance_issues": provenance,
+        "inventory_lang_witness": lang_witness,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "inventory_db": inventory_db,
         "store_db": store_db,
@@ -225,6 +307,31 @@ def main():
     print(f"shards            : {p['n_shards']:,} "
           f"({p['n_compute_shards']:,} to compute)")
     print(f"-> {Path(a.out_dir)/f'plan-{a.run_id}.json'}")
+
+    # Two independent witnesses, then the zero check. The provenance record
+    # is the producer's self-report; the lang witness is our own observation of
+    # the content. A correct re-stamp satisfies the first and not the second.
+    prov = p.get("inventory_provenance_issues") or []
+    if prov:
+        print("\n\u26a0 INVENTORY PROVENANCE NOT CONFIRMED:")
+        for d in prov[:10]:
+            print(f"   {d['namespace']:<10} basis={d.get('basis'):<14} "
+                  f"stale={d.get('stale')} unknown={d.get('unknown')} "
+                  f"{d.get('detail','')[:60]}")
+        if not a.ignore_stale_inventory:
+            raise SystemExit(
+                "refusing: the inventory's provenance is stale or unrecorded, "
+                "so it cannot be shown to cover the current staged corpus. An "
+                "inventory rebuilt from a STALE final/ looks newer than "
+                "everything and would pass an mtime check. Pass "
+                "--ignore-stale-inventory to override.")
+
+    w = p.get("inventory_lang_witness") or {}
+    if w.get("total"):
+        print(f"\n  tgn lang witness: total={w['total']:,} "
+              f"und={w['und']:,} ({w['und_pct']}%) "
+              f"empty={w['empty_lang']:,} ({w['empty_pct']}%) "
+              f"fix_applied={w['fix_appears_applied']}")
 
     # A zero here is ambiguous and must not pass silently.
     stale = p.get("stale_inventory_namespaces") or []
