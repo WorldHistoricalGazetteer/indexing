@@ -52,6 +52,49 @@ should go on judgement, not on things a script can catch.
    field 22 times and `∅` **zero** times, so this is not the convention and the
    character is likely emitted into the output. Corrected in these drafts.
 
+## Measured: the drafts work, and a third machine defect emerged
+
+Run through a residue harness against real toponyms, and then against PanPhon:
+
+| mode | shipped | drafted | letter residue |
+|---|---|---|---|
+| `mya-Mymr` | 16.6% | **98.7%** | 11.5% → 0.3% |
+| `sin-Sinh` | 71.7% | **100.0%** | 3.2% → 0.0% |
+| `zgh-Tfng` *(new)* | — | 90.5% → higher with 4 letters since added | 1.3% |
+| `cmn-Bopo` *(new)* | — | 100.0% | 0.0% |
+| `pan-Guru` | 52.1% | *was refusing to load — fixed, see below* | — |
+
+**The independent-vowel diagnosis was the whole story for Myanmar**:
+`(က)ရပ်ကွက်` went from `(က)rp∅ကwက∅` to `(k)rpkwk`.
+
+### 🛑 Three defect classes, none of which a residue check can see
+
+Residue asks *"did a rule fire?"*. PanPhon asks *"is the output usable?"*. For
+Bopomofo those answers were **100.0% and 5.6%**.
+
+1. **ASCII `g` (U+0067) for IPA `ɡ` (U+0261)** — 38 shipped rows, 28 files, all six
+   priority rule sets. PanPhon rejects it.
+2. **Literal `∅` (U+2205) for an empty field** — 15 shipped rows, 10 files. Epitran's
+   own 139 native maps use `∅` **zero** times.
+3. **Silently TRUNCATED IPA — 36 shipped rows.** PanPhon does not error; it returns a
+   shorter segment list and the distinction vanishes:
+   `dʒʰ → dʒ` (7 files), `ɡʱ → ɡ`, `ʈʳ → ʈ`, `r̩ː → r̩`. **The aspiration and
+   breathy-voice contrasts in the Indic-derived maps do not survive to the consumer.**
+
+⚠ **This bears directly on Q1 below.** If PanPhon discards the aspiration anyway, then
+mapping `ဃ` to `gʰ` rather than `ɡ` buys nothing downstream — **the Pali-vs-modern
+question may be moot for the voiced-aspirate series specifically**, whatever the right
+answer is for `သ` and `ရ`.
+
+### A method error worth passing on
+
+`pan-Guru` would not load: `ਸ਼` was defined twice and Epitran rejects one-to-many maps.
+The cause is instructive — the shipped file writes it **decomposed** (U+0A38 + U+0A3C)
+and the draft added it **precomposed** (U+0A36). They render identically, and Unicode's
+composition exclusions mean NFC does **not** merge them. **A codepoint-presence check is
+not a grapheme-presence check**, and the two differ silently in exactly the scripts this
+work targets. Fixed by comparing NFD-normalised graphemes.
+
 ## Questions, by language
 
 ### Myanmar — `mya-Mymr.csv` (79,705 rows, the largest prize)
@@ -89,9 +132,12 @@ grounds that they carry a vowel sign rather than a sound. Correct?
 
 ### Sinhala — `sin-Sinh.csv` (15,491 rows)
 
-**Q7 — prenasalised consonants** (`ඟ ඦ ඬ ඳ ඹ`) drafted as `ⁿɡ`, `ⁿdʒ`, `ⁿɖ`, `ⁿd`,
-`ⁿb`. Is the superscript-nasal notation right, or should these be `ŋɡ` etc.? ⚠ This
-is also a machine question — whichever form is chosen must parse in PanPhon.
+**Q7 — prenasalised consonants** (`ඟ ඦ ඬ ඳ ඹ`) — **the machine half is now settled and
+the drafts changed.** `ⁿɡ` is the dangerous case: PanPhon does not reject it, it returns
+`['ɡ']`, so **the prenasalisation vanishes with no error**. Redrafted as homorganic
+nasal + stop (`ŋɡ`, `ndʒ`, `ɳɖ`, `nd`, `mb`), which PanPhon segments correctly and which
+is arguably the better analysis anyway. **The linguistic question stands: is that the
+right analysis for Sinhala?**
 
 **Q8 — spoken vs literary Sinhala** differ in vowel realisation. Which should the
 rules target?
@@ -112,7 +158,12 @@ rather than names. Worth checking what they are before investing further.
 
 **Q11 — tone marks** (`ˊ ˇ ˋ ˙`) are separate codepoints and are **not** mapped here.
 
-**Q12 — `ㄦ` drafted as `ɚ`, which PanPhon does not parse.** An alternative is needed.
+**Q12 — tone, now a decision rather than an omission.** All four tone marks were passing
+through unparsed and **94% of Bopomofo output was unusable downstream**. They are now
+mapped to nothing, matching this corpus's practice elsewhere (Myanmar and Punjabi are
+tonal and neither map encodes tone). ⚠ **The alternative is available**: PanPhon *does*
+parse IPA tone letters (`˥`, `˧˥`), so tone could be represented if it is wanted. Is
+toneless right? And `ㄦ` is redrafted `ɚ` → `ər`, which parses.
 
 ## NOT drafted, deliberately
 
