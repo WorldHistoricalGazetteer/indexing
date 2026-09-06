@@ -103,13 +103,61 @@ It is not robustness of the quantity, and the MEHDIE figure proves it: two
 quoted with the corpus it was measured on**, and 4.37, 3.12 and 7.25 are not
 competing estimates of one number — they are three different measurements.
 
-⚠ Mechanism, offered as a hypothesis and not tested: MEHDIE is a curated set of
-distinct historical places, while the index carries enormous near-duplicate
-redundancy (millions of similar GeoNames/OSM settlement names). Lower diversity
-concentrates variance into fewer directions and so lowers the participation
-ratio. If that is right the corpus-wide 3.12 partly measures the index's
-redundancy rather than PanPhon's expressiveness — which would matter to any
-argument about what a teacher fitted to it could learn.
+### 🛑 The redundancy hypothesis — TESTED AND REFUTED ON THREE GROUNDS
+
+I proposed that the index's lower rank reflects near-duplicate redundancy
+(millions of similar GeoNames/OSM settlement names) against MEHDIE's curated
+distinct places. **I tested it and it is wrong three times over.**
+
+**1. The mechanism is impossible in its naive form.** The participation ratio is
+*invariant to uniform replication*: duplicating every vector k times scales the
+Gram matrix by k, scales every eigenvalue by k, and leaves the normalised
+spectrum unchanged. Checked empirically rather than trusted — tripling every row
+of a 19,812-vector index sample moved the rank by **δ = −0.000000** (3.1190 →
+3.1190). So "there are duplicates" cannot by itself lower a rank. Only
+*non-uniform* concentration could.
+
+**2. The premise is false, and backwards.** Measured duplicate rates:
+
+| corpus | n | distinct | duplicate rows |
+|---|---:|---:|---:|
+| index sample | 300,000 | 299,072 | **0.309%** |
+| MEHDIE | 6,013 | 5,853 | **2.661%** |
+
+**MEHDIE is 8.6× more duplicated than the index**, not less. The premise was
+asserted from plausibility about what gazetteers contain, and the data says the
+opposite.
+
+**3. The intervention does nothing.** Deduplicating — exactly, then collapsing
+vectors identical to one decimal place — leaves every stratum where it was, and
+where it moves anything it moves it *down*, not up as predicted:
+
+| stratum | n | raw | exact-dedup | near-dedup |
+|---|---:|---:|---:|---:|
+| index / ARABIC | 300,000 | 4.198 | 4.194 | 4.197 |
+| MEHDIE / ARABIC | 3,280 | 7.196 | 7.196 | 7.169 |
+| index / HEBREW | 143,149 | 3.753 | 3.477 | 3.448 |
+| MEHDIE / HEBREW | 2,654 | 5.726 | 5.614 | 5.608 |
+
+**The within-script gap survives dedup intact** — Arabic 1.72×, Hebrew 1.61×,
+essentially unchanged from the raw figures.
+
+**Controls.** An isotropic Gaussian at the same shape returns **190.15 of 192**,
+so the estimator does report near-maximal rank when the data is genuinely
+full-rank and the low numbers above are not an artefact of it.
+
+### What this leaves
+
+The gap is real, it is not redundancy, and it is **a property of what the index
+CONTAINS rather than of how often it repeats it**. The index's Arabic and Hebrew
+toponyms are phonetically less varied than MEHDIE's historical ones in some way
+that survives deduplication.
+
+⚠ I am not proposing a replacement mechanism. I proposed one story from
+plausibility, it was wrong in its premise, its mechanism and its prediction, and
+substituting a second untested story would be the same error. What is
+established is the negative: **redundancy does not explain it, and the corpus
+dependence of PanPhon rank still needs an explanation.**
 
 ## 🛑 The spectra have opposite shapes, and "cliff" belongs to only one of them
 
