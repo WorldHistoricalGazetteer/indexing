@@ -1393,7 +1393,7 @@ orthography*, and two legs remain, **neither requiring a specialist**:
 | leg | what it gives | status |
 |---|---|---|
 | **LHPN Welsh ↔ English** | ~~the volume~~ — **14,863 pairs, harvested and counted** (§6.2b) | ✅ acquired; **the 5.5% yield was 3.2× too high** |
-| **TGN dated variants** (§6.8) | **labelled** European historic forms — `Dorchestre`/`Dorcic`/`Dorkecestre` | ✅ constructible from the **`toponyms`** index + the patch file, no production write |
+| **TGN dated variants** (§6.8) | **labelled** European historic forms — `Dorchestre`/`Dorcic`/`Dorkecestre`. ⚠ effective N **3,565 places**, not 40,937 pairs | ✅ **harvest from the STAGED EXTRACT, not ES** — see below |
 
 🛑 **So v8's historic-orthography target is EUROPEAN.** Welsh clerk
 transliteration and dated European name variants — **not** Chinese transcription,
@@ -1499,6 +1499,54 @@ session's relay that SG had authorised the work. It put it to him directly, beca
 route needs a forged `Referer`** — a detail this session did not know and which
 would have mattered. **That is the second time today a relayed authorisation was
 verified rather than acted on, and the first time one was wrong.**
+
+## 6.2c HARVEST THE TGN PAIRS FROM THE STAGED EXTRACT, NOT FROM ES
+
+**SG's suggestion, and it is better than the ES route this document specified.**
+The `tgn` re-extract ran 6 Sep and its artefacts carry **both halves in one
+record**:
+
+```
+staged/tgn/extract/places.jsonl        5.2 GB   06:17
+staged/tgn/h3_merged/places.parquet    399 MB   07:26
+staged/tgn/final/places.parquet        <- ccode_merge, in flight
+```
+
+**Shape, verified:** `toponyms[]` entries are `{toponym_id, timespans}` with the
+name carried in the id —
+
+```
+{"toponym_id": "Dorcic@",                "timespans": [{"start":{"in":600},"end":{"in":1000}}]}
+{"toponym_id": "Dorchecestre@",          "timespans": [{"start":{"latest":2026},"end":{"earliest":2026}}]}
+{"toponym_id": "Dorchester@en",          "timespans": [{"start":{"latest":2026},"end":{"earliest":2026}}]}
+```
+
+**A real date is distinguishable from the `attested_at(2026)` placeholder by the
+sentinel.** `tgn:7011929` carries **9 toponyms** here against the **one**
+(`Dorchester`) the live `places` index holds.
+
+### Why this beats the ES route
+
+1. 🛑 **The ES route cannot reach the names.** `places.toponyms[]` is empty for
+   **42.7%** of TGN and holds only modern forms for the rest — that *is* item 4.
+   The extract has the full term inventory **before** any of it depends on the
+   production write landing.
+2. **One source instead of a join.** The ES route needed the `toponyms` **index**
+   (names) joined to `temporal_patch.jsonl` (dates). Here name and date sit in the
+   same record.
+3. ✅ **The extract is RICHER than the patch.** The patch keys spans by name into
+   `places` and covers **9,450 concepts**; the extract carries **16,384 dated
+   terms** across the release. **The patch was a workaround for the ES route's
+   limitation, and inherits it.**
+4. **No 3M-document read against a production cluster serving search.**
+5. **Independent of the write.** The pairs are available whether or not the
+   `tgn` production ingest has landed, which decouples the v8 training input from
+   `place#246`'s schedule entirely.
+
+⚠ **Prefer `final/places.parquet` once `ccode_merge` completes** — `final/` is the
+stage the indexer reads, so harvesting from it means the training input and the
+indexed corpus came from the same artefact. Harvesting from `extract/` or
+`h3_merged/` instead would be sound but would not carry that guarantee.
 
 ## 6.3 What the second target broke in the benchmark code — found before it ran
 
