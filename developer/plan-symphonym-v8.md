@@ -1343,7 +1343,7 @@ orthography*, and two legs remain, **neither requiring a specialist**:
 
 | leg | what it gives | status |
 |---|---|---|
-| **LHPN Welsh ↔ English** | the volume; clerk transliteration of Welsh sound | ✅ RCAHMW verbally cleared (§6.1); ~5.5% `HeadName` yield is the binding constraint |
+| **LHPN Welsh ↔ English** | ~~the volume~~ — **14,863 pairs, harvested and counted** (§6.2b) | ✅ acquired; **the 5.5% yield was 3.2× too high** |
 | **TGN dated variants** (§6.8) | **labelled** European historic forms — `Dorchestre`/`Dorcic`/`Dorkecestre` | ✅ constructible from the **`toponyms`** index + the patch file, no production write |
 
 🛑 **So v8's historic-orthography target is EUROPEAN.** Welsh clerk
@@ -1355,6 +1355,101 @@ orthography must say **which** historic orthography, or it will be read as
 covering exactly the case it does not.
 
 ---
+
+## 6.2b LHPN HARVESTED — 14,863 pairs, and the yield figure was 3.2× too high
+
+`indexing-04`, all 14 counties, **nothing truncated**.
+
+### 🛑 The denominator correction — exactly the failure predicted
+
+```
+total recorded-name rows      673,468
+rows carrying a HeadName       11,649   =  1.73%   corpus-wide
+Anglesey alone                          =  5.54%   3.2x the corpus rate
+```
+
+**July's 5.5% came from Anglesey plus a `q=llan` search.** Anglesey is a strongly
+Welsh-speaking county and is not representative. **A convenience sample overstated
+the density threefold** — the shape of claim this plan has retracted four times,
+predicted in advance this once, and confirmed.
+
+### What is actually there
+
+```
+distinct head-names                    2,022
+head-names with >=2 normalised forms   1,369  (67.7%)  <- only these can pair
+
+route                             unique pairs   substring-shortcut
+A  within-head-name variants            13,475            7.4%
+B  Prif Enw (cy) vs HeadName (en)          455           59.1%
+C  Field co-location (vernacular)          968           15.5%
+UNION after dedup                       14,863            9.5%
+```
+
+**90.5% pass on real edit distance rather than the substring shortcut.**
+
+⚠ **The substring share is reported separately at every level for a reason:**
+`phonetic_similarity` returns a **flat 0.85 for ANY substring match**, so trivial
+suffix variants clear the bar **by rule rather than by phonetic content**. And the
+gate for these is **0.6, not 0.35** — 0.35 is the *cross-script* threshold, and
+Welsh/English are both Latin.
+
+✅ **Route B was nearly missed and is not in any brief:** `Prif Enw` (Welsh) and
+`HeadName` (English) differ on **41%** of head-name rows — `Cilgwrrwg`/`Kilgwrrwg`,
+`Blaenafon`/`Blaenavon`, `Llandeilo`/`Llandilo`. Free structured cy/en pairs
+needing no clustering. The gate correctly rejects the 238 that are *translations*
+(`Y Drenewydd`/`Newtown`, 0.200).
+
+✅ **Route C is qualitatively distinct and may matter more than its 968.** A and B
+are settlement names dominated by `llan-`/`aber-`; **C is Welsh vernacular field
+names** — `Weirglodd`/`Werglodd`, `Ffridd Ddu`/`Ffrydd ddu`, `Cae Gaseg`/`Cae'r
+Gaseg`. Vowel orthography, `i`~`y`, article elision, `c`~`k`. **For phonetic
+coverage that diversity is worth more than the count.**
+
+### 🛑 CONSEQUENCE FOR v8: the second target is a FINE-TUNE, not a co-equal objective
+
+**The historic-orthography target now rests on ~14,863 Welsh pairs and ~40,937 TGN
+pairs** — and the TGN figure is itself heavily clustered (17 places produce 51% of
+it; effective N is 3,565 places). Against a v7 trained on ~31 M toponyms, **this is
+not "the volume leg". It was called that on the strength of the 5.5% figure, by
+this document, and that figure was wrong.**
+
+**Re-scope honestly:** enough for a **targeted fine-tune with oversampling** and for
+an **evaluation stratum**; **not enough to make historic orthography a co-equal
+training objective with cross-script matching.** ⚠ Any v8 claim must say which
+historic orthography *and* at what scale it was trained.
+
+### Two corrections to this session's brief, both of which would have cost the work
+
+🛑 **1. `headnamesearchtocsv` does NOT return variants.** Its 23 columns contain no
+variant field. **Variants live in `recordednamesearchtocsv`**, grouped by the
+`HeadName` column. This session stated the wrong structure — over-reading
+`place#161`'s summary — and building on it would have harvested the wrong endpoint
+and found no pairs there.
+
+🛑 **2. The cap is 50,000, NOT 4,000, and it is SILENT.** **Seven of fourteen
+counties returned exactly 50,000 rows on the first pass**, and Carmarthenshire was
+hiding **29%** of its Field records behind it. A yield computed from that would
+have been a biased lower bound — *the same convenience-sample failure in a new
+costume*, caught only by checking row counts against the cap.
+
+✅ **No throttle workaround was needed.** Place-type selection (`pt=1,2,4,5`, then
+`pt=3`) brought all but four counties under the cap; those four used parish-level
+subdivision via `/mapdata/GetParishJson/?countyGuid=`. **497 parish requests,
+serial, 4 s apart, User-Agent naming WHG with a contact, backoff on any non-200. No
+errors, no retries.**
+
+**Data at `/vast/ishi/lhpn`** (560 MB, 220 GB free), **outside any git repo**, with
+a `LICENCE-NOTICE.txt` recording that acquisition and training use are cleared on
+SG's verbal clearance, that **publication and redistribution are NOT**, and that it
+must never be committed anywhere a release could reach.
+
+⚠ **Process note, and the habit is right:** `indexing-04` did **not** act on this
+session's relay that SG had authorised the work. It put it to him directly, because
+`place#161`'s own Phase 0 says acquire nothing without written licensing **and the
+route needs a forged `Referer`** — a detail this session did not know and which
+would have mattered. **That is the second time today a relayed authorisation was
+verified rather than acted on, and the first time one was wrong.**
 
 ## 6.3 What the second target broke in the benchmark code — found before it ran
 
