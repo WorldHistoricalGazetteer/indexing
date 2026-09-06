@@ -14,7 +14,7 @@
 192** → a teacher fitted to it → a student distilled to rank **10.83 of 128** →
 a retrain is justified. The student's 10.83 was measured twice, on two
 implementations, and shown stable from 6k to 1.05M names. **The teacher's 4.37
-was measured once, on 3,000 toponyms, and never again** — `panphon_features`
+was measured once, on 6,000 toponyms, and never again** — `panphon_features`
 has been NULL in every surviving store since. It was the most load-bearing
 unverified number in the plan, and the IPA store is the first time the input to
 recompute it has existed.
@@ -47,20 +47,69 @@ uninterpretable — the script exits without computing one in that case.
 posed — does 4.37 survive at scale, or climb — has a third answer: it is flat,
 and it is flat at **3.12, not 4.37**.
 
-🛑 **The discrepancy is not scale.** At the *same* n = 3,000 this measures
-**3.130**. So whatever produced 4.37 differs in the sample or the treatment,
+🛑 **The discrepancy is not scale.** The plan's measurement was at n = 6,000;
+this run brackets it with **3.130** at 3,000 and **3.104** at 29,768. So whatever produced 4.37 differs in the sample or the treatment,
 not in the size. **Finding 2's direction is confirmed and strengthened** — the
 input representation is *more* collapsed than recorded, so the causal chain
 holds a fortiori — but the specific value 4.37 should not be requoted.
 
-⚠ **A plausible reconciliation, offered as a hypothesis and not a result.** The
-script breakdown below puts Arabic at **4.198**, the closest of any stratum to
-4.37. §4.5 records that the evaluation testsets are "all Arabic/Hebrew/Latin
-historical gazetteers". If the original 3,000 toponyms were drawn from that
-corpus rather than from the index, an Arabic-heavy sample would land near 4.2.
-That is consistent, unverified, and would make 4.37 a corpus property read as a
-representation property — the pattern already logged four times in this
-campaign. **It should be checked before anyone reconciles the two numbers.**
+### 🛑 The MEHDIE hypothesis — TESTED AND REFUTED, 6 Sep
+
+I proposed that the original 6,000 might have been drawn from the MEHDIE
+testsets (Arabic/Hebrew/Latin historical gazetteers), since ARABIC measured
+4.198, closer to 4.37 than any other stratum. **Tested directly by running the
+MEHDIE toponyms themselves through the same shipped pipeline. It is wrong.**
+
+One circumstantial detail is a near-perfect match. The five testsets hold eight
+distinct gazetteer files, 6,914 title rows, **6,013 distinct titles** — against
+the plan's "6,000 distinct real toponyms". Script mix: ARABIC 3,280, HEBREW
+2,654, LATIN 79; IPA produced for 6,013 of 6,013.
+
+**But the rank does not match, and it is not close:**
+
+| sample | n | effective rank |
+|---|---:|---:|
+| MEHDIE, all | 6,013 | **7.247** |
+| MEHDIE, Arabic | 3,280 | 7.196 |
+| MEHDIE, Hebrew | 2,654 | 5.726 |
+| *plan's recorded figure* | *6,000* | *4.37* |
+| corpus-wide (this run) | 3,000–3M | 3.12 |
+
+MEHDIE gives **7.25**, nearly double 4.37. If the original had been measured
+there it would have recorded ~7.2. **The hypothesis is refuted**; 4.37's
+provenance remains unresolved, and the 6,013 ≈ 6,000 coincidence is exactly
+that until something else corroborates it.
+
+### ✅ What the test found instead, which matters more
+
+**PanPhon's effective rank is a property of the corpus and the representation
+jointly, not of the representation.** Holding SCRIPT constant and changing only
+the corpus moves it as much as changing script does:
+
+| script | corpus-wide store | MEHDIE | ratio |
+|---|---:|---:|---:|
+| ARABIC | 4.198 | 7.196 | **1.71×** |
+| HEBREW | 3.753 | 5.726 | **1.53×** |
+
+against a 1.55× spread across all scripts *within* the store (CJK 2.703 →
+ARABIC 4.198). So the two effects are comparable in size, and my own
+by-script framing above understates it: script is not the dominant driver,
+**corpus composition is**.
+
+⚠ **This also qualifies the stability result.** "Flat at 3.12 across three
+orders of magnitude" is stability across sample SIZE *within one population*.
+It is not robustness of the quantity, and the MEHDIE figure proves it: two
+6,000-scale samples of real toponyms differ by 2.3×. **Any PanPhon rank must be
+quoted with the corpus it was measured on**, and 4.37, 3.12 and 7.25 are not
+competing estimates of one number — they are three different measurements.
+
+⚠ Mechanism, offered as a hypothesis and not tested: MEHDIE is a curated set of
+distinct historical places, while the index carries enormous near-duplicate
+redundancy (millions of similar GeoNames/OSM settlement names). Lower diversity
+concentrates variance into fewer directions and so lowers the participation
+ratio. If that is right the corpus-wide 3.12 partly measures the index's
+redundancy rather than PanPhon's expressiveness — which would matter to any
+argument about what a teacher fitted to it could learn.
 
 ## 🛑 The spectra have opposite shapes, and "cliff" belongs to only one of them
 
@@ -121,8 +170,11 @@ ruling out.
 
 - **Finding 2 is confirmed on its weakest leg**, at 1000× the original scale,
   with a passing positive control. The retrain justification stands.
-- **4.37 should be retired in favour of 3.12**, with the Arabic hypothesis
-  checked before the two are reconciled.
+- **4.37 should not be requoted**, but neither should 3.12 replace it as a
+  bare number: the MEHDIE test showed the quantity is corpus-dependent by
+  2.3×, so it must always travel with the corpus it was measured on.
+- **The MEHDIE hypothesis is refuted** (7.247, not ~4.37). 4.37's
+  provenance is still unknown, and no code in the repository computes it.
 - **The "cliff" description must be scoped to the student.** PanPhon is
   dominated, not truncated, and the distinction matters to any argument about
   what a teacher fitted to it could learn.

@@ -9,7 +9,7 @@ v8's finding 2 is a causal chain: PanPhon input rank 4.37 of 192 -> a teacher
 fitted to it -> a student distilled to rank 10.83 of 128 -> a retrain is
 justified. The STUDENT's 10.83 was measured twice, on two implementations, and
 shown stable from 6k to 1.05M names. The TEACHER's 4.37 was measured once, on
-3,000 toponyms, and never again -- the `panphon_features` column has been NULL
+6,000 toponyms, and never again -- the `panphon_features` column has been NULL
 in every surviving store since. The IPA store built on 6 Sep is the first time
 the input to recompute it has existed.
 
@@ -207,7 +207,7 @@ def main():
         print("->", a.out); return
 
     # ---- 2. PanPhon rank vs corpus size ----
-    print("\n== PanPhon192 effective rank vs sample size (plan records 4.37 at n=3,000) ==")
+    print("\n== PanPhon192 effective rank vs sample size (plan records 4.37 at n=6,000) ==")
     for n in [int(x) for x in a.sizes.split(",")]:
         t0 = time.time()
         ipas, avail = load_ipa(n)
