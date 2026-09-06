@@ -2614,6 +2614,63 @@ different **set** where a boundary case crosses the top-N cutoff.
 uniform score perturbation produces, and production's self-consistency follows
 because its own tombstones are constant within a run.
 
+## ✅ TASK 1 CLOSED — the `/ix1` snapshot IS faithful, demonstrated on content
+
+`indexing-04`, 6 Sep. **Content, not counts; full corpus, not a sample.**
+
+**Provenance asserted rather than assumed:** all **8 shards** report
+`source.repository=prod_repo`, `source.snapshot=prod-manual-20260905t1931z` via
+`_recovery`.
+
+**Content, sampled:** 400 places + 400 toponyms drawn from production, fetched by
+`_id` from **both** clusters, compared as **canonical-JSON sha256 over `_source`**
+— **800/800 identical**, 0 differing, 0 missing either side. *Including the 128-d
+embeddings.*
+
+**Content, FULL CORPUS** — the part that makes it a demonstration:
+
+```
+places total          51,187,900  ==  51,187,900
+namespace             27 buckets covering all 51.2M    identical
+nested geometries     50,315,192  ==  50,315,192
+  geom_class          3 buckets covering all 50.3M     identical
+  has_geom            2 buckets covering all 50.3M     identical
+  h3_cover values    100,348,433  == 100,348,433
+nested types          54,108,146  ==  54,108,146
+nested toponyms      119,277,282  == 119,277,282
+```
+
+**Every nested doc count matches to the unit**, on top of per-shard doc counts
+matching shard for shard.
+
+⚠ **TWO VACUOUS CHECKS NEARLY REPORTED AS PASSES.** The first signature pass ran
+`terms` aggs on `geom_class` and `has_geom` at the **top level**. Both returned
+**0 buckets on both clusters**, and the harness printed `IDENTICAL` — **a
+comparison of nothing against nothing.** The fields live under the **nested**
+`geometries` path. *Two of four places dimensions were testing nothing while
+reporting agreement.* Fixed by flagging `VACUOUS: 0 buckets, tests nothing`, so an
+empty comparison can never again read as a pass. **Same shape as everything else
+this week.**
+
+⚠ **Two honest limits, so this is not over-read.** `geometries.source` and
+`geometries.approximation` are **sparse** — 3 and 4 buckets covering only
+**32,353 of 50.3 M** nested geometries, so they discriminate weakly. And
+`types.identifier` is the **top 250 of a long tail**, covering 2,181,625 of
+54,108,146. **The load-bearing dimensions are the ones covering the full corpus:**
+namespace, `geom_class`, `has_geom`, the three nested doc counts, and the
+`h3_cover` value count.
+
+✅ **So SG's question 1 — "do we truly have a faithful snapshot on `/ix1`?" — is
+answered YES, on evidence.**
+
+**The only real remaining difference is deleted-doc counts** (prod 292,493 vs
+staging 305,969), which is the whole of the BM25 divergence below.
+
+⚠ **And the route-2 caveat is now stronger than first stated:** expunging deletes
+on **production alone would REVERSE the asymmetry rather than remove it** — and
+would *look like an improvement in the aggregate while being the same defect*.
+**Both sides or neither.**
+
 ## ✅ CAUSE FOUND AND MEASURED — and it is BM25, not KNN (6 Sep)
 
 `indexing-04`, and the finding is the opposite of what it predicted.
