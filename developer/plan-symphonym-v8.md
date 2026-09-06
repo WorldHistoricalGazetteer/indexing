@@ -2668,6 +2668,72 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## `place#246` — items 2 and 3 CLOSED in code, and two findings worth more than the fixes
+
+`indexing-9c`, 6 Sep (`8989825`, `378990d`). **Neither needed a rebuild, so the
+rebuild set is unchanged: `tgn` alone, `osm` conditional on the PBF scan.**
+
+### 🛑 Item 2 was SIX implementations, not three — and how the other three hid
+
+The audit found `osm-places.py`, `tgn_temporal.py`, `nativeland-places.py`.
+**`dplace-places.py`, `indexvillaris-places.py` and `wikidata-geoshapes.py` also
+carried private copies.**
+
+⚠ **They were invisible to the audit because their releases carry real dates, so
+the fallback NEVER FIRES in production and leaves NO TRACE IN THE DATA.**
+Inspecting the namespaces whose data looked suspicious could not have reached
+them. They were found by a guard written to stop a *seventh* appearing — **which
+failed the first time it ran.**
+
+> ✅ **A grep for the PATTERN beats an inspection of the namespaces you already
+> suspect, because a latent defect that has never fired leaves nothing to audit.**
+
+That is the counterpart to §8.3b's rule: selection effects reach the evidence, and
+here the evidence *could not exist* for half the instances.
+
+### 🛑 Item 3's root cause is NOT a writer — it is parquet schema unification
+
+**Every writer is clean.** A parquet **struct column has one schema per file**, so
+reading it back **materialises every key any row used, as an explicit null on the
+rows that lacked it.**
+
+> **A document's null pattern is a fingerprint of what shared its staged file.**
+
+Observed exactly so: `osm`/`nl`/`gb`/`iv`/`clio` clean (one shape per file); `tgn`
+carrying `in: null` (`attested_at` + `lifespan` in the same file); `wd` all three;
+`ohm` a wholly null `end`. `drop_nulls_for_parquet` was already applied on the
+**write** side; the missing half was added at the two **readers** that feed ES.
+
+⚠ **The mechanism was already documented** — in `refresh_staged_names._drop_nulls`,
+fixed there for one comparison guard and **never at the writers it equally applies
+to.** A known fault, solved once, locally.
+
+### 🛑 An addition to the inverted verification, and it is load-bearing
+
+Use `fidelity.py`'s **NORMALISED** hash for the untouched-namespace half, **not the
+raw one.** A re-ingest **re-shuffles which documents share a staged parquet file**,
+so **null patterns change corpus-wide with no content change** — the raw hash would
+report *every* namespace as differing and bury the real signal.
+
+⚠ **This session hit exactly that trap and did not generalise it.** Comparing the
+TGN apply before/after, the raw canonical-JSON hash said **400 of 400 differ**;
+only after normalising nulls away did the truth appear — **0 genuine value
+changes.** `indexing-9c` turned the same observation into a standing requirement
+for the rebuild.
+
+### The staging cancellation was coordinated, not mysterious
+
+Job 23990206 was stopped by `indexing-04` **after asking `indexing-9c` directly
+whether it needed it, and being told no.** `gotw-eb`'s release and this session's
+handover crossed with that decision. ✅ **And nothing was lost:**
+`prod-manual-20260905t1931z` is a **manual** snapshot, and SLM prunes only what SLM
+created — **so it never ages out.** The pre-apply state costs a restore to recover,
+not a loss.
+
+⚠ Earlier this session reported it could not tell who cancelled it, since all
+sessions run as `stg135`. **True of the scheduler, and the wrong place to look —
+the answer was available by asking.**
+
 ## ✅ `place#246` SHOULD BUILD ON STAGING AND SWAP — SG, 6 Sep
 
 **Yes, and the dominant reason is not "it keeps load off production".**
