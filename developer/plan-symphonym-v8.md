@@ -4365,6 +4365,82 @@ of `my km lo si bo am ti or pa mn shn dz new` has a `SCRIPT_FIRST` or
 `NEURAL_ROUTES` entry (they may reach an installed Epitran mode via the `to_iso3`
 fallback — `/vast/ishi/ipa-strata-11169066.out` settles it empirically).
 
+### ✅ PREDICTION REGISTERED AND RESOLVED — TRANSFER IS **SCRIPT**-LEVEL
+
+Tested on `seed20260905/ranks.jsonl`, no new compute. Aggregate by
+script-coverage class (query side; partner side agrees, which is the check):
+
+```
+class                                     n     R@10   R@200   median rank   lev R@200   Δ@200
+v7-zero language, script COVERED        306    0.379   0.562           74       0.533   +0.029
+script NOT covered (OTHER)              346    0.003   0.003      544,551       0.367   −0.364
+reference: all other queries          8,061    0.303   0.494          217       0.479   +0.015
+```
+
+🛑 **The zero-IPA-but-covered class is not merely surviving — it is ABOVE the
+corpus reference** (R@200 0.562 vs 0.494; median rank **74** vs 217) and beats
+Levenshtein. **Zero IPA, never trained as a language, and it outperforms the
+average query.** The uncovered class sits at 0.003 with a median rank of
+**544,551 of 1,053,229**. ⚠ **Two to four orders of magnitude in median rank
+separate them on the same model, same haystack, same k. Language-level transfer
+is refuted.**
+
+**Per script, so it is not one lucky stratum** (R@200, all cells n ≥ 44):
+
+```
+script      trained control      v7-zero cell        Δ@200 (v7-zero)
+ARABIC      0.420 (n=529)        0.364 (n=44)             +0.227
+CYRILLIC    0.680 (n=691)        0.572 (n=152)            −0.026
+LATIN       0.514 (n=704)        0.627 (n=110)            +0.027
+OTHER       — none exists        0.003 (n=346)            −0.364
+```
+
+**The v7-zero cell tracks its script's control wherever a control exists, and
+collapses only where none does.**
+
+✅ **`arz` — the nominated discriminator — did more than survive.** Δ over
+Levenshtein **+0.227** (query) / **+0.175** (partner), **among the largest v7
+advantages in the whole benchmark**, on a language for which v7 saw **not one IPA
+string**. §8.3 explains it: Arabic romanisation is lossy, so the baseline cannot
+cheat and v7's *script-level* representation carries the load. **The hypothesis
+made a quantitative prediction it did not have to satisfy.**
+
+🛑 **THE CONTROL THAT RULES OUT THE OBVIOUS ALTERNATIVE, and it was already in
+the data.** *"`OTHER` scripts are just intrinsically hard"* would explain the
+collapse with no transfer story — but **Levenshtein gets R@200 = 0.367 on exactly
+those queries**, in line with 0.479 on the reference. **Those partners are
+retrievable in principle by a method that knows nothing about phonology.** So
+this is a **COVERAGE HOLE, not a difficulty ceiling** — and the two imply
+completely different work.
+
+### 🛑 AND THE BLACKOUT IS A **SCHEMA** LIMIT, NOT A G2P LIMIT — 395,409 rows behind one enum
+
+`Script` (`phonetics/utils/script_detection.py:15`) has **20 members**, of which
+`OTHER` is a **single catch-all for every writing system not in the other 19** —
+Myanmar, Khmer, Lao, Sinhala, Tibetan, Ethiopic, Oriya, Gurmukhi, Tifinagh,
+Mongolian, Ol Chiki, Bopomofo, all one label. `SCRIPT_TAG` has **19 entries and
+no `OTHER`**. So at `routes.py:208`:
+
+```python
+iso3, tag = self.to_iso3(base), SCRIPT_TAG.get(script)   # tag is None for OTHER
+if iso3 and tag:                                          # never true
+    ...
+return None, "no_route"                                   # every time
+```
+
+🛑 **`resolve()` returns `no_route` for all 395,409 rows before Epitran is ever
+consulted.** Epitran ships modes for several of these writing systems —
+`amh-Ethi` and `pan-Guru` are the obvious candidates — and **the router cannot
+even ask**, because the script was flattened before the lookup.
+`EPITRAN_SUPPORTED_SCRIPTS` encodes the same assumption a second time.
+
+✅ **So the three findings compose into a small job.** Transfer is script-level →
+the fix needs **one route per script, not per language** (not 85 language tags) →
+and the reason no such route exists is that **those scripts are not values in the
+enum.** ⚠ **Splitting the enum and mapping the tags is a different and much
+smaller project than writing new G2P** — do not let the second's cost attach to
+the first's rows.
+
 ### 🛑 §8's "v7 LOSES RETRIEVAL" IS AN ARTEFACT OF TWO UNSEPARATED STRATA
 
 | stratum | n | v7 R@10 | lev R@10 | Δ@10 | Δ@200 | Δ@1000 |
