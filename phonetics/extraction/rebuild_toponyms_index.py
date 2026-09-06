@@ -900,6 +900,13 @@ def extract_toponyms_to_db(conn, namespaces, batch_size, limit=None):
                 at_pos = top_id.rfind('@')
                 name = top_id[:at_pos]
                 lang_part = top_id[at_pos + 1:]
+                # ⚠ Keep the FULL tag. `is_script_mismatch` needs the script
+                # subtag to honour a source declaration (#250), and the split
+                # below destroys it — which is how the #250 fix came to be dead
+                # code at this call site: the test was repaired and the line
+                # above it, which threw the distinguishing information away,
+                # was not.
+                full_lang = lang_part
                 if '-' in lang_part:
                     parts = lang_part.split('-', 1)
                     lang = parts[0]
@@ -911,6 +918,7 @@ def extract_toponyms_to_db(conn, namespaces, batch_size, limit=None):
                 name = top_id
                 lang = None
                 lang_variant = None
+                full_lang = None
 
             if not name and label:
                 name = label
@@ -930,8 +938,14 @@ def extract_toponyms_to_db(conn, namespaces, batch_size, limit=None):
             script, _ = detect_script(name)
             script_value = script.value
 
-            if is_script_mismatch(lang, script):
-                mismatch_counts[f"{lang}:{script_value}"] += 1
+            if is_script_mismatch(full_lang, script):
+                # Key on the FULL tag, not the base. Keying on the base made
+                # this counter non-discriminating: a filtered `zh-Latn` was
+                # reported as `zh:LATIN`, identical to a filtered bare `zh`, so
+                # the breakdown read the same whether declared romanisations
+                # were being dropped or not — and it was read as evidence they
+                # were not.
+                mismatch_counts[f"{full_lang}:{script_value}"] += 1
                 skipped_batch.append((top_id, 'lang_script_mismatch', lang, script_value))
                 toponyms_skipped += 1
                 continue
