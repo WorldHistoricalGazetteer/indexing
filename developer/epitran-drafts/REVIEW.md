@@ -76,7 +76,9 @@ Bopomofo those answers were **100.0% and 5.6%**.
    priority rule sets. PanPhon rejects it.
 2. **Literal `∅` (U+2205) for an empty field** — 15 shipped rows, 10 files. Epitran's
    own 139 native maps use `∅` **zero** times.
-3. **Silently TRUNCATED IPA — 36 shipped rows.** PanPhon does not error; it returns a
+3. **Silently TRUNCATED IPA — 36 shipped rows** (of **108** total mismatches:
+   36 truncated-but-non-empty, 57 parsing to nothing, 15 literal `∅`; three
+   different questions, three correct numbers).** PanPhon does not error; it returns a
    shorter segment list and the distinction vanishes:
    `dʒʰ → dʒ` (7 files), `ɡʱ → ɡ`, `ʈʳ → ʈ`, `r̩ː → r̩`. **The aspiration and
    breathy-voice contrasts in the Indic-derived maps do not survive to the consumer.**
@@ -85,6 +87,42 @@ Bopomofo those answers were **100.0% and 5.6%**.
 mapping `ဃ` to `gʰ` rather than `ɡ` buys nothing downstream — **the Pali-vs-modern
 question may be moot for the voiced-aspirate series specifically**, whatever the right
 answer is for `သ` and `ရ`.
+
+### 🛑 UNICODE NORMALISATION HAS BITTEN THIS WORK TWICE, IN OPPOSITE DIRECTIONS
+
+**Store every `Phon` value NFD-normalised, and lint after normalising.** PanPhon
+accepts the decomposed form and rejects the composed one for the *same glyph*:
+
+```
+'ẽ' = e + U+0303 (NFD)  -> segs ['ẽ']   PARSES
+'ẽ' = U+1EBD     (NFC)  -> segs []      NOT PARSED
+```
+
+Same for `ĩ ã õ ũ`. ⚠ **A file stored NFC fails the lint while looking perfectly
+correct in any editor**, so the next person will reasonably conclude the lint is
+wrong.
+
+**And the inverse trap is live in the same work.** `pan-Guru` would not load
+because `ਸ਼` appeared twice — once **decomposed** (U+0A38 + U+0A3C), once
+**precomposed** (U+0A36) — which render identically, and **Unicode's composition
+exclusions mean NFC does NOT merge them.** So: NFC failed to unify two spellings
+of one grapheme in the `Orth` column, and NFC is the rejected spelling in the
+`Phon` column. **Normalise both columns to NFD, and compare graphemes NFD-wise
+when checking for duplicates.**
+
+### 🛑 A LIMIT THAT CANNOT BE FIXED IN A MAP FILE — bare modifiers
+
+Two shipped rules map a Myanmar sign to a **bare modifier**: `ှ` → `ʰ` and `း` →
+`ː`. PanPhon parses `kʰ` and `aː` and `kʰaː`, but a modifier **alone** parses to
+nothing — it has nothing to modify.
+
+In normal use that is harmless: the modifier concatenates onto the preceding
+segment. ⚠ **It becomes bare only when the preceding grapheme emits nothing** —
+e.g. a modifier following `်` (asat), which maps to empty. **That is a sequencing
+problem, and a character-to-character map cannot express it**; attaching a
+diacritic to a variable base needs an Epitran pre/post-processor, not a map row.
+**Flagged as a structural limit rather than a correction to make.** It accounts
+for the bulk of Myanmar's residual (`ː` ×502, `ʰ` ×155 in real output).
 
 ### A method error worth passing on
 
