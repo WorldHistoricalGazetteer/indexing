@@ -2668,6 +2668,68 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## ✅ `place#246` SHOULD BUILD ON STAGING AND SWAP — SG, 6 Sep
+
+**Yes, and the dominant reason is not "it keeps load off production".**
+
+🛑 **Doing #246's data work IN PLACE would inflict the exact damage we spent the
+day characterising.** Item 4 requires re-ingesting `tgn` (2,991,143 places, of
+which **1,277,683 — 42.7% — have an empty `toponyms[]`**); item 1, if the PBF scan
+justifies it, requires `osm` (20,622,228). **Every in-place update is a delete
+plus a reindex**, so that route would add up to **~23.6 M tombstones on top of the
+existing 14,169,759** — roughly *tripling* the dead weight, on the volume
+production serves from, with merge pressure and the `dense_vector` heap history
+behind it.
+
+✅ **A staging rebuild carries none of it: a freshly built index has ~0 deletes by
+construction.** And it permanently removes the staging/production divergence,
+because after the swap production *is* the rebuilt index.
+
+✅ **It is also the project's documented pattern, not a new idea.**
+`promote_to_production` is snapshot → restore → **one** `_aliases` swap of both
+indices; full rebuilds already build in staging.
+
+### ⚠ Scope it — most of #246 does NOT need this
+
+| item | route |
+|---|---|
+| **1** `osm-places.py` never reads `start_date`/`end_date` | ⚠ **PBF scan FIRST.** Overlap with our 20.6 M ingested features is *unmeasured*; the 19,338,154 taginfo figure is across all OSM objects. Re-ingest only if sized and justified. |
+| **2** three `datetime.now().year` implementations | **Code only.** No data work, no rebuild. |
+| **3** `"in": null` in stored timespans | Writer fix; live rows patchable. Harmless to queries — ES does not index nulls. |
+| **4** `places`/`toponyms` name-inventory mismatch | 🛑 **Needs re-ingest of `tgn`.** This is the one that justifies the route. |
+| **5** Getty term dates cannot land | Blocked on 4; resolves with it. |
+
+**So the rebuild set is probably `tgn` alone**, with `osm` conditional on the PBF
+scan. A whole-corpus rebuild is not implied and should not be assumed.
+
+### 🛑 The verification must INVERT after a rebuild — this is the subtle one
+
+`indexing-04`'s `fidelity.py` and `corpussig2.py` were built to prove *sameness*.
+**After a deliberate fix, `IDENTICAL` is a FAILURE report.** The harness must
+assert **both** halves:
+
+1. the **intended** differences ARE present — 42.7% empty `toponyms[]` gone, Getty
+   dates landed on the 9,450 concepts; **and**
+2. **nothing else** changed — every other namespace byte-identical, full-corpus
+   nested counts moving only where predicted.
+
+⚠ **A fidelity harness pointed at a changed index reports success when it has
+failed**, and that is precisely the class of error this whole sequence has been
+about. Say what should change *before* running it, then check both directions.
+
+### Carried over from `place#247`, unchanged
+
+* **Point-in-time gap** — restoring a staging-derived snapshot discards production
+  writes made after the snapshot. Production is currently quiescent (0 indexing
+  ops / 30 s). **Quiesce for the window and verify `index_total` unchanged
+  immediately before the swap.**
+* **`/vast` cannot hold both copies** — 226 GB free against 73.4 GB needed lands
+  on ES's 85% low watermark. **Restore sequentially per index**, accepting that
+  the two aliases then move at different moments.
+* **The forcemerge on completion is right but its value differs**: a fresh build
+  has ~0 deletes, so the merge buys **segment consolidation**, not delete
+  expunging. The alignment benefit arrives free with the rebuild.
+
 ## ✅ `place#247` CLOSED (6 Sep) — and why, as a mechanism not a tolerance
 
 SG closed it: the blocking question is answered and the residual does not touch
