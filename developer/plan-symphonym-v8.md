@@ -4618,7 +4618,7 @@ Bopomofo those answers were **100.0% and 5.6%.**
    priority rule sets. PanPhon **rejects** it.
 2. **Literal `∅` (U+2205) for an empty field** — 15 rows, 10 files. Epitran's own
    139 native maps use it **zero** times.
-3. **SILENTLY TRUNCATED IPA — 36 rows.** PanPhon does not error, it returns a
+3. **SILENTLY TRUNCATED IPA.** PanPhon does not error, it returns a
    shorter segment list: `dʒʰ → dʒ` (7 files), `ɡʱ → ɡ`, `ʈʳ → ʈ`, `r̩ː → r̩`.
    **The aspiration and breathy-voice contrasts in every Indic-derived map do not
    survive to the consumer.** ⚠ Same shape as `ⁿɡ → ['ɡ']`, which silently drops
@@ -4638,6 +4638,71 @@ vowel signs that *do* emit and are a separate, unmeasured problem.
 and false of the CARDINALITY — 14 and 29 contexts, top-10 above 99%. A
 structural-impossibility claim needs a cardinality check before publication,
 because a thing flagged as inherent is the one nobody re-examines.**
+
+### ✅ THE FULL COUNT, RECONCILED — 103 in 41 files, and my 108 was FIVE TOO HIGH
+
+⚠ **Corrected by `whg3-9d`, and it is my own normalisation finding biting in the
+direction I had not considered.** Linting the raw file gives 108 in 42; **linting
+after NFD gives 103 in 41.** The five differences are precomposed vowels PanPhon
+handles perfectly once decomposed — `wol-Latn` `ë` (U+00EB), `hat-Latn`
+`ã`/`ẽ`/`õ` (U+00E3, U+1EBD, U+00F5), `szl-Latn` `ã`. **`wol-Latn`'s only flagged
+row was that `ë`, so it has no defect at all.** Verified independently here: 42
+raw, 41 NFD, same five rows.
+
+🛑 **I wrote the normalisation trap up as a hazard that makes a CORRECT file FAIL
+the lint. It also makes a correct file APPEAR DEFECTIVE** — and that is worse in
+one specific way: **a false positive spends a reviewer's time on a row that was
+always fine.** Normalise before testing, in the lint and in the review UI's
+validator.
+
+**Three partitions of one measurement have now been quoted; none corrects
+another:**
+
+```
+103  total mismatches after NFD, across 41 of 115 files
+ 38  ASCII g (U+0067) where IPA needs ɡ (U+0261)
+ 15  literal ∅ (U+2205) instead of an empty field
+ 50  the rest — 26 lossy (parses, comes back shorter) + 24 unparseable
+```
+
+The earlier **36 / 57 / 15 = 108** partition *included* the ASCII-`g` rows and was
+measured pre-NFD. **93 − 38 − 5 = 50**, so the two agree exactly.
+
+### ✅ PANPHON PARITY — every figure published today came from ONE version
+
+`whg3` pinned **panphon 0.22.0** (whg3 runs `pandas==1.4.1`; 0.22.1+ needs
+pandas ≥2.1), and justified it by measurement: byte-identical `ipa_all.csv`
+(sha256 `0ec0052e…`) and all 453 distinct `Phon` values segmenting identically to
+0.22.2. ✅ **Checked here: this environment is ALSO on 0.22.0 with that exact
+digest** — so the cross-version question does not arise for any figure in this
+document. ⚠ **It moves rather than disappears:** the conversion-rate and residue
+measurements were run on the **CRC cluster**, a third environment nobody has
+checked. **Anyone pinning panphon on any side must say so** — the parity claim is
+what makes browser-side validation mean anything.
+
+### ✅ THE REVIEW CHANNEL EXISTS — `place#252`, built, with all 115 rule sets live
+
+SG dispatched a job spec (`place#252`) to an agent on `whg3`; it is **built and
+synced**. Registered WHG users correct grapheme→IPA rules through the site, backed
+by the Django DB. **Scope per SG: prioritise the five drafts, but open all 115
+shipped rule sets to correction** (~6,050 rows).
+
+🛑 **The design constraint that mattered most was not technical.** There are **two
+review postures** — the drafts ask *"is this proposed value right?"*, the shipped
+sets ask *"is this shipped value wrong?"* — and **a reviewer shown both in one
+undifferentiated queue will approve shipped values they never examined.** That is
+"silence is not agreement" in a form that is easy to miss, and it is now kept
+distinct in the UI *and* in the data.
+
+✅ **Two `whg3` design decisions worth recording because they remove failure modes
+this side could not have prevented:** each Review stores `reviewed_ipa`, so a
+review never silently transfers to a value the reviewer did not see; and
+**adoption is DETECTED, not self-reported** — the sync notices a value now equals
+a standing proposal and stamps it, so attribution does not depend on anyone
+remembering to report back. ⚠ And unmeasured rule frequencies are sent as `NULL`,
+never `0`: **a rule nobody measured and a rule affecting no names are different
+facts**, and rendering both as zero would bury the unmeasured ones where nobody
+looks.
 
 ⚠ **A method error worth keeping.** `pan-Guru` would not load — `ਸ਼` defined twice,
 Epitran rejecting one-to-many. The shipped file writes it **decomposed**
