@@ -4391,14 +4391,87 @@ non-Latin↔non-Latin 0.316 → 0.521 (+0.205, +65%).** Real, worth building, ca
 by construction — **~48% of partners never enter the top 200 for any method
 tested.**
 
-⚠ **CAVEAT ON THESE NUMBERS, stated by the run that produced them.** 7 of 12
-pre-registered anchors missed by 0.003–0.005 in a consistent direction. The
-string baselines are deterministic functions of the query set, so this **cannot**
-be device or float ordering — **the query sample differs, and §8 recorded no
-seed.** Job 11170921 is sweeping seeds; **the seed-to-seed spread is the more
-valuable output, being the resolution of four decimal places §8 quoted with no
-error bar.** Nothing above depends on it: these deltas are 0.03–0.38 against a
-0.005 disagreement.
+### ✅ §8's SEED RECOVERED — and the spread makes §8's HEADLINE UNSUPPORTABLE
+
+**`--queries-per-pair 100 --seed 20260905`** (the *corpus* seed, not
+`run_benchmark`'s defaults of 40 and 0). 12 of 12 anchors now pass; the
+deterministic baselines reproduce to **0.0000** and v7 to **0.0003**, which for a
+deterministic scorer can only be CPU-vs-GPU float ordering near ties.
+
+🛑 **At the documented defaults §8 is UNREPRODUCIBLE, and it fails SILENTLY** —
+you get 4,843 queries and a plausible-looking table. **Record the invocation, not
+just the result.**
+
+🛑 **THE SEED SPREAD, and this is the finding to put in front of SG first.**
+Across 11 seeds at fixed budget:
+
+```
+v7 overall R@10                spread 0.0090   sd 0.0023
+v7 overall R@200               spread 0.0088   sd 0.0025
+lev latin-involving R@10       spread 0.0247   sd 0.0077
+lev non-Latin↔non-Latin R@200  spread 0.0059   sd 0.0020
+```
+
+**§8's "a tie at 200" was a gap of 0.0002 against sd 0.0025** — two orders of
+magnitude inside the noise (and at the true seed it is exactly 0.0000). Its R@100
+gap (0.0055) is ~2σ; its R@10 gap (0.0288) is ~12σ. ⚠ **So §8's four decimal
+places support about two**, and the honest reading of its retrieval table is:
+**v7 loses meaningfully at k ≤ 10, and is INDISTINGUISHABLE from k ≈ 50 upward.**
+
+### ✅ WHAT v7 ACTUALLY IS — a clean three-way story
+
+| where | v7 vs edit distance |
+|---|---|
+| **non-Latin↔non-Latin** (52.7%) | **WINS** — 0.3164 vs 0.2664 @10, +0.1021 @200 |
+| **Latin-involving** (37.6%) | **LOSES** — 0.3382 vs 0.4319 @10, and this is the real deficit |
+| **`OTHER`** (9.7%) | **DEAD** — 0.0012 flat from k=10 to k=1000 |
+
+**v7 wins where phonology is the only signal, loses where surface similarity is,
+and is at chance where it never trained.** ⚠ Excluding `OTHER`, v7 **crosses the
+baseline at k=20** and leads at every k above; **+0.0343 at k=200 is ~14σ against
+the seed sd**, so unlike §8's "tie" that one is real. ⚠ And `any OTHER` is
+**0.0012 flat over two orders of magnitude of k** — *one query, unchanged*. Not a
+weak score: **no signal.**
+
+**So v8's job is not "fix retrieval".** It is (a) stop losing at the top of the
+ranking on Latin-involving pairs, and (b) cover the dead scripts.
+
+### 🛑 THE PAIR-ELIGIBILITY CENSUS — 31.56% excluded, and `OTHER` is only 1.7% of it
+
+Measured against the IPA store directly (`indexing-17`):
+
+* **`script='OTHER'`: 395,409 rows, 0 ok, 0.00%**, backend `(none)` for every
+  one. **The only script in the store at exactly zero**; every other sits
+  66.6%–99.9%.
+* 🛑 **3,542 of 3,941 `(lang, script)` cells have zero IPA — 22,947,929 rows,
+  31.56% of the store.** `script='OTHER'` is just **1.7%** of that. **98.3% sits
+  inside WELL-COVERED scripts**: 18.5M with no language tag (16.2M of them
+  Latin), `ceb`/LATIN 2,778,161 quarantined, `mul` 200,982, `war` 161,193,
+  `vo` 141,234, `ota`/ARABIC 20,189, `grc`/GREEK 16,438. ⚠ And `mn`/CYRILLIC
+  7,531 at 0.00% inside a script that is 83.25% covered — **language-shaped holes
+  exist inside covered scripts, not only script-shaped ones.**
+
+⚠ **A TRAP IN THE PER-LANGUAGE VIEW, worth more than the numbers.** `my` reads
+**21.29% ok** at language level. Cross-tabulated it is `my`/LATIN **19,389 at
+99.98%** and `my`/**OTHER 71,675 at 0.00%**. **Epitran's route is keyed on
+LANGUAGE and fires only on the romanisation.** Anyone reading the language-level
+figure concludes Myanmar is partly covered; **it is not covered at all in its own
+script.** Same for `km` and `lo`. `si`, `bo`, `pa`, `am`, `or`, `sat` are 0.00%
+on *every* script including Latin.
+
+✅ **This completes the unification with denominators.** `generator.py:155`
+excludes **31.6% of the corpus** from positive pairs. Where the excluded rows
+**share a script** with trained data (the 16.2M untagged Latin) orthographic
+transfer rescues them — that is the 0.9560. Where they share **nothing**
+(395,409 `OTHER`) v7 sits at chance. **Same gate, opposite outcomes, script
+sharing the whole discriminator.**
+
+🛑 **AND THE EXCLUSION IS STRUCTURAL, NOT INCIDENTAL.** A language enters a gain
+stratum only by *acquiring* IPA, and the routes that exist are overwhelmingly for
+languages already well served. **The 395,409 `OTHER` rows cannot appear in any
+gain stratum until a route exists at all** — so the IPA recomputation cannot
+reach them **by construction**, not merely by accident of which languages were
+picked.
 
 ### 🛑 §8's EVIDENCE NO LONGER EXISTS — only the three rows quoted in this document
 
