@@ -241,6 +241,42 @@ majority of tgn's toponyms**, each arriving as a new row with no embedding and
 no IPA. (Absolute count owed by `indexing-9c`; 59.9% is of tgn's toponyms, and
 must not be back-derived from the 2,991,143 *place* count.)
 
+### 🛑 THE tgn FIX MAKES 1,398,790 ROWS PRESENT BUT NOT TRANSCRIBABLE
+
+Measured by `indexing-9c`: **1,398,790 net-new inventory rows** — distinct
+`toponym_id`s re-keyed `Name@` → `Name@und`, **zero colliding** with an existing
+`@und` id (tgn's tagged terms carry real codes and never `und`, so nothing
+merges and the delta cannot be sized down). ⚠ 40.1% here vs the 59.9% reported
+earlier is **not** a contradiction: 59.9% is per-document toponyms, 40.1% is
+**distinct ids**, and a name on many places is one inventory row. The distinct
+figure is the one that sizes the top-up.
+
+🛑 **But `und` does not route.** `routes.py:164` `resolve()`: `und` is **not** in
+`NON_LANGUAGE_TAGS` (`{genitive, ar1, lauc}`) so it clears that gate;
+`('und','LATIN')` is in neither `SCRIPT_FIRST` nor `NEURAL_ROUTES`; it is not
+quarantined; `to_iso3('und')` returns `und` unchanged; and `und-Latn` is not an
+installed Epitran mode — so it falls to `return None, "no_route"` (`:190`).
+**All 1,398,790 land `no_route`.** They get an inventory row and an embedding
+(~30 s of L40S at 49k/s); they get **no IPA**.
+
+⚠ **Forecast `no_route` 866,948 → ~2.27M**, more than 2.6× and the largest
+movement in the status census since it was built. Predicted here **with its
+cause**, so the next `verify_store` run does not read it as damage.
+
+**The fix is not wrong** — it stops `extract_namespace` discarding them, makes
+them searchable, and gets them embeddings, none of which was true yesterday.
+**It moves them from "silently dropped" to "present but untranscribable."**
+Crossing the rest needs a real language tag: the language-identification project,
+not a routing fix.
+
+🛑 **And because IPA gates pair ELIGIBILITY, they cannot train the main
+objective.** `generator.py:155` is `WHERE t.ipa IS NOT NULL`, so these 1.4M are
+**ineligible**, not merely unlabelled. **Rebuild-and-index does not make them
+trainable.** §6.2c's decision to harvest the tgn pairs from the **staged
+extract** rather than from ES is what saves the fine-tune — ⚠ **keep it**;
+harvesting from the inventory or ES would now silently lose exactly this
+population.
+
 🛑 **The forms being re-keyed are exactly the historic-orthography signal the
 fine-tune depends on** — `Dorkecestre`, `Dorocine` → `tgn:7011929` are Getty's
 untagged historic variants. **Do not train the fine-tune against the inventory
