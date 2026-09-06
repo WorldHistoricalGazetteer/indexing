@@ -664,12 +664,72 @@ that**, and this document is the reason it was oversold:
 Welsh LHPN     14,863 pairs    (the 5.5% yield figure was 1.73% corpus-wide)
 TGN dated      40,937 pairs    (effective N 3,565 places; 17 places = 51%)
 Chinese             0          specialist review cancelled; 1908 Atlas dropped
+                               ⚠ but see below — ~102,675 Wade-Giles terms may
+                               be recoverable by #250's filter exemption
 ```
 
 **Against a v7 trained on ~31M toponyms this is a fine-tune and an evaluation
-stratum — not a co-equal training objective.** ⚠ **And it is EUROPEAN**: Welsh
-clerk transliteration and dated European variants. **Any v8 claim must say which
-historic orthography, and at what scale it was trained.**
+stratum — not a co-equal training objective.** ⚠ **And it is EUROPEAN** — Welsh
+clerk transliteration and dated European variants — **unless the Wade-Giles
+population below proves out.** **Any v8 claim must say which historic
+orthography, and at what scale it was trained.**
+
+### ⚠ THE CHINESE HALF MAY HAVE A ROUTE AFTER ALL — pending one measurement
+
+`indexing-04`, 6 Sep, sampling `explicit.zip` (2026-01-04) directly rather than
+the staged tree. **The population the filter discards is TWO conventions, not
+one:**
+
+```
+zh-Latn-pinyin-x-notone   1,264,794 solid      8 hyphenated  -> pinyin, as tagged
+zh-Latn (bare)              257,776 solid  205,350 hyphenated -> TWO conventions
+```
+
+(Raw lines; each term appears under both `ontology#term` and `literalForm`, so
+roughly **102,675 distinct** hyphenated terms.)
+
+**The hyphenated forms are Wade-Giles** — `Hsü-jih-t'un`,
+`Pai-chia-ts'ao-fang-tzu`, `Ch'en-chia-wo-p'u`, `Kao-chia-ying-tzu`. Aspiration
+apostrophes, the `hs` digraph, and `-t'un` (屯), `-ts'un` (村), `-kou` (溝),
+`-tzu` (子) suffixes. ✅ **Village and hamlet granularity.** Postal *province*
+forms are in the release too — `Chihli`, `Kiangsu`, `Chekiang`, `Fukien`,
+`Hunan`, `Honan`, `Shantung`, `Shansi` — so the head is there as well as the
+tail.
+
+🛑 **#245 WAS CLOSED not-planned ON THE PREMISE THAT THIS MATERIAL WAS
+UNAVAILABLE.** It measured Chinese reachability at **18.0%** against a British
+control of **76.0%**, identified the gap as *"our corpus is county-level, and
+nothing suggests the tail's postal forms are indexed — that tail is the gap"*,
+and proposed OCRing the 1908 Atlas for ~4,255 index entries. **The tail it wanted
+appears to be sitting in TGN at ~102,675 terms — roughly 24× the Atlas — already
+structured and attested rather than needing recognition from page images.**
+
+✅ **This REINFORCES dropping the 1908 Atlas rather than reviving it.** More
+material, attested, no OCR.
+
+⚠ **WHAT IS NOT ESTABLISHED, and must not be skipped over.** #245 measured
+*postal* 0.786 and *pinyin* 0.571 similarity against its 1856 forms.
+**Wade-Giles was never measured.** It sits between the two historically, and that
+licenses **no** figure. Nobody has re-run the reachability probe against a corpus
+containing these forms. **So: the material exists, is the right granularity, is
+attested, and is discarded. Whether it closes the 18%-vs-76% gap is an OPEN
+MEASUREMENT, not a conclusion.**
+
+✅ **The test is cheap and already built** — #245 left `process/probe_reachability.py`
+and `process/probe_qing_provinces.py`, the second asserting a baseline that fails
+loudly if it moves. **Re-run both after #250's exemption lands.** One filter fix
+covers both populations, since bare `zh-Latn` and `zh-Latn-pinyin-x-notone` alike
+declare `-Latn` in the tag.
+
+⚠ **One trap for whoever measures it: the TAG DOES NOT SEPARATE THE TWO
+CONVENTIONS.** Bare `zh-Latn` holds pinyin *and* Wade-Giles mixed. For training
+that is harmless — both are romanisations. But **any Wade-Giles-specific claim
+needs an orthographic classifier** (hyphenation + apostrophes), which is a
+**heuristic** and must be characterised before numbers are quoted from it.
+
+**#245 has NOT been reopened** — that is the closer's call, and `indexing-04`
+flagged the caveat on the issue rather than acting on a connection it had not
+fully measured. **The right call.**
 
 ### What is still open
 
