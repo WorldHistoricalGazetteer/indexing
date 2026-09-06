@@ -196,7 +196,65 @@ notation cases these are **cleanly identifiable from the source, because Getty
 labels them**: a filter with an authoritative predicate behind it, not a
 heuristic. Belongs in the toponym-hygiene issue.
 
-✅ **TRANSLITERATION IS MARKED, WE ALREADY CAPTURE IT, AND WE DO NOT USE IT.**
+🛑 **TRANSLITERATION IS MARKED BY GETTY — AND IT IS NOT IN OUR CORPUS.**
+
+⚠ **This entry first said "we already capture it, since we take the whole tag."
+That was WRONG** — read off the extractor and not checked against the store.
+`indexing-04` withdrew it on measurement:
+
+```
+lang   total in store   LATIN-script rows   of which ok
+zh          1,587,205                   0             0
+ja            949,609                   0             0
+fa            624,686                   0             0
+ru          1,100,241                   0             0
+ar            508,397                   0             0
+el            192,873                   0             0
+ko            323,097                   0             0
+```
+
+**Zero — not `no_route`, ABSENT.** Corpus-wide only **24,614 of 72,703,552**
+rows (0.034%) carry any script subtag, and all are Wikidata-shaped
+(`be:word_stress` 18,540, `ja_rm` 3,249, `zh_pinyin` 38). Getty's
+`zh-Latn-pinyin-x-notone` **appears nowhere**.
+
+✅ **The "absent" finding is sound, confirmed by a second route.** A pinyin row
+would have surfaced in exactly that query: `rebuild_toponyms_index:867`/`:900`
+splits the tag to its base, so `Beijing@zh-Latn-pinyin-x-notone` becomes
+`Beijing@zh` with `lang_variant` beside it; and **script is derived from the
+CHARACTERS** (`:1066`), the docstring at `:577` naming *"Beijing with lang=zh and
+script=LATIN"* as a case it handles. So the row would read `zh` + LATIN — which
+is what was queried, and found zero of.
+
+⚠ **The routing hypothesis raised here was structurally right and empirically
+moot.** `normalise_lang` is `lang.strip().split("-")[0].lower()`, so the script
+subtag *is* discarded before the `(lang, script)` lookup — **but no rows reach
+that lookup.** They are lost earlier than the router.
+
+**Where they are lost is NOT established. Two of the three candidates are
+eliminated from the code; do not re-propose them:**
+
+* 🛑 **NOT the empty-language drop.** `zh-Latn-pinyin-x-notone` is a *non-empty*
+  tag, so `extract_namespace` has no reason to discard it.
+* 🛑 **NOT dedup collapse.** `tgn-places.py` `make_doc` dedups on
+  `toponym_id = f"{name}@{lang}"`, and the romanised and native forms are
+  *different strings* — they cannot collide.
+* 🛑 **NOT predicate selection.** `VALID_LABEL_PREDS = ("prefLabelGVP",
+  "altLabel", "prefLabel")` covers the SKOS-XL links Getty uses, so a romanised
+  term attached as `altLabel` **is** read, and `make_doc` applies no per-place
+  cap.
+
+**Still open:** normalisation between the extract and the store, and whether the
+store's own enumeration ever offered these rows to the IPA planner.
+
+🛑 **CONSEQUENCE FOR THE DESIGN DECISION — they are NOT free.** Getty's ~1.16M
+attested romanisations remain strictly better than computed pairs **in
+principle**, but they are **not currently available to the pair selector**.
+**They are a recovery task of unknown size, not an asset on the shelf**, and the
+anyascii option below is **not** superseded by something we hold — it is
+competing with something we would first have to recover.
+
+**What Getty publishes (in the export, per the census):**
 There is **no script-bearing predicate anywhere** in Terms — script stays
 derivable only from the string or from the tag. But Getty encodes romanisation
 **in the language tag itself** via `-Latn` subtags, and since the extractor takes
@@ -210,10 +268,9 @@ ja-Latn                   63,919      bo-Latn    7,904
                                       ~1.16M total
 ```
 
-🛑 **These are Getty-ATTESTED native↔romanised pairs on the same subject** — a
-cross-script positive source we hold and do not exploit. See the next section:
-they are **strictly better than the computed romanisation proposed there**,
-wherever they exist.
+🛑 **These are Getty-ATTESTED native↔romanised pairs on the same subject** — and
+**we do not have them.** See the withdrawal above: recovering them is a task, not
+a lookup.
 
 ⚠ **One thing to check before treating them as free:** `normalise_lang` presumably
 bases `zh-Latn-pinyin-x-notone` to `zh`, which is then looked up as
@@ -234,11 +291,11 @@ Uluru ≈ Ayers Rock, destroying the metric it exists to provide. The open quest
 is empirical and unasked: **at each threshold, how many true phonetic variants
 are excluded, and how many exonyms admitted?**
 
-**0. And a better one exists where it applies — Getty's own.** The ~1.16M
-`-Latn` forms above are **attested rather than computed**, so they are gold
-labels rather than a heuristic. They are smaller than the gap (1.16M against
-18.5M unreachable rows) and cover only the languages Getty romanises, so they
-**complement** the option below rather than replacing it.
+**0. A better one exists in principle — but we do not currently hold it.**
+Getty's ~1.16M `-Latn` forms are **attested rather than computed**, so they would
+be gold labels rather than a heuristic. ⚠ **They are absent from our corpus**
+(see the withdrawal above), so they are a **recovery task of unknown cost**. Do
+not schedule against them, and do not treat the option below as superseded.
 
 **2. There is one genuinely independent second opinion available, and it needs no
 IPA.** **anyascii romanisation + edit distance** — the benchmark's own baseline
