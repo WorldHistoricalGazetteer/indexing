@@ -137,6 +137,91 @@ self-training amplifies systematic error with nothing left pulling back.
 **The defect in PanPhon-based selection is COVERAGE, not circularity** — and leg
 1 is what attacks it.
 
+### ✅ WHAT TGN ACTUALLY PUBLISHES — censused, and `und` IS irreducible
+
+SG asked whether Getty documents anything about term language or script that is
+not obvious in the data as extracted. `indexing-04` censused the LOD export
+(`explicit.zip`, 2026-01-04; 17 members, 45,280,094 triples in Terms alone) —
+**not** recalled from a model of Getty's editorial database. Full census at
+`/vast/ishi/tgn-census-11169092.out`.
+
+⚠ **Scope, preserved deliberately:** every count below is *"present in the LOD
+export on N of 5,315,747 terms"*. A field may exist editorially and be projected
+away. **Absence here is not absence in Getty.**
+
+🛑 **THE `und` POPULATION IS IRREDUCIBLE FROM THIS FILE.** There *is* a separate
+Getty term-language assertion — `dcterms:language`, on 3,172,492 terms (59.68%),
+which the extractor ignores. It recovers **nothing**:
+
+```
+terms (literalForm)         5,315,747   <- denominator
+  WITH xml:lang             3,172,492   59.68%
+  WITHOUT xml:lang          2,143,255   40.32%   <- becomes our `und`
+
+terms with dcterms:language 3,172,492   59.68%
+  ...also carrying xml:lang 3,172,492  100.00%
+  ...with NO xml:lang               0   <- ZERO recoverable
+```
+
+Its values (`<http://vocab.getty.edu/language/zh>` mirroring `@zh`) are a
+**redundant restatement of the same fact in URI form**. ✅ **Only language
+identification can move this population** — the conclusion §0 already reaches,
+now closed rather than assumed.
+
+✅ **And Getty does NOT positively assert "undetermined"** — four matches across
+45.3M triples. Our `und` is our own placeholder for an omitted tag, exactly as
+`tgn-places.py:266` documents. **Confirms the plan's framing; does not correct
+it.**
+
+✅ **`gvp:historicFlag` — 22,225 terms (0.42%): 22,198 `historic`, 27
+`currentAndHistoric`.** Directly usable as a **positive** marker for the
+historic-orthography fine-tune, and against a pack whose *effective* N is 3,565
+places, 22,198 Getty-attested historic terms is not small. ⚠ **But the dump
+publishes only the two non-current values**, where Getty's documented model has
+Current/Historical/Both/Unknown — so **absence of the flag does NOT mean
+"current", it means not published.** Usable to find historic forms; **unusable**
+to identify current ones.
+
+➡ **`gvp:termFlag` — 4,058,205 terms (76.34%), of which 4,058,187 `Vernacular`.**
+Getty tells us which term is the native-language form, and we discard it.
+Vernacular-vs-not is the axis a Welsh-clerk-orthography fine-tune cares about.
+**Recorded as available, not scheduled** — what it buys needs measuring.
+
+🛑 **A DATA-QUALITY DEFECT: WE INDEX ADMINISTRATIVE CODES AS TOPONYMS.**
+`gvp:termKind` on 902,219 terms (16.97%) — mostly `OfficialName` (896,278), but
+also **FIPSCode 4,764 · ISOalpha3 246 · ISOalpha2 240 · ISOnumeric3 240 ·
+USPSCode 50 · SiteName 365 · Pseudonym 18**. ~5,540 terms that are *codes, not
+names* — `US`, `840`, `CA` — currently searchable as place names. ⚠ Unlike the
+notation cases these are **cleanly identifiable from the source, because Getty
+labels them**: a filter with an authoritative predicate behind it, not a
+heuristic. Belongs in the toponym-hygiene issue.
+
+✅ **TRANSLITERATION IS MARKED, WE ALREADY CAPTURE IT, AND WE DO NOT USE IT.**
+There is **no script-bearing predicate anywhere** in Terms — script stays
+derivable only from the string or from the tag. But Getty encodes romanisation
+**in the language tag itself** via `-Latn` subtags, and since the extractor takes
+the whole tag we already hold them:
+
+```
+zh-Latn-pinyin-x-notone  632,401      el-Latn   56,193
+zh-Latn                  231,563      ru-Latn   30,405
+fa-Latn                  128,277      ar-Latn   11,338
+ja-Latn                   63,919      bo-Latn    7,904
+                                      ~1.16M total
+```
+
+🛑 **These are Getty-ATTESTED native↔romanised pairs on the same subject** — a
+cross-script positive source we hold and do not exploit. See the next section:
+they are **strictly better than the computed romanisation proposed there**,
+wherever they exist.
+
+⚠ **One thing to check before treating them as free:** `normalise_lang` presumably
+bases `zh-Latn-pinyin-x-notone` to `zh`, which is then looked up as
+`('zh','LATIN')` — and routes are keyed by the script a language is *normally*
+written in. **If `('zh','LATIN')` is not a route, ~630k explicitly-marked pinyin
+forms are landing `no_route` for a reason unrelated to being unroutable.**
+Unverified; do not quote as established.
+
 ### A SECOND OPINION IN THE FILTER — worth measuring, and one candidate is free
 
 Two things follow from the above, and neither is a recommendation to act yet.
@@ -148,6 +233,12 @@ genuinely different names (exonyms, renames). PanPhon separates them. ⚠ **So
 Uluru ≈ Ayers Rock, destroying the metric it exists to provide. The open question
 is empirical and unasked: **at each threshold, how many true phonetic variants
 are excluded, and how many exonyms admitted?**
+
+**0. And a better one exists where it applies — Getty's own.** The ~1.16M
+`-Latn` forms above are **attested rather than computed**, so they are gold
+labels rather than a heuristic. They are smaller than the gap (1.16M against
+18.5M unreachable rows) and cover only the languages Getty romanises, so they
+**complement** the option below rather than replacing it.
 
 **2. There is one genuinely independent second opinion available, and it needs no
 IPA.** **anyascii romanisation + edit distance** — the benchmark's own baseline
