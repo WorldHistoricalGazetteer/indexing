@@ -2668,6 +2668,67 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## OSM re-ingest ⇒ RETILE (user-visible), but do NOT refresh the PBF in the same pass
+
+**Three questions from SG, all checkable.**
+
+### 1. Yes — tiles bake dating metadata per feature
+
+`generate_tiles.py:1169` writes `start` / `end` on every dated feature, plus
+`start_def` / `end_def` where a timespan pins both inner bounds.
+
+### 2. Yes — a re-ingested `osm` requires a retile, and the effect is USER-VISIBLE
+
+**Today every OSM feature tiles as unbounded.** `generate_tiles.py:1154`, in its
+own words: an attestation `{"start": {"latest": 2026}}` *"now gets `start = -9999,
+end = 9999` (unbounded: never hidden in possibly) plus `start_def = end_def =
+2026`"*. The comment records why — pooling endpoints had stamped every
+contemporary feature `(2026, 2026)`, which *"blanks `osm` / `osm_misc` / `tgn` /
+`nl` on any historical range"*.
+
+🛑 **So if item 1 gives OSM real `start_date`/`end_date`, dated features gain real
+bounds and would correctly VANISH outside their period.** Without a retile the map
+keeps showing them at every year. **That is a visible behaviour change, not
+metadata hygiene** — and the `historic=*` features, where such tags cluster, are
+exactly the ones a historical gazetteer's timeline should be hiding.
+
+### 3. 🛑 NO — refreshing the PBF in the same pass destroys the verification
+
+**The PBF's data date is `2026-07-20`** (`osmosis_replication_timestamp`;
+downloaded 30 Jul, 94 GB). ~7 weeks old.
+
+⚠ **`.pin-place233/planet-pinned.osm.pbf` is a HARDLINK to the same inode
+(56867, 2 links).** So a refresh would *not* destroy place#233's reproducibility —
+the pinned name keeps the old inode — and would cost a second 94 GB on `/ix1`
+(1.8 TB free). **The pin is not the obstacle.**
+
+**The obstacle is that it makes the check unable to fail.** `indexing-9c`'s
+inverted verification requires asserting **both** that the intended differences are
+present **and that nothing else changed**. On the **same** PBF, an `osm` re-ingest
+should reproduce its output identically except for the new date fields — a strong
+check with real power. **On a NEW PBF everything legitimately changes, and
+"our fix worked" becomes indistinguishable from "upstream moved".**
+
+> **That is this week's recurring failure re-created deliberately: a change that
+> removes the check's ability to discriminate.**
+
+⚠ **It also invalidates item 1's own measurement.** The PBF scan sizes
+`start_date` coverage *on the pinned file*; a refresh makes that number describe a
+file we are no longer ingesting, so the scan would have to be re-run.
+
+### Recommended sequence
+
+1. **PBF scan on the pinned file** → decide item 1 on it.
+2. **Re-ingest `osm` on the SAME pinned PBF** → verification keeps full power.
+3. **Retile the OSM buckets** → the dating metadata goes live.
+4. **Refresh the PBF as its own campaign, later, if wanted** — at which point the
+   diff is purely *"upstream moved"*, which is a clean and separately useful thing
+   to measure.
+
+✅ **Seven weeks is not stale for named places.** OSM's churn over that window is
+marginal for our purposes, and the currency gain does not buy back the lost
+ability to verify.
+
 ## ⚠ PBF TOOLING — the newer pyosmium API is installed and HALF ADOPTED
 
 **SG's recollection is correct and the split is clean.** `pyosmium 4.x` is in the
