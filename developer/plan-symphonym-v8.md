@@ -3999,7 +3999,10 @@ Backfilling before that rebuild therefore yields a DB that passes every check,
 feeds training correctly, and **silently reverts to 0% IPA the moment the tgn
 rebuild runs — with that run reporting success.** Required order:
 
-1. `tgn` re-ingest lands in production
+1. ✅ **`tgn` re-ingest LANDED 6 Sep** — nameless tgn places **1,277,683 → 10**,
+   `ok=2,991,143 errors=0` against an independent pre-scan, counts unchanged
+   (51,187,900 corpus / 2,991,143 tgn) so no stale ids. See the filter-family
+   note below.
 2. ✅ **HYDRATE THE SYMPHONYM CACHE FROM THE LIVE `toponyms` INDEX.** ⚠ The
    binding deadline is **before the OLD INDEX IS DELETED**, *not* before the
    rebuild — see the amendment below. Do it here anyway: it is cheap and removes
@@ -4046,6 +4049,42 @@ alias fix changed the hazard out from under the constraint derived from it.**
 ⚠ **A constraint derived from a defect needs RE-DERIVING when the defect is
 fixed** — otherwise the plan keeps encoding a hazard that no longer exists, and
 the remedy outlives the disease.
+
+### 🛑 `extract_namespace` HOLDS FIVE SILENT TOPONYM FILTERS — TWO MISFIRED TODAY
+
+The empty-language drop was not a lone defect. The ingest pipeline every
+namespace passes through contains **five** silent `continue` filters:
+
+```
+origId == null || !origId.contains('@')      malformed id
+atPos <= 0                                   empty name before '@'
+origName.length() == 0 || lang.length() == 0 ← the EMPTY-LANG drop (fixed at the authority)
+normalized.length() < 2                      ← the CJK SINGLE-CHARACTER drop
+seen.contains(newId)                         dedup (legitimate)
+```
+(plus a `normalized.length() > 200` cap.)
+
+🛑 **`normalized.length() < 2` is wrong for CJK, and that is a sharper objection
+than "crude".** The 10 tgn places still nameless after the fix include **`麻`** and
+**`多`** — ordinary Chinese names killed by a **character-count** rule. A
+single character is a complete name in Chinese and Japanese; the rule encodes a
+Latin assumption about what "too short to be a name" means. ⚠ **And it is
+corpus-wide, not tgn-specific** — every namespace passes through this pipeline.
+
+⚠ **The pattern is the finding.** Two of five filters were found to misfire in a
+single day, both silent, both in the same place. **Audit the whole set rather
+than fixing them one at a time** — the remaining three have never been examined,
+and a filter that has not been questioned is not the same as one that has been
+cleared.
+
+✅ **But note which corpus this affects.** These filters are ES-side, and
+`rebuild_toponyms_index` reads the **staged** tree, never the `places` index — so
+they shape `places.toponyms[]` and **not** the v8 training corpus. ⚠ Which raises
+a question worth settling before #246's impact is written up: if the dropped
+names were in the `toponyms` index all along (staged-derived), those places were
+**discoverable** all along, and the defect was in *enrichment* rather than
+*findability*. `indexing-9c` observed exactly that asymmetry days ago
+(`Dorkecestre` present in `toponyms`, absent from `places.toponyms[]`).
 
 ### ⚠ TWO REPO-WIDE DEFECTS FOUND STARTING THE tgn RE-INGEST (`indexing-9c`)
 
