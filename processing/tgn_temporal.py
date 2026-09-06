@@ -83,21 +83,8 @@ def timespan(start: int | None, end: int | None,
     neither             *attested* at the dump year — no claim about begin/end
     ==================  ===========================================================
     """
-    if start is None and end is None:
-        # Undated: all we know is Getty listed it in this release.
-        return attested_at(placeholder)
-    if start is None:
-        # An end with no start. The closure rule supplies `start.latest`,
-        # without which the record can never be *definitely* alive at any year.
-        return lifespan(end=end)
-    if end is None:
-        # Began at `start` and Getty still lists it: attested alive at the
-        # dump year, but NOT claimed to have ended there.
-        return bounded(start_earliest=start, start_latest=start,
-                       end_earliest=placeholder)
-    if start > end:
-        start, end = end, start
-    return lifespan(start, end)
+    from processing.temporal import dated_or_attested
+    return dated_or_attested(start, end, placeholder)
 
 
 def parse_term_dates(zip_path: Path) -> dict[str, tuple[int | None, int | None]]:

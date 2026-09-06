@@ -20,7 +20,7 @@ from shapely.geometry import mapping
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import DATA_DIR, OSM_STATE_FILE
-from processing.temporal import attested_at
+from processing.temporal import attested_at, dated_or_attested, parse_osm_year
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -116,21 +116,43 @@ def _attestation_timespans():
     return attested_at(_ATTESTATION_YEAR)
 
 
+def _feature_timespans(tags):
+    """Source-stated dates where OSM gives them, attestation where it does not.
+
+    ⚠ NOT `lifespan(start, end)`, which is what `ohm-places.py` uses. OHM is a
+    map of the PAST, so an undated end is genuinely unknown. OSM is a map of the
+    PRESENT: a feature tagged `start_date=1650` and still present in this dump
+    demonstrably exists now, so its end is *attested at the dump year*, not
+    unknown. `dated_or_attested` is the shared four-branch rule; recording an
+    undated end as unknown here would throw away what the dump itself asserts.
+    """
+    return dated_or_attested(
+        parse_osm_year(tags.get('start_date')),
+        parse_osm_year(tags.get('end_date')),
+        _ATTESTATION_YEAR,
+    )
+
+
 # ---------------- HELPERS ----------------
 def create_doc(osm_id, osm_type, tags, geometry):
     place_id = f"osm:{osm_type[0]}{osm_id}"
 
+    # One computation, used for names and geometry alike: they describe the same
+    # feature over the same interval, and deriving them separately is how the
+    # two drift apart.
+    ts = _feature_timespans(tags)
+
     # Build toponyms array with timespans (plural)
     toponyms = [{
         'toponym_id': f"{tags['name']}@und",
-        'timespans': _attestation_timespans(),
+        'timespans': ts,
     }]
 
     if 'names' in tags:
         for lang, val in tags['names'].items():
             toponyms.append({
                 'toponym_id': f"{val}@{lang}",
-                'timespans': _attestation_timespans(),
+                'timespans': ts,
             })
 
     # Base document
@@ -144,7 +166,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
     if geometry:
         geom_entry = enrich_geometry(
             geometry,
-            timespans=_attestation_timespans(),
+            timespans=ts,
             geom_key=f"{place_id}_0",
         )
         if geom_entry:
@@ -217,6 +239,11 @@ def process_tags(tags):
             result['names'][tag.k[5:]] = tag.v
         elif tag.k in {'place', 'natural', 'water', 'waterway', 'historic', 'landuse', 'boundary', 'admin_level',
                        'population', 'elevation', 'wikidata',
+                       # #246 item 1. These were parsed by ohm-places.py and
+                       # DISCARDED here, so 226,468 ingested OSM features (1.10%,
+                       # of which 132,841 are historic=*) asserted "attested
+                       # 2026" while the source stated a real start year.
+                       'start_date', 'end_date',
                        # ISO 3166-1 country codes carried by admin_level=2
                        # country relations AND dependent-territory relations
                        # (which carry their OWN code, e.g. PR, GU) — the

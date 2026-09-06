@@ -67,6 +67,8 @@ automatically. Prefer a real start where one is known.
 
 from __future__ import annotations
 
+import re as _re
+
 from typing import Any
 
 __all__ = [
@@ -122,6 +124,75 @@ def _clean(ts: dict[str, Any]) -> list[dict[str, Any]]:
     """Drop empty endpoints; return ``[]`` rather than a meaningless ``[{}]``."""
     out = {k: v for k, v in ts.items() if v}
     return [out] if out else []
+
+
+_OSM_YEAR_RE = _re.compile(
+    r'^~?'                                            # optional leading tilde
+    r'(?:(?:before|after|about|circa|ca)\s*:?\s*)?'   # optional qualifier
+    r'(-?\d{1,5})'                                    # year, may be negative (BCE)
+    r'(?:[-/]\d{1,2})?'                               # optional month
+    r'(?:[-/]\d{1,2})?'                               # optional day
+    r'(?:T.*)?$',                                     # optional time
+    _re.IGNORECASE,
+)
+_OSM_CENTURY_RE = _re.compile(r'^C(\d{1,2})$', _re.IGNORECASE)   # C19 -> 1800
+
+
+def parse_osm_year(date_str: "str | None") -> "int | None":
+    """Integer year from an OSM/OHM ``start_date``/``end_date`` tag, or None.
+
+    Promoted from `authorities/ohm-places.py`, unchanged, because
+    `osm-places.py` now needs the identical parser and the two files share a
+    tag schema. Duplicating it would have made a seventh instance of the
+    problem item 2 of #246 exists to remove.
+    """
+    if not date_str:
+        return None
+    date_str = date_str.strip()
+    m = _OSM_YEAR_RE.match(date_str)
+    if m:
+        try:
+            return int(m.group(1))
+        except (ValueError, OverflowError):
+            return None
+    m = _OSM_CENTURY_RE.match(date_str)
+    if m:
+        try:
+            return (int(m.group(1)) - 1) * 100
+        except ValueError:
+            return None
+    return None
+
+
+def dated_or_attested(start: "int | None", end: "int | None",
+                      attested_year: "int | None") -> list:
+    """Source-stated bounds where they exist, attestation where they do not.
+
+    The four-branch rule for a source that is a DATED SNAPSHOT carrying optional
+    per-feature dates — which is `tgn` and, since #246 item 1, `osm`:
+
+        start and end   a genuine lifespan — the one correct use of ``in``
+        start only      began then, and the snapshot still lists it, so it is
+                        *attested* alive at the snapshot year — NOT ended there
+        end only        ended then; the closure rule bounds the start
+        neither         attested at the snapshot year, no claim either way
+
+    ⚠ The `start only` branch is the one that distinguishes this from OHM's
+    `lifespan(start, end)`. OpenHistoricalMap is a map OF THE PAST, so an
+    undated end is genuinely unknown. OSM is a map of the PRESENT: a feature
+    tagged `start_date=1650` and present in the 2026 dump demonstrably still
+    exists, and recording its end as unknown throws that away.
+    """
+    if start is None and end is None:
+        return attested_at(attested_year)
+    if start is None:
+        return lifespan(end=end)
+    if end is None:
+        return bounded(start_earliest=start, start_latest=start,
+                       end_earliest=attested_year)
+    if start > end:
+        start, end = end, start
+    return lifespan(start, end)
 
 
 def source_release_year(release: "str | Path | None" = None, *,
