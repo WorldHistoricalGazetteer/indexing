@@ -3276,6 +3276,63 @@ Two investigations, opposite directions, same finding — **the kana half of a
 kanji/kana pair is not reliably a reading, and a harvest must separate readings
 from transliterations rather than assume.**
 
+### 🛑 9e. THE 49.7M IPA STRINGS ARE UNREACHABLE BY ANY CONSUMER, AND THE OBVIOUS FIX IS DESTROYED BY THE STEP THAT MUST FOLLOW IT
+
+`indexing-8b` checked at the reader rather than the writer, and found the
+recomputation succeeded into a place nothing reads. The strings live in
+`/vast/ishi/ipa-v8/store/ipa.duckdb`, a **separate file**. Both training
+consumers — `export_training_parquet` (`rebuild_toponyms_index.py:1181`) and
+`dump_to_jsonl` (`:1528`) — `SELECT t.ipa` from the **toponyms** DuckDB, where
+the column is NULL across all 72,703,552 rows.
+
+**So the training pipeline today would still see 0% IPA coverage.** The 68.428%
+is real, audited, and reachable by nothing. That is the fault class the
+postmortem catalogues — *a producer that succeeded, verified at the writer* —
+and it survived precisely because every check this campaign ran was a check on
+the store.
+
+⚠ **The obvious fix is correctly ordered only one way round, and the wrong way
+round looks identical for a while.** `rebuild_toponyms_index` main
+(`:2150-2175`) builds into scratch and ends `shutil.copy2(temp_db_path,
+final_db_path)`; without `--resume` it starts from `create_db()`, where `ipa
+VARCHAR` (`:618`) is created **empty** and filled only by the G2P stage's
+`UPDATE toponyms SET ipa = u.ipa` (`:1717`). **A fresh rebuild copies a new file
+over the old one — it does not merge.** And the rebuild is not optional: it is
+the only way new `tgn` toponyms enter the inventory at all.
+
+Backfilling before that rebuild therefore yields a DB that passes every check,
+feeds training correctly, and **silently reverts to 0% IPA the moment the tgn
+rebuild runs — with that run reporting success.** Required order:
+
+1. `tgn` re-ingest lands in production
+2. `rebuild_toponyms_index` re-runs extract-to-DuckDB → **new** inventory
+3. IPA top-up computes the toponyms that are new in that inventory
+4. **then** backfill store → toponyms DuckDB, last
+
+**Decisions taken (coordinator, 6 Sep):**
+
+* **Backfill via the shipped bridge at `:1717`, not a side-car Parquet.** A
+  separate Parquet that consumers must be re-pointed at is the same fault in a
+  different hat: it depends on someone editing two `SELECT t.ipa` sites, and
+  until they do, coverage is still zero.
+* **Write `ipa` only; leave `panphon_features` NULL** — deliberate, because §10
+  retires the pooled 192-d vector, and filling that column would manufacture an
+  input for a consumer we intend to remove. Recorded at the write site so the
+  next reader does not file it as an omission.
+* **The store remains the SYSTEM OF RECORD; the backfill is lossy by
+  construction.** A NULL `ipa` in the toponyms DuckDB flattens **seven** states
+  into one — `no_lang`, `quarantined`, `no_route`, `non_language_tag`,
+  `echoed_input`, `empty_output`, and never-computed. ⚠ **No IPA coverage
+  statistic may ever be computed from the toponyms DuckDB**; it comes from
+  `ipa.duckdb` with its status breakdown, and the per-status counts (3,411,436
+  quarantined, 18,543,146 no_lang) are recorded at backfill time as stated
+  numbers rather than left to a later subtraction.
+
+⚠ **A planner keyed on the inventory cannot distinguish "no work" from "the
+inventory has not been rebuilt yet"** — Fault 12's shape again. The top-up
+planner should assert the inventory's generation against the `tgn` extract it is
+meant to cover and **refuse**, rather than return zero.
+
 ## 10. The pending IPA / PanPhon recomputation
 
 The campaign deferred recomputing IPA and PanPhon "pending any retraining".
