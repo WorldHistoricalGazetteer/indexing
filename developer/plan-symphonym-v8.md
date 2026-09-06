@@ -3940,9 +3940,60 @@ feeds training correctly, and **silently reverts to 0% IPA the moment the tgn
 rebuild runs — with that run reporting success.** Required order:
 
 1. `tgn` re-ingest lands in production
-2. `rebuild_toponyms_index` re-runs extract-to-DuckDB → **new** inventory
-3. IPA top-up computes the toponyms that are new in that inventory
-4. **then** backfill store → toponyms DuckDB, last
+2. 🛑 **HYDRATE THE SYMPHONYM CACHE FROM THE LIVE `toponyms` INDEX — BEFORE
+   ANYTHING REPLACES IT.** See below; skipping this costs ~28h of GPU and the
+   source is destroyed by step 3.
+3. `rebuild_toponyms_index` re-runs extract-to-DuckDB → **new** inventory
+4. IPA top-up computes the toponyms that are new in that inventory
+5. **then** backfill store → toponyms DuckDB, last
+
+### 🛑 A STEP THAT MUST HAPPEN BEFORE THE REBUILD, AND WHOSE INPUT THE REBUILD DESTROYS
+
+Raised by `indexing-9c`, 6 Sep, and it belongs in this ordering rather than in an
+ops note. **The Symphonym embedding cache must be hydrated from the CURRENT live
+`toponyms` index before the rebuild replaces it.** `rebuild_toponyms_index`
+writes `panphon_embedding` only — the 128-d Symphonym vectors come from the
+separate stage 2 — so the live index is the *only* place the existing vectors
+exist. Hydrating from it gives **~99% cache hits**; losing that source costs
+**~28h GPU** to recompute what we already had.
+
+⚠ **The ordering is unforgiving because the rebuild does not merge.** It builds
+fresh in scratch and `shutil.copy2`s over the target, so the moment it lands the
+hydration source is gone. **There is no recovery step; there is only doing it
+first.**
+
+### ⚠ TWO REPO-WIDE DEFECTS FOUND STARTING THE tgn RE-INGEST (`indexing-9c`)
+
+Both are fixed, and both bear on the corpus-wide rebuild SG has authorised.
+
+🛑 **1. `index_namespace` materialised an entire namespace before writing
+anything (`8d39818`) — on the VM that hosts production ES.**
+`collect_attestations` returned every place doc it walked as a list. At `ukhc`'s
+92 docs that is free, and **the tool's docstring — scoping it to "a single
+(small) authority" — was the only guard in place.** At `tgn`'s 2,991,143 it
+reached **9.7 GB RSS still climbing at 2.6 GB/min**, against 31 GB available
+falling ~1 GB/25s. Killed at 9.7 GB. **Nothing reported a problem; the run simply
+grew.**
+
+⚠ **That is the "never run heavy compute on the pitt VM" prohibition being
+violated by a tool that looks like an ordinary indexer** — the previous instance
+of that rule cost ~1h of production outage. **A safe operating range recorded
+only in prose is not a guard.** Now streams (peak ~420 MB, flat), and indexed
+`ok` is compared against a pre-scan count, because `ok=N errors=0` cannot see a
+short read.
+
+🛑 **2. The full `rebuild_toponyms_index` was aimed at the ALIAS (`ca07cfe`).**
+`--toponyms-index` defaults to `toponyms` and `scripts/symphonym.sh` does not
+override it, so STEP 4's delete branch **is** entered. Measured against the live
+cluster: `DELETE /<alias>` returns **400 `illegal_argument_exception`** in ES
+9.0.0 and the concrete index survives — **so the corpus was never at risk.** ⚠
+**But it was protected by an ES version's behaviour, not by design**, and the run
+would have died at STEP 4 *after* scanning 51.2M places, building the vocabulary
+and computing IPA + PanPhon — **hours discarded for a condition knowable in the
+first second.** Now guarded at startup.
+
+✅ **Consequence for the authorised rebuild: it must target a NEW DATED CONCRETE
+INDEX and end with one `_aliases` swap** — never the alias itself.
 
 **Decisions taken (coordinator, 6 Sep):**
 
