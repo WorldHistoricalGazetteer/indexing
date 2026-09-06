@@ -133,12 +133,21 @@ NON_LANGUAGE_TAGS: Set[str] = {"genitive", "ar1", "lauc"}
 # backend-work queue that no backend can ever serve, and take them out of the
 # language-identification queue that is precisely where they belong.
 #
-# This became live with the tgn fix: `extract_namespace` discards empty
-# language tags, so the authority now emits `lang or "und"`, re-keying
-# ~1,398,790 distinct toponyms from `Name@` to `Name@und`. Those rows have not
-# acquired a language -- they have acquired a placeholder saying they have
-# none. `mul` is handled separately in QUARANTINED_LANGS for a different
-# reason (a Wikidata edition label, not a linguistic claim).
+# `mul` is handled separately in QUARANTINED_LANGS for a different reason (a
+# Wikidata edition label, not a linguistic claim).
+#
+# 🛑 THIS GUARD IS NOT EVIDENCE THAT THE CASE OCCURS. Do not derive a forecast
+# from it. The tgn fix (`lang or "und"`) re-keys `Name@` -> `Name@und` in the
+# **places** index ONLY; the toponyms inventory normalises `und` back to None
+# at rebuild_toponyms_index.py:935 before the id is built, so it holds `Name@`
+# and this router never sees an `und` from that path. The two indices
+# legitimately differ in shape and neither is wrong.
+#
+# An earlier note here sized ~1,398,790 rows as a re-keyed inventory
+# population, and a `no_lang` forecast of 18,543,146 -> ~19,941,936 was drawn
+# from it. Both are WITHDRAWN: those rows were always present as `Name@`, so
+# there is no new inventory population and no growth. The guard remains as
+# defensive correctness for an inventory built by some other path.
 #
 # ⚠ ALIGNED WITH AN EXISTING CONVENTION, not invented here. The toponyms build
 # already canonicalises these away at rebuild_toponyms_index.py:935:
