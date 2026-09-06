@@ -2532,6 +2532,95 @@ are independent, and only the second is what v8 is about.**
 
 ---
 
+## 9b. THREE G2P FINDINGS THAT CHANGE v8's OWN PLAN (indexing-8b, `069ce95`)
+
+Found while scoping the IPA recomputation. **All three bear on v8 directly, not
+merely on the recompute.** Writeup: `developer/finding-charsiu-g2p-defects.md`.
+
+### 🛑 1. `ja` + CJK has NO G2P route — and CharsiuG2P is not the fix
+
+**465,177 Japanese Kanji toponyms return `None` from `to_ipa`.** `ja` is mapped
+only for HIRAGANA and KATAKANA; `ja`+CJK falls to the Epitran default branch,
+finds no entry, and returns nothing. `CHARSIU_LANG_MAP` already carries
+`'ja': 'jpn'` commented as a fallback that `to_ipa` never reaches. Verified
+through the shipped function — 12 of 12 Kanji names `None`, **with the Katakana
+path as a positive control in the same run**, so `None` is the routing decision
+and not a broken probe.
+
+⚠ **DO NOT record this as "Japanese fixed".** Routing to CharsiuG2P replaces a
+total absence with **partial accuracy**: `千代田町渡瀬` returns
+`seɴdaitamatɕiɰᵝatase` where `千代田` is *Chiyoda*; `厳原町` (*Izuhara*) returns
+`geɴgeɴtɕoɯ`. **Place-name Kanji readings are not derivable from the
+characters.** Zero signal → partly-wrong signal is an improvement and is not a
+reading dictionary.
+
+🛑 **So D-B — a Japanese kanji reading table — is the ACTUAL fix, and §6's
+dismissal of it needs revisiting.** It was ruled out as "not cross-script", on a
+scoping decision since superseded. §8.3 measured CJK↔Latin as the stratum where
+the romanised baseline is a near-oracle *by artefact* and v7 looks worst, and
+`東京`~`Tokyo` reaches only 0.51 because anyascii returns the *Mandarin* reading.
+**The hole and the weakness are in the same place.**
+
+### 🛑 2. ByT5 truncation — every Charsiu route silently capped at ~13–15 IPA chars
+
+`_CharsiuWrapper` calls `model.generate(**inputs)` with **no length argument**.
+HF defaults `max_length` to **20 TOKENS**, and the tokenizer is **ByT5 —
+byte-level**. IPA is heavily multi-byte, so the cap is ~13–15 characters
+*regardless of input length*. Measured, same model and inputs, 60 real names per
+route:
+
+```
+yue+CJK    80.0% truncated        ko+HANGUL  71.7%
+ja+CJK     33.3%                  zh+CJK     16.7%
+```
+
+`澎湖列島` → `pʰa:ŋ˨˩wu:˨˩li` — two syllables gone. **2,026,765 corpus rows sit on
+these routes.**
+
+⚠ **It never surfaced because a truncated IPA string is WELL-FORMED**, and nothing
+compared output length to input length. Every truncation lands at 13–15
+characters, which is a token budget rather than a property of the inputs.
+
+### 🛑 3. `sv` contamination is INSIDE the existing 50.4% baseline
+
+Wikidata carries one label per **Wikipedia edition**, and Lsjbot mass-generated
+place articles worldwide. So a `ceb` or `sv` label is frequently not a
+Cebuano or Swedish place name at all:
+
+```
+lang  toponyms    from wd   name also under another lang
+ceb  2,786,505     98.4%    82.6%
+sv   1,825,578     94.4%    82.7%   <- ALREADY ROUTED TODAY
+```
+
+⚠ **`sv` is not in the unlockable set — it is inside the 50.4% already routed, so
+any v7 training data drawn from it carries this.** `ceb`/`war`/`min`/`vo`/`mul`
+are quarantined by default (recorded, never dropped, reversible), taking the
+verified unlockable from 15.8M to **~13.0M**.
+
+⚠ **This is the one judgement call in the package a reviewer might make
+differently.** A shared name is not by itself proof — *Paris* is legitimately
+multilingual. The inference rests on the **conjunction** of ~98% `wd` provenance,
+95–99% name-sharing, and languages with no plausible worldwide toponymic
+footprint.
+
+### ✅ And the capability was already built — nobody routed to it
+
+`phonetics/epitran_extensions/` holds **115 hand-built CSVs**;
+`scripts/install_epitran_extensions.sh` installs them; **they ARE installed on
+CRC** — 254 modes across 203 ISO-639-3 codes against a **45-entry**
+`EPITRAN_LANG_MAP`. **The 21.76% gap is not missing capability, it is capability
+nobody routed to.** All 215 unlockable cells verified against real corpus names,
+0 failures; preflight 218/218 modes load and do not echo.
+
+⚠ **The end-to-end caught what 15 green unit tests could not.** Deriving routes
+from Epitran's CSV directory **dropped ENGLISH** — Epitran implements `eng` in
+*code* via flite/`lex_lookup`, so there is no `eng-Latn.csv`. Pass 1 reported
+120 of 120 English rows as `no_route`: **the single largest cell in the corpus,
+silently.** The unit tests were green throughout because they used a *synthetic*
+mode set. The regression test now omits `eng-Latn` deliberately, so it can only
+pass through the fix.
+
 ## 10. The pending IPA / PanPhon recomputation
 
 The campaign deferred recomputing IPA and PanPhon "pending any retraining".
