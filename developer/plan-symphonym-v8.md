@@ -2755,6 +2755,72 @@ silently.** The unit tests were green throughout because they used a *synthetic*
 mode set. The regression test now omits `eng-Latn` deliberately, so it can only
 pass through the fix.
 
+## 9d. ✅ IPA RECOMPUTED — 0.00% → 68.43%, and two near-misses worth more than the number
+
+`indexing-8b`. Store at `/vast/ishi/ipa-v8/store/ipa.duckdb`.
+
+```
+rows in store        72,703,552
+carrying IPA         49,749,377   68.428%   (from 0.00%)
+
+ok           49,749,377      no_route            866,948
+no_lang      18,543,146      non_language_tag    126,394
+quarantined   3,411,436      echoed_input          6,240
+                             empty_output             11
+```
+
+**4,015 of 4,015 shards present**, so the merge's completeness gate *passed* rather
+than being waived. 333 array tasks, zero tracebacks. `/vast/ishi` ended at 219 GB
+free.
+
+✅ **The `ja`+CJK hole is closed** — 465,177 of 465,177 now carry IPA, against 12 of
+12 returning `None` from the shipped helper that morning. **Quarantine held**: `ceb`
+0 ok of 2,786,505. **English routed**: 10,270,813 of 10,271,605. ⚠ **Every audit
+check carries a positive control in the same query**, so none of those zeros can
+come from an empty predicate.
+
+**Throughput, for costing:** Epitran 17k–44k names/s across CSV modes, `eng-Latn`
+882/s through flite, CharsiuG2P 26.4/s on CPU against ~150/s on an L40S. **The
+neural backend was 5% of the rows and ~90% of the cost** — which is what justified
+splitting the GPU array out.
+
+### 🛑 A passing test that would have gone green either way
+
+`verify_store` asserted CharsiuG2P `max_len > 20` and got **255**. **That passes.**
+But 256 was the new `max_new_tokens`, so **255 is one below the ceiling** — and
+*"the maximum went up"* was the ByT5 bug's entire disguise.
+
+> **A threshold test written against a bug you have just fixed tends to encode the
+> bug's OLD signature.** It tested *"not 20-ish"* when it should have tested *"not
+> at the current ceiling"*. The second form survives the next cap change; the first
+> silently stops testing anything.
+
+**Investigated rather than accepted**, and the answer is *not* truncation — 1,043
+rows (0.0419%) sit at ≥250 bytes and are **autoregressive repetition loops on
+out-of-distribution input**:
+
+```
+zh  'deɴneɴkakioɯɾiɴçikːokɯɯɴdoɯkaideɴkeisaidaɴɕidaɴɕidaɴɕidaɴɕid'
+ko  'ɾjʌ̹nɦa̠ɡje̞o̞ɭʎimpʰik̚sʰa̠ikxɯɭna̠md͡ʑa̠na̠md͡ʑa̠na̠md͡ʑa̠n'
+```
+
+**A higher cap yields longer garbage, not better IPA.** The Epitran control has no
+generation cap at all and reaches 343 bytes with 1,510 rows over 250, so genuinely
+long IPA exists and 256 is real but rarely binding. ⚠ **Recorded rather than
+fixed — those 1,043 rows still carry `status='ok'`. A known residual, not a clean
+result.**
+
+### 🛑 And a near-miss that nearly took PRODUCTION READ-ONLY
+
+The stratified job's first attempt **spilled 198.5 GiB and took `/vast` to 86 GB
+free — about 35 GB from putting production ES read-only** — because its `LIMIT`
+sat *after* the join, so sampling reduced nothing. Rewritten to sample *before*
+joining, with an explicit `max_temp_directory_size`.
+
+⚠ **`/vast/ishi` is a 1 TB allocation shared with production ES, which goes
+read-only at ~51 GB free.** A query plan is a disk-consumption decision on this
+cluster, and a `LIMIT` in the wrong position is enough to make it one.
+
 ## 9c. LANGUAGE INFERENCE FOR THE 18.5M NO-LANG ROWS — a negative held back for the right reason
 
 `indexing-8b` built the (c) instrument — hide a known `lang`, infer it from the
