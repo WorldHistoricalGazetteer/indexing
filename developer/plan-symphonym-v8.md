@@ -4639,9 +4639,54 @@ and false of the CARDINALITY — 14 and 29 contexts, top-10 above 99%. A
 structural-impossibility claim needs a cardinality check before publication,
 because a thing flagged as inherent is the one nobody re-examines.**
 
-### ✅ THE FULL COUNT, RECONCILED — 103 in 41 files, and my 108 was FIVE TOO HIGH
+### ✅ THE FULL COUNT, SETTLED AT THE THIRD ATTEMPT — 81 rows in 38 files
 
-⚠ **Corrected by `whg3-9d`, and it is my own normalisation finding biting in the
+**108 → 103 → 81.** Both corrections came from `whg3-9d`, both were the lint
+being wrong rather than the corpus, and **the second was reasoning I had already
+written down and failed to apply to my own tally.**
+
+```
+108   original, pre-NFD
+ −5   precomposed vowels the validator handles once decomposed
+103
+−22   MODIFIER-ONLY values, which are correct rules and not defects
+ 81   in 38 files — and every one is real
+```
+
+🛑 **A modifier on its own is a correct rule, not a missing segment.** PanPhon
+finds no segment in `ː`, `̃`, `ʲ` or `ʰ` because **on their own they are not
+segments** — they lengthen, nasalise, palatalise or aspirate whatever the
+preceding rule emitted. Exempted: `̃` ×10 (`bho`, `guj`, `kan`, `nep`, `new`,
+`pan`, `pnb`, `sat` ×2, `sin` anusvara), `ʲ` ×7 (`bel`, `che`, `oss`, `tat` soft
+sign), `ʰ` ×3, `ː` ×2.
+
+✅ **The test is Unicode general category — `Lm`/`Mn`/`Sk`/`Me` — and it applies
+only when the WHOLE value is modifiers.** `zʰ` is a base segment plus an
+aspiration PanPhon silently drops, so it stays a defect. Verified here in both
+directions.
+
+⚠ **I argued exactly this in one message** ("a modifier attaches to the preceding
+segment, so unparseable in isolation is expected") **and then counted 57 of them
+as defects in the next.** The reasoning and the tally were never reconciled.
+
+**The 2 remaining unparseable are both `ʤ`** (`kur-Latn`, `lim-Latn`) — the
+tie-bar ligature the IPA **withdrew in 1989**. Genuine defects; `dʒ` is the
+replacement.
+
+### 🛑 AND THE SHARPEST METHODOLOGICAL POINT OF THIS WHOLE THREAD
+
+**`mya-Mymr` `ှ → ʰ` is NOT a lint defect — it parses, as a modifier — and it is
+WRONG.** Myanmar ha-hto on a sonorant marks **devoicing**, not aspiration. **A
+clean lint on that row would have read as "nothing to see".**
+
+⚠ **The row that most needed a human was the row the machine passed.** Every
+mechanical pass in this work — NFD, general category, parseability,
+duplicate-grapheme — makes the reviewer's time more valuable by clearing noise,
+and **none of them can substitute for the linguistic judgement.** The 9,647
+affected occurrences were found by asking *what precedes ha-hto*, which no
+validator would ever ask.
+
+⚠ **First correction, and it is my own normalisation finding biting in the
 direction I had not considered.** Linting the raw file gives 108 in 42; **linting
 after NFD gives 103 in 41.** The five differences are precomposed vowels PanPhon
 handles perfectly once decomposed — `wol-Latn` `ë` (U+00EB), `hat-Latn`
@@ -4655,18 +4700,8 @@ one specific way: **a false positive spends a reviewer's time on a row that was
 always fine.** Normalise before testing, in the lint and in the review UI's
 validator.
 
-**Three partitions of one measurement have now been quoted; none corrects
-another:**
-
-```
-103  total mismatches after NFD, across 41 of 115 files
- 38  ASCII g (U+0067) where IPA needs ɡ (U+0261)
- 15  literal ∅ (U+2205) instead of an empty field
- 50  the rest — 26 lossy (parses, comes back shorter) + 24 unparseable
-```
-
-The earlier **36 / 57 / 15 = 108** partition *included* the ASCII-`g` rows and was
-measured pre-NFD. **93 − 38 − 5 = 50**, so the two agree exactly.
+**Publish 81 / 38.** The intermediate partitions are retained above only so that
+none of the three figures quoted in this campaign is read as a disagreement.
 
 ### ✅ PANPHON PARITY — every figure published today came from ONE version
 
