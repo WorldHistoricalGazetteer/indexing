@@ -4128,6 +4128,50 @@ reconstruct v7's per-language baseline — if so it is the only surviving record
 must be copied aside first.** Either way the standing rule holds: **no IPA
 coverage figure may come from anywhere but `8b`'s store.**
 
+### 🛑 #250's FIX IS INERT AT THE CALL SITE — the function was repaired, the line above it was not
+
+Found 6 Sep while checking a peer's evidence. **`2f093c4` added
+`_has_script_subtag` and a `return False` guard INSIDE `is_script_mismatch`, and
+changed NOTHING at the call site.** But the extraction loop base-splits first:
+
+```
+:905   lang = parts[0]                      ← subtag destroyed HERE
+:933   if is_script_mismatch(lang, script): ← receives 'zh', never 'zh-Latn'
+:934   mismatch_counts[f"{lang}:{script_value}"] += 1
+```
+
+So `_has_script_subtag('zh')` returns False and **the exemption is dead code.**
+⚠ **This is the very defect the commit message diagnoses** — *"the distinguishing
+information was thrown away on the line above the test"* — **the fix repaired the
+test and left the line above it.**
+
+🛑 **AND THE TESTS ARE GREEN.** `tests/test_script_mismatch_declared.py` calls
+`is_script_mismatch("zh-Latn", …)` **directly**, with a full tag the production
+path never delivers. A correct unit test of a function that is unreachable in
+that state. **Any test for this must exercise the extraction loop, not the
+function.**
+
+### 🛑 AND THE MISMATCH COUNTER CANNOT DISCRIMINATE — a measure that returns the same output in both worlds
+
+The counter at `:934` keys on the **base** `lang`, so a filtered `zh-Latn` is
+recorded as `zh:LATIN` **exactly as a filtered bare `zh` is**. ⚠ **The absence of
+`-Latn` from its breakdown is therefore guaranteed by the key format, not
+evidence of anything** — it reads identically whether the declared forms passed
+or were dropped. It was briefly taken as *positive* evidence that #250 was
+working; it cannot be evidence either way.
+
+⚠ **`zh:LATIN 969,391` is consistent with the LOSS, not the recovery** — the
+commit measures ~864k declared `zh` romanisations in the staged tree (632,401 +
+231,563), comfortably inside that count.
+
+✅ **The acceptance test that DOES discriminate**, and it belongs to step 5:
+**query the new index for `lang: zh-Latn` (and `fa-Latn`, `ja-Latn`) and expect
+> 0.** The code comment records that `tgn lang=zh script=LATIN` was **0** before,
+so this tests the recovered population itself. ⚠ **Not "the corpus total went
+up"** — dedup can mask that in either direction, and the observed total
+(72,703,741 against a live 72,703,777) sits within 36 of the old one, which is
+precisely why it looked inert and *was*.
+
 ### 🛑 STEP 5 IS A STAGING CAMPAIGN, NOT A JOB
 
 `scripts/symphonym.sh:34-50` **requires a staging ES and writes there.**
