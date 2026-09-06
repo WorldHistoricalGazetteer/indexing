@@ -723,13 +723,37 @@ sbatch processing/es_staging.sbatch
   stored at `/ix1/ishi/es/config/elastic.password`. Example ad-hoc query:
   ```bash
   ssh pitt 'ES_PASS=$(cat /ix1/ishi/es/config/elastic.password); \
-    curl -s -u "elastic:${ES_PASS}" "http://localhost:9200/places_20260317/_search" \
+    curl -s -u "elastic:${ES_PASS}" "http://localhost:9200/places/_search" \
     -H "Content-Type: application/json" -d '"'"'{"size":1}'"'"''
   ```
   Note: the gateway on port 9200 also requires auth; port 9201 is the direct
-  ES backend. Index names are dated, and the current generation is
-  `*_postbarrier-20260502` behind the `places` / `toponyms` **aliases** — query
-  the alias, not a dated name (the example above uses a stale one). Use `_cat/indices` to discover current names.
+  ES backend. **Always query the ALIAS (`places` / `toponyms`), never a dated
+  name** — the example above does, deliberately.
+
+  Index names are dated and the generation moves. **Verified live 6 Sep 2026:**
+
+  | alias | concrete index | built |
+  |-------|----------------|-------|
+  | `places` | `places_h3ccode-20260805t120000z` | created 2026-08-06, promoted 6 Aug |
+  | `toponyms` | `toponyms_temporal-20260731t160000z` | created 2026-08-05, promoted 5 Aug |
+
+  ⚠ **The asymmetry is correct, not a half-finished swap.** There is no
+  `toponyms_h3ccode-*`: the `h3ccode` run rebuilt **places only** — H3 is a
+  places-level field — so `toponyms` legitimately stays on the `temporal`
+  generation. A mismatched pair is *also* what a missed alias swap looks like, so
+  check before concluding either way.
+
+  ⚠ **A dated name written here is a snapshot of a fact, and it rots.** This entry
+  claimed `*_postbarrier-20260502` for four months after two promotions superseded
+  it. Resolve the truth from the cluster — `GET /_alias/places`, or
+  `_cat/aliases` — and treat any generation named in this file as a hint, never an
+  answer.
+
+  ⚠ **Enrichment does NOT create a new generation.** The Sept 2026 work (h3_cover
+  remediation, MultiPoint covers, field cleanup, the Symphonym re-embed) was
+  in-place `_bulk` updating of the indices above — which is why they still carry
+  August run-ids while containing September fixes. **Do not read an August name as
+  an out-of-date corpus.**
 - **Python 3.11+** required (uses `str | None` union syntax, match statements).
 - Key dependencies: `elasticsearch`, `httpx`, `fastapi`, `uvicorn`, `pydantic`,
   `osmium`, `ijson`, `orjson`, `shapely`, `torch` (for Symphonym).
