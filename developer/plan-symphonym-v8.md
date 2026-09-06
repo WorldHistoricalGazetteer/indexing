@@ -4290,6 +4290,56 @@ up"** — dedup can mask that in either direction, and the observed total
 (72,703,741 against a live 72,703,777) sits within 36 of the old one, which is
 precisely why it looked inert and *was*.
 
+### 🛑 RETRIEVAL IS TWO PROBLEMS, AND RERANKING ONLY REACHES THE SMALLER ONE
+
+From §8's own published anchors (`indexing-17`, 6 Sep; full sweep running as
+11170893):
+
+```
+R@200   v7  0.4766     levenshtein_romanised  0.4768
+R@10    v7  0.2940     levenshtein_romanised  0.3230
+```
+
+* **Ordering within the pool** — reranker territory. Ceiling **R@10 → 0.477**,
+  i.e. **+0.182 absolute, +62% relative**. Real and worth having.
+* **Recall into the pool** — **52% of true partners never enter the top 200 at
+  all**, and **no reranker can reach them.**
+
+🛑 **The two R@200s agree to 0.0002**, which settles more than it looks. It rules
+out a recall problem masked by v7's discrimination win — *the entire v7-vs-
+baseline retrieval gap is ordering within the pool*. But it also says **the same
+~52% is missed by edit distance and by v7 alike**, so those pairs are hard for
+surface similarity *and* for whatever v7 encodes. ✅ **That is exactly the
+population v8's real improvements would have to reach** — better IPA in
+non-Latin scripts, an objective that produces gradient — **and it is unreachable
+by reranking by construction.**
+
+⚠ **Consequence for what to build first: the loss change outranks the reranker.**
+A contrastive/InfoNCE objective with in-batch and ANN-mined hard negatives
+improves **global geometry (recall into the pool) as well as fine ordering**,
+where a reranker is **capped at 0.477 by construction**. *The ceiling on
+reranking is bounded and known; the ceiling on fixing retrieval is not.*
+
+### 🛑 §8's EVIDENCE NO LONGER EXISTS — only the three rows quoted in this document
+
+There is **no `benchmark.json`, no `haystack_v7.npy` and no `[bench]` log
+anywhere on `/vast`** (searched: the eval tree, the repo checkout,
+`elastic/logs`, every top-level `*.out`). **A benchmark that gated an authorised
+retrain survives solely as prose in a planning file that is not the artefact.**
+Any further analysis is therefore a **re-run**, not a post-processing pass.
+
+✅ **The standard this sets, and it should be the norm:** an evaluation that
+decides something must leave a **re-derivable artefact**, not a paragraph.
+11170893 caches `ranks.jsonl` (per-query, per-scorer, full rank) and
+`haystack_v7.npy` so that no future `k` and no future stratification ever needs
+compute again.
+
+✅ **And it is being re-run with a PRE-REGISTERED check.** Twelve cells are known
+in advance from §8's anchors — R@{1,10,100,200} × {v7, levenshtein, jaro_winkler}
+— asserted to ±0.002, with the query count asserted at 8,713 before anything is
+scored. ⚠ **Without it a drifted run would look exactly like a finer one.** If
+the anchors fail, that is a finding about §8 rather than a broken job.
+
 ### 🛑 STEP 5 IS A STAGING CAMPAIGN, NOT A JOB
 
 `scripts/symphonym.sh:34-50` **requires a staging ES and writes there.**
