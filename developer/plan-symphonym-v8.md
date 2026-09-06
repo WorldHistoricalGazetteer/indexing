@@ -2668,6 +2668,66 @@ non-uniform, which is worth knowing before item 3 is measured.
 would have re-examined it.** `gotw-eb`'s rule applies: *a call that still looks
 right after its evidence is withdrawn gets no second look.*
 
+## ⚠ PBF TOOLING — the newer pyosmium API is installed and HALF ADOPTED
+
+**SG's recollection is correct and the split is clean.** `pyosmium 4.x` is in the
+`whg` env — `FileProcessor`, `filter`, `zip_processors`, `IdTracker`,
+`BackReferenceWriter`, `BufferIterator` all present.
+
+✅ **The retiling / boundary / water code adopted it:**
+`osm_boundary_geometry.py:708`, `boundary_stage.py:315`,
+`boundary_shard_planner.py:115,161`, `osm_way_area_geometry.py:406,420`,
+`water233/{vertex_identity,assemble_inland_water,count_water}.py` — all
+`FileProcessor`, with `.with_locations()` / `.with_areas()`, and
+`count_water.py:73` even uses **`osmium.filter.KeyFilter`**, which filters in C++.
+
+🛑 **The two AUTHORITY INGEST scripts did NOT — they predate it:**
+
+```
+authorities/osm-places.py:231   class OSMHandler(osmium.SimpleHandler)
+authorities/ohm-places.py:262   class OHMHandler(osmium.SimpleHandler)
+
+osm-places.py:415   handler.apply_file(pbf, locations=True, idx='flex_mem')
+osm-places.py:245   def node(self, n):  if not n.tags: return        <- IN PYTHON
+osm-places.py:258   def way(self, w):   if 'name' not in w.tags: return  <- IN PYTHON
+```
+
+**Under `SimpleHandler.apply_file`, EVERY object in the PBF crosses the C++→Python
+boundary and the discard decision is made in Python.** The overwhelming majority
+of nodes in an OSM extract are untagged geometry vertices, so nearly all of that
+traffic is paid for and thrown away one object at a time.
+
+`FileProcessor` with `osmium.filter.EmptyTagFilter()` / `KeyFilter(...)` makes the
+same rejection **in C++**, so Python only ever sees survivors. The entity-type
+selector (`osmium.osm.NODE | osmium.osm.WAY`) narrows it further before any
+filter runs.
+
+⚠ **No speedup figure is claimed here — this has not been measured on our data,
+and the gain depends on the tagged fraction of the specific PBF.** The mechanism
+is certain; the magnitude is not, and it should be measured rather than asserted.
+`with_locations()` still indexes every node either way — that cost does not go
+away, and it is C++ side.
+
+### Why this is live rather than housekeeping
+
+🛑 **`place#246` item 1 needs a PBF scan over OSM to size `start_date` coverage,
+and may then need a full `osm` re-ingest — 20,622,228 places from the 92 GB PBF
+on `/ix1`.** That is precisely the workload the old API is worst at. **The scan
+should be written with `FileProcessor` + filters from the outset**, and doing so
+gives a free comparison against the existing `osm-places.py` path if anyone wants
+the magnitude.
+
+⚠ **A trap for anyone reaching for the C++ CLI as a prefilter instead:**
+
+```
+osmium -> /ihome/ishi/stg135/.local/bin/osmium
+  error while loading shared libraries: libboost_program_options.so.1.85.0
+```
+
+**`osmium-tool` is installed and NON-FUNCTIONAL.** `osmconvert`, `osmfilter` and
+`osmcoastline` are absent from the env entirely. So `osmium tags-filter` is not
+available as a prefilter, and the Python `filter` module is the route.
+
 ## `place#246` — items 2 and 3 CLOSED in code, and two findings worth more than the fixes
 
 `indexing-9c`, 6 Sep (`8989825`, `378990d`). **Neither needed a rebuild, so the
