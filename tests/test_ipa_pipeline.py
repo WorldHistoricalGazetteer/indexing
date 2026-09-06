@@ -104,6 +104,45 @@ class TestRouteTable(unittest.TestCase):
         self.assertEqual(route.mode, "eng-Latn")
 
 
+class TestShardNaming(unittest.TestCase):
+    """Regression: 431 of the corpus's `lang` values are not language codes.
+    '1510/' turned a shard id into a path and killed an array task mid-run
+    with FileNotFoundError; ' Acland St' and '20 Sukhumvit' are others."""
+
+    def test_clean_codes_pass_through_unchanged(self):
+        # Stability matters: a re-plan must not rename shards that already
+        # computed, or --skip-existing silently recomputes the whole corpus.
+        for code in ("en", "ca", "zh", "jpn-Hrgn", "LATIN", "CJK", "nan"):
+            self.assertEqual(R.shard_token(code), code)
+
+    def test_path_separators_cannot_survive(self):
+        for bad in ("1510/", "a/b/c", "../etc", "x\\y"):
+            tok = R.shard_token(bad)
+            self.assertNotIn("/", tok, bad)
+            self.assertNotIn("\\", tok, bad)
+
+    def test_distinct_junk_tags_do_not_collide(self):
+        # '1510/' and '1510:' both sanitise to '1510_' without the hash.
+        self.assertNotEqual(R.shard_token("1510/"), R.shard_token("1510:"))
+        self.assertNotEqual(R.shard_token(" Acland St"),
+                            R.shard_token("_Acland_St"))
+
+    def test_empty_lang_gets_a_name(self):
+        self.assertEqual(R.shard_token(""), "NONE")
+
+    def test_partition_component_matches_duckdb_encoding(self):
+        """DuckDB percent-encodes PARTITION_BY directory names. Reading them
+        back naively finds nothing, and finding nothing is indistinguishable
+        from an empty cell -- which is why compute now raises instead."""
+        self.assertEqual(R.partition_path_component("lang", "1510/"),
+                         "lang=1510%2F")
+        self.assertEqual(R.partition_path_component("lang", "1749:source"),
+                         "lang=1749%3Asource")
+        self.assertEqual(R.partition_path_component("lang", " 2"), "lang=%202")
+        self.assertEqual(R.partition_path_component("lang", "en"), "lang=en")
+        self.assertEqual(R.partition_path_component("lang", ""), "lang=")
+
+
 class TestStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -164,6 +203,21 @@ class TestStore(unittest.TestCase):
     def test_name_sha_changes_when_the_name_does(self):
         self.assertNotEqual(S.name_sha("Köln"), S.name_sha("Koln"))
         self.assertEqual(S.name_sha("Köln"), S.name_sha("Köln"))
+
+    def test_python_and_sql_name_sha_agree(self):
+        """plan.py computes name_sha in SQL; store.name_sha computes it in
+        Python. Inside the pipeline the two never meet -- the planner compares
+        a SQL-derived hash against a SQL-derived hash -- so a divergence would
+        stay invisible until someone used the Python helper against a stored
+        row, at which point EVERY row looks stale and the incremental design
+        silently degrades into a full rerun. Pin them together."""
+        import duckdb
+        con = duckdb.connect()
+        for n in ("Manchester", "Köln", "東京", "Навас", "O'Fallon",
+                  "Ærøskøbing", "a b  c"):
+            sql = con.execute("SELECT substr(sha256(?), 1, 16)", [n]).fetchone()[0]
+            self.assertEqual(sql, S.name_sha(n), n)
+        con.close()
 
 
 class TestMergeRefusesIncompleteRun(unittest.TestCase):

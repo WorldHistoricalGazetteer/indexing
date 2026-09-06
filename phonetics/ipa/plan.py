@@ -39,7 +39,8 @@ MAX_ROWS_PER_SHARD = 400_000
 def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                retry_statuses: Optional[List[str]] = None,
                allow_quarantined: bool = False,
-               max_rows_per_shard: int = MAX_ROWS_PER_SHARD) -> Dict:
+               max_rows_per_shard: int = MAX_ROWS_PER_SHARD,
+               work_dir_override: Optional[Path] = None) -> Dict:
     import duckdb
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -82,10 +83,15 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
     terminal_rows: Dict[str, int] = {}
     for lang, script, n in cells:
         route, status = table.resolve(lang, script)
+        # Shard ids become FILENAMES, and 431 of the corpus's lang values are
+        # not language codes -- '1510/', ' Acland St'. A '/' turns into a
+        # directory separator and the write fails mid-array.
+        ltok = R.shard_token(lang)
+        stok = R.shard_token(script)
         if route is None:
             terminal_rows[status] = terminal_rows.get(status, 0) + n
             shards.append({
-                "shard_id": f"terminal-{status}-{lang or 'NONE'}-{script}",
+                "shard_id": f"terminal-{status}-{ltok}-{stok}",
                 "lang": lang, "script": script, "backend": None, "mode": None,
                 "status": status, "rows": n, "terminal": True,
             })
@@ -93,7 +99,7 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
         n_parts = max(1, -(-n // max_rows_per_shard))
         for p in range(n_parts):
             shards.append({
-                "shard_id": f"{route.backend}-{route.mode}-{lang or 'NONE'}-{script}-{p:03d}",
+                "shard_id": f"{route.backend}-{route.mode}-{ltok}-{stok}-{p:03d}",
                 "lang": lang, "script": script,
                 "backend": route.backend, "mode": route.mode,
                 "status": "pending", "rows": n, "terminal": False,
@@ -117,12 +123,21 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
     (out_dir / f"plan-{run_id}.json").write_text(json.dumps(plan, indent=2))
 
     # The work list itself, partitioned so a worker reads only its own shard.
-    work_dir = out_dir / f"work-{run_id}"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    con.execute(f"""
-        COPY (SELECT * FROM work) TO '{work_dir}'
-        (FORMAT PARQUET, PARTITION_BY (lang, script), OVERWRITE_OR_IGNORE 1)
-    """)
+    if work_dir_override is not None:
+        # Re-planning against an already-exported work set: the shard NAMES may
+        # need to change (a bad lang made an unwritable filename) while the
+        # rows themselves are unchanged, and re-exporting 72.7M rows to fix a
+        # naming bug is pure waste.
+        work_dir = work_dir_override
+        if not work_dir.exists():
+            raise SystemExit(f"--reuse-work given but {work_dir} does not exist")
+    else:
+        work_dir = out_dir / f"work-{run_id}"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        con.execute(f"""
+            COPY (SELECT * FROM work) TO '{work_dir}'
+            (FORMAT PARQUET, PARTITION_BY (lang, script), OVERWRITE_OR_IGNORE 1)
+        """)
     plan["work_dir"] = str(work_dir)
     (out_dir / f"plan-{run_id}.json").write_text(json.dumps(plan, indent=2))
     return plan
@@ -138,11 +153,13 @@ def main():
                     help="reopen a settled status, e.g. no_route after adding a mode")
     ap.add_argument("--allow-quarantined", action="store_true")
     ap.add_argument("--max-rows-per-shard", type=int, default=MAX_ROWS_PER_SHARD)
+    ap.add_argument("--reuse-work", help="path to an existing work-<run> dir; skips re-exporting the row set")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     p = build_plan(a.inventory_db, a.store_db, Path(a.out_dir), a.run_id,
-                   a.retry_status, a.allow_quarantined, a.max_rows_per_shard)
+                   a.retry_status, a.allow_quarantined, a.max_rows_per_shard,
+                   Path(a.reuse_work) if a.reuse_work else None)
     print(f"rows needing work : {p['rows_needing_work']:,}")
     print(f"  computable      : {p['computable_rows']:,}")
     print(f"  terminal        : {sum(p['terminal_rows'].values()):,} "

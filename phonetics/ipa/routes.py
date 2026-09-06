@@ -197,3 +197,38 @@ class RouteTable:
             "quarantined_langs": len(self.quarantine),
             "allow_quarantined": int(self.allow_quarantined),
         }
+
+
+def shard_token(value: str) -> str:
+    """Filesystem-safe token for a lang/script value used in a shard id.
+
+    The corpus's `lang` field is not a language code in 431 of its values: it
+    holds '1510/', '1749:source', '1837-1893', ' Acland St', '20 Sukhumvit'.
+    A '/' in a shard id becomes a directory separator and the Parquet write
+    fails with FileNotFoundError partway through an array.
+
+    Clean codes ('en', 'ca', 'zh-Hans') pass through UNCHANGED, so shard ids
+    stay stable across a re-plan and already-computed shards remain valid. A
+    value that needed rewriting gets a short hash of the original appended, so
+    two different junk tags cannot collapse onto one id.
+    """
+    import hashlib
+    import re as _re
+    if value == "":
+        return "NONE"
+    safe = _re.sub(r"[^A-Za-z0-9._-]", "_", value)
+    if safe == value:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+    return f"{safe[:40]}~{digest}"
+
+
+def partition_path_component(key: str, value: str) -> str:
+    """Directory name DuckDB writes for PARTITION_BY, which percent-encodes.
+
+    Reading a partition back by naively formatting f'lang={value}' silently
+    misses every non-trivial value -- and a miss looks like an empty shard,
+    not an error.
+    """
+    from urllib.parse import quote
+    return f"{key}={quote(value, safe='')}"
