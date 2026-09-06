@@ -36,6 +36,54 @@ logger = logging.getLogger(__name__)
 MAX_ROWS_PER_SHARD = 400_000
 
 
+STAGED_ROOT = "/vast/ishi/staged"
+
+
+def stale_inventory_namespaces(inventory_db: str,
+                               staged_root: str = STAGED_ROOT) -> List[dict]:
+    """Namespaces whose staged extract is NEWER than the inventory DuckDB.
+
+    WHY THIS EXISTS. New toponyms do not enter the inventory when a namespace's
+    extract finishes -- they enter when `rebuild_toponyms_index` re-runs its
+    extract-to-DuckDB step. Run the planner in between and it compares the new
+    corpus against an inventory that never saw it, finds nothing to do, and
+    returns ZERO WORK. That is indistinguishable from "already up to date",
+    which is Fault 12's exact shape: a stage reports success because its input
+    never changed.
+
+    Observed live on 6 Sep 2026: /vast/ishi/staged/tgn/extract/places.jsonl at
+    08:38 against an inventory built 4 Aug, while `tgn-extract-nofetch` was
+    still running.
+
+    ⚠ Compares mtime to mtime, both from the same filesystem clock. It does NOT
+    compare a run id to an mtime -- run ids are UTC and hosts are EDT, and that
+    4-hour trap has already misattributed one regression in this project.
+    """
+    inv = Path(inventory_db)
+    if not inv.exists():
+        return []
+    inv_mtime = inv.stat().st_mtime
+    out = []
+    root = Path(staged_root)
+    if not root.is_dir():
+        return []
+    for ns_dir in sorted(root.iterdir()):
+        if not ns_dir.is_dir():
+            continue
+        for rel in ("extract/places.jsonl", "final/places.parquet"):
+            f = ns_dir / rel
+            if f.exists() and f.stat().st_mtime > inv_mtime:
+                out.append({
+                    "namespace": ns_dir.name, "artefact": rel,
+                    "artefact_mtime": f.stat().st_mtime,
+                    "inventory_mtime": inv_mtime,
+                    "newer_by_hours": round(
+                        (f.stat().st_mtime - inv_mtime) / 3600.0, 2),
+                })
+                break
+    return out
+
+
 def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                retry_statuses: Optional[List[str]] = None,
                allow_quarantined: bool = False,
@@ -106,8 +154,11 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                 "part": p, "n_parts": n_parts,
             })
 
+    stale = stale_inventory_namespaces(inventory_db)
+
     plan = {
         "run_id": run_id,
+        "stale_inventory_namespaces": stale,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "inventory_db": inventory_db,
         "store_db": store_db,
@@ -154,6 +205,13 @@ def main():
     ap.add_argument("--allow-quarantined", action="store_true")
     ap.add_argument("--max-rows-per-shard", type=int, default=MAX_ROWS_PER_SHARD)
     ap.add_argument("--reuse-work", help="path to an existing work-<run> dir; skips re-exporting the row set")
+    ap.add_argument("--allow-no-work", action="store_true",
+                    help="accept a plan with zero rows to do; without it a "
+                         "zero is REFUSED, because it cannot be told apart "
+                         "from a stale inventory")
+    ap.add_argument("--ignore-stale-inventory", action="store_true",
+                    help="proceed even though a staged extract is newer "
+                         "than the inventory DuckDB")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -167,6 +225,27 @@ def main():
     print(f"shards            : {p['n_shards']:,} "
           f"({p['n_compute_shards']:,} to compute)")
     print(f"-> {Path(a.out_dir)/f'plan-{a.run_id}.json'}")
+
+    # A zero here is ambiguous and must not pass silently.
+    stale = p.get("stale_inventory_namespaces") or []
+    if stale:
+        print("\n\u26a0 INVENTORY IS BEHIND THE STAGED CORPUS:")
+        for d in stale[:10]:
+            print(f"   {d['namespace']:<10} {d['artefact']:<24} "
+                  f"newer by {d['newer_by_hours']}h")
+        if not a.ignore_stale_inventory:
+            raise SystemExit(
+                "refusing to plan against an inventory older than the staged "
+                "corpus: rebuild_toponyms_index must re-run its "
+                "extract-to-DuckDB step first, or this plan silently omits "
+                "every new toponym. Pass --ignore-stale-inventory to override.")
+
+    if p["rows_needing_work"] == 0 and not a.allow_no_work:
+        raise SystemExit(
+            "plan has ZERO rows to do. That is indistinguishable from a stale "
+            "inventory, so it is refused rather than reported as success. "
+            "Confirm the inventory actually contains what you expect, then "
+            "pass --allow-no-work.")
 
 
 if __name__ == "__main__":

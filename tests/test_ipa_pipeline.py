@@ -277,5 +277,63 @@ class TestMergeRefusesIncompleteRun(unittest.TestCase):
         self.assertEqual(out["merged_shards"], 1)
 
 
+class TestInventoryStalenessGuard(unittest.TestCase):
+    """A planner that returns ZERO WORK against a stale inventory is
+    indistinguishable from one that is genuinely up to date -- Fault 12's
+    shape. These prove the detector fires and, just as importantly, that it
+    stays quiet when it should: a guard that always fires is as useless as one
+    that never does."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        self.inv = self.d / "inventory.db"
+        self.inv.write_text("x")
+        self.staged = self.d / "staged"
+        (self.staged / "tgn" / "extract").mkdir(parents=True)
+        (self.staged / "gn" / "extract").mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _artefact(self, ns, offset_seconds):
+        import os
+        f = self.staged / ns / "extract" / "places.jsonl"
+        f.write_text("{}")
+        t = self.inv.stat().st_mtime + offset_seconds
+        os.utime(f, (t, t))
+        return f
+
+    def test_fires_when_staged_extract_is_newer(self):
+        from phonetics.ipa.plan import stale_inventory_namespaces
+        self._artefact("tgn", +7200)          # two hours after the inventory
+        stale = stale_inventory_namespaces(str(self.inv), str(self.staged))
+        self.assertEqual([d["namespace"] for d in stale], ["tgn"])
+        self.assertAlmostEqual(stale[0]["newer_by_hours"], 2.0, places=1)
+
+    def test_silent_when_inventory_is_current(self):
+        # The negative control. Without this the test above passes against a
+        # detector that flags everything.
+        from phonetics.ipa.plan import stale_inventory_namespaces
+        self._artefact("tgn", -7200)          # two hours BEFORE the inventory
+        self._artefact("gn", -60)
+        self.assertEqual(stale_inventory_namespaces(str(self.inv),
+                                                    str(self.staged)), [])
+
+    def test_reports_every_stale_namespace_not_just_the_first(self):
+        from phonetics.ipa.plan import stale_inventory_namespaces
+        self._artefact("tgn", +3600)
+        self._artefact("gn", +1800)
+        stale = stale_inventory_namespaces(str(self.inv), str(self.staged))
+        self.assertEqual({d["namespace"] for d in stale}, {"gn", "tgn"})
+
+    def test_missing_inventory_or_staged_root_does_not_crash(self):
+        from phonetics.ipa.plan import stale_inventory_namespaces
+        self.assertEqual(
+            stale_inventory_namespaces(str(self.d / "nope.db"), str(self.staged)), [])
+        self.assertEqual(
+            stale_inventory_namespaces(str(self.inv), str(self.d / "nostaged")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
