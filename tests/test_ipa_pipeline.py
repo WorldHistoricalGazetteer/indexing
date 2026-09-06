@@ -428,5 +428,105 @@ class TestLangWitness(unittest.TestCase):
         self.assertEqual(w["total"], 2)
 
 
+class TestBackfill(unittest.TestCase):
+    """The backfill writes a corrected `ipa` into the toponyms DuckDB and NULLs
+    `panphon_features` on the same rows. The nulling is the load-bearing part:
+    the rebuild populates that column from ITS OWN (defective) IPA, so leaving
+    it produces an ipa and a panphon vector from different computations --
+    individually plausible, jointly wrong, undetectable afterwards."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        self.store = str(self.d / "store.duckdb")
+        self.inv = str(self.d / "inv.duckdb")
+        import duckdb
+        con = S.connect(self.store)
+        rows = [("a@en", "ok", "eɪ"), ("b@en", "ok", "biː"),
+                ("c@en", "no_lang", None), ("d@en", "quarantined", None),
+                ("e@en", "echoed_input", "e@en")]
+        for tid, status, ipa in rows:
+            con.execute(
+                "INSERT INTO ipa VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                [tid, "sha", "en", "LATIN", ipa, "epitran", "eng-Latn",
+                 status, None, "r1", datetime.now(timezone.utc)])
+        con.close()
+        c2 = duckdb.connect(self.inv)
+        c2.execute("CREATE TABLE toponyms (toponym_id VARCHAR, name VARCHAR, "
+                   "lang VARCHAR, lang_variant VARCHAR, script VARCHAR, "
+                   "ipa VARCHAR, panphon_features BLOB)")
+        # Every inventory row starts with a STALE ipa and a stale panphon
+        # vector, as it would after a rebuild.
+        for tid in ("a@en", "b@en", "c@en", "d@en", "e@en", "z@en"):
+            c2.execute("INSERT INTO toponyms VALUES (?,?,?,NULL,'LATIN',?,?)",
+                       [tid, tid.split("@")[0], "en", "STALE", b"\x01\x02"])
+        c2.close()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_dry_run_writes_nothing(self):
+        from phonetics.ipa.backfill import backfill
+        import duckdb
+        rep = backfill(self.store, self.inv, execute=False)
+        self.assertFalse(rep["executed"])
+        self.assertNotIn("target_after", rep)
+        con = duckdb.connect(self.inv, read_only=True)
+        self.assertEqual(
+            con.execute("SELECT count(*) FROM toponyms WHERE ipa='STALE'").fetchone()[0], 6)
+        con.close()
+
+    def test_writes_only_ok_rows(self):
+        from phonetics.ipa.backfill import backfill
+        import duckdb
+        backfill(self.store, self.inv, execute=True)
+        con = duckdb.connect(self.inv, read_only=True)
+        got = dict(con.execute("SELECT toponym_id, ipa FROM toponyms").fetchall())
+        con.close()
+        # Compare against the literals the store was seeded with. An escape
+        # round-trip here mangled them and failed a correct backfill.
+        self.assertEqual(got["a@en"], "e\u026a")
+        self.assertEqual(got["b@en"], "bi\u02d0")
+        # Terminal-status rows must NOT be written, and must keep what was there
+        # rather than being blanked -- this backfill adds, it does not clear.
+        for tid in ("c@en", "d@en", "e@en", "z@en"):
+            self.assertEqual(got[tid], "STALE", tid)
+
+    def test_panphon_is_nulled_exactly_where_ipa_is_written(self):
+        from phonetics.ipa.backfill import backfill
+        import duckdb
+        backfill(self.store, self.inv, execute=True)
+        con = duckdb.connect(self.inv, read_only=True)
+        rows = dict(con.execute(
+            "SELECT toponym_id, panphon_features IS NULL FROM toponyms").fetchall())
+        con.close()
+        # nulled where written
+        self.assertTrue(rows["a@en"]); self.assertTrue(rows["b@en"])
+        # untouched everywhere else -- a blanket NULL would also pass a test
+        # that only checked the written rows.
+        for tid in ("c@en", "d@en", "e@en", "z@en"):
+            self.assertFalse(rows[tid], tid)
+
+    def test_reports_target_rows_absent_from_the_store(self):
+        """A store built from an older inventory silently leaves new toponyms
+        untouched, and the count of rows written cannot reveal that."""
+        from phonetics.ipa.backfill import backfill
+        rep = backfill(self.store, self.inv, execute=False)
+        self.assertEqual(rep["target"]["inventory_rows"], 6)
+        self.assertEqual(rep["target"]["absent_from_store"], 1)   # z@en
+        self.assertEqual(rep["target"]["rows_with_ipa_to_write"], 2)
+
+    def test_report_carries_the_full_status_census(self):
+        """Coverage must be answerable from the store's statuses, because the
+        inventory flattens seven states into one NULL."""
+        from phonetics.ipa.backfill import backfill
+        rep = backfill(self.store, self.inv, execute=False)
+        c = rep["store_census"]
+        self.assertEqual(c["ok"], 2)
+        self.assertEqual(c["no_lang"], 1)
+        self.assertEqual(c["quarantined"], 1)
+        self.assertEqual(c["echoed_input"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
