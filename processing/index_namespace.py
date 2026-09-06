@@ -217,9 +217,19 @@ def parse_toponym_id(top_id: str) -> tuple[str, str, str | None, str | None, str
 
 
 def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
-    """Return per-toponym attestation records and the place docs (materialised).
+    """Return per-toponym attestation records, consuming ``docs`` as a stream.
 
     Each record: ``{toponym_id, name, lang, lang_variant, script, place_ids}``.
+
+    ⚠ This used to also return the place docs it had walked past, as a
+    materialised list, so the caller could index places without re-reading the
+    source. That was invisible at ukhc's 92 docs and untenable at tgn's
+    2,991,143: the list passed 9.7 GB RSS still climbing at 2.6 GB/min on the VM
+    that also hosts production Elasticsearch — the exact shape of the incident
+    the project notes record. The places path now re-reads the staged file
+    instead (``iter_place_docs`` reopens it, so a second pass is free), and only
+    the toponym aggregation — inherently a whole-corpus group-by — is held, and
+    only when toponyms are actually being written.
 
     Toponyms whose canonical ``_id`` exceeds Elasticsearch's hard 512-byte
     ``_id`` limit are skipped (with a warning) rather than aborting the whole
@@ -227,11 +237,9 @@ def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
     comma-joined variant-spelling apparatus dumped into one LPF ``name``
     field), not real single toponyms. The count is returned in the meta dict.
     """
-    place_docs: list[dict] = []
     by_topid: dict[str, dict] = {}
     skipped_oversize = 0
     for doc in docs:
-        place_docs.append(doc)
         pid = doc.get("place_id")
         if not pid:
             continue
@@ -268,10 +276,7 @@ def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
             f"> {_MAX_TOPONYM_ID_BYTES}B (malformed source names)",
             file=sys.stderr,
         )
-    return list(by_topid.values()), {
-        "place_docs": place_docs,
-        "skipped_oversize": skipped_oversize,
-    }
+    return list(by_topid.values()), {"skipped_oversize": skipped_oversize}
 
 
 # ---------------------------------------------------------------------------
@@ -303,11 +308,32 @@ _STRIP_NS_SCRIPT = (
 # Places
 # ---------------------------------------------------------------------------
 
-def plan_and_index_places(es, index, namespace, place_docs, *, replace, execute,
-                          allow_missing_h3):
-    uncovered = sum(1 for d in place_docs if _has_uncovered_geometry(d))
+def scan_places(doc_iter) -> tuple[int, int]:
+    """Stream the staged source once, counting docs and uncovered geometries.
+
+    Separated from the write pass so the h3 refusal below still happens BEFORE
+    anything is written, now that the docs are no longer held in memory. Both
+    numbers are reported, because "0 uncovered" means nothing without the
+    denominator it was drawn from.
+    """
+    n = uncovered = 0
+    for doc in doc_iter:
+        n += 1
+        if _has_uncovered_geometry(doc):
+            uncovered += 1
+    return n, uncovered
+
+
+def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
+                          uncovered, replace, execute, allow_missing_h3):
+    """Index one namespace's places, streaming from ``doc_iter_factory()``.
+
+    ``doc_iter_factory`` is a zero-argument callable returning a FRESH iterator
+    over the staged docs — not a list, and not a single spent iterator. The
+    counts come from :func:`scan_places`, which has already made one pass.
+    """
     print(f"\n[places] target index: {index}")
-    print(f"[places] docs to index: {len(place_docs):,}")
+    print(f"[places] docs to index: {n_docs:,}")
     if uncovered:
         msg = (f"[places] WARNING: {uncovered:,} docs have geometries missing "
                f"h3_centroid / h3_cover / bounds — source is not the enriched "
@@ -334,14 +360,31 @@ def plan_and_index_places(es, index, namespace, place_docs, *, replace, execute,
         return
 
     def actions():
-        for d in place_docs:
+        seen = skipped = 0
+        for d in doc_iter_factory():
             pid = d.get("place_id")
             if not pid:
+                skipped += 1
                 continue
+            seen += 1
+            if seen % 250_000 == 0:
+                print(f"[places]   ... {seen:,} / {n_docs:,} submitted", flush=True)
             yield {"_op_type": "index", "_index": index, "_id": pid, "_source": d}
+        if skipped:
+            print(f"[places] WARNING: {skipped:,} staged doc(s) had no place_id "
+                  f"and were not indexed", file=sys.stderr)
 
     ok, errors = es_helpers.bulk(es, actions(), chunk_size=500, raise_on_error=False)
-    print(f"[places] indexed ok={ok:,} errors={len(errors) if isinstance(errors, list) else errors}")
+    n_err = len(errors) if isinstance(errors, list) else errors
+    print(f"[places] indexed ok={ok:,} errors={n_err}")
+    # A bulk that reports no errors is not evidence it indexed the corpus: a
+    # short read of the staged file ends the generator early and still exits
+    # clean. Compare against the pre-scan count, which came from a separate pass.
+    if ok != n_docs:
+        print(f"[places] ⚠ INDEXED {ok:,} BUT PRE-SCAN COUNTED {n_docs:,} "
+              f"({n_docs - ok:+,}) — the write pass did not see the same corpus "
+              f"as the scan pass. Do not treat this run as complete.",
+              file=sys.stderr)
     if errors:
         for e in (errors or [])[:5]:
             print("   ", json.dumps(e)[:200], file=sys.stderr)
@@ -518,15 +561,21 @@ def main() -> None:
 
     src_path, stage = _source_path(args.namespace, args.source_stage)
     print(f"source: {src_path}  (stage={stage})")
-    attest_records, ctx = collect_attestations(iter_place_docs(src_path))
-    place_docs = ctx["place_docs"]
 
     if not args.toponyms_only:
+        n_docs, uncovered = scan_places(iter_place_docs(src_path))
+        print(f"[places] scanned {n_docs:,} staged docs, {uncovered:,} with "
+              f"uncovered geometry")
         places_index = resolve_concrete_index(es, PLACES_ALIAS)
-        plan_and_index_places(es, places_index, args.namespace, place_docs,
+        plan_and_index_places(es, places_index, args.namespace,
+                              lambda: iter_place_docs(src_path),
+                              n_docs=n_docs, uncovered=uncovered,
                               replace=args.replace, execute=args.execute,
                               allow_missing_h3=args.allow_missing_h3)
     if not args.places_only:
+        # Built only when toponyms are actually written — this aggregation is a
+        # whole-corpus group-by and is the remaining memory cost of the run.
+        attest_records, _ctx = collect_attestations(iter_place_docs(src_path))
         toponyms_index = resolve_concrete_index(es, TOPONYMS_ALIAS)
         plan_and_index_toponyms(es, toponyms_index, args.namespace, attest_records,
                                 replace=args.replace, execute=args.execute,
