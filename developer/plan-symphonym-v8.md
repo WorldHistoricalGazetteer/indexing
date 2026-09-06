@@ -4680,6 +4680,48 @@ measurements were run on the **CRC cluster**, a third environment nobody has
 checked. **Anyone pinning panphon on any side must say so** — the parity claim is
 what makes browser-side validation mean anything.
 
+### ➡ A PRONUNCIATION LEXICON — the residue rules can NEVER reach (`place#253`)
+
+Proposed by SG, 6 Sep, as an extension to #252. **Measured before specifying it**,
+because Epitran's `eng-Latn` does not use letter-to-sound rules — it uses **flite's
+pronunciation lexicon**, falling back to rules on a miss:
+
+```
+✅ Leicester lɛstɹ̩   Worcester wʊstɹ̩   Gloucester ɡlɔstɹ̩   London lʌndən
+🛑 Bicester  bajsɛstɹ̩ (is ˈbɪstər)      Frome fɹowm (is fruːm)
+🛑 Beaulieu  bowlju   (is ˈbjuːli)      Wymondham wɪmɑndəm (is ˈwɪndəm)
+🛑 Cholmondeley t͡ʃowlmɑndɪli (ˈtʃʌmli)  Happisburgh hæpɪsbɹ̩ɡ (ˈheɪzbrə)
+🛑 Milngavie mɪlnɡəvi (is mʌlˈɡaɪ)
+```
+
+**Seven of eleven wrong, and the split is not random: the lexicon covers the
+nationally famous names and fails on the locally known ones** — precisely the
+population WHG's contributors have and Carnegie Mellon's lexicon does not.
+
+⚠ **Note the failure shape.** `Bicester → bajsɛstɹ̩` is not a blank; it is
+letter-to-sound rules producing a **confident wrong answer** with nothing
+reporting that a lexicon miss occurred. **Same defect class as everything else
+this campaign has met** — a fallback manufacturing a plausible value rather than
+an absence.
+
+🛑 **No refinement of a rule yields `Cholmondeley → ˈtʃʌmli`.** These spellings
+stopped tracking pronunciation centuries ago; the mapping is **lexical, not
+derivable**. #251/#252 improve the rules, which is right for regular
+orthographies — **this is the complement.** And it is operational, not cosmetic:
+if `Bicester` is embedded as "BYE-sester", a user searching *Bister* does not find
+it.
+
+✅ **It also partly answers the Epitran-accuracy question** raised as optimisation
+#4: the concern was that rule-based G2P may be systematically wrong on toponyms.
+For English the mechanism turns out to be a **lexicon coverage boundary** rather
+than rule error — which is both more tractable and directly addressable by
+contributors.
+
+⚠ **The design point that differs most from #252:** a rule is seen by many
+reviewers, so disagreement surfaces errors; **a pronunciation for one village may
+attract exactly one contributor, ever.** The disagreement signal that protects
+#252 is largely absent, so provenance and competence matter **more**, not less.
+
 ### ✅ THE REVIEW CHANNEL EXISTS — `place#252`, built, with all 115 rule sets live
 
 SG dispatched a job spec (`place#252`) to an agent on `whg3`; it is **built and
