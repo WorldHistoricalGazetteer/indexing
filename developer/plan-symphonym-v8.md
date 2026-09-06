@@ -113,14 +113,29 @@ measurement says **the cleanup has not happened**, and the correct restatement i
 *"prevents future contamination in five never-routed languages; `sv` remains
 uncleaned and grows."*
 
-⚠ **`ja`+CJK — two figures that are NOT interchangeable.** `465,177 of 465,177`
-is the closure of the previously-**unroutable** set; `ja` **+591,550** is ja's
-total v7→v8 delta (`zh` +276,524). Compatible — the hole was a subset — but they
-answer different questions and neither may be quoted as the other.
+✅ **`ja`+CJK — RECONCILED, and the decomposition is exact.** Not competing
+measurements: **`465,177` is a proper subset of `+591,550`, and 78.6% of it.**
 
-🛑 **"Closed the CJK hole" ships QUALIFIED.** **1,036,998 CJK-script rows still
-receive no IPA at all**, for want of a language tag rather than for want of a
-route.
+```
+ja by script     v7        v8        delta
+CJK               0     465,177   +465,177   <- the hole, closed entire
+HIRAGANA     47,533     149,167   +101,634
+KATAKANA    310,410     335,158    +24,748
+total       357,943     949,609   +591,559 population
+                        949,493   +591,550 ok-based (116 rows no_route/echoed)
+```
+
+**v7 had ZERO CJK-script `ja`** — no kanji-written Japanese name carried IPA at
+all — and the whole population is now routed. Both figures carry their own
+denominator; neither may be quoted as the other.
+
+🛑 **"Closed the CJK hole" ships QUALIFIED — and the untagged half is the LARGER
+one.** v7's CJK-script strata were `zh` 1,306,961 · `wuu` 48,883 · `gan` 37,097 ·
+`yue` 31,345 · `ko` 2,060 **and nothing else**, against 2,973,525 CJK-script rows
+in v7's corpus. So **~1.5M CJK-script rows had no IPA for want of a language**,
+and **1,036,998 still do**. **The hole that closed was the `ja`-tagged part.**
+The untagged part is the same `no_lang` wall — *"closed the CJK hole" is true
+only of rows that had a language tag to close it with.*
 
 ### Leg 2 — the objective. Unchanged, unchallenged, and now the sharpest.
 
