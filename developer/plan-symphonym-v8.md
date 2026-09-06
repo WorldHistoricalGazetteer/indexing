@@ -27,21 +27,100 @@ inverts that. The legs, in their corrected order:
 
 ### Leg 1 — the input data. Promoted to primary.
 
-v7 trained on **31,113,585** IPA strings. The corpus now carries **49,749,377**
-— **+18,635,792 over what v7 actually had** — with the `ja`+CJK hole closed
-(465,177 of 465,177) and Lsjbot contamination quarantined (3.4M across
-`ceb`/`war`/`min`/`vo`). ⚠ `sv` (1.8M) sits **inside** v7's already-routed
-baseline, so v7's own training data carries that contamination: it is a
-*cleanup* stratum, not a gain stratum, and the two must not be summed.
+✅ **MEASURED 6 Sep (`indexing-04`, 2,438 strata, full table at
+`/vast/ishi/ipa-strata-11169066.out`), reconstructed against v7's own
+`coverage_stats.json`.** The leg holds. Three corrections came with it, two of
+which run *against* the version this section first published.
 
-**That is a retrain justification independent of geometry.** v7 was trained on
-materially worse data, and no amount of architectural work on v7's weights
-recovers 18.6M strings it never saw.
+```
+v7   31,113,585 IPA  = 46.49% of its 66,924,548 total corpus
+v8   49,749,377 IPA  = 68.43% of    72,703,552
+                       +21.9pp on a common denominator
+```
 
-⚠ **This promotion is pending measurement, and is marked as such deliberately.**
-`indexing-04` is measuring per-language coverage now against v7's reconstructible
-baseline. If the gain proves not to be concentrated where this section assumes,
-**demote the leg rather than reinterpret the measurement.**
+⚠ **The headline this section first used — 54.02% → 68.43% — was NOT
+like-for-like**, and understated the gain: 54.02% excluded non-training
+namespaces while 68.43% is over everything. **46.49% → 68.43% is the comparable
+pair.** The parenthesis carrying 46.49% was already here; the headline still
+used the wrong one.
+
+**Two figures, and they answer different questions — quote both:**
+
+* **+18,635,792** — what v8 trains on beyond what v7 saw. The right number for
+  *what the model gets*.
+* **+15,949,102** — what better **routing** bought. 5,779,004 of the raw gain is
+  **corpus growth** (66,924,548 → 72,703,552), which would have happened without
+  any of this work. **This is the number the retrain earns**, and the honest one
+  to quote for the leg.
+
+**No stratum regressed** — the loss table is empty; not one language has fewer
+IPA strings in v8 than v7. And the reclassification worry is clear: quarantined
+rows carry `backend='(none)'`, so nothing moved from `ok` to `quarantined`.
+
+**Twenty of the top thirty gain strata had v7 = 0 — genuinely new routes:**
+`ga` 681,984 · `ca` 678,611 · `nb` 447,675 · `ce` 368,716 · `eu` 364,083 ·
+`nan` 337,975 · `ast` 318,685 · `nn` 316,089 · `tt` 303,490 · `eo` 288,989 ·
+`arz` 282,950 · `sh` 275,385 · `sl` 262,395 · `cy` 246,721 · `gl` 238,290 ·
+`sk` 226,965 · `oc` 222,431 · `uz` 215,250 · `be` 200,279 · `vec` 179,507.
+**Improved:** `en` +2,231,124 · `ja` +591,550 · `de` +329,273 · `nl` +329,248 ·
+`ru` +296,246 · `zh` +276,524 · `sr` +266,566 · `fr` +259,790 · `id` +238,985 ·
+`tr` +176,869. ⚠ v7 recorded only **49** strata against v8's 2,438, which is
+itself part of the story.
+
+**That is a retrain justification independent of geometry.** No architectural
+work on v7's weights recovers strings it was never shown.
+
+### ✅ AND THE LEG IS LARGER THAN "BETTER TEACHER INPUTS" — IPA GATES PAIR ELIGIBILITY
+
+Raised by SG, 6 Sep, and it is not recorded anywhere else. `generator.py:155` is
+`WHERE t.ipa IS NOT NULL` and `:179` requires `panphon_embedding` to exist.
+**A toponym with no IPA cannot enter a positive pair at all.**
+
+At v7's training that excluded roughly **46% of the corpus** — 31,113,585 of
+66,924,548 — from the positive set entirely. Not mislabelled: **ineligible**,
+never learned as anything.
+
+So the recomputation does not only improve what the teacher is *shown*; **it
+enlarges the set of toponyms eligible to be a training pair in the first
+place.** That is plausibly the larger of the two effects. It also reframes the
+selector question (below): the defect in PanPhon-based selection is **coverage,
+not circularity** — and leg 1 is what attacks it.
+
+### 🛑 THE LSJBOT CLEANUP CLAIM IS WITHDRAWN — and the truth is worse
+
+This section claimed the quarantine removed contamination from v8's training
+data. **It removes nothing v7 ever learned from.**
+
+```
+lang    v7 ipa       v8 ok        v8 quarantined
+ceb            0            0        2,786,505    QUARANTINED
+mul            0            0          209,667    QUARANTINED
+war            0            0          161,194    QUARANTINED
+vo             0            0          141,241    QUARANTINED
+min            0            0          112,829    QUARANTINED
+sv     1,715,947    1,825,107                0    NOT quarantined
+```
+
+**v7 had zero IPA for all five quarantined languages** — they were never routed,
+so they contributed nothing to v7's training data. The quarantine **formalises a
+gap that already existed**; it does not clean anything.
+
+🛑 **And `sv` is the sharper half.** It is *not* quarantined, and v8 carries
+**1,825,107 against v7's 1,715,947** — **~109k MORE Swedish**. If `sv` carries
+Lsjbot contamination, **v8's training data is more contaminated in that stratum,
+not less.** The instinct to separate cleanup from gain was right; the
+measurement says **the cleanup has not happened**, and the correct restatement is
+*"prevents future contamination in five never-routed languages; `sv` remains
+uncleaned and grows."*
+
+⚠ **`ja`+CJK — two figures that are NOT interchangeable.** `465,177 of 465,177`
+is the closure of the previously-**unroutable** set; `ja` **+591,550** is ja's
+total v7→v8 delta (`zh` +276,524). Compatible — the hole was a subset — but they
+answer different questions and neither may be quoted as the other.
+
+🛑 **"Closed the CJK hole" ships QUALIFIED.** **1,036,998 CJK-script rows still
+receive no IPA at all**, for want of a language tag rather than for want of a
+route.
 
 ### Leg 2 — the objective. Unchanged, unchallenged, and now the sharpest.
 
@@ -90,13 +169,19 @@ nonsense overall).
 **The gate must therefore be stratified**, with three strata reported separately
 and never summed:
 
-* **GAIN** — languages with IPA now that had none at v7 training. *This is where
-  leg 1 either shows up or does not.* Stratum list pending `indexing-04`.
-* **CLEANUP** — `sv` and the quarantined set: v7 trained on contaminated labels
-  here, so the target is *correction*, and a flat result is a pass.
+* **GAIN** — the twenty new-route languages plus the improved ones, listed
+  above. *This is where leg 1 either shows up or does not.*
+* **CONTAMINATION RISK** — 🛑 **replaces the CLEANUP stratum, which was wrong on
+  both halves.** `sv` is not quarantined and v8 trains on ~109k **more** of it,
+  so this stratum is watched for **degradation**, not expected to improve. A
+  flat result is a pass; an improvement is a surprise that needs explaining.
 * **UNCHANGED** — everything else. **This is where "no regression" is tested**,
   and it is the only stratum where the old gate was ever measuring what it
   claimed.
+
+⚠ **The quarantined set is OUT of the gate entirely** — never routed in either
+generation, so it can neither gain nor regress, and including it would credit
+v8 with a 3.4M block it does not touch.
 
 Plus the two the old gate had, retained: the geometry gate, and no regression on
 discrimination (v7: AUC 0.9324 vs 0.9002, separated interval). **Retrieval
@@ -166,11 +251,26 @@ historic orthography, and at what scale it was trained.**
 
 ### What is still open
 
-* Whether to attempt **language ID from the string** for the 16.2M Latin no-lang
-  rows. 18,543,146 rows carry no language at all, **87.43% of them Latin**;
-  country-based inference is **closed by arithmetic** — every script where it
-  looked accurate is one where a constant beats it (§9c). A separate project,
-  not a refinement.
+* 🛑 **THE LARGEST BLOCK IS NOT ROUTING FAILURE — IT IS MISSING LANGUAGE TAGS,
+  and v8 does NOT address it.** Named here as an explicit absence so no reader
+  credits v8's gain with having touched it:
+
+  ```
+  ok                 49,749,377   68.43%
+  no_lang            18,543,146   25.51%   <- ALL ok = 0
+  quarantined         3,411,436    4.69%
+  no_route              866,948    1.19%
+  non_language_tag      126,394    0.17%
+  echoed_input            6,240    0.01%
+  empty_output               11    0.00%
+  ```
+
+  By script within `no_lang`: **LATIN 16,211,998 · CJK 1,036,998 · CYRILLIC
+  640,825 · ARABIC 332,828 · HANGUL 107,038.** ⚠ Those 1.04M CJK rows are why
+  "closed the CJK hole" must ship qualified. **Language identification is a
+  bigger lever than any remaining backend work** — and country-based inference
+  is **closed by arithmetic** (§9c: every script where it looked accurate is one
+  where a constant beats it). A separate project, not a refinement.
 * **D-B, a Japanese reading table**, dismissed in §6 as "not cross-script" under
   a scoping decision since superseded. §9b measured that **36.1%** of sampled
   kanji-bearing places already carry the kana reading by co-attestation.
