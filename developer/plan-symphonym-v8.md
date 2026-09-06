@@ -4003,10 +4003,10 @@ rebuild runs — with that run reporting success.** Required order:
    `ok=2,991,143 errors=0` against an independent pre-scan, counts unchanged
    (51,187,900 corpus / 2,991,143 tgn) so no stale ids. See the filter-family
    note below.
-2. ✅ **HYDRATE THE SYMPHONYM CACHE FROM THE LIVE `toponyms` INDEX.** ⚠ The
-   binding deadline is **before the OLD INDEX IS DELETED**, *not* before the
-   rebuild — see the amendment below. Do it here anyway: it is cheap and removes
-   the question.
+2. ✅ **CACHE HYDRATION — ALREADY DONE, AND NEVER NEEDED.** The cache holds
+   **73,657,964 rows, 100% under model_version 7 and the current checkpoint
+   hash** — *more* rows than the 72.7M live toponyms. See below: the constraint
+   was moot from the start.
 3. `rebuild_toponyms_index` re-runs extract-to-DuckDB → **new** inventory
 4. IPA top-up computes the toponyms that are new in that inventory
 5. **then** backfill store → toponyms DuckDB, last
@@ -4041,14 +4041,84 @@ a one-shot ordering with ~28h GPU as the penalty for mis-sequencing. **The ~28h
 becomes real only if the old index is deleted while the cache is cold.** Hydrate
 early regardless, because it is cheap and removes the question.
 
-🛑 **THE GENERAL LESSON, which is why this amendment is recorded rather than
-silently edited.** The original ordering was **correct for the code as it stood
-that morning** — the rebuild's default target was the alias, i.e. the live index,
-so the rebuild really would have destroyed the source. **`indexing-9c`'s own
-alias fix changed the hazard out from under the constraint derived from it.**
-⚠ **A constraint derived from a defect needs RE-DERIVING when the defect is
-fixed** — otherwise the plan keeps encoding a hazard that no longer exists, and
-the remedy outlives the disease.
+### ✅ AMENDED AGAIN — THE CONSTRAINT WAS MOOT ALL ALONG
+
+🛑 **Third reading, and the last: the cache was ALREADY FULLY HYDRATED.**
+`/vast/ishi/models/phonetic/symphonym_cache.duckdb` holds **73,657,964 rows,
+100% under `model_version 7` and the current checkpoint hash** (`f2493fd6…` =
+sha256 of `phase3_best.pt`; `final_model.pt` is byte-identical). More rows than
+the live index has documents. **So the hazard was moot in a third way — not
+"before the rebuild", not "before the deletion", but never binding at all.**
+
+⚠ **`indexing-9c` found this by checking the cache BEFORE running the hydration
+tool** — the only reason it did not become an unnecessary multi-hour scroll of
+72.7M documents.
+
+🛑 **THE LESSON, and it is now earned twice over.** The constraint went through
+three readings:
+
+1. *"before the rebuild"* — correct for the code as it stood that morning, when
+   the rebuild's default target was the alias.
+2. *"before the deletion"* — after `9c`'s own alias fix **changed the hazard out
+   from under the constraint derived from it**. ⚠ **A constraint derived from a
+   defect needs RE-DERIVING when the defect is fixed**, or the remedy outlives
+   the disease.
+3. *"never needed"* — because nobody asked **whether the thing being protected
+   was already safe.**
+
+⚠ **Two rounds of careful mechanism-reasoning about preserving a resource, and
+the cheapest question — "is this already done?" — was asked third.** Check the
+state before elaborating a constraint about preserving it.
+
+### ✅ THE GPU COST OF THE REBUILD IS ~1h, NOT ~28h — and the reuse is proved, not sampled
+
+The cache is keyed on `toponym_id`, and null-lang toponyms are keyed `name@`. The
+`@und` fix makes them `name@und` — **a different key, so they miss**. For tgn:
+**1,398,790 distinct `@und` ids, 0 under the new key, 1,398,779 under the old.**
+
+✅ **The old vectors are CORRECT for the new key by construction.**
+`hf/inference.py:390` `encode_lang` returns `LANG_UNK_ID` for `None`/`''`, else
+`lang_to_id.get(...)` — and **`'und'` is absent from the 1,944-entry lang
+vocabulary**, so it *also* returns `LANG_UNK_ID = 0`. All three inputs collapse
+to one lang id, so the embedding **cannot** differ. A 10-name spot check
+(Latin + CJK) agrees: 10/10 bit-identical, max|diff| 0.000000.
+
+✅ **And `9c` declined to re-key the cache on the strength of that — the right
+call.** ~35 min of GPU saved, against writing 1.4M rows into a shared 28.6 GB
+cache that other pipelines read. **Recomputation is self-verifying; a re-key is
+only as good as the reasoning behind it.**
+
+**Planning number: tgn's 1.4M + #250's recovered romanisations ≈ 2.5M new ids ≈
+~1h GPU**, everything else a cache hit. ⚠ Treat 2.5M as an **upper bound**:
+toponyms are globally deduplicated, so any romanised form already present from
+another namespace is not a new id.
+
+### 🛑 STEP 5 IS A STAGING CAMPAIGN, NOT A JOB
+
+`scripts/symphonym.sh:34-50` **requires a staging ES and writes there.**
+Production ES is localhost-only on the pitt VM and unreachable from a Slurm
+compute node, and the rebuild is heavy multiprocessing that must not run on pitt.
+So the real shape is:
+
+```
+start staging ES on Slurm → rebuild into staging → stage-2 embeddings into staging
+                          → promote: snapshot → restore → ONE alias swap
+```
+
+**Multi-hour, needing a staging instance** — and the alias swap is the
+*promotion's* swap, not a standalone one. ✅ This matches the recorded practice
+(`rebuild_staging_default_and_promotion`): full rebuilds build in staging and
+`promote_to_production` does snapshot → restore → one `_aliases` swap of both
+indices.
+
+⚠ **SG set a PRECONDITION on this** earlier in the campaign: *check the remaining
+wall time on staging is adequate before starting.* The `htc` QOS tiers cap at
+`htc-htc-ll` = 21 days.
+
+⚠ **Stale comment to fix:** `symphonym.sh:34` says staging is required because
+"rebuild reads from places". **It reads the STAGED tree** (`scan_places_staged`);
+staging is needed as the **write target**. Correct it, or someone infers the
+rebuild depends on ES `places`.
 
 ### 🛑 `extract_namespace` HOLDS FIVE SILENT TOPONYM FILTERS — TWO MISFIRED TODAY
 
