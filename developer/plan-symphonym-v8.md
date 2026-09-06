@@ -4164,10 +4164,21 @@ working; it cannot be evidence either way.
 commit measures ~864k declared `zh` romanisations in the staged tree (632,401 +
 231,563), comfortably inside that count.
 
-✅ **The acceptance test that DOES discriminate**, and it belongs to step 5:
-**query the new index for `lang: zh-Latn` (and `fa-Latn`, `ja-Latn`) and expect
-> 0.** The code comment records that `tgn lang=zh script=LATIN` was **0** before,
-so this tests the recovered population itself. ⚠ **Not "the corpus total went
+✅ **The acceptance test that DOES discriminate**, and it belongs to step 5.
+
+🛑 **CORRECTED — the first version of this test WOULD HAVE READ 0 ON A PERFECT
+RUN.** It said *"query for `lang: zh-Latn` > 0"*. **There is no such row.**
+Extraction canonicalises `Shanghai@zh-Latn` to `Shanghai@zh` with `lang='zh'` and
+`lang_variant='Latn'` (`:903-906`) — **the base IS the stored lang and the subtag
+moves to `lang_variant`.** The fix changes what survives the filter, not how the
+survivor is keyed. ⚠ **Another check that cannot fail**, written into this plan
+while the correct premise sat in the sentence beside it.
+
+**The real test:**
+
+* **`lang='zh' AND script=LATIN` > 0** — measured **0** before the fix — and
+  likewise `fa`, `ja`, `el`, `ru` with `script=LATIN`;
+* equivalently **`lang_variant='Latn'` > 0**. ⚠ **Not "the corpus total went
 up"** — dedup can mask that in either direction, and the observed total
 (72,703,741 against a live 72,703,777) sits within 36 of the old one, which is
 precisely why it looked inert and *was*.
