@@ -522,6 +522,15 @@ and never summed:
 
 * **GAIN** — the twenty new-route languages plus the improved ones, listed
   above. *This is where leg 1 either shows up or does not.*
+
+  🛑 **The v7 figure for this stratum is a FLOOR, not a baseline, and must be
+  LABELLED AS ONE IN THE TABLE — not in a footnote.** (Raised by `rewt-c7`,
+  6 Sep.) A v7 AUC over pairs whose languages had **zero** IPA at v7 training is
+  measuring a model **on inputs it was never given a signal for**. That is not
+  "v7's discrimination on this stratum" in the sense the UNCHANGED figure is.
+  ⚠ **Reported in one table under one caption, the two will be read as
+  commensurable however carefully the prose hedges** — a caveat has to travel
+  with the number, and a footnote does not.
 * **CONTAMINATION RISK** — 🛑 **replaces the CLEANUP stratum, which was wrong on
   both halves.** `sv` is not quarantined and v8 trains on ~109k **more** of it,
   so this stratum is watched for **degradation**, not expected to improve. A
