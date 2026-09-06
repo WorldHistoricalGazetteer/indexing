@@ -300,10 +300,28 @@ def main():
     p = build_plan(a.inventory_db, a.store_db, Path(a.out_dir), a.run_id,
                    a.retry_status, a.allow_quarantined, a.max_rows_per_shard,
                    Path(a.reuse_work) if a.reuse_work else None)
+    terminal_total = sum(p["terminal_rows"].values())
     print(f"rows needing work : {p['rows_needing_work']:,}")
     print(f"  computable      : {p['computable_rows']:,}")
-    print(f"  terminal        : {sum(p['terminal_rows'].values()):,} "
-          f"{p['terminal_rows']}")
+    print(f"  terminal        : {terminal_total:,} {p['terminal_rows']}")
+
+    # A run that writes many rows and produces little IPA is the DESIGNED
+    # behaviour, not a failure, and it needs saying here rather than in a
+    # document nobody has open. A terminal row is written precisely so the
+    # next run can tell "tried, nothing can be done" from "never looked" --
+    # without it every re-run retries ~20M hopeless rows forever and no
+    # coverage figure has a denominator.
+    if terminal_total and terminal_total >= p["computable_rows"]:
+        pct = 100.0 * terminal_total / max(p["rows_needing_work"], 1)
+        print(f"\n  NOTE: {pct:.1f}% of this plan is terminal — it will write "
+              f"{terminal_total:,} rows and produce no IPA for them.")
+        print("  That is the intended outcome, not a failure: the row exists to "
+              "record")
+        print("  WHY there is no IPA, so the next run does not retry it and the "
+              "coverage")
+        print("  figure keeps its denominator. Judge the run by "
+              "computable-vs-produced,")
+        print("  not by rows-vs-IPA.")
     print(f"shards            : {p['n_shards']:,} "
           f"({p['n_compute_shards']:,} to compute)")
     print(f"-> {Path(a.out_dir)/f'plan-{a.run_id}.json'}")
