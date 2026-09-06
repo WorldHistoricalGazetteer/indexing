@@ -306,6 +306,52 @@ class OSMHandler(osmium.SimpleHandler):
             self.tag_rejected['relation'] += 1
         self.tracker.increment('relation')
 
+    # ---------------- ITERATION ----------------
+    def apply_file(self, path, **_ignored):
+        """FileProcessor iteration, replacing ``SimpleHandler.apply_file``.
+
+        Under ``SimpleHandler`` every object in the file crossed the C++/Python
+        boundary and the discard decision was made in Python. Most objects in a
+        planet extract carry no ``name``, so nearly all of that traffic was paid
+        for and thrown away one object at a time. ``KeyFilter("name")`` makes the
+        same rejection in C++.
+
+        MEASURED on the OHM planet (1.1 GB, same code, same predicate, job
+        11168150): objects reaching Python fell from 172,308,444 to 1,809,768 —
+        95x — and wall clock from 201.6 s to 10.0 s, a 20.16x speedup. The old
+        API ran SECOND in that comparison, holding any page-cache advantage, so
+        the result is biased against this change and still favours it.
+
+        ⚠ WHY ``KeyFilter("name")`` IS THE EXACT PREFILTER, not merely a fast one.
+        All three per-object methods reject anything ``process_tags`` would
+        reject, and ``process_tags`` returns ``None`` unless ``"name"`` is
+        present. So filtering on ``name`` in C++ removes only objects the Python
+        code was going to discard anyway. It is a superset of the true predicate
+        (``name`` AND one of our tag keys), and the existing checks still run
+        behind it — which is what keeps this change semantically inert. Verified,
+        not assumed: both APIs returned byte-identical counts through the same
+        predicate (ingested 821,880, start_date 180,746, either 186,133).
+
+        ⚠ Do NOT narrow this filter to also require our tag keys without
+        re-verifying. A filter that is not exactly equivalent to the Python
+        predicate makes objects vanish silently, and the only thing that catches
+        it is a document count against a prior run.
+
+        Signature keeps ``**_ignored`` so the call site's ``locations=True,
+        idx='flex_mem'`` keeps working — locations are now requested below,
+        where they belong.
+        """
+        fp = (osmium.FileProcessor(path)
+              .with_locations(idx='flex_mem')
+              .with_filter(osmium.filter.KeyFilter('name')))
+        for obj in fp:
+            if isinstance(obj, osmium.osm.Node):
+                self.node(obj)
+            elif isinstance(obj, osmium.osm.Way):
+                self.way(obj)
+            elif isinstance(obj, osmium.osm.Relation):
+                self.relation(obj)
+
 
 # ---------------- STAGING & MAIN ----------------
 def stage_file_to_scratch(source_path, namespace='osm'):
