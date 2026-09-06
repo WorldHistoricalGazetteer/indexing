@@ -684,7 +684,52 @@ majority of tgn's toponyms**, each arriving as a new row with no embedding and
 no IPA. (Absolute count owed by `indexing-9c`; 59.9% is of tgn's toponyms, and
 must not be back-derived from the 2,991,143 *place* count.)
 
-### 🛑 THE tgn FIX MAKES 1,398,790 ROWS PRESENT BUT NOT TRANSCRIBABLE
+### 🛑 WITHDRAWN — THERE IS NO NEW INVENTORY POPULATION AT ALL
+
+⚠ **Everything in the block below was reasoned about a case the pipeline does not
+produce.** `rebuild_toponyms_index.py:935` normalises `und`/`zxx`/`mis`/`null`/
+`none` → `None` **before** `canonical_id` is built, so the toponyms inventory
+holds `Name@` and **never `Name@und`.** Confirmed at both ends by `indexing-9c`:
+the staged tree *does* carry `@und`, and the new DuckDB holds **0 `@und` ids and
+1,398,787 empty-lang ids — identical to the old inventory, to the row.**
+
+**So the consequences drawn from it are all withdrawn:**
+
+* 🛑 **"1,398,790 net-new inventory rows" — NOT net-new.** They were always in the
+  toponyms inventory as `Name@`. The re-key is **`places`-side only**.
+* 🛑 **"~1.4M Symphonym cache misses" — they are HITS.** The ids never change, so
+  stage-2 GPU cost is bounded by the #250 romanisations alone, well under the
+  ~2.5M / ~1h upper bound recorded above.
+* 🛑 **"`no_route` 866,948 → ~2.27M"** and its successor **"`no_lang` +7.5%" —
+  both withdrawn.** There is no growth: those rows were already counted in both
+  the inventory and the store.
+* 🛑 **"present but untranscribable" mis-stated which corpus.** They were always
+  present in the **training** corpus and always untranscribable. What the fix
+  changed is their presence in **`places`**.
+
+✅ **AND A FRAMING CORRECTION WE HAD BOTH BEEN USING.** `places` and the toponyms
+vocabulary **legitimately differ in shape here** — `places` holds `@und`, the
+vocabulary holds `@`. #246 was a **`places`-side** defect (the `extract_namespace`
+pipeline discarding empty-lang toponyms) and is closed there: **1,277,683 → 10**
+nameless, 1,604,407 places carrying `@und`. **The toponyms index never had that
+defect.** ⚠ So the `@und` re-key was never going to appear in the toponyms
+inventory, and **a plan step expecting it would be another check that cannot
+pass.**
+
+⚠ **THE PATTERN, and this is its third instance today.** Two rounds of *correct*
+mechanism-reasoning — the cache-miss analysis, and the by-construction proof that
+`und`/`''`/`None` all collapse to `LANG_UNK_ID` — about a situation **the
+pipeline never creates.** Same shape as the hydration constraint, which was
+reasoned through twice before anyone asked whether the cache was already
+hydrated. **The cheapest question — "does this case actually arise?" — came last
+again.** (The `UNDETERMINED_TAGS` router fix stands as defensive correctness, but
+its forecast consequences do not, because `und` never reaches the router from the
+inventory.)
+
+⚠ **The historical block below is retained for the reasoning, NOT for its
+conclusions.**
+
+### ~~THE tgn FIX MAKES 1,398,790 ROWS PRESENT BUT NOT TRANSCRIBABLE~~ (superseded)
 
 Measured by `indexing-9c`: **1,398,790 net-new inventory rows** — distinct
 `toponym_id`s re-keyed `Name@` → `Name@und`, **zero colliding** with an existing
