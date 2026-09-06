@@ -44,6 +44,8 @@ from __future__ import annotations
 
 import argparse
 import json
+
+from processing.staged_parquet import drop_nulls_for_parquet
 import shutil
 import sys
 from pathlib import Path
@@ -85,19 +87,18 @@ def _read_jsonl(path: Path) -> dict[str, dict]:
 
 
 def _drop_nulls(value):
-    """Recursively remove null-valued keys.
+    """Recursively remove null-valued keys — now the shared implementation.
 
-    Downstream stages round-trip a doc through a schema that materialises absent
-    optional fields as nulls, so ``{"start": {"latest": 1974}}`` comes back as
-    ``{"start": {"latest": 1974, "in": None}}``. Those assert the same thing, and
-    treating them as a difference would make the guard fire on every doc — which
-    is exactly what it did before this normalisation.
+    Was a private copy. The mechanism it documents (a parquet struct schema
+    materialising absent optional fields as nulls on read, so
+    ``{"start": {"latest": 1974}}`` returns as
+    ``{"start": {"latest": 1974, "in": None}}``) is the same one that puts those
+    nulls into the LIVE INDEX, because the two indexers read parquet without
+    this step. The knowledge lived here, scoped to this module's comparison
+    guard, while the writers it also applies to went unfixed. Delegating rather
+    than duplicating so the next person to find it finds one function.
     """
-    if isinstance(value, dict):
-        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_drop_nulls(v) for v in value]
-    return value
+    return drop_nulls_for_parquet(value)
 
 
 def _comparable_geoms(doc: dict) -> list[dict]:

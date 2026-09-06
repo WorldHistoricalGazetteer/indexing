@@ -57,7 +57,7 @@ from processing.stage_writers import (
     write_stage_event,
 )
 from processing.staging_contract import is_relations_only
-from processing.staged_parquet import strip_hull
+from processing.staged_parquet import drop_nulls_for_parquet, strip_hull
 from processing.staging_orchestrator import (
     load_run_manifest,
     stage_status_with_fallback,
@@ -103,7 +103,24 @@ def _iter_staged_docs(path: Path, batch_size: int = 2000) -> Iterator[dict[str, 
         for batch in parquet.iter_batches(batch_size=batch_size):
             for row in batch.to_pylist():
                 if isinstance(row, dict):
-                    yield strip_hull(row)
+                    # ⚠ PARQUET ONLY, and deliberately not the JSONL branch below.
+                    # A parquet struct column has ONE schema for the whole file,
+                    # so reading it back materialises every key any row used, as
+                    # an explicit null on the rows that lacked it. A timespan
+                    # written `{"start": {"latest": 2026}}` returns
+                    # `{"start": {"in": None, "latest": 2026}}` if any other doc
+                    # in the same file carried `in` — which is why the null
+                    # pattern in the live index is a fingerprint of what SHARED
+                    # a staged file rather than of the record itself: osm and nl
+                    # are clean, tgn carries `in: null`, wd carries all three,
+                    # ohm carries a wholly null `end`.
+                    #
+                    # `drop_nulls_for_parquet` is applied on the WRITE side
+                    # already; this is the missing half. The JSONL branch is
+                    # left alone on purpose — `normalize_for_parquet` puts
+                    # deliberate `None`s there (empty lists) and stripping them
+                    # would be a different change with no reported defect.
+                    yield drop_nulls_for_parquet(strip_hull(row))
         return
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:

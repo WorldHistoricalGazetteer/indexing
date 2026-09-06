@@ -71,7 +71,7 @@ def _es_basic_auth() -> tuple[str, str] | None:
     return ("elastic", pw) if pw else None
 
 from processing.settings import STAGED_BASE_DIR
-from processing.staged_parquet import strip_hull
+from processing.staged_parquet import drop_nulls_for_parquet, strip_hull
 
 try:
     from phonetics.utils.script_detection import detect_script
@@ -132,7 +132,24 @@ def iter_place_docs(path: Path) -> Iterator[dict[str, Any]]:
         for batch in pf.iter_batches(batch_size=500):
             for row in batch.to_pylist():
                 if isinstance(row, dict):
-                    yield strip_hull(row)
+                    # ⚠ PARQUET ONLY, and deliberately not the JSONL branch below.
+                    # A parquet struct column has ONE schema for the whole file,
+                    # so reading it back materialises every key any row used, as
+                    # an explicit null on the rows that lacked it. A timespan
+                    # written `{"start": {"latest": 2026}}` returns
+                    # `{"start": {"in": None, "latest": 2026}}` if any other doc
+                    # in the same file carried `in` — which is why the null
+                    # pattern in the live index is a fingerprint of what SHARED
+                    # a staged file rather than of the record itself: osm and nl
+                    # are clean, tgn carries `in: null`, wd carries all three,
+                    # ohm carries a wholly null `end`.
+                    #
+                    # `drop_nulls_for_parquet` is applied on the WRITE side
+                    # already; this is the missing half. The JSONL branch is
+                    # left alone on purpose — `normalize_for_parquet` puts
+                    # deliberate `None`s there (empty lists) and stripping them
+                    # would be a different change with no reported defect.
+                    yield drop_nulls_for_parquet(strip_hull(row))
     else:
         with path.open(encoding="utf-8") as fh:
             for line in fh:
