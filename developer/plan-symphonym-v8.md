@@ -4434,7 +4434,38 @@ consulted.** Epitran ships modes for several of these writing systems —
 even ask**, because the script was flattened before the lookup.
 `EPITRAN_SUPPORTED_SCRIPTS` encodes the same assumption a second time.
 
-✅ **So the three findings compose into a small job.** Transfer is script-level →
+### 🛑 AND SIX HAND-WRITTEN RULE SETS FOR THOSE SCRIPTS ALREADY EXIST, INSTALLED AND UNREACHABLE
+
+Raised by SG, 6 Sep: he **hand-crafted custom Epitran CSV rules** for languages
+outside the published set. `zenodo/epitran_extensions/` holds **115**, and six are
+for exactly the blackout scripts:
+
+```
+bod-Tibt  Tibetan     khm-Khmr  Khmer      mya-Mymr  Myanmar
+pan-Guru  Punjabi     sat-Olck  Santali    sin-Sinh  Sinhala
+        ALL SIX fall in Script.OTHER — unreachable
+(the other 109: Latn 83, Cyrl 8, Arab 7, Deva 3, Armn 2, and one each
+ Knda/Hani/Gujr/Grek/Geor/Beng — all reachable)
+```
+
+🛑 **And they are not merely written — they are INSTALLED.**
+`scripts/install_epitran_extensions.sh` puts all 115 into Epitran's map path
+(`preflight.py:11`, `routes.py:10`), so `mya-Mymr` and `pan-Guru` are almost
+certainly **already among the 218 installed modes**.
+
+**Which completes the chain.** `resolve()` reaches `:208`, computes
+`iso3 = 'mya'` correctly from the language, and then `SCRIPT_TAG.get(OTHER)`
+returns `None`, `if iso3 and tag:` fails, and it returns `no_route`. **The mode
+exists, is installed, and the router can never construct its name** — because the
+script was flattened two steps earlier. ⚠ **Hand-written work, shipped, and
+unreachable by one missing dictionary entry.**
+
+⚠ **A consequence to plan for:** splitting `Script.OTHER` changes what
+`detect_script` returns, so the stored `script` value goes **stale** for those
+395,409 rows. Establish early what keys on `script` — the toponyms build writes
+it and `is_script_mismatch` reads it.
+
+✅ **So the four findings compose into a small job.** Transfer is script-level →
 the fix needs **one route per script, not per language** (not 85 language tags) →
 and the reason no such route exists is that **those scripts are not values in the
 enum.** ⚠ **Splitting the enum and mapping the tags is a different and much
