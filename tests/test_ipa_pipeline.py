@@ -103,6 +103,30 @@ class TestRouteTable(unittest.TestCase):
         self.assertEqual(status, "ok")
         self.assertEqual(route.mode, "eng-Latn")
 
+    def test_undetermined_tags_are_no_lang_not_no_route(self):
+        """`und` is ISO 639-2 for UNDETERMINED, so it means the same as an
+        empty tag and must land in the language-identification queue, not the
+        add-a-backend queue. The tgn fix re-keys ~1.4M toponyms to `Name@und`;
+        filing them as no_route would put rows in a queue no backend can ever
+        serve. Asserted against the EMPTY tag's status so the two stay tied."""
+        t = self.table()
+        empty_status = t.resolve("", "LATIN")[1]
+        for tag in ("und", "mis", "zxx"):
+            route, status = t.resolve(tag, "LATIN")
+            self.assertIsNone(route, tag)
+            self.assertEqual(status, "no_lang", tag)
+            self.assertEqual(status, empty_status, tag)
+
+    def test_undetermined_is_no_lang_in_every_script(self):
+        t = self.table()
+        for script in ("LATIN", "ARABIC", "CJK", "CYRILLIC", "HEBREW"):
+            self.assertEqual(t.resolve("und", script)[1], "no_lang", script)
+
+    def test_a_real_but_unsupported_language_is_still_no_route(self):
+        """The negative control: this change must not collapse no_route into
+        no_lang. 'sw' is a real language with no installed mode here."""
+        self.assertEqual(self.table().resolve("sw", "LATIN")[1], "no_route")
+
 
 class TestShardNaming(unittest.TestCase):
     """Regression: 431 of the corpus's `lang` values are not language codes.

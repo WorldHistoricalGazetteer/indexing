@@ -93,6 +93,25 @@ QUARANTINED_LANGS: Set[str] = {"ceb", "war", "min", "vo", "mul"}
 # Tags that are not languages at all -- found in the live corpus.
 NON_LANGUAGE_TAGS: Set[str] = {"genitive", "ar1", "lauc"}
 
+# ISO 639-2 codes that mean "no usable language", as opposed to a language we
+# happen not to support. They must resolve to `no_lang`, NOT `no_route`.
+#
+# WHY THE DISTINCTION IS LOAD-BEARING. The two statuses address different
+# future work: `no_lang` is the queue for language identification, `no_route`
+# is the queue for adding a G2P backend. `und` is ISO 639-2 for UNDETERMINED --
+# semantically identical to an empty tag, and no Epitran mode will ever be
+# written for it. Filing it under `no_route` would put 1.4M rows in the
+# backend-work queue that no backend can ever serve, and take them out of the
+# language-identification queue that is precisely where they belong.
+#
+# This became live with the tgn fix: `extract_namespace` discards empty
+# language tags, so the authority now emits `lang or "und"`, re-keying
+# ~1,398,790 distinct toponyms from `Name@` to `Name@und`. Those rows have not
+# acquired a language -- they have acquired a placeholder saying they have
+# none. `mul` is handled separately in QUARANTINED_LANGS for a different
+# reason (a Wikidata edition label, not a linguistic claim).
+UNDETERMINED_TAGS: Set[str] = {"und", "mis", "zxx"}
+
 _MODE_RE = re.compile(r"^([a-z]{3})-([A-Za-z]+)$")
 
 # Epitran implements some languages in CODE, with no CSV map to glob. English
@@ -167,6 +186,10 @@ class RouteTable:
         """
         base = normalise_lang(lang)
         if not base:
+            return None, "no_lang"
+        if base in UNDETERMINED_TAGS:
+            # An explicit "we do not know" is the same state as no tag at all,
+            # and belongs in the same queue.
             return None, "no_lang"
         if base in NON_LANGUAGE_TAGS:
             return None, "non_language_tag"
