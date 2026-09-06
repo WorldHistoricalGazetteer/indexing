@@ -2614,7 +2614,56 @@ different **set** where a boundary case crosses the top-N cutoff.
 uniform score perturbation produces, and production's self-consistency follows
 because its own tombstones are constant within a run.
 
-✅ **THE CAUSAL STEP IS NOW DEMONSTRATED — by a session trying to refute it.**
+## 🛑 RETRACTED — THE TOMBSTONE EXPLANATION IS FALSE (6 Sep)
+
+**Everything below about tombstones rests on a premise that was never checked at
+the scale it was applied to, and it is wrong.** Measured directly on the live
+staging instance:
+
+```
+index                              production   staging      delta
+places_h3ccode-20260805t120000z    14,169,759   14,033,363   -136,396
+toponyms_temporal-20260731t160000z    292,493      305,969    +13,476
+```
+
+🛑 **The restore did NOT purge tombstones.** Staging carries ~99% of production's
+deletes, not zero — and **the deltas run in opposite directions**, which is what
+independent background merging on two live clusters produces. The claim
+*"production's 14.2 M deletes all vanish in staging"* is **false**, and any IDF
+effect is of order **1%**, not 100%.
+
+⚠ **And the provenance suspicion was also wrong** — SG's, and reasonable. ES's
+`_recovery` API records what each shard actually recovered from, and **both**
+staging indices came from the current production snapshot:
+
+```
+places_h3ccode-20260805t120000z    <- prod_repo / prod-manual-20260905t1931z
+toponyms_temporal-20260731t160000z <- prod_repo / prod-manual-20260905t1931z
+```
+
+Doc counts match exactly on both sides. **So the divergence has neither of the
+two explanations offered for it, and its cause is OPEN.**
+
+🛑 **HOW THREE SESSIONS GOT THERE, because the shape matters more than the
+error.** One proposed a mechanism; a second tested it on a **2,000-document**
+throwaway and reported it confirmed (1,200 deletes → 0); a third ran a
+pre-registered directional test and found the predicted 3.2× concentration
+(p = 0.0397). Every step was sound. **Nobody checked the premise against the
+361-million-document instance the argument was about.** The small-scale result did
+not generalise — quite possibly because a tiny index merges on restore where a
+23.6 GB one does not.
+
+✅ **`gotw-eb`'s shape-split OBSERVATION stands; its EXPLANATION does not.** The
+lexical concentration is real and pre-registered. What it means is now unknown.
+
+📋 **Filed as [`place#247`](https://github.com/WorldHistoricalGazetteer/place/issues/247)**
+— prove the `/ix1` snapshots faithful, optimise the live indices triaged, then
+stand up a staging ES and *demonstrate* 100% alignment. **Sequenced ahead of
+`place#246`, which is ahead of v8**, because #246's audit counts are worthless if
+taken on an instance not shown to match production.
+
+⚠ ~~**THE CAUSAL STEP IS NOW DEMONSTRATED — by a session trying to refute it.**~~
+*(retained: it was published and acted on)*
 `indexing-04` believed *"a snapshot stores live documents only"* was wrong: a
 snapshot copies Lucene segment files, deletions live in `.liv` files inside those
 segments, so tombstones *ought* to survive a restore. Plausible, and false.
