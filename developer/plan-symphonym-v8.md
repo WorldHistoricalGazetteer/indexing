@@ -231,8 +231,70 @@ moot.** `normalise_lang` is `lang.strip().split("-")[0].lower()`, so the script
 subtag *is* discarded before the `(lang, script)` lookup — **but no rows reach
 that lookup.** They are lost earlier than the router.
 
-**Where they are lost is NOT established. Two of the three candidates are
-eliminated from the code; do not re-propose them:**
+### ✅ FOUND — A DELIBERATE FILTER DROPS THEM, and the zero was the clue
+
+`rebuild_toponyms_index.py:570` `is_script_mismatch`, called at `:893`. Its
+docstring names this exact case as something to remove:
+
+```
+Examples of mismatches we want to filter:
+- "Beijing" with lang=zh and script=LATIN (should be 北京)
+- "Moskva" with lang=ru and script=LATIN (should be Москва)
+```
+
+`lang_base = lang.lower().split('-')[0]` → `zh-Latn-pinyin-x-notone` becomes
+`zh`; LATIN is not in `LANG_EXPECTED_SCRIPTS['zh']`; returns True; `continue`.
+**Every Getty pinyin form is skipped by design.**
+
+⚠ **That is why the count is exactly ZERO rather than merely small.** A leaky
+pipeline gives a trickle; a filter gives a zero. **The absoluteness of the result
+was the diagnostic**, and it is worth keeping as a habit: an exact zero over a
+population that should be large is evidence of a *rule*, not of attrition.
+
+🛑 **The base-split destroys the evidence that would exempt them.** `-Latn` is
+Getty **declaring** the romanisation; the filter discards that subtag and then
+rejects the row *for being romanised*. It is `lang_variant`-blind at precisely
+the point where the variant would justify the script.
+
+✅ **Checkable with no re-ingest** — the skips are **recorded**:
+`skipped_batch.append((top_id, 'lang_script_mismatch', lang, script_value))` into
+`skipped_toponyms` (`:654`). Querying that table by reason and lang should show
+the pinyin / `fa-Latn` / `ja-Latn` populations *present by name* — a positive
+presence rather than another absence.
+
+### THE FIX IS A NAMED EXEMPTION, NOT A REMOVAL
+
+**Exempt from `is_script_mismatch` any form whose language tag explicitly
+declares its script.** Where the tag says `-Latn`, the romanisation is
+**asserted, not erroneous**. The filter stays correct for its real purpose — an
+*unmarked* `Beijing@zh` genuinely is a data error that would pollute the "what
+does Chinese look like" signal — and Getty's marked forms stop being collateral.
+**This is what would deliver the attested cross-script pairs to the selector.**
+
+⚠ **TWO NUMBERS THAT MUST NOT BE QUOTED**, both from an intermediate reading:
+
+* **"48.5% of Getty's terms never reached the corpus" compares a DEDUPLICATED
+  count to a RAW one.** Toponyms are globally deduplicated — one row, many
+  `attestations[]` — so 5,315,747 *terms* mapping to 2,737,570 *distinct*
+  `name@lang` ids is largely **dedup, not loss** (`San José@es` is one row across
+  hundreds of places). The difference is not a loss rate.
+* **"tgn's toponym count should approach 5.3M" therefore cannot happen**, dedup
+  alone forbids it — so anyone testing that prediction would see it fall short
+  and wrongly conclude the fix failed. **The sound test is `zh` + LATIN becoming
+  non-zero**: binary, and unaffected by dedup.
+
+⚠ **BOTH THINGS ARE TRUE AT ONCE.** The live index *is* still pre-fix — 1,277,683
+tgn places with no toponyms at all (42.72%), exactly #246's figure — and that is
+real and 9c's to act on. **But it is not the mechanism for the romanisations**,
+which would still be filtered after that gap closes.
+
+**Ruled out along the way, by measurement:** store enumeration (ipa store holds
+72,703,552 of the index's 72,703,777 rows — **99.99969% reach**, so the zero is
+about the corpus and not the planner) and normalisation in general (**932,739**
+toponyms corpus-wide carry a working `lang_variant`), with the toponyms index
+agreeing with the store at the reader.
+
+**And eliminated from the code; do not re-propose:**
 
 * 🛑 **NOT the empty-language drop.** `zh-Latn-pinyin-x-notone` is a *non-empty*
   tag, so `extract_namespace` has no reason to discard it.
@@ -244,15 +306,13 @@ eliminated from the code; do not re-propose them:**
   term attached as `altLabel` **is** read, and `make_doc` applies no per-place
   cap.
 
-**Still open:** normalisation between the extract and the store, and whether the
-store's own enumeration ever offered these rows to the IPA planner.
-
-🛑 **CONSEQUENCE FOR THE DESIGN DECISION — they are NOT free.** Getty's ~1.16M
-attested romanisations remain strictly better than computed pairs **in
-principle**, but they are **not currently available to the pair selector**.
-**They are a recovery task of unknown size, not an asset on the shelf**, and the
-anyascii option below is **not** superseded by something we hold — it is
-competing with something we would first have to recover.
+🛑 **CONSEQUENCE FOR THE DESIGN DECISION.** Getty's ~1.16M attested romanisations
+are **not currently available to the pair selector** — so they are not free, as
+this entry first claimed. But they are **not an unbounded recovery task either**:
+the cause is a single named filter with a small, defensible exemption. ⚠ **Do
+not schedule against them until the exemption is written and measured**, and do
+not treat the anyascii option below as superseded — it reaches the 18.5M
+`no_lang` population, which this exemption does not.
 
 **What Getty publishes (in the export, per the census):**
 There is **no script-bearing predicate anywhere** in Terms — script stays
