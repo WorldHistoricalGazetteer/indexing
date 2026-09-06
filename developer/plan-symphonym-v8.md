@@ -11,47 +11,142 @@
 
 ---
 
-## 0. The short version — WHERE v8 STANDS (6 Sep 2026)
+## 0. The short version — WHERE v8 STANDS (reassessed 6 Sep 2026)
 
-**v7 is not measurably better than anyascii-romanised Levenshtein.** Three things
-were wrong; the first is fixed, and the other two are what v8 is for.
+🛑 **THE THREE LEGS HAVE BEEN REORDERED, AND THE OLD ORDER IS WHY THE
+ACCEPTANCE GATE WAS WRONG.** This section previously led with the geometry
+finding and treated the input data as a footnote. Everything measured since
+inverts that. The legs, in their corrected order:
 
-1. ✅ **The gateway tokenised queries differently from the way the index was
-   embedded** — CJK queries were *anti-correlated* with their own documents
-   (cos −0.30 for `東京`). **A bug, not a design limit; needed no retraining.**
-   Done, §5.
-2. 🛑 **The teacher's input representation has effective rank 4.37 of 192**, and
-   the student inherits it — **10.8 of 128**, spectrum falling off a cliff at
-   component 20.
-3. 🛑 **The training objective is exhausted** — phase-1 validation loss 0.0056
-   against a triplet margin of 0.3. Almost every triplet contributes no gradient.
+| | leg | status | what it now does for v8 |
+|---|---|---|---|
+| **1** | **The input data is materially better than what v7 trained on** | measured | **MOTIVATES the retrain, on its own** |
+| **2** | **The training objective is exhausted** | measured, unchallenged | **DICTATES that the retrain change the loss** |
+| **3** | The representation is rank-collapsed | measured, but corpus-conditional | **CONSTRAINS the architecture — no longer a motivation** |
+| ~~4~~ | ~~The gateway tokenised queries differently from the index~~ | ✅ fixed, §5 | needed no retraining at all |
 
-### ✅ SETTLED: the retrain is authorised, and what it targets
+### Leg 1 — the input data. Promoted to primary.
 
-**The benchmark that §0 once said did not exist has run (§8).** Split verdict: v7
-**wins discrimination** (AUC 0.9324 vs 0.9002, separated interval) and **loses
-retrieval** (R@10 0.294 vs 0.323), with **one mechanism behind both** — a space too
-dense to order a 200-deep pool.
+v7 trained on **31,113,585** IPA strings. The corpus now carries **49,749,377**
+— **+18,635,792 over what v7 actually had** — with the `ja`+CJK hole closed
+(465,177 of 465,177) and Lsjbot contamination quarantined (3.4M across
+`ceb`/`war`/`min`/`vo`). ⚠ `sv` (1.8M) sits **inside** v7's already-routed
+baseline, so v7's own training data carries that contamination: it is a
+*cleanup* stratum, not a gain stratum, and the two must not be summed.
 
-**SG authorised a retrain targeting the GEOMETRY** (finding 2). **Acceptance is the
-geometry gate plus NO REGRESSION on discrimination — explicitly not a retrieval
-win**, which §8.2's `n^−0.22` density scaling suggests may not be available at
-72.7M by any means.
+**That is a retrain justification independent of geometry.** v7 was trained on
+materially worse data, and no amount of architectural work on v7's weights
+recovers 18.6M strings it never saw.
 
-### ✅ SETTLED: what changed about the INPUT DATA
+⚠ **This promotion is pending measurement, and is marked as such deliberately.**
+`indexing-04` is measuring per-language coverage now against v7's reconstructible
+baseline. If the gain proves not to be concentrated where this section assumes,
+**demote the leg rather than reinterpret the measurement.**
 
-| | before | now |
-|---|---|---|
-| **IPA strings** | **31,113,585** at v7 training (54.02% of its 57.6M in-training-namespace corpus; 46.49% of its 66.9M total) — **then LOST from the surviving stores** | **49,749,377** = 68.43% of 72,703,552. **A gain of +18.6M over what v7 actually trained on** — the run *restored* as well as extended |
-| `ja`+CJK | silently unroutable | **465,177 of 465,177 covered** |
-| CharsiuG2P output | silently capped ~13–15 chars | uncapped; 1,043 rows (0.04%) are repetition loops, recorded as a residual |
-| `sv` / `ceb` labels | trusted | **Lsjbot contamination**; `ceb`/`war`/`min`/`vo` quarantined (3.4M). ⚠ **`sv` (1.8M) is INSIDE the already-routed baseline, so v7's own training data carries it** |
+### Leg 2 — the objective. Unchanged, unchallenged, and now the sharpest.
 
-🛑 **The remaining 31.6% is not a tuning problem.** 18,543,146 rows carry **no
-language at all**, and **87.43% of those are Latin script**. Country-based
-inference is **closed by arithmetic** — every script where it looked accurate is
-one where a constant beats it (§9c). Moving that gap needs **language
-identification from the string itself: a different project.**
+Phase-1 validation loss **0.0056** against a triplet margin of **0.3**: almost
+every triplet contributes no gradient. **Nothing measured since has touched
+this**, and unlike leg 3 it is a property of the training procedure rather than
+of any corpus — so it does not move when the corpus does. It is the one leg that
+says v8 must be *a different training run*, not merely the same run over better
+data.
+
+### Leg 3 — the geometry. Demoted from motivation to constraint.
+
+Two things demoted it, and neither refutes it:
+
+1. 🛑 **The PanPhon rank is corpus-conditional to a degree that makes a single
+   number meaningless.** Re-measured at scale: **4.37**, **3.12** and **7.247**
+   are three *different measurements over three different corpora*, not three
+   estimates of one quantity. Holding script constant while changing corpus
+   moves rank **1.71×** — as much as changing script does. **Any PanPhon rank
+   must travel with the corpus it was measured on**, and "effective rank 4.37 of
+   192" as a bare property of PanPhon is not a claim this document can make.
+2. **Its remedy is already taken.** §10 retires the pooled 192-d vector outright.
+   A finding whose fix is already decided constrains what v8 may be built from;
+   it no longer argues for building it.
+
+**What survives, and it is the part that matters:** the *student's* 10.8 of 128
+was measured on the production corpus and reproduced **three times** (11.067 in
+the third, against a known 10.83). That is a real property of the shipped model.
+The constraint it imposes: **v8's teacher must not be the pooled 192-d PanPhon
+vector**, whatever else it is.
+
+### 🛑 WHAT THIS CHANGES ABOUT THE ACCEPTANCE GATE
+
+The gate was **"geometry gate + no regression on discrimination"**. That was
+derived from leg 3 being primary. With leg 1 primary it is **insufficient — it
+cannot see the thing v8 is now mainly for.**
+
+⚠ **A corpus-average cannot detect the input-data gain**, because the gain is
+not uniform: it is concentrated in languages that previously had *no route at
+all*. Averaged across a corpus where most strata are unchanged, +18.6M
+disappears. This campaign has already been bitten by exactly this
+(`romanised_baseline_measures_provenance`: 35% of CJK↔Latin positives romanise
+to identical strings, making edit-distance a near-oracle in one stratum and
+nonsense overall).
+
+**The gate must therefore be stratified**, with three strata reported separately
+and never summed:
+
+* **GAIN** — languages with IPA now that had none at v7 training. *This is where
+  leg 1 either shows up or does not.* Stratum list pending `indexing-04`.
+* **CLEANUP** — `sv` and the quarantined set: v7 trained on contaminated labels
+  here, so the target is *correction*, and a flat result is a pass.
+* **UNCHANGED** — everything else. **This is where "no regression" is tested**,
+  and it is the only stratum where the old gate was ever measuring what it
+  claimed.
+
+Plus the two the old gate had, retained: the geometry gate, and no regression on
+discrimination (v7: AUC 0.9324 vs 0.9002, separated interval). **Retrieval
+remains explicitly not a win condition** — §8.2's `n^−0.22` density scaling
+suggests it may not be available at 72.7M by any means.
+
+### 🛑 A PRE-FLIGHT GATE THAT DID NOT EXIST, AND WOULD HAVE CAUGHT A LIVE FAULT
+
+**Assert IPA coverage as the TRAINING PIPELINE sees it, not as the store reports
+it, before any training run starts.**
+
+This is not hypothetical hygiene. As of today the 49,749,377 strings are real,
+audited, and **reachable by nothing**: they live in a separate store, while both
+training consumers `SELECT t.ipa` from the toponyms DuckDB where the column is
+NULL across all 72,703,552 rows (§9e). **A v8 run started today would train on
+0% IPA and report success.** Every check that certified the recomputation was a
+check on the writer.
+
+### 🛑 THE TRAINING CORPUS IS NOT THE CORPUS THE GATEWAY SERVES
+
+Newly established, and it invalidates a natural assumption rather than any
+existing measurement. `rebuild_toponyms_index` **never reads the `places`
+index** — `_staged_namespace_source` (`:705`) walks `final/` → `h3_merged/` →
+`boundary_merged/` → `extract/` and reads the staged file directly. So:
+
+* `places` is ES-mediated and passes through the `extract_namespace` pipeline,
+  which **discards any toponym with an empty language tag**.
+* `toponyms` — and therefore the training corpus — is staged-direct and
+  **unfiltered**.
+
+⚠ **Anything measured on `places` does not describe what v8 trains on.** tgn
+alone carries **59.9%** untagged toponyms (Getty publishes untagged terms
+routinely; tgn was the only one of 28 namespaces doing so, now fixed at the
+authority with `lang or "und"`). Those forms are *in the training corpus and
+absent from the served index*.
+
+### ⚠ SEQUENCING — the corpus moves before v8 trains, and it moves under the fine-tune
+
+The `lang or "und"` fix does not *add* names to the inventory: `Dorkecestre@`
+and `Dorkecestre@und` are **different `toponym_id`s**, so it **re-keys the
+majority of tgn's toponyms**, each arriving as a new row with no embedding and
+no IPA. (Absolute count owed by `indexing-9c`; 59.9% is of tgn's toponyms, and
+must not be back-derived from the 2,991,143 *place* count.)
+
+🛑 **The forms being re-keyed are exactly the historic-orthography signal the
+fine-tune depends on** — `Dorkecestre`, `Dorocine` → `tgn:7011929` are Getty's
+untagged historic variants. **Do not train the fine-tune against the inventory
+until the tgn rebuild has landed**, or it trains on the half of the signal that
+happened to carry a tag. Required order: clean `final/` → index → **inventory
+rebuild** → IPA top-up → backfill → train.
 
 ### 🛑 SETTLED: the historic-orthography target is a FINE-TUNE, not a second objective
 
@@ -72,12 +167,15 @@ historic orthography, and at what scale it was trained.**
 ### What is still open
 
 * Whether to attempt **language ID from the string** for the 16.2M Latin no-lang
-  rows — a separate project, not a refinement.
-* **D-B, a Japanese reading table**, dismissed in §6 as "not cross-script" under a
-  scoping decision since superseded. §9b measured that **36.1%** of sampled
+  rows. 18,543,146 rows carry no language at all, **87.43% of them Latin**;
+  country-based inference is **closed by arithmetic** — every script where it
+  looked accurate is one where a constant beats it (§9c). A separate project,
+  not a refinement.
+* **D-B, a Japanese reading table**, dismissed in §6 as "not cross-script" under
+  a scoping decision since superseded. §9b measured that **36.1%** of sampled
   kanji-bearing places already carry the kana reading by co-attestation.
-* The **IPA→PanPhon** half: the pooled 192-d vector is **retired** (it is finding
-  2's bottleneck); per-segment features remain conditional on whether a teacher
+* The **IPA→PanPhon** half: the pooled 192-d vector is **retired** (leg 3's
+  constraint); per-segment features remain conditional on whether a teacher
   survives the v8 design.
 
 ---
@@ -94,7 +192,7 @@ a session to exactly that failure (`select_h3_cover_geometry`, CLAUDE.md).
 The live chain:
 
 ```
-rebuild_toponyms_index.py   → toponyms + IPA + PanPhon192   (54.0% IPA coverage)
+rebuild_toponyms_index.py   → toponyms + IPA + PanPhon192   (reads STAGED, not ES)
 extraction/generator.py     → positive pairs via HDBSCAN over panphon_embedding
                             → phase1/2/3 parquet
 training/train.py           → teacher (triplet) → student (MSE+cos distill) → student (triplet)
@@ -246,6 +344,15 @@ gateway is deployed — see Package 1 step 3.
 ---
 
 ## 3. Finding 2 — the representation is rank-collapsed
+
+⚠ **DEMOTED 6 Sep — read §0 leg 3 before this section.** The measurements below
+stand; their *status* does not. The PanPhon rank is corpus-conditional (4.37,
+3.12 and 7.247 are three measurements over three corpora, not three estimates of
+one number, and corpus moves it 1.71×), and the remedy — retiring the pooled
+192-d vector — is already taken in §10. **This finding now CONSTRAINS v8's
+architecture rather than motivating the retrain.** What survives intact is the
+*student's* 10.8 of 128, measured on the production corpus and reproduced three
+times.
 
 **Not scheduled. Background for the decisions in §6.**
 
@@ -453,6 +560,12 @@ an irrelevant gain. Only ~6.2 of 8 bits of range are used (mean max component
 ---
 
 ## 4. Finding 3 — the labels and the objective
+
+✅ **PROMOTED 6 Sep — this is now v8's sharpest leg (§0 leg 2).** Nothing
+measured since has touched it, and unlike finding 2 it is a property of the
+training procedure rather than of any corpus, so it does not move when the
+corpus does. It is the one finding that says v8 must be *a different training
+run* and not merely the same run over better data.
 
 **Not scheduled. Background for the decisions in §6.**
 
