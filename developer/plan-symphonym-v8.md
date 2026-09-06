@@ -297,15 +297,71 @@ effective rank of 192      3,000      3.130
 ```
 
 🛑 **4.37 does not reproduce, and the discrepancy is NOT scale** — at the same
-n=3,000 the measurement is 3.130. **Finding 2's direction is confirmed and
-STRENGTHENED**: the input is *more* collapsed than recorded, so the chain holds *a
-fortiori*. **But 4.37 should not be requoted.**
+n the measurement is 3.130. **Finding 2's direction is confirmed**: the input is
+*more* collapsed than recorded on this corpus.
 
-⚠ **A reconciliation offered as a hypothesis, not a result.** `ARABIC` measures
-**4.198**, closer to 4.37 than any other stratum, and §4.5 records the evaluation
-testsets as *"all Arabic/Hebrew/Latin"*. **If the original 3,000 came from that
-corpus rather than the index, 4.37 was a corpus property read as a representation
-property** — the fifth instance of that shape. **Unchecked.**
+⚠ **Sample size: the original was 6,000, not 3,000.** This session's brief said
+3,000, `indexing-8b` took it on trust and propagated it into its finding document,
+commit message and docstring before either of us opened line 252, which says
+**"Measured on 6,000 distinct real toponyms"**. Corrected on both sides.
+
+### 🛑 BUT THE MEHDIE HYPOTHESIS IS REFUTED — AND THE REFUTATION IS THE REAL FINDING
+
+The guess above was that 4.37 came from the MEHDIE testsets. **Tested directly,
+not argued from the Arabic stratum.** One detail matches almost too well — the five
+testsets hold **6,013 distinct titles** against the plan's "6,000" — but:
+
+```
+MEHDIE all       6,013    7.247
+MEHDIE Arabic    3,280    7.196
+MEHDIE Hebrew    2,654    5.726
+plan's figure    6,000    4.37
+corpus-wide      3k-3M    3.12
+```
+
+**MEHDIE would have recorded ~7.2. So 4.37's provenance remains unknown, and no
+code in the repository computes it.**
+
+🛑 **AND THE TEST QUALIFIES THE FLATNESS RESULT.** Holding **script** constant and
+changing only the **corpus** moves the rank as much as changing script does:
+
+```
+ARABIC   corpus 4.198  vs  MEHDIE 7.196   1.71x
+HEBREW   corpus 3.753  vs  MEHDIE 5.726   1.53x
+                          (against 1.55x across ALL scripts within the store)
+```
+
+> **"Flat at 3.12 across three orders of magnitude" was stability across sample
+> SIZE within ONE population — not robustness of the quantity.** Two 6,000-scale
+> samples of real toponyms differ by **2.3×**.
+
+🛑 **4.37, 3.12 and 7.25 are not competing estimates of one number. They are three
+different measurements, and any PanPhon rank must travel with its corpus.** That is
+a stronger and more restrictive claim than *"retire 4.37 in favour of 3.12"*.
+
+### ✅ The redundancy hypothesis is refuted too — `indexing-8b`'s own, on three grounds
+
+It had offered, untested, that the index's lower rank reflects near-duplicate
+redundancy against MEHDIE's curated distinct places. SG asked for it to be tested.
+
+* **The mechanism is impossible in its naive form.** Participation ratio is
+  **invariant to uniform replication** — duplicating every vector *k* times scales
+  every eigenvalue by *k* and leaves the normalised spectrum unchanged. *Checked
+  rather than trusted*: tripling every row of a 19,812-vector sample moved the rank
+  by **Δ = −0.000000**. *"There are duplicates"* can never lower a rank.
+* **The premise is false and backwards.** Index 300,000 rows / **0.309%**
+  duplicates; MEHDIE 6,013 rows / **2.661%**. **MEHDIE is 8.6× MORE duplicated.**
+* **The intervention does nothing.** Exact then near-dedup leaves every stratum
+  where it was, and where it moves anything it moves it **down**.
+
+✅ **Estimator control: isotropic Gaussian returns 190.15 of 192**, so it does
+report near-maximal rank on genuinely full-rank data.
+
+⚠ **No replacement mechanism is proposed, deliberately.** *"I offered one story from
+plausibility and it was wrong in premise, mechanism and prediction; a second
+untested story would repeat the error rather than correct it."* **What survives is
+that the corpus dependence is real, is not redundancy, and is a property of what
+the index CONTAINS rather than how often it repeats it.**
 
 ### 🛑 The two low ranks are DIFFERENT OBJECTS — and §3's language must not migrate
 
