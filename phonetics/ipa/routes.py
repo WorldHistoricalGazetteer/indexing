@@ -139,7 +139,18 @@ NON_LANGUAGE_TAGS: Set[str] = {"genitive", "ar1", "lauc"}
 # acquired a language -- they have acquired a placeholder saying they have
 # none. `mul` is handled separately in QUARANTINED_LANGS for a different
 # reason (a Wikidata edition label, not a linguistic claim).
-UNDETERMINED_TAGS: Set[str] = {"und", "mis", "zxx"}
+#
+# ⚠ ALIGNED WITH AN EXISTING CONVENTION, not invented here. The toponyms build
+# already canonicalises these away at rebuild_toponyms_index.py:935:
+#     if lang and lang.lower() in ('und', 'zxx', 'mis', 'null', 'none'):
+#         lang = None
+# so an inventory produced by that path never presents them to this router at
+# all. `null`/`none` are included anyway because an inventory built by any
+# OTHER path could carry them, and without them they would fall through to
+# `no_route` -- the wrong queue by the same argument that puts `und` in
+# `no_lang`. Matching the set exactly means the two places cannot disagree
+# about what counts as "no language".
+UNDETERMINED_TAGS: Set[str] = {"und", "mis", "zxx", "null", "none"}
 
 _MODE_RE = re.compile(r"^([a-z]{3})-([A-Za-z]+)$")
 

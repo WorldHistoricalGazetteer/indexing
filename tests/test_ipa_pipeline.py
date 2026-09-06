@@ -111,7 +111,7 @@ class TestRouteTable(unittest.TestCase):
         serve. Asserted against the EMPTY tag's status so the two stay tied."""
         t = self.table()
         empty_status = t.resolve("", "LATIN")[1]
-        for tag in ("und", "mis", "zxx"):
+        for tag in ("und", "mis", "zxx", "null", "none"):
             route, status = t.resolve(tag, "LATIN")
             self.assertIsNone(route, tag)
             self.assertEqual(status, "no_lang", tag)
@@ -121,6 +121,14 @@ class TestRouteTable(unittest.TestCase):
         t = self.table()
         for script in ("LATIN", "ARABIC", "CJK", "CYRILLIC", "HEBREW"):
             self.assertEqual(t.resolve("und", script)[1], "no_lang", script)
+
+    def test_undetermined_set_matches_the_rebuild_s_own_normalisation(self):
+        """rebuild_toponyms_index.py:935 canonicalises exactly this set to
+        None. If the two drift, a tag the builder calls 'no language' would be
+        filed here as a language nobody supports -- the wrong queue. Pinned to
+        the source convention rather than to our own judgement."""
+        self.assertEqual(R.UNDETERMINED_TAGS,
+                         {"und", "zxx", "mis", "null", "none"})
 
     def test_a_real_but_unsupported_language_is_still_no_route(self):
         """The negative control: this change must not collapse no_route into
