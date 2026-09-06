@@ -272,10 +272,91 @@ Located precisely, by hooking activations and by taking the SVD of the weights:
 | `output_proj.3` (128×128), σ_last/σ1 = 6 × 10⁻⁷ | **7.08** |
 | final L2-normalised output | 10.8 |
 
-The chain is causal and complete: an input representation of rank 4.4 →
-a teacher fitted to it → a student distilled to that teacher (phase-2
-student–teacher cosine plateaus at 0.9418) → a phase-3 objective too weak to
-expand it. **The 128-d embedding is a rank-≈10 embedding in a 128-d costume.**
+The chain is causal: an input representation of very low rank → a teacher fitted
+to it → a student distilled to that teacher (phase-2 student–teacher cosine
+plateaus at 0.9418) → a phase-3 objective too weak to expand it. **The 128-d
+embedding is a rank-≈10 embedding in a 128-d costume.**
+
+### ✅ RE-MEASURED AT SCALE (6 Sep) — PanPhon is **3.12**, not 4.37, and the spectra are OPPOSITE shapes
+
+`indexing-8b`, `9e5dda9`, using the **shipped** `IPAConverter.to_embedding` and the
+**shipped** `evaluation.geometry.measure_geometry` — reimplementing either would
+have made the control meaningless.
+
+✅ **Control first: 299,524 v7 student embeddings return 11.067 against the known
+10.83** — a third reproduction, at a scale between the two prior ones, sampled **by
+id hash rather than `LIMIT`** because the parquet is ordered and a head sample
+measures the head. *The script exits without computing any PanPhon number if this
+fails.*
+
+```
+effective rank of 192      3,000      3.130
+                          29,768      3.104
+                         299,998      3.121
+                       2,999,994      3.122     <- flat to +/-0.5% across 1000x
+```
+
+🛑 **4.37 does not reproduce, and the discrepancy is NOT scale** — at the same
+n=3,000 the measurement is 3.130. **Finding 2's direction is confirmed and
+STRENGTHENED**: the input is *more* collapsed than recorded, so the chain holds *a
+fortiori*. **But 4.37 should not be requoted.**
+
+⚠ **A reconciliation offered as a hypothesis, not a result.** `ARABIC` measures
+**4.198**, closer to 4.37 than any other stratum, and §4.5 records the evaluation
+testsets as *"all Arabic/Hebrew/Latin"*. **If the original 3,000 came from that
+corpus rather than the index, 4.37 was a corpus property read as a representation
+property** — the fifth instance of that shape. **Unchecked.**
+
+### 🛑 The two low ranks are DIFFERENT OBJECTS — and §3's language must not migrate
+
+```
+sigma_i / sigma_1        v7 student    PanPhon192
+s5                          0.739         0.182
+s10                         0.651         0.131
+s20                         0.0059        0.103
+s100                        0.0058        0.037
+variance in top 1           0.153         0.562
+variance in top 20          0.9995        0.790
+```
+
+* **The student is DIMENSIONAL COLLAPSE** — ~10 real directions then a cliff;
+  components 20–128 carry **0.05%** between them.
+* **PanPhon is DOMINANCE** — **one** direction carrying **56.2%** of all variance,
+  then a genuine long tail; components 20–192 still carry **21%**.
+
+🛑 **So "~85% of the index's storage is spent on dimensions that carry nothing" is
+a claim about the STUDENT and survives untouched. The equivalent claim CANNOT be
+made about PanPhon, and that sentence must not migrate.** A participation ratio of
+3.12 with a 56% first component is not *"worse than"* 11.07 with a 15% first
+component — **it is a different geometry.**
+
+### ⚠ And "the student inherits it" is now too strong
+
+**The student's effective rank (11.07) EXCEEDS its input representation's (3.12).**
+So the input does not impose a rank ceiling that the student merely inherits — the
+student *expands* past it and then hits a cliff that PanPhon does not have.
+
+🛑 **The cliff is therefore at least partly ARCHITECTURAL, not inherited** — which
+is consistent with the weight ranks already in the table below
+(`pooling.attention.0` **4.54**, `output_proj.3` **7.08**, σ_last/σ₁ = 6 × 10⁻⁷).
+**Design consequence for v8: fixing the input representation alone may not fix the
+output.** The retrain's geometry target has to address the projection stack, not
+only what feeds it.
+
+### By script (300k each) — the averaging artefact is ruled out
+
+```
+ARABIC 4.198 · non-LATIN 3.380 · CYRILLIC 3.076 · LATIN 3.053 · CJK 2.703
+```
+
+**A 1.55× spread, so geometry genuinely differs by script — but every stratum is
+in the same regime**, and `LATIN` (80.5% of rows carrying IPA) is within 2% of the
+corpus figure.
+
+⚠ **Only effective rank and the spectrum are reported**, because
+`measure_geometry`'s neighbourhood statistics (`nn1`/`nn200`/`nn_gap`) are **not
+comparable across sample sizes** — its own docstring says so. Rank and spectrum are
+exact at every size.
 
 Consequence for search: 72.7M items packed into ~10 effective dimensions must
 be dense, which is why `Marsails → مارساليس` (0.9878, genuine) sits *below* a junk
