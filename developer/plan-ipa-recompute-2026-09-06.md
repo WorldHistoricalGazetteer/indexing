@@ -201,6 +201,66 @@ Two honest options, both out of scope until someone chooses:
 
 ---
 
+### 3.1 🛑 The script accuracies were measuring the SCRIPT, not the inference
+
+The per-script agreement spread (HIRAGANA 99.40%, THAI 91.23%, CJK 76.48%
+against LATIN 26.53%) looked like it identified where inference is defensible.
+It does not. Set each script's agreement beside the share of its LABELLED rows
+carrying that script's single most common language — the accuracy a constant
+would achieve:
+
+| script | no-lang rows | agreement | majority-class | inference − constant |
+|---|---:|---:|---:|---:|
+| LATIN | 16,211,998 | 26.53% | 23.38% (`en`) | **+3.15** |
+| CJK | 1,036,998 | 76.48% | 71.87% (`zh`) | **+4.61** |
+| CYRILLIC | 640,825 | 36.28% | 30.61% (`ru`) | **+5.67** |
+| ARABIC | 332,828 | 44.27% | 32.56% (`fa`) | **+11.71** |
+| HANGUL | 107,038 | 50.69% | 99.88% (`ko`) | −49.19 |
+| THAI | 37,988 | 91.23% | 99.91% (`th`) | −8.68 |
+| GREEK | 33,988 | 65.48% | 91.15% (`el`) | −25.67 |
+| KATAKANA | 22,521 | 11.45% | 99.87% (`ja`) | −88.42 |
+| ARMENIAN | 3,909 | 48.01% | 96.28% (`hy`) | −48.27 |
+| HIRAGANA | 4,536 | 99.40% | 99.85% (`ja`) | −0.45 |
+
+**Every script where country inference looked good is one where a CONSTANT is
+better.** HIRAGANA's 99.40% is not skill: 99.85% of hiragana toponyms are
+labelled `ja`, so the figure measures the script's mono-nationality and the
+inference is fractionally *worse* than saying `ja` every time. The scripts
+where inference genuinely beats a constant are the multi-national ones — and
+there it adds 3–12 points on top of 26–44% absolute, which is not usable.
+
+⚠ This is the **fourth** instance in this campaign of a corpus property read as
+a method property, and the second in this document. The measurement was correct
+both times; what it measured was not what the number was taken to mean.
+
+**Conclusion: country-based CLDR inference should not be used anywhere.** Where
+it is accurate a constant is more accurate; where it beats a constant it is not
+accurate.
+
+### 3.2 What the same table DOES support — a smaller, safer rule
+
+The majority-class column is itself a finding: for mono-national scripts,
+"assign the script's modal language" is 99%+ correct. And for choosing a **G2P
+backend** that is the right question — you want to know *whose phonology should
+read this string*, not whose name it originally was. Katakana is the clean
+case: a katakana toponym is often a foreign name, but Japanese phonology is
+still what should read it, so `ja` is correct for this purpose even where it is
+wrong about the name's origin.
+
+Scripts whose modal language covers ≥95% of their labelled rows — HANGUL, THAI,
+KATAKANA, HIRAGANA, ARMENIAN, GUJARATI, TAMIL, MALAYALAM, KANNADA, TELUGU —
+account for **177,318 no-lang rows: 0.956% of the no-lang population and 0.244%
+of the corpus.** Applying it would move coverage 68.428% → **68.672%**.
+
+That is small, safe and cheap, and it is the whole realistic headroom: **LATIN
+is 87.43% of all no-lang rows** and nothing here helps it. The 18.5M gap is a
+Latin-script problem, and no script- or country-conditioned rule addresses it.
+
+⚠ Not implemented. It is still an inference and would ship with a provenance
+column and its measured rate, per §3.
+
+---
+
 ## 4. Two G2P defects found on the way
 
 Both written up in
