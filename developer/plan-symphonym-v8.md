@@ -278,9 +278,29 @@ student–teacher cosine plateaus at 0.9418) → a phase-3 objective too weak to
 expand it. **The 128-d embedding is a rank-≈10 embedding in a 128-d costume.**
 
 Consequence for search: 72.7M items packed into ~10 effective dimensions must
-be dense, which is exactly why the 200 nearest neighbours of anything sit above
-0.93 and why `Marsails → مارساليس` (0.9878, genuine) sits *below* a junk
-ceiling of 0.9881. **The documented conclusion that "no cosine threshold
+be dense, which is why `Marsails → مارساليس` (0.9878, genuine) sits *below* a junk
+ceiling of 0.9881.
+
+⚠ **CORRECTED 6 Sep — the neighbour claim was CITED, never measured, and its
+universal form is false.** This document repeated the repo's note that *"the 200
+nearest neighbours of anything sit above 0.93"*. Measured directly against
+production (40 random toponyms carrying an embedding, k=200, ES cosine score
+de-normalised as `cos = 2·score − 1`):
+
+```
+              n    min      p10      median   p90      max
+1st (self)   40   1.0000   1.0000   1.0000   1.0000   1.0000
+10th         40   0.9397   0.9504   0.9768   0.9973   0.9989
+200th        40   0.9025   0.9151   0.9495   0.9600   0.9785
+
+200th neighbour above cosine 0.93:  34 of 40  (85%)
+```
+
+**The density is real — the median 200th neighbour is 0.9495 — but "of anything"
+is wrong: 15% of queries have their 200th neighbour BELOW 0.93, as low as
+0.9025.** ⚠ n=40, so this refines the claim rather than replacing it with a
+precise one. **The argument survives** (a rank-≈10 space is extremely dense, and
+that is what defeats a global threshold); **the universal quantifier does not.** **The documented conclusion that "no cosine threshold
 separates them" is correct, and it is a symptom of rank collapse, not an
 intrinsic property of phonetic matching.** Restoring rank is what would make a
 threshold exist.
