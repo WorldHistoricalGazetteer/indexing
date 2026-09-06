@@ -2763,20 +2763,53 @@ same rejection **in C++**, so Python only ever sees survivors. The entity-type
 selector (`osmium.osm.NODE | osmium.osm.WAY`) narrows it further before any
 filter runs.
 
-⚠ **No speedup figure is claimed here — this has not been measured on our data,
-and the gain depends on the tagged fraction of the specific PBF.** The mechanism
-is certain; the magnitude is not, and it should be measured rather than asserted.
-`with_locations()` still indexes every node either way — that cost does not go
+✅ **MEASURED — `indexing-9c`, job 11168150, OHM planet (1.1 GB, same tag schema,
+same code):**
+
+```
+objects crossing into Python    new      1,809,768
+                                old    172,308,444     <- 95x more
+wall clock                      new           10.0 s
+                                old          201.6 s   <- 20.16x slower
+
+counts agree across APIs: True
+  ingested 821,880 · start_date 180,746 · end_date 90,735 · either 186,133
+```
+
+⚠ **The `old` run went SECOND, holding whatever page-cache advantage the first
+pass created — the confound was deliberately set AGAINST the hypothesis. It still
+lost by 20x.**
+
+🛑 **The `seen` counts are the mechanism made visible, and they matter more than
+the wall clock:** `KeyFilter('name')` rejected **170.5 M objects in C++** that
+`SimpleHandler` dragged across the boundary to discard in Python one at a time.
+That ratio **scales with the untagged fraction**, which on the 94 GB planet is far
+higher than on OHM — so 20x is a floor for our case, not an estimate of it.
+
+✅ **The count agreement is what makes conversion safe.** Both APIs produce
+byte-identical results through the same `_classify` predicate, so converting
+`osm-places.py`'s handler is a **mechanical change with a ready-made equivalence
+test**, not a rewrite needing fresh validation against production output.
+
+⚠ `with_locations()` still indexes every node either way — that cost does not go
 away, and it is C++ side.
 
 ### Why this is live rather than housekeeping
 
 🛑 **`place#246` item 1 needs a PBF scan over OSM to size `start_date` coverage,
-and may then need a full `osm` re-ingest — 20,622,228 places from the 92 GB PBF
-on `/ix1`.** That is precisely the workload the old API is worst at. **The scan
-should be written with `FileProcessor` + filters from the outset**, and doing so
-gives a free comparison against the existing `osm-places.py` path if anyone wants
-the magnitude.
+and may then need a full `osm` re-ingest — 20,622,228 places from the 94 GB PBF
+on `/ix1`.** That is precisely the workload the old API is worst at.
+
+**Item 1's scan is running as job 11168151** (planet, `--mode new` only).
+✅ **Dropping the `old` half there was right:** the API question is a *methods*
+question that OHM answered cleanly, and re-proving it on 94 GB would spend hours
+entirely on the slow path to reach a conclusion already reached.
+
+⚠ **A pre-registered warning about how to read that result, recorded BEFORE the
+number arrives.** OHM's ingested features are **21.99% `start_date`** — but **OHM
+is OpenHistoricalMap, a corpus that exists to carry dates.** That is an upper
+bound of the most generous kind and says nothing about OSM. **If the planet comes
+back anywhere near 22%, disbelieve it until the reason is found.**
 
 ⚠ **A trap for anyone reaching for the C++ CLI as a prefilter instead:**
 
