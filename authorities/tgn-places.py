@@ -248,6 +248,22 @@ def index_tgn(zip_path):
             if not literal_data:
                 continue
             name, lang = literal_data
+            # ⚠ `und` (ISO 639-2 "undetermined"), never an empty tag. The
+            # `extract_namespace` ingest pipeline discards any toponym whose
+            # language segment is empty —
+            #     if (origName.length() == 0 || lang.length() == 0) { continue; }
+            # — inside Elasticsearch, AFTER the indexer has handed the document
+            # over. So the write reports `docs_indexed: 2,991,143, errors: 0`
+            # and the toponyms are gone, which is exactly what happened: 59.9%
+            # of tgn's toponyms were dropped, and 1,277,683 tgn places indexed
+            # with `toponyms: []` because every one of their terms was untagged.
+            #
+            # Getty routinely publishes terms with no xml:lang, and
+            # `build_side_index` stores those as `(name, "")`. tgn was the ONLY
+            # namespace of 28 emitting an empty tag — `osm` already writes
+            # `@und` for the same situation, so this matches existing practice
+            # rather than inventing a convention.
+            lang = lang or "und"
             toponym_id = f"{name}@{lang}"
             if toponym_id in seen_ids:
                 continue
