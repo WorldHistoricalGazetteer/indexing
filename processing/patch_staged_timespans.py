@@ -91,7 +91,16 @@ def main() -> int:
                 for g in doc.get("geometries") or []:
                     g["timespans"] = ts
                 patched += 1
-            fout.write(json.dumps(doc, ensure_ascii=False) + "\n")
+            # ⚠ ensure_ascii=True to MATCH THE PIPELINE, not because it is
+            # better. Every other staged writer emits \uXXXX escapes
+            # (`h3_merged/places.jsonl` carries \u0426 for Ц); writing UTF-8
+            # here re-encodes all 20.6M lines and shrinks the file ~2% —
+            # semantically identical, byte-different, and therefore exactly the
+            # kind of meaningless difference that makes a later hash comparison
+            # report a change that is not one. That is the trap flagged for
+            # `fidelity.py`'s raw hash, committed by the tool written after
+            # flagging it.
+            fout.write(json.dumps(doc, ensure_ascii=True) + "\n")
 
     # The count is the check. A patch whose ids do not occur in the snapshot
     # rewrites 20.6M lines and changes nothing, which looks identical to success
