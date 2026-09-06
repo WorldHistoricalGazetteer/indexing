@@ -2660,6 +2660,82 @@ silently.** The unit tests were green throughout because they used a *synthetic*
 mode set. The regression test now omits `eng-Latn` deliberately, so it can only
 pass through the fix.
 
+## 9c. LANGUAGE INFERENCE FOR THE 18.5M NO-LANG ROWS — a negative held back for the right reason
+
+`indexing-8b` built the (c) instrument — hide a known `lang`, infer it from the
+attested place's ccode via CLDR likely-subtags, compare — and got a **decisive
+negative it is NOT yet reporting as the answer.**
+
+```
+applicability   17,888,708 of 18,543,146 (96.47%) resolve to a single-country place
+accuracy           643,083 of  1,985,006  =  32.40%
+countries >=90%          0        >=95%: 0        >=99%: 0
+FR 13.19%   ES 13.91%   IT 16.03%   IN 7.89%   DE 24.36%
+```
+
+🛑 **But the confusion table says the measurement may be on the wrong
+population.** The dominant error is `true=en, inferred=<local language>`:
+
+```
+IN true=en -> hi  21,256      DE true=en -> de  15,360
+ID true=en -> id  20,618      JP true=en -> ja  14,487
+CN true=en -> za  16,282      FR true=en -> fr  11,111
+```
+
+**Those are English EXONYMS.** Inferring "German" for a German place is not wrong
+about the *place* — it is wrong about a *label that was never local*. And **the
+labelled rows are not a random sample of the unlabelled ones**: the no-lang
+population is **71.35% `osm`**, and OSM's `name` tag is the **local** name, an
+endonym. So the instrument may be **understating** accuracy on precisely the
+population that needs it.
+
+⚠ **Fourth instance of §8.3b** — a corpus property read as a method property, this
+time inside the validation rather than the corpus. `indexing-8b` would have
+reported 32.4% as a clean refutation an hour earlier.
+
+⚠ **And it cuts both ways: `US true=ceb → en`, 17,686 rows.** The Lsjbot labels are
+inside the GROUND TRUTH, so part of "truth" is the contamination we quarantined.
+Not yet separated. Job 11168562 re-runs stratified by namespace with
+English-labelled rows held out.
+
+### 🛑 A deeper limit on (c) that stratification cannot remove
+
+Even a clean stratified result is an **upper bound on confidence, not a
+validation**. **Labelledness is itself non-random**: a row has a `lang` because
+something supplied one, and rows lacking one may differ systematically *within the
+same namespace*. **An imputation cannot be fully validated on the labelled subset
+when being labelled is the thing that differs.**
+
+✅ **Consequence, and it is unconditional:** any inferred `lang` ships with its
+**provenance flag and the measured error rate stamped beside it**, whatever the
+accuracy turns out to be — because the accuracy itself cannot be fully validated.
+
+### ✅ The result that survives either way: accuracy is SCRIPT-dependent, not country-dependent
+
+```
+HIRAGANA 99.40%   THAI 91.23%   CJK 76.48%   GREEK 65.48%   HANGUL 50.69%
+ARABIC   44.27%   CYRILLIC 36.28%   LATIN 26.53%   KATAKANA 11.45%
+```
+
+**Effectively mono-national scripts infer almost perfectly; Latin — spread over a
+hundred countries — is hopeless, and Latin is 16.2M of the 18.5M no-lang rows.**
+That is the whole of the headline number. **So if any inference is defensible it
+is script-first and narrow, not country-first and general.**
+
+### 🛑 KATAKANA at 11.45% CAVEATS §9b's kanji→kana harvest
+
+**Katakana is the Japanese script for FOREIGN loanwords**, so a katakana toponym
+is disproportionately a *transliterated non-Japanese name* and the correct `lang`
+is often not `ja` at all.
+
+⚠ **That is the same phenomenon this document met from the other direction**: §9b
+proposed harvesting kanji→kana pairs as Japanese readings, and flagged
+`済州島 → チェジュ島` (Jeju) as a Japanese rendering of a Korean name rather than a
+reading. **`indexing-8b` measured independently what that caveat guessed at.**
+Two investigations, opposite directions, same finding — **the kana half of a
+kanji/kana pair is not reliably a reading, and a harvest must separate readings
+from transliterations rather than assume.**
+
 ## 10. The pending IPA / PanPhon recomputation
 
 The campaign deferred recomputing IPA and PanPhon "pending any retraining".
