@@ -256,17 +256,58 @@ Getty **declaring** the romanisation; the filter discards that subtag and then
 rejects the row *for being romanised*. It is `lang_variant`-blind at precisely
 the point where the variant would justify the script.
 
-✅ **Checkable with no re-ingest** — the skips are **recorded**:
-`skipped_batch.append((top_id, 'lang_script_mismatch', lang, script_value))` into
-`skipped_toponyms` (`:654`). Querying that table by reason and lang should show
-the pinyin / `fa-Latn` / `ja-Latn` populations *present by name* — a positive
-presence rather than another absence.
+### ✅ MEASURED — 8 of 8, with a positive control that turns it into mechanism
+
+🛑 **The skip log does NOT survive, and that is a separate defect.** I proposed
+querying `skipped_toponyms` — but `rebuild_toponyms_index:2150` builds into a
+`tempfile.TemporaryDirectory`, so the table is written, used, and **destroyed
+with the run**. `/ix1/ishi/data/toponyms.duckdb` does not exist (controlled: the
+directory is readable, mode 775, 19 entries, no `.duckdb` at all). **A filter
+discarding ~1.16M rows leaves no durable record of what it dropped.** That is
+worth fixing independently of the romanisation question.
+
+✅ **`indexing-04` used a natural control instead, and it is better than the skip
+log would have been.** The hypothesis predicts *exactly which* languages are
+zeroed: those in `LANG_EXPECTED_SCRIPTS` whose set excludes LATIN.
+
+```
+lang  in dict  expected scripts             store LATIN rows
+zh    yes      CJK                                         0
+ja    yes      CJK, HIRAGANA, KATAKANA                     0
+ko    yes      HANGUL, CJK                                 0
+ru    yes      CYRILLIC                                    0
+el    yes      GREEK                                       0
+ar    yes      ARABIC                                      0
+fa    yes      ARABIC                                      0
+bo    NO       (absent from the dict)                  8,431
+```
+
+🛑 **`bo` is the positive control that makes this mechanism rather than
+correlation.** Getty publishes 7,904 `bo-Latn` forms and **they survived** —
+purely because Tibetan is not one of the 38 languages enumerated. Had the cause
+been anything upstream (ingest, dedup, normalisation), Tibetan romanisations
+would have died with the Chinese ones. **They did not.**
+
+### 🛑 THE FILTER IS ALREADY INCONSISTENT — which is what makes the exemption principled
+
+The rule as implemented is not *"we filter romanisations"*. It is **"we filter
+romanisations of the 38 languages someone enumerated"** — Tibetan, Ethiopic,
+Khmer, Lao and every other unlisted script keep theirs. Nothing about data
+quality, attestation, or the names themselves separates `bo-Latn` from
+`zh-Latn-pinyin`.
+
+✅ **And the precedent already exists in the dict.** `'sr': {Script.CYRILLIC,
+Script.LATIN}` — the author *already accepted* that some languages' Latin forms
+are legitimate, and implemented it as a **hand-maintained exception**. The
+proposed exemption does not introduce a new principle; it **generalises an
+existing one from a hardcoded list to the data's own declaration.**
 
 ### THE FIX IS A NAMED EXEMPTION, NOT A REMOVAL
 
 **Exempt from `is_script_mismatch` any form whose language tag explicitly
 declares its script.** Where the tag says `-Latn`, the romanisation is
-**asserted, not erroneous**. The filter stays correct for its real purpose — an
+**asserted, not erroneous** — and `sr`'s hardcoded `{CYRILLIC, LATIN}` shows the
+principle was already conceded, just not read from the data. The filter stays correct for its real purpose — an
 *unmarked* `Beijing@zh` genuinely is a data error that would pollute the "what
 does Chinese look like" signal — and Getty's marked forms stop being collateral.
 **This is what would deliver the attested cross-script pairs to the selector.**
@@ -281,7 +322,11 @@ does Chinese look like" signal — and Getty's marked forms stop being collatera
 * **"tgn's toponym count should approach 5.3M" therefore cannot happen**, dedup
   alone forbids it — so anyone testing that prediction would see it fall short
   and wrongly conclude the fix failed. **The sound test is `zh` + LATIN becoming
-  non-zero**: binary, and unaffected by dedup.
+  non-zero**: binary, dedup-immune, and currently exactly 0. ⚠ **It will move
+  only if the FILTER changes** — a places re-ingest cannot touch it, because
+  `rebuild_toponyms_index` reads the staged tree and never passes through
+  `extract_namespace` at all. **The ingest gap and the romanisation loss are TWO
+  mechanisms, both live, independent of each other.**
 
 ⚠ **BOTH THINGS ARE TRUE AT ONCE.** The live index *is* still pre-fix — 1,277,683
 tgn places with no toponyms at all (42.72%), exactly #246's figure — and that is
