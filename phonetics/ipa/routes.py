@@ -56,6 +56,35 @@ SCRIPT_TAG: Dict[str, str] = {
     "KANNADA": "Knda", "GUJARATI": "Gujr", "THAI": "Thai",
     "GEORGIAN": "Geor", "ARMENIAN": "Armn", "HANGUL": "Hang",
     "CJK": "Hans", "HIRAGANA": "Hrgn", "KATAKANA": "Ktkn",
+    # ⚠ THE FIX. This table had 19 entries against `Script`'s 20, and the
+    # missing one was the catch-all: `SCRIPT_TAG.get("OTHER")` returned None, so
+    # `if iso3 and tag` at the bottom of `resolve` could never be true and every
+    # one of these writing systems returned `no_route` with a correctly-derived
+    # iso3 in hand. `mya-Mymr`, `pan-Guru`, `bod-Tibt`, `sin-Sinh`, `khm-Khmr`
+    # and `sat-Olck` were hand-written, installed, and unreachable.
+    #
+    # A tag here is a FACT about the writing system, not a claim that a route
+    # exists — `mode in self.modes` still gates that — so MONGOLIAN and
+    # CANADIAN_ABORIGINAL are listed despite having no mode: they resolve to
+    # `no_route` either way, and naming them keeps this table a description of
+    # Unicode rather than of our current coverage.
+    "MYANMAR": "Mymr",
+    "GURMUKHI": "Guru",
+    "TIBETAN": "Tibt",
+    "SINHALA": "Sinh",
+    "KHMER": "Khmr",
+    "OL_CHIKI": "Olck",
+    "TIFINAGH": "Tfng",
+    "ETHIOPIC": "Ethi",
+    "ORIYA": "Orya",
+    "LAO": "Laoo",
+    "MONGOLIAN": "Mong",
+    "CANADIAN_ABORIGINAL": "Cans",
+    "BOPOMOFO": "Bopo",
+    "THAANA": "Thaa",
+    "NKO": "Nkoo",
+    "SYRIAC": "Syrc",
+    "COPTIC": "Copt",
 }
 
 BACKEND_EPITRAN = "epitran"

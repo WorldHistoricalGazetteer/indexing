@@ -56,7 +56,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 # --- BEGIN CANONICAL TOKENISER ---
-# CANONICAL-BLOCK v1 sha256=9a879b4cc312902c2447baf6671fca9886fe5ba2d2584cc6ce16bc054405a47f
+# CANONICAL-BLOCK v1 sha256=74fb6176adfae9b44e2a591fee4daab973ba7fc68b7a33fd4411dedba28e6685
 # CANONICAL-BLOCK Convention, stated because the same block has been hashed two different
 # CANONICAL-BLOCK ways elsewhere and nothing ever compared them: sha256 over this block
 # CANONICAL-BLOCK INCLUDING both marker lines and EXCLUDING every line beginning
@@ -125,6 +125,29 @@ _SCRIPT_UNICODE_RANGES: List[Tuple[str, List[Tuple[int, int]]]] = [
              (0xF900, 0xFAFF)]),
     ("HIRAGANA", [(0x3040, 0x309F), (0x1B000, 0x1B0FF)]),
     ("KATAKANA", [(0x30A0, 0x30FF), (0x31F0, 0x31FF), (0xFF65, 0xFF9F)]),
+    # ⚠ Kept in step with `script_detection.SCRIPT_RANGES`, same order, same
+    # blocks — `test_tokeniser_contract` compares the two codepoint maps entry
+    # for entry, so a divergence here is a test failure rather than a silent
+    # reclassification. The model is UNAFFECTED: `encode_script` falls back to
+    # OTHER for a name the 20-entry `script_vocab.json` does not carry, which is
+    # exactly the id these characters already receive today.
+    ("MYANMAR", [(0x1000, 0x109F), (0xA9E0, 0xA9FF), (0xAA60, 0xAA7F)]),
+    ("GURMUKHI", [(0x0A00, 0x0A7F)]),
+    ("TIBETAN", [(0x0F00, 0x0FFF)]),
+    ("SINHALA", [(0x0D80, 0x0DFF)]),
+    ("KHMER", [(0x1780, 0x17FF), (0x19E0, 0x19FF)]),
+    ("OL_CHIKI", [(0x1C50, 0x1C7F)]),
+    ("TIFINAGH", [(0x2D30, 0x2D7F)]),
+    ("ETHIOPIC", [(0x1200, 0x137F), (0x1380, 0x139F), (0x2D80, 0x2DDF), (0xAB00, 0xAB2F)]),
+    ("ORIYA", [(0x0B00, 0x0B7F)]),
+    ("LAO", [(0x0E80, 0x0EFF)]),
+    ("MONGOLIAN", [(0x1800, 0x18AF)]),
+    ("CANADIAN_ABORIGINAL", [(0x1400, 0x167F), (0x18B0, 0x18FF)]),
+    ("BOPOMOFO", [(0x3100, 0x312F), (0x31A0, 0x31BF)]),
+    ("THAANA", [(0x0780, 0x07BF)]),
+    ("NKO", [(0x07C0, 0x07FF)]),
+    ("SYRIAC", [(0x0700, 0x074F), (0x0860, 0x086F)]),
+    ("COPTIC", [(0x2C80, 0x2CFF)]),
 ]
 
 SCRIPT_OTHER = "OTHER"

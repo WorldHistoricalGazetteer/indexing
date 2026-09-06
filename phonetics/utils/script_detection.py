@@ -33,6 +33,31 @@ class Script(str, Enum):
     CJK = "CJK"  # Chinese/Japanese Kanji - will be romanized
     HIRAGANA = "HIRAGANA"  # Japanese - will be romanized
     KATAKANA = "KATAKANA"  # Japanese - will be romanized
+
+    # ⚠ ADDED — these were all folded into OTHER, and `routes.SCRIPT_TAG` has no
+    # OTHER entry, so `RouteTable.resolve` could never build a mode name for any
+    # of them: 252,447 rows returned `no_route` BEFORE Epitran was consulted,
+    # including 159,073 for which a hand-written rule set was already installed.
+    # Splitting them is what makes those rules reachable; it is a schema fix, not
+    # a G2P one. Measured 6 Sep 2026 over the 395,409 OTHER rows in the IPA store.
+    MYANMAR = "MYANMAR"
+    GURMUKHI = "GURMUKHI"
+    TIBETAN = "TIBETAN"
+    SINHALA = "SINHALA"
+    KHMER = "KHMER"
+    OL_CHIKI = "OL_CHIKI"
+    TIFINAGH = "TIFINAGH"
+    ETHIOPIC = "ETHIOPIC"
+    ORIYA = "ORIYA"
+    LAO = "LAO"
+    MONGOLIAN = "MONGOLIAN"
+    CANADIAN_ABORIGINAL = "CANADIAN_ABORIGINAL"
+    BOPOMOFO = "BOPOMOFO"
+    THAANA = "THAANA"
+    NKO = "NKO"
+    SYRIAC = "SYRIAC"
+    COPTIC = "COPTIC"
+
     OTHER = "OTHER"
 
 
@@ -63,7 +88,26 @@ EPITRAN_SUPPORTED_SCRIPTS = {
     Script.CJK,  # Mandarin via cmn-Hans
     Script.HIRAGANA,  # Japanese
     Script.KATAKANA,  # Japanese
+    # Installed modes verified in the live env, 6 Sep 2026 (218 modes):
+    Script.MYANMAR,     # mya-Mymr
+    Script.GURMUKHI,    # pan-Guru
+    Script.TIBETAN,     # bod-Tibt
+    Script.SINHALA,     # sin-Sinh
+    Script.KHMER,       # khm-Khmr
+    Script.OL_CHIKI,    # sat-Olck
+    Script.ETHIOPIC,    # amh-Ethi, tir-Ethi
+    Script.ORIYA,       # ori-Orya
+    Script.LAO,         # lao-Laoo
+    Script.SYRIAC,      # aii-Syrc
 }
+
+# ⚠ NOTHING READS `EPITRAN_SUPPORTED_SCRIPTS` — grepped 6 Sep 2026, the only
+# references are in this module. It is kept in step anyway because it encodes
+# the same "these 19 are the world" assumption that `SCRIPT_TAG` did, and a
+# stale copy of a fixed assumption is how the next reader re-derives the bug.
+# TIFINAGH and BOPOMOFO are deliberately absent: rule sets are drafted
+# (`developer/epitran-drafts/`) but not installed, and this set is about what
+# the installed Epitran can do, not what we hope it will.
 
 # Unicode block ranges for each script
 # Format: list of (start, end) inclusive ranges
@@ -161,6 +205,71 @@ SCRIPT_RANGES: Dict[Script, list] = {
         (0x30A0, 0x30FF),  # Katakana
         (0x31F0, 0x31FF),  # Katakana Phonetic Extensions
         (0xFF65, 0xFF9F),  # Halfwidth Katakana
+    ],
+    # ⚠ APPENDED, AND THE POSITION IS DELIBERATE. `_build_codepoint_map` lets a
+    # later entry win, and Hebrew/Armenian already rely on that. None of the
+    # ranges below overlaps an existing one (checked block by block, and pinned
+    # by `test_script_split_routes.test_new_ranges_do_not_collide`), so appending
+    # cannot reclassify a single character that was previously classified.
+    Script.MYANMAR: [  # Myanmar, + Extended-B, + Extended-A
+        (0x1000, 0x109F),
+        (0xA9E0, 0xA9FF),
+        (0xAA60, 0xAA7F),
+    ],
+    Script.GURMUKHI: [  # Gurmukhi
+        (0x0A00, 0x0A7F),
+    ],
+    Script.TIBETAN: [  # Tibetan
+        (0x0F00, 0x0FFF),
+    ],
+    Script.SINHALA: [  # Sinhala
+        (0x0D80, 0x0DFF),
+    ],
+    Script.KHMER: [  # Khmer, + Khmer Symbols
+        (0x1780, 0x17FF),
+        (0x19E0, 0x19FF),
+    ],
+    Script.OL_CHIKI: [  # Ol Chiki (Santali)
+        (0x1C50, 0x1C7F),
+    ],
+    Script.TIFINAGH: [  # Tifinagh
+        (0x2D30, 0x2D7F),
+    ],
+    Script.ETHIOPIC: [  # Ethiopic, + Supplement, + Extended, + Extended-A
+        (0x1200, 0x137F),
+        (0x1380, 0x139F),
+        (0x2D80, 0x2DDF),
+        (0xAB00, 0xAB2F),
+    ],
+    Script.ORIYA: [  # Oriya (Odia)
+        (0x0B00, 0x0B7F),
+    ],
+    Script.LAO: [  # Lao
+        (0x0E80, 0x0EFF),
+    ],
+    Script.MONGOLIAN: [  # Mongolian
+        (0x1800, 0x18AF),
+    ],
+    Script.CANADIAN_ABORIGINAL: [  # UCAS, + Extended
+        (0x1400, 0x167F),
+        (0x18B0, 0x18FF),
+    ],
+    Script.BOPOMOFO: [  # Bopomofo, + Extended
+        (0x3100, 0x312F),
+        (0x31A0, 0x31BF),
+    ],
+    Script.THAANA: [  # Thaana (Dhivehi)
+        (0x0780, 0x07BF),
+    ],
+    Script.NKO: [  # N'Ko
+        (0x07C0, 0x07FF),
+    ],
+    Script.SYRIAC: [  # Syriac, + Supplement
+        (0x0700, 0x074F),
+        (0x0860, 0x086F),
+    ],
+    Script.COPTIC: [  # Coptic
+        (0x2C80, 0x2CFF),
     ],
 }
 
