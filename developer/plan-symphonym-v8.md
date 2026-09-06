@@ -4000,27 +4000,52 @@ feeds training correctly, and **silently reverts to 0% IPA the moment the tgn
 rebuild runs — with that run reporting success.** Required order:
 
 1. `tgn` re-ingest lands in production
-2. 🛑 **HYDRATE THE SYMPHONYM CACHE FROM THE LIVE `toponyms` INDEX — BEFORE
-   ANYTHING REPLACES IT.** See below; skipping this costs ~28h of GPU and the
-   source is destroyed by step 3.
+2. ✅ **HYDRATE THE SYMPHONYM CACHE FROM THE LIVE `toponyms` INDEX.** ⚠ The
+   binding deadline is **before the OLD INDEX IS DELETED**, *not* before the
+   rebuild — see the amendment below. Do it here anyway: it is cheap and removes
+   the question.
 3. `rebuild_toponyms_index` re-runs extract-to-DuckDB → **new** inventory
 4. IPA top-up computes the toponyms that are new in that inventory
 5. **then** backfill store → toponyms DuckDB, last
 
 ### 🛑 A STEP THAT MUST HAPPEN BEFORE THE REBUILD, AND WHOSE INPUT THE REBUILD DESTROYS
 
-Raised by `indexing-9c`, 6 Sep, and it belongs in this ordering rather than in an
-ops note. **The Symphonym embedding cache must be hydrated from the CURRENT live
-`toponyms` index before the rebuild replaces it.** `rebuild_toponyms_index`
-writes `panphon_embedding` only — the 128-d Symphonym vectors come from the
-separate stage 2 — so the live index is the *only* place the existing vectors
-exist. Hydrating from it gives **~99% cache hits**; losing that source costs
-**~28h GPU** to recompute what we already had.
+Raised by `indexing-9c`, 6 Sep. **The Symphonym embedding cache must be hydrated
+from the live `toponyms` index.** `rebuild_toponyms_index` writes
+`panphon_embedding` only — the 128-d Symphonym vectors come from the separate
+stage 2 — so an existing index is the *only* place the existing vectors live.
+Hydrating gives **~99% cache hits**; losing the source costs **~28h GPU** to
+recompute what we already had.
 
-⚠ **The ordering is unforgiving because the rebuild does not merge.** It builds
-fresh in scratch and `shutil.copy2`s over the target, so the moment it lands the
-hydration source is gone. **There is no recovery step; there is only doing it
-first.**
+### 🛑 AMENDED — THE DEADLINE IS THE DELETION, NOT THE REBUILD
+
+⚠ **This section first said "the moment the rebuild lands the hydration source is
+gone; there is no recovery step." That is FALSE once the rebuild targets a new
+dated concrete index** — which the `ca07cfe` guard now requires. Verified in the
+code rather than reasoned from the rebuild alone:
+
+* `processing/hydrate_symphonym_cache.py` takes **`--index-pattern`** (default
+  `toponyms_*`) and scrolls **whatever index it is pointed at**, in 5,000-row
+  batches. It was never coupled to the alias.
+* The rebuild's STEP 4 delete is guarded — `if es.indices.exists(index=args.toponyms_index)`
+  (`:2404`). Against a **new dated name that does not exist yet**, the branch is
+  not entered, **so the old index is untouched and survives.**
+
+**So the binding constraint is "hydrate before the OLD INDEX IS DELETED", not
+"before the rebuild".** That is materially different: the campaign has a
+**recovery path** — hydrate late, from the still-present old index — rather than
+a one-shot ordering with ~28h GPU as the penalty for mis-sequencing. **The ~28h
+becomes real only if the old index is deleted while the cache is cold.** Hydrate
+early regardless, because it is cheap and removes the question.
+
+🛑 **THE GENERAL LESSON, which is why this amendment is recorded rather than
+silently edited.** The original ordering was **correct for the code as it stood
+that morning** — the rebuild's default target was the alias, i.e. the live index,
+so the rebuild really would have destroyed the source. **`indexing-9c`'s own
+alias fix changed the hazard out from under the constraint derived from it.**
+⚠ **A constraint derived from a defect needs RE-DERIVING when the defect is
+fixed** — otherwise the plan keeps encoding a hazard that no longer exists, and
+the remedy outlives the disease.
 
 ### ⚠ TWO REPO-WIDE DEFECTS FOUND STARTING THE tgn RE-INGEST (`indexing-9c`)
 
