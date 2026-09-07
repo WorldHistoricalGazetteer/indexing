@@ -4597,6 +4597,51 @@ Myanmar row cannot trip it, and *adding* entries would have created a new class 
 drop for an unmeasured population. **The fourth would-be check-that-cannot-pass
 caught before shipping.**
 
+### 🛑 v8 GATE ITEM — PROJECT A SPLIT THE **DETECTOR**, NOT THE **MODEL VOCABULARY**
+
+Found by `indexing-17`, 7 Sep, and verified here. **`hf/vocab/script_vocab.json`
+holds `script_to_id` with 20 entries and `MYANMAR`, `TIFINAGH`, `BOPOMOFO`,
+`SINHALA` and `KHMER` are all ABSENT.** `OTHER` = 19, `LATIN` = 0.
+
+**Project A split the `Script` enum deliberately without touching the model
+vocabulary, so the 72.7M stored vectors stay valid** — `encode_script` falls back
+to `OTHER` for any name the vocabulary lacks. **So all 17 newly-split scripts are
+still script-id 19 to v7.**
+
+🛑 **PROJECT A MADE THE IPA REACHABLE; IT DID NOT MAKE THE SCRIPTS
+REPRESENTABLE.** Two different fixes, and **only the first has shipped.**
+
+🛑 **THE GATE: if v8's vocabulary is built from the same 20-entry file, the
+retrain REPRODUCES THE BLACKOUT EXACTLY.** ⚠ Obvious today, invisible in three
+weeks — and it would present as *"we fixed the scripts and the blackout
+persisted"*, which is the worst debugging position available. **v8's script
+vocabulary must be rebuilt from the split enum.**
+
+⚠ **`encode_script`'s own docstring sharpens why the fallback matters.** The
+pre-fix path was `script_to_id.get(script_name, 0)` — **and 0 is not a sentinel,
+it is LATIN.** A script the detector could name but the vocabulary could not
+represent was **silently embedded as Latin**. The `OTHER` fallback means the
+newly-split scripts now fail *visibly* rather than *wrongly* — but they still
+fail.
+
+### ⚠ AND IT CORRECTS A FIGURE THIS DOCUMENT ACCEPTED FOR AN HOUR
+
+The Shan/Mon/Pa'o alias was withdrawn on the reasoning that its counterfactual
+was *"script-level transfer at R@200 0.562, median rank 74, which demonstrably
+works"*. 🛑 **That figure is from the `script COVERED` stratum — ARABIC, CYRILLIC,
+LATIN — the scripts that ARE in the 20-entry vocabulary. Myanmar-script rows were
+in the `OTHER` bucket of the same table, at R@200 0.003.**
+
+✅ **So the counterfactual for Shan is the BLACKOUT, not transfer, and the alias
+is ADDITIVE rather than displacing.** Decision retaken: **take the alias**,
+labelled as a graphemic Pali-register reading rather than Shan phonology, flagged
+for review, with `shn-Mymr` proper still on the list.
+
+⚠ **The instructive part is how it survived an hour.** The *reasoning* was
+checkable and was checked; **the PROVENANCE OF THE NUMBER was not visible in the
+argument, and nobody asked which rows it was measured over** — the same question
+this campaign has pressed on every other claim today.
+
 ### ✅ THE RULE DRAFTS WORK — Myanmar 16.6% → 98.7%
 
 | mode | shipped | drafted |
