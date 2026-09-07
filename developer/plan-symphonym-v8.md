@@ -6896,3 +6896,56 @@ POST-CHANGE  derive_name_forms('Valparaíso') -> ['Valparaiso']   PASS
 **The failure you demonstrate must be the failure the test is FOR.** Pre-change
 tree size-checked at 58,196 bytes so a silently-empty extraction could not pass
 as a run.
+
+## 23. `#249` — three measurements, and a challenge to a number we are PUBLISHING
+
+`indexing-04`. Status: three measurements posted to the issue; **the stratified
+judgement sample — the actual deliverable — is not started.** M2 is **not
+started** (see §23.3).
+
+### 23.1 `osm` DOMINATES THE COUNT AND BARELY THE HARM
+
+```
+discards           osm 43,899   vs   21,978 across the other 28 namespaces
+truncation rate    osm  1.6%    vs   75.4% corpus-wide      ← INVERTED profile
+places, no clean name  156,608  vs    4,117                 ← where it really dominates
+```
+
+⚠ **`osm` and `tgn` had been excluded from every previous figure**, so the
+namespace carrying the most junk was absent from the junk census. **The largest
+contributor to the count is among the smallest to the harm** — which is why a
+single "junk" total would have misled in both directions.
+
+### 23.2 ✅ A PROPOSED JUNK CLASS, FALSIFIED BY MEASUREMENT
+
+A **Wikidata `sameAs` link is a 10–100× protective signal** already present in
+staged data — 18.67% baseline against 0.16–1.89% in suspect strata. Applied to
+`04`'s own proposed class it **killed the hypothesis**: `;`-separated names score
+**25.48%, ABOVE baseline**, because they are **simplified/traditional Chinese
+variants**, not junk. ✅ **A junk class disproved before anything was deleted on
+it.**
+
+Re-ingest scoping: `noname` is worthless (93 objects); `ref` confirms only 4% of
+the all-digits class. **Recommendation: fold the tags into the re-ingest the
+pipeline fix already requires rather than run one for this.**
+
+### 23.3 🛑 A FINDING THAT CHALLENGES THE ARTIFACT'S HEADLINE
+
+The Artifact tells colleagues that **~25 points of coverage are unreachable
+because a quarter of the corpus does not say what language it is in**
+(`no_lang` = 18,543,250, 25.236%).
+
+⚠ **`04` reports that `osm`'s share of that is large BY CONSTRUCTION: the
+extractor writes the bare `name` tag as `@und` for every object.** So an unknown
+part of the 18.5M is not "a name whose language nobody recorded" but **"a name
+our own extractor declined to tag"** — a different problem with a different fix,
+and one that does not need a language-identification project at all.
+
+**So `#249` is now scoped as a correctness check on a published number**, not a
+corpus-quality exercise: **how much of the 18,543,250 is junk, how much is our
+own `@und` convention, and how much is genuinely untagged** — per namespace,
+`osm` first, denominator on every figure.
+
+🛑 **If a material share is either, the ~25-point claim OVERSTATES the difficulty
+and language identification is a smaller project than we are telling people.**
+That must be settled before the Artifact is used to justify scope.
