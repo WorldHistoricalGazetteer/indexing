@@ -6591,3 +6591,90 @@ bridged. **Romanising the QUERY at search time would reach them** — which is w
 
 ⚠ **That is a gateway change, not an indexing one, and it is unscoped.** Recorded
 as a flag rather than a proposal.
+
+## 19. 🛑 THE RE-EXTRACT IS A PREREQUISITE — but for the OPPOSITE reason to the one feared
+
+I asked `8b` whether training inherits the stale `script` values. **The answer was
+the third option — "something else entirely" — and it inverts the argument while
+keeping the conclusion.**
+
+**The code path says yes.** `data_loading.py:398` reads `script` from the training
+parquet; `export_training_parquet` (`rebuild_toponyms_index.py:1229`) SELECTs
+`t.script` **straight from the store** with no recomputation; `detect_script` is
+called exactly **once** in the whole file, at `:938`, inside
+`extract_toponyms_to_db`. **So a training parquet inherits whatever detector was
+current when its EXTRACT ran.**
+
+🛑 **BUT THE ARTEFACT SAYS OTHERWISE, AND THE ARTEFACT IS THE ANSWER.** None of
+the ten languages appears in **any** training parquet — v5, v6 or v7, in any
+script. **Not as `OTHER`. Not at all.**
+
+```
+lang     total   in gn/wd/tgn   with ipa   training-eligible
+my      91,068         63,515          0                  0
+pa      23,568         22,796          0                  0
+bo      23,987         15,638          0                  0
+si      15,751         14,528          0                  0
+km      23,452         21,810          0                  0
+sat     13,481         13,222          0                  0
+lo      16,663         15,026          0                  0
+am       9,628          9,070          0                  0
+or       9,044          7,525          0                  0
+ti         964            622          0                  0
+
+183,752 of 227,606 rows (80.7%) ARE already in gn/wd/tgn.
+ZERO have IPA.  Training-eligible: 0.
+```
+
+✅ **So the feared failure cannot happen.** The stale `script` values never reach
+a model, because **the rows carrying them never reach training.** They are gated
+by `WHERE t.ipa IS NOT NULL` (`generator.py:155`), not by namespace — the same
+gate behind the GAIN stratum finding. **A row without IPA is INELIGIBLE for a
+training pair, not merely unlabelled.**
+
+### 19.1 THE ORDERING IS STRICT, AND IT MAKES THIS A BLOCKER
+
+```
+re-extract → correct script → route succeeds → IPA → training-eligible
+```
+
+**80.7% of those 227,606 rows are already sitting in the training namespaces**,
+every one blocked at the IPA gate, and the IPA gate is blocked on the script.
+**So the "+0.23 coverage" line badly understates it: the same intervention is the
+entry ticket for ~183,752 names, in ten languages whose rule files are already
+installed and currently reach nothing.**
+
+⚠ **This corrects the Artifact's most optimistic claim.** §5 said covering the
+missing scripts was **"largely done — 172,210 rows"**. The *rules* are done; the
+*corpus* is not, and until it is re-extracted **those rule files reach zero
+training examples**. Now reads **"rules done, corpus not yet"**, with the gate
+stated in full.
+
+### 19.2 SCOPE — determined, and open to SG's override
+
+`8b` correctly flags that ranking this ahead of the PoC depends on **whether v8
+is meant to cover those ten languages at all.** ✅ **It is: they ARE the
+blackout.** Burmese, Punjabi, Tibetan, Sinhala, Khmer, Santali, Lao, Amharic,
+Odia and Tigrinya are precisely the post-split additions this campaign exists to
+reach, and the Artifact's headline is "a dozen writing systems the model never
+learned — 10% of all queries". **Training v8 without them would leave the
+campaign's own premise unmet**, so the re-extract precedes training-data
+generation.
+
+### 19.3 ✅ AND THE ADJACENT CHECK EXTENDS THE VOCABULARY RESULT
+
+The training parquet's `script` column is **`VARCHAR` in all three generations**,
+and `data_loading.py:391` carries an explicit note saying so. **So nothing
+anywhere stores an integer script id** — the earlier artefact audit (§16.3) does
+extend to the training format, the pinned-id scheme protects everything, and
+regeneration would reinterpret nothing **because there is nothing encoded to
+reinterpret.** ⚠ That was worth checking rather than assuming: the audit covered
+DuckDBs and parquets, not the training-example format.
+
+⚠ **`8b`'s own caveat, kept:** the zeros above are the *rebuild's* IPA column
+(its 46.5% pass), not `8b`'s store (67.8%). Its store routes none of those ten
+either — `no_route`, for the same script reason — **so the conclusion holds under
+both**, but the figures are the rebuild's.
+
+✅ **No `vundscript` training parquet exists yet, so nothing is committed either
+way.**
