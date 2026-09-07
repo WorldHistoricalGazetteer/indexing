@@ -368,11 +368,14 @@ class TestInventoryStalenessGuard(unittest.TestCase):
 
 
 class TestLangWitness(unittest.TestCase):
-    """The tgn empty-lang fix RE-KEYS toponyms (`X@` -> `X@und`), so an
-    inventory built after it has a large `und` population and few empty tags.
-    This is a SECOND witness, independent of the rebuild's own sidecar: the
-    sidecar is the producer's self-report and a correct re-stamp satisfies it
-    while the content is still wrong."""
+    """Counts und vs empty lang tags per namespace.
+
+    ⚠ It reports COUNTS and explicitly refuses a verdict. The tgn fix re-keys
+    `X@` -> `X@und` in the PLACES index, but the vocabulary build normalises
+    und away at rebuild_toponyms_index.py:935, so this inventory can never show
+    und however the authority behaves. An earlier version returned
+    `fix_appears_applied` from those counts and I escalated a false alarm on
+    it."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -404,7 +407,8 @@ class TestLangWitness(unittest.TestCase):
         self.assertEqual(w["total"], 10)
         self.assertEqual(w["und"], 0)
         self.assertEqual(w["empty_lang"], 6)
-        self.assertFalse(w["fix_appears_applied"])
+        self.assertTrue(w["und_is_normalised_away_here"])
+        self.assertIn("NOT OBSERVABLE", w["verdict"])
 
     def test_detects_inventory_built_after_the_fix(self):
         from phonetics.ipa.plan import inventory_lang_witness
@@ -413,7 +417,7 @@ class TestLangWitness(unittest.TestCase):
         w = inventory_lang_witness(self.db, "tgn")
         self.assertEqual(w["und"], 6)
         self.assertEqual(w["empty_lang"], 0)
-        self.assertTrue(w["fix_appears_applied"])
+        self.assertIn("NOT OBSERVABLE", w["verdict"])
 
     def test_counts_only_the_named_namespace(self):
         # A gn-only `und` population must not make tgn look fixed.
@@ -423,7 +427,7 @@ class TestLangWitness(unittest.TestCase):
         w = inventory_lang_witness(self.db, "tgn")
         self.assertEqual(w["total"], 3)
         self.assertEqual(w["und"], 0)
-        self.assertFalse(w["fix_appears_applied"])
+        self.assertIn("NOT OBSERVABLE", w["verdict"])
 
     def test_reports_both_counts_together(self):
         """A zero must always arrive beside its non-zero, so it can never be

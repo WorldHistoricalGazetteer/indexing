@@ -155,11 +155,32 @@ def inventory_lang_witness(inventory_db: str, namespace: str = "tgn") -> dict:
     finally:
         con.close()
     total, und, empty = row
-    return {"namespace": namespace, "total": total, "und": und,
-            "empty_lang": empty,
-            "und_pct": round(100.0 * und / total, 3) if total else None,
-            "empty_pct": round(100.0 * empty / total, 3) if total else None,
-            "fix_appears_applied": bool(und > 0 and und > empty)}
+    out = {"namespace": namespace, "total": total, "und": und,
+           "empty_lang": empty,
+           "und_pct": round(100.0 * und / total, 3) if total else None,
+           "empty_pct": round(100.0 * empty / total, 3) if total else None}
+
+    # 🛑 DO NOT REPORT A VERDICT THIS WITNESS CANNOT REACH.
+    #
+    # An earlier version returned `fix_appears_applied: und > 0 and und > empty`
+    # and this inventory made it False -- which I read as "the tgn fix did not
+    # land" and escalated. It had landed. rebuild_toponyms_index.py:935
+    # canonicalises und/zxx/mis/null/none -> None BEFORE the id is built, so a
+    # vocabulary built by that path holds `Name@` and can NEVER show `und`,
+    # whether or not the authority emits it. The witness was reporting the
+    # absence of something the consumer removes by design.
+    #
+    # `places` is where the fix is observable (it holds `@und`); the vocabulary
+    # is not. A check that returns a confident verdict it has no power to reach
+    # is worse than no check, so this returns the counts and says so.
+    out["und_is_normalised_away_here"] = True
+    out["verdict"] = (
+        "NOT OBSERVABLE in the toponyms vocabulary: rebuild_toponyms_index.py:935 "
+        "normalises und -> None before the id is built, so empty_lang is the "
+        "EXPECTED shape and und=0 is not evidence of anything. Check the `places` "
+        "index for @und instead."
+    )
+    return out
 
 
 def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
