@@ -4674,7 +4674,7 @@ Status honestly:
 | **TGN dated variants** | 40,937 pairs / **3,565 effective places** | ✅ **SCHEDULED** — the historic-orthography fine-tune, harvested from the staged extract (§6.2c) |
 | **`gvp:historicFlag`** | **22,198** `historic` | ⚠ recorded, **not scheduled** |
 | **`gvp:termFlag`** | **4,058,187** `Vernacular` | ⚠ explicitly *"available, not scheduled"* |
-| **`-Latn` romanisations** | ~1.16M | ⚠ blocked — recovered by #250, then need Latin routes that mostly do not exist |
+| **`-Latn` romanisations** | ~1.16M | ⚠ recovered by #250 — then see below, which is **better than I first said** |
 
 **🛑 AND TWO OF THEM ARE WORTH MORE THAN THAT STATUS SUGGESTS.**
 
@@ -4700,6 +4700,40 @@ answer to a question the selector currently answers by inference, so it is a
 romanised-edit-distance filter would be weakest where the model is strongest —
 **`termFlag` is the only way on the table to check that claim against ground truth
 rather than argue about it.**
+
+### 🛑 "THEN NEED LATIN ROUTES" — CORRECTED, and it is mostly a CODE MAPPING
+
+I told SG the recovered romanisations *"need `<iso3>-Latn` modes that mostly do not
+exist"*. **Measured, that is wrong in the most valuable case:**
+
+```
+cmn-Latn   EPITRAN-NATIVE, installed     zh + LATIN -> no_route   🛑
+khm-Latn   ours (SG's extensions)        km + LATIN -> ok
+mya-Latn   ours (SG's extensions)        my + LATIN -> ok
+bo / ota / kn + LATIN                    -> no_route  (genuinely absent)
+```
+
+🛑 **`cmn-Latn` ships with Epitran and the router cannot reach it**, because
+`to_iso3('zh')` returns **`zho`** — the *macrolanguage* code — while the mode is
+**`cmn-Latn`**, the individual language. It builds `zho-Latn`, finds nothing, and
+returns `no_route` **with a working Mandarin romanisation map sitting right there.**
+⚠ Same class as `ory`/`ori`, and the same shape as `Script.OTHER`: **a mode that
+exists, unreachable through a lookup.**
+
+**That is the largest single item in the `-Latn` population** — `zh-Latn-pinyin`
+alone is ~632k rows — **and it is a dictionary entry, not linguistics.** ⚠ **But the
+risk is in that dictionary entry**: `zh` as a corpus tag may cover **Yue and Wu** rows
+that must not silently become Mandarin. **Answer that before making the one-line
+change**, and scope the mapping to the `Latn` case if not.
+
+✅ **And `km`/`my` already route today**, on SG's own extensions rather than Epitran's.
+
+**What genuinely needs writing — `bod-Latn` (Wylie), `ota-Latn`, `kan-Latn` (ISO
+15919) — is among the EASIEST rule work available**, because **a romanisation scheme
+is already a phonetic notation**: the source has done the phonological work and the
+map transcribes a transcription. Same job as `cmn-Bopo`, which reached **99.8%
+parseable**. ⚠ **Pin WHICH scheme per file** — Wylie vs THL, ISO 15919 vs Hunterian —
+with `kn:iso15919` naming its own in the tag as the model case.
 
 **Nothing here is a new commitment**; it is a status correction and two sized
 opportunities. ⚠ **But "recorded, not scheduled" for a signal this large is how a
