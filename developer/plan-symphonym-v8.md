@@ -4848,11 +4848,64 @@ selector returns nothing.** One defect, traced end to end at last.
 (`WHERE t.ipa IS NOT NULL`) as excluding the 1,398,790 `und` rows. **Measured, that
 predicate excludes ALL 72,703,777 documents.**
 
-⚠ **OPEN, and it is the question to ask next:** whether an *earlier* index generation
-carried these fields, and against what the training data now in use was generated.
-⚠ **And 9c's rebuild (11170631) has been running 16 hours — if it produces a new index
-against the same schema, the field will be absent again.** **The schema needs the two
-fields declared before that lands, or the rebuild reproduces the defect.**
+🛑 **RETRACTED — "THE SCHEMA NEEDS THE FIELDS DECLARED" WAS WRONG AND WOULD HAVE
+LOOKED LIKE A FIX.** I recommended it to `9c`; `indexing-04` caught it before the run
+landed behind it.
+
+**`schemas/toponyms.json` does not set `dynamic`, so ES's default `true` applies** —
+verified. With `dynamic: true`, **ES adds an undeclared field to the mapping the first
+time a document carries it.** The mapping lacks `panphon_embedding`, ⚠ **therefore no
+document carrying it has ever been written. The schema was never the obstacle**, and
+declaring the fields changes nothing.
+
+⚠ **That recommendation was the exact failure class this document catalogues**: a
+change that lands, passes inspection, supplies a plausible reason to believe the
+problem was addressed, and reproduces the defect. **Proposed by me, in the middle of a
+week spent removing them.**
+
+✅ **It also confirms the diagnosis from a second direction.** `dynamic: true` rules
+out *silently dropped*; `_source={}` rules out *written-but-unindexed*. **Two
+mechanisms excluded, one conclusion.**
+
+### ✅ WHERE THE WRITE ACTUALLY STOPS — and it is §9e with a consequence nobody traced
+
+`:1654` is `if existing_ipa and existing_features:`, read from **the toponyms
+DuckDB** — whose `ipa` column `8b` measured **NULL across all 72,703,552 rows**. So
+the condition never holds.
+
+🛑 **And §9e already records why: there are TWO stores.** The **49,749,377 rows with
+IPA** live in `/vast/ishi/ipa-v8/store/ipa.duckdb`, **a separate file**, while every
+consumer reads the toponyms DuckDB. `8b`'s words: *"real, audited, and reachable by
+nothing."*
+
+```
+IPA computed → /vast/ishi/ipa-v8/store/ipa.duckdb   49,749,377 ok
+                        ↓  (nothing reads this)
+toponyms DuckDB `ipa`   NULL × 72,703,552
+                        ↓
+rebuild `if existing_ipa and existing_features:` → never fires
+                        ↓
+ES index has no panphon_embedding
+                        ↓
+find_similar_in_place returns [] for EVERY place
+```
+
+🛑 **THE FIX IS A PATH, NOT A SCHEMA — and it is the backfill already agreed with
+`8b`.** Its urgency has changed completely: not *"training would see 0% IPA"* but
+**"the pair selector returns nothing at all"**.
+
+⚠ **AND THE AGREED ORDERING NOW HAS A GAP.** The backfill was scheduled *after* the
+inventory rebuild, because a fresh rebuild replaces the DuckDB. **But the ES write
+happens INSIDE the same job, before any backfill can run** — so a rebuild landing
+today produces an index that cannot feed pair selection **even after the backfill
+lands.** Either the rebuild reads the v8 store directly, or the DuckDB is populated
+before the ES phase, or it takes two passes. **This is the sequencing question that
+now matters most.**
+
+⚠ **Still open:** whether an *earlier* generation carried these fields, and what the
+training data now in use was generated against. v7 **was** trained on 31,113,585 IPA
+strings, so they existed once — **this gives that loss a mechanism for the first
+time.**
 
 ### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
 
