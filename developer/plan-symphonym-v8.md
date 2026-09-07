@@ -6213,3 +6213,63 @@ producing a wrong-shaped query; it would have been discarded on arrival.
 Cancelling it saved roughly four more hours of a run that had to be rerun anyway
 — so the instinct to size the spill rather than accommodate it was what found the
 bug.
+
+## 14. The TGN IPA top-up — done, and a coverage figure that FELL on success
+
+`8b`, end to end against the compacted inventory:
+
+```
+plan     781,768 rows needing work → 54,251 computable · 727,517 terminal · 165 shards
+compute  48 array tasks, all COMPLETED, 0 tracebacks, 165/165 shards
+merge    165 expected / 165 present / 0 MISSING
+written  no_route 727,413 · ok 48,000 · echoed_input 6,240 · no_lang 104
+store    73,479,069 rows (exactly the new inventory) · 49,797,377 with IPA
+```
+
+🛑 **COVERAGE READS 67.77%, DOWN FROM 68.43%, AND THAT IS NOT A REGRESSION.**
+
+```
+absolute IPA   49,749,377 → 49,797,377      +48,000     ← work went UP
+denominator    72,703,552 → 73,479,069     +775,517     ← corpus grew more
+share              68.43% →     67.77%        -0.66pp
+```
+
+The added rows are **overwhelmingly unroutable romanisations**, so a larger
+denominator of unreadable names lowers the share while raising the count.
+⚠ **A coverage figure falling after a successful run is exactly the shape a
+reader takes for damage**, which is why it is stated here with both terms rather
+than as a percentage. `8b` flagged it unprompted; that is the right instinct.
+
+**Consequence for anything quoting coverage:** the plan's and the Artifact's
+`68.43%` was measured on **72,703,552**. It is not wrong, it is *of a smaller
+corpus*. The Artifact now carries **67.8% of 73,479,069** with the denominator
+named and the fall explained; the `69.53%` rule-work ceiling becomes **~68.8%**
+on the new denominator, on the assumption — sound, per the bucket split above —
+that the added rows are not rule-reachable. ⚠ **That recomputed ceiling is
+derived, not measured; do not quote it as a measurement.**
+
+### 14.1 ✅ AN INDEPENDENT CONFIRMATION OF THE ROMANISATION SPLIT
+
+The planner had **no knowledge of `9b84d27`**, yet:
+
+```
+planner terminal bucket   no_route   727,413    ≈ 722,044 romanisations
+                                                  recommended left unrouted
+planner computable                    54,251    ≈  47,877 kk, the population
+                                                  recommended for shipping
+```
+
+**Two independent routes to the same split** — one from the romanisation
+substitution measurement, one from a planner that never saw it. That is the kind
+of agreement worth more than either result alone, because neither could have
+been fitted to the other.
+
+### 14.2 The DuckDB default that explains a run of earlier incidents
+
+`8b` reports that `temp_directory` defaulting to `<dbfile>.tmp` **retro-explains
+every spill it had previously attributed to "DuckDB used the cwd"**. So §13.5's
+mechanism is not a one-off of `9c`'s: it has been the silent shape of this
+campaign's disk pressure throughout. Its planner now pins `temp_directory` to
+`/ix1` and `max_temp_directory_size=32GB` **as module defaults rather than flags
+someone must remember** — which is the right place, since the failure mode is
+precisely that nobody names the path.
