@@ -1,0 +1,9 @@
+orth	proposed_ipa	note
+ⵒ	p	HIGH. YAP — a Neo-Tifinagh letter added for /p/ in loanwords. The IRCAM letter name is transparent and no other letter competes for /p/. Seen in 9 rows.
+ⵠ	v	HIGH. YAV — same loan series as YAP, for /v/. No competing letter. Seen in 9 rows.
+ⵞ	tʃ	HIGH. YACH — "ch" in the IRCAM naming convention, standing to ⵛ YASH /ʃ/ as its affricate partner. Seen in 2 rows.
+ⵦ	e	HIGH. YE — the IRCAM vowel set is ⴰ a, ⵉ i, ⵓ u, ⴻ ə; YE and YO extend it for varieties that distinguish /e/ and /o/. Seen in 1 row.
+ⵧ	o	HIGH. YO — as YE above. Seen in 1 row.
+ⵂ	h	HIGH. TUAREG YAH — a Tuareg variant of ⵀ YAH, which this file already maps to /h/. Seen in 1 row.
+ⴺ	ðˤ	MEDIUM — INFERRED FROM THE SERIES, NOT FROM A SOURCE. The ya-d series runs ⴷ d, ⴸ ð, ⴹ dˤ, so the fourth cell should be the emphatic interdental /ðˤ/, the reflex of Arabic ظ. Please confirm the emphasis is right, and that this letter is not simply a regional spelling of ⴹ. Seen in 12 rows.
+ⴶ	dʒ	MEDIUM — INFERRED FROM CONTRAST, NOT FROM A SOURCE. ⴵ (Berber Academy yaj) is already /ʒ/ in this file, so a second yaj most plausibly denotes the affricate /dʒ/. If the two letters are variants of one phoneme this value is wrong and should be /ʒ/. Seen in 4 rows.

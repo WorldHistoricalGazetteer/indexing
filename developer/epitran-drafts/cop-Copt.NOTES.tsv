@@ -1,0 +1,8 @@
+orth	proposed_ipa	note
+ⲁ	a	HIGH — whole file. Coptic is the Greek alphabet plus seven Demotic letters, and the 24 Greek-derived letters carry their Greek values. All 33 rules here are that core; every character is attested in the 942 cop-tagged toponyms in the corpus.
+ⲏ	eː	MEDIUM — REGISTER. Sahidic reading. ⲏ (hate) is long /eː/ in the conventional reconstruction; some traditions read it /iː/ under later Greek influence.
+ⲃ	b	MEDIUM — REGISTER, AND THE MAIN DIALECT QUESTION. Sahidic /b/. BOHAIRIC reads ⲃ (vida) as /v/, and Bohairic is the liturgical standard, so a reviewer working from church usage may expect /v/. Flagged rather than chosen: 138 rows.
+ⲫ	pʰ	MEDIUM — REGISTER. Sahidic aspirate /pʰ/; Bohairic reads it /f/. Same dialect axis as ⲃ, and it should be answered the same way. 42 rows.
+ⲭ	kʰ	MEDIUM — REGISTER. Sahidic /kʰ/; Bohairic /x/. Same axis as ⲃ and ⲫ.
+ⲱ	oː	MEDIUM — as ⲏ. Long /oː/ against short ⲟ /o/; the length contrast is conventional rather than certain for toponyms.
+Ⲁ	a	HIGH — the nine attested capitals (Ⲁ Ⲓ Ⲕ Ⲗ Ⲡ Ⲥ Ⲧ Ⲫ Ⲭ) take the same values as their lowercase forms. Included explicitly because Epitran matches the literal string and does not case-fold.

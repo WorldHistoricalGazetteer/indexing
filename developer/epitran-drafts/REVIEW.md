@@ -232,12 +232,95 @@ right analysis for Sinhala?**
 **Q8 — spoken vs literary Sinhala** differ in vowel realisation. Which should the
 rules target?
 
-### Tifinagh — `zgh-Tfng.csv` (10,683 rows) — NEW
+### Tifinagh — `zgh-Tfng.csv` (10,620 rows) — NEW, EXTENDED TO 45 RULES
+
+⚠ **The row count is 10,620, not 10,683**, censused over every Berber-tagged row in
+the IPA store: `ber` 8,722, `zgh` 1,833, plus `tzm` 31, `shi` 18, `kab` 15, `rif` 1.
+**Note `ber` is 82% of it** — the collective Berber code, not `zgh` — so this file
+cannot be routed to by language tag until `ber` resolves to it.
+
+**The existing 37 rules already covered 99.91% of Tifinagh occurrences and 99.2% of
+rows.** Tifinagh was never a rule-writing gap; it is an *installation and routing*
+gap. The eight rules added below reach 82 further rows.
 
 **Q9 — which variety?** Drafted against the **IRCAM Neo-Tifinagh** standard, tagged
 `zgh` (Standard Moroccan Amazigh). Tuareg Tifinagh differs substantially. If the
 corpus is largely Kabyle (`kab`), Tachelhit (`shi`) or Tuareg, this is the wrong
-target and the file should be renamed and revalued.
+target and the file should be renamed and revalued. ⚠ The census above answers part
+of this: the language-tagged minority is Tamazight/Tachelhit/Kabyle in that order,
+and nothing is tagged Tuareg — but 82% is the undifferentiated `ber`.
+
+**Q13 — two values inferred from the series, not from a source.** `ⴺ` YADDH is
+drafted `ðˤ` because the ya-d series runs `ⴷ` d, `ⴸ` ð, `ⴹ` dˤ, so the fourth cell
+should be the emphatic interdental — the reflex of Arabic ظ. And `ⴶ` YAJ is drafted
+`dʒ` because `ⴵ` (Berber Academy yaj) is already `ʒ` here, so a second yaj most
+plausibly denotes the affricate. **If those two letters are variants of one phoneme,
+`ⴶ` should be `ʒ` and the rule is wrong.** 12 and 4 rows respectively.
+
+**Q14 — two letters left DELIBERATELY UNMAPPED, and one of them is this file's
+largest single gap.** They are absent rather than guessed because **a missing rule
+surfaces as residue and gets found, while a wrong one lints clean** — which is the
+lesson `ှ → ʰ` taught this campaign.
+
+* **`ⴴ` U+2D34 YAGHH — 37 rows, the biggest gap in the file.** The ya-g series gives
+  `ⴳ` /ɡ/ and `ⵖ` YAGH /ɣ/; what the doubled-H form denotes could not be established.
+  Plausibly /ʁ/, plausibly a geminate /ɣː/, plausibly a regional variant of the /ɣ/
+  that `ⵖ` already covers. **Naming the sound settles 37 rows.**
+* **`ⴿ` U+2D3F YAKHH — 9 rows.** `ⵅ` YAKH is already /x/ here; what the doubled-H
+  form adds is unclear, and a duplicate value would be indistinguishable from a
+  correct one.
+
+⚠ These two appear here rather than in `zgh-Tfng.NOTES.tsv` on purpose: a notes row
+keyed to a grapheme that is **absent from the CSV** would reference a row the review
+UI has not got. A deliberate absence is a question for this file, not a row comment.
+
+### Coptic — `cop-Copt.csv` (942 rows) — NEW
+
+35 distinct characters attested across 937 `cop`-tagged toponyms; 33 mapped. Coptic
+is the Greek alphabet plus seven Demotic letters, and the Greek-derived core carries
+Greek values, so **confidence in the core is high and the whole file turns on one
+axis**.
+
+**Q15 — Sahidic or Bohairic?** One answer settles three rules:
+
+| letter | Sahidic (drafted) | Bohairic |
+|---|---|---|
+| `ⲃ` vida | `b` | `v` |
+| `ⲫ` fi | `pʰ` | `f` |
+| `ⲭ` khi | `kʰ` | `x` |
+
+⚠ **Bohairic is the liturgical standard**, so a reviewer reasoning from church usage
+will expect the second column and may read the draft as simply wrong. It is a dialect
+choice, not an error, and it should be made deliberately. `ⲃ` alone is 138 rows.
+
+**Q16 — vowel length.** `ⲏ` is drafted `eː` and `ⲱ` `oː`, against short `ⲉ` /e/ and
+`ⲟ` /o/. The contrast is conventional in reconstruction; whether it should be encoded
+for *toponyms* is a separate question.
+
+**Q17 — two Old Nubian letters left unmapped** (`ⳝ` 3 rows, `ⳟ` 1 row). Out of scope
+for a Coptic map and too few to guess at.
+
+### Thaana — `div-Thaa.csv` (1,858 rows) — NEW
+
+46 distinct characters attested, 45 mapped. The 24 native consonants and 10 fili are
+a closed, well-documented set with a one-to-one phonemic reading, so confidence is
+high; the questions are about two deliberate deletions and a loan series.
+
+**Q18 — alifu `އ` is mapped to NOTHING, and that is a decision.** Alifu is a vowel
+*carrier*: it holds a fili at the start of a syllable and has no sound of its own, so
+the vowel comes from the fili and the letter contributes nothing. **1,012 rows.**
+⚠ If word-initial glottal stop should be represented, this must be `ʔ` instead. Not
+obvious either way, and it is the single largest deliberate deletion in the file
+after sukun.
+
+**Q19 — the Arabic-derived loan letters** (`ޘ ޙ ޚ ޝ ޞ ޠ ޢ ޣ ޤ ޥ`) are drafted with
+their Arabic values (θ ħ x ʃ sˤ tˤ ʕ ɣ q w). They are rare here — between 1 and 43
+rows each — so they carry little weight and should be weighed accordingly against
+the native set.
+
+⚠ **Not a question, but worth stating because the romanisation misleads**: Dhivehi
+writes *eebeefili* "ee" and it is **/iː/**, and *ooboofili* "oo" and it is **/uː/** —
+English-style spellings, IPA values. The drafted values follow the IPA.
 
 ### Bopomofo — `cmn-Bopo.csv` (3,194 rows) — NEW
 
@@ -261,10 +344,21 @@ toneless right? And `ㄦ` is redrafted `ɚ` → `ər`, which parses.
   same glyph can represent several phonemes depending on context. **A
   character-to-character map would be actively wrong**, not merely incomplete. Needs
   either a real G2P or a decision to romanise first.
-- **Canadian Aboriginal Syllabics** (2,733 rows). Not one script but a family — Cree,
-  Inuktitut and Ojibwe assign different values, and glyph *orientation* encodes the
-  vowel. A flat map can work but **only per language**. ⚠ **Blocking question: which
-  language are those 2,733 rows?** That must be answered before anything is drafted.
+- **Canadian Aboriginal Syllabics** (3,667 rows). ✅ **The blocking question is now
+  ANSWERED, by counting: 2,176 Inuktitut** (`iu` 2,108, `ike` 38, `iku` 30) against
+  **501 Cree** (`cr` 485, `crk` 12, `crl` 4), plus 928 untagged. So the target is
+  `iku-Cans`, Inuktitut only, at 81% of the identified rows — **not a pan-Cans map**,
+  and Cree kept separate rather than averaged in.
+
+  ⚠ **Still not drafted, and the reason has changed.** The corpus uses **192 distinct
+  characters** spanning Inuktitut, Cree, West-Cree, Th-Cree, Naskapi, Sayisi and
+  Carrier, and the top 80 cover only 95%. The map is *derivable from the Unicode
+  names* rather than from memory — `ᑲ` is CANADIAN SYLLABICS KA, `ᖏ` is NGI — which
+  makes it auditable. **But there is a trap that would poison it systematically:
+  Unicode's "O" series is /u/ in Inuktitut** — `ᐅ` is named O and romanises *u*,
+  `ᑐ` is TO and romanises *tu*. A naive name-derived map yields /o/ everywhere
+  Inuktitut has /u/, across dozens of rules, every one of them linting clean. Cree
+  genuinely has /o/ there, which is precisely why the file must be per-language.
 
 ## Returning corrections
 

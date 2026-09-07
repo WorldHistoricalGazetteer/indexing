@@ -1,0 +1,7 @@
+orth	proposed_ipa	note
+ހ	h	HIGH — the 24 native Thaana consonants and the 10 fili (vowel diacritics) are a closed, well-documented set with a one-to-one phonemic reading. All attested in the 1,553 dv-tagged toponyms.
+އ	(empty)	MEDIUM — DELIBERATE DELETION, PLEASE CONFIRM. Alifu is a vowel CARRIER, not a consonant: it holds a fili at the start of a syllable and has no sound of its own, so it is mapped to nothing and the vowel comes from the fili. 1,012 rows. If a reviewer wants word-initial glottal stop represented, this should be /ʔ/ instead — that is the decision, and it is not obvious.
+ް	(empty)	HIGH — DELIBERATE DELETION. Sukun marks the ABSENCE of a vowel; a map with no inherent vowel is right to drop it. 1,324 occurrences, and it is the largest single deletion in the file.
+ދ	d̪	MEDIUM. Dhivehi contrasts dental ދ /d̪/ ތ /t̪/ against retroflex ޑ /ɖ/ ޓ /ʈ/; the dental diacritic records that contrast rather than asserting a precise place.
+ީ	iː	HIGH — BUT THE ROMANISATION IS MISLEADING AND WORTH STATING. Eebeefili is written "ee" and is long /iː/, not /eː/; ooboofili is written "oo" and is long /uː/, not /oː/. English-style spellings, IPA values.
+ޘ	θ	MEDIUM — LOAN SERIES. ޘ ޙ ޚ ޝ ޞ ޠ ޢ ޣ ޤ ޥ are the Arabic-derived letters used in loanwords and Islamic names; values follow their Arabic sources (θ ħ x ʃ sˤ tˤ ʕ ɣ q w). Rare in this corpus — between 1 and 43 rows each — so a reviewer should weigh them lightly against the native set.
