@@ -4630,6 +4630,76 @@ framing unsafe.
 read when v8 is prepared — a requirement that lives only in a licence file is the same
 failure as a licence that lives only in a catalogue record.
 
+### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
+
+Measured by `indexing-17` on the whole store (72,703,552 rows), 7 Sep. **This bounds
+what the phonetic-coverage half of v8 can claim, and it is the answer to "can every
+non-junk toponym now get IPA?": no, by about 26 percentage points.**
+
+```
+status              rows        share    what it would actually take
+ok            49,749,377      68.43%    — already has IPA
+no_lang       18,543,146      25.51%    LANGUAGE IDENTIFICATION — no rule reaches an untagged row
+quarantined    3,411,436       4.69%    a POLICY decision (Wikipedia-edition tags)
+no_route         866,948       1.19%    G2P — the ONLY slice a rule file touches
+non_language_tag 126,394       0.17%    nothing; the tag is an identifier namespace
+echoed_input       6,240       0.01%
+empty_output          11       0.00%
+```
+
+```
+today                                49,749,377   68.43%
++ Project A (measured, 172,210)      49,921,587   68.66%
++ zgh/cop/div drafts (~13,044)       49,934,631   68.68%
+if EVERY remaining G2P gap closed    50,549,132   69.53%  <- CEILING for rule work alone
++ language identification            69,092,278   95.03%  ⚠ upper bound, not a yield
++ un-quarantining                    72,503,714   99.73%  ⚠ upper bound, not a yield
+```
+
+⚠ **The first four lines are measured; the last two assume every such row would then
+route successfully, which nobody has measured** — a newly identified language may
+still have no Epitran mode. **Label them as ceilings wherever they are quoted.**
+
+🛑 **Language identification is worth ~26 points against rule work's 1.1 — more than
+twenty times the return**, and it is a different project.
+
+### ➡ AND THE STRATEGIC CONSEQUENCE, WHICH CHANGES THE OPTIMISATION RANKING
+
+**The 18.5M `no_lang` rows are reachable TWO ways, and only one of them is a project:**
+
+* **Give them IPA** — language identification. 26 points of coverage, and a research
+  effort in its own right.
+* **Stop requiring IPA** — remove the `generator.py:155` gate on pair selection, and
+  filter exonyms by romanised edit distance instead of PanPhon. **The same rows become
+  trainable with no G2P at all.**
+
+✅ **That materially strengthens "remove the IPA gate" (optimisation #2).** It is not
+merely a cheaper way to widen the training corpus — **it is the cheap route to the
+single largest reachable population in the corpus**, the one that all rule work
+combined cannot touch. ⚠ With its known caveat unchanged: romanisation is lossy
+exactly where the model is strongest, so the substitute filter is weakest where it
+matters most, and that must be measured rather than assumed.
+
+### 🛑 71% OF THE REMAINING G2P WORK IS NOT IN THE BLACKOUT SCRIPTS
+
+```
+no_route inside script='OTHER'    252,447   Project A + the drafts address this
+no_route in COVERED scripts       614,501   a language with no Epitran mode — UNTOUCHED
+no_route total                    866,948
+```
+
+⚠ **Invisible to everything measured today, because every census this session filtered
+on `script='OTHER'`.** These are languages with no Epitran mode sitting in scripts
+already covered — **the natural next tranche, and larger than the one just done.**
+
+### ✅ WHAT TODAY'S WORK IS ACTUALLY WORTH — stated so it is not mistaken for the coverage number
+
+**A script at *exactly zero* is a different kind of defect from a script at 70%.** v7
+has **no representation at all** for those writing systems and v8 would have inherited
+it. Going from nothing to something on **~185,000 rows across a dozen writing systems**
+matters for *whether the model can represent them*. ⚠ **It was never going to move the
+corpus-wide percentage, and it should not be allowed to look as though it had.**
+
 ### 🛑 v8 GATE ITEM — THE PoC WILL CHANGE TWO THINGS AT ONCE AND CANNOT ATTRIBUTE THE RESULT
 
 Raised by `whg3-9d`, 7 Sep, sharpened here. Rules drafted "to the best of an
