@@ -4692,6 +4692,39 @@ no_route total                    866,948
 on `script='OTHER'`.** These are languages with no Epitran mode sitting in scripts
 already covered — **the natural next tranche, and larger than the one just done.**
 
+🛑 **AND IT IS MOSTLY GENUINE LINGUISTICS, NOT ROUTING — the opposite of tranche 1.**
+
+```
+LATIN        428,162 (70%)   per-language maps; NO alias is defensible
+ARABIC        60,517         ps Pashto, ota Ottoman are distinct languages
+CYRILLIC      59,535         mn, mdf Moksha, mhr Meadow Mari — distinct
+GREEK         18,677         grc → ell-Grek the one arguable alias
+DEVANAGARI    14,132         mai Maithili — plausible
+CJK/HEB/GEO   13,584/7,979/7,559   yi has NO Hebrew-script mode at all
+```
+
+⚠ **DO NOT QUOTE "91.7% reachable by alias" — `indexing-17` withdrew it as an
+artefact of its own test.** The job flagged a cell alias-reachable if *any* installed
+mode existed for that script under a different iso3. **For Arabic or Georgian that
+discriminates; for LATIN it is vacuous**, because Epitran ships 100+ Latin modes so
+every Latin-script language trivially qualifies — and routing Cornish through
+`afr-Latn` would be nonsense. **Latin orthography is language-specific, which is
+precisely why there are 100+ Latin modes rather than one.** 🛑 **The flag fired
+hardest exactly where the alias argument is weakest** — the inverse of the
+Myanmar/Tifinagh case, where the alias held *because* the map was graphemic. **Sixth
+non-discriminating check of this campaign.**
+
+✅ **Two cheap findings fell out.** `etymology` **5,546** and `etymology:wikidata`
+**7,652** are **OSM tag keys, not language tags** — ~13,200 rows in the backend queue
+that belong in `NON_LANGUAGE_TAGS` with `uicn`/`geoid`. ⚠ They sit in **covered**
+scripts, so the `script='OTHER'` census that found the first pair could never have
+seen them. And a class worth naming: **romanised forms of non-Latin languages** —
+`ota` LATIN 11,934, `bo` LATIN 8,431, `kn:iso15919` LATIN 7,940 — needing
+`<iso3>-Latn` modes that mostly do not exist. 🛑 **These are the same rows
+`is_script_mismatch` was discarding under #250**: a declared romanisation is a real
+form of the name, and it now needs a **Latin-script route** rather than the
+native-script one its base tag implies.
+
 ### ✅ WHAT TODAY'S WORK IS ACTUALLY WORTH — stated so it is not mistaken for the coverage number
 
 **A script at *exactly zero* is a different kind of defect from a script at 70%.** v7
