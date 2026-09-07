@@ -4,7 +4,8 @@ Inference pipeline for populating Elasticsearch with toponym embeddings.
 
 Modes:
   1. compute:  Load training Parquet -> GPU inference -> embeddings Parquet
-  2. index:    DuckDB + embeddings -> Full ES toponyms index (rebuild from scratch)
+  2. index:    DuckDB + embeddings -> Full ES toponyms index (DELETES and recreates:
+               every field must be restated, or it is destroyed — see run_index)
 
 The compute stage reads directly from the training Parquet files generated
 by rebuild_toponyms_index.py. The index stage rebuilds the entire toponyms
@@ -447,6 +448,25 @@ def run_index(args):
 
     Uses DuckDB for memory-efficient embedding lookups via temporary table in /scratch.
 
+    ⚠ THIS STAGE DELETES AND RECREATES THE INDEX. Every field the document is to
+    carry must be restated in the doc built below; anything omitted is destroyed,
+    not merged. The docstring used to say only that it "rebuilds the entire
+    toponyms index", which is true of the DOCUMENT SET and false of the FIELD
+    SET — and that half-truth is why the omission survived review for so long.
+    Whoever reads "rebuilds the entire index" reasonably assumes field parity.
+
+    Three fields the rebuild computes at real cost were dropped here:
+    ``ipa``, ``panphon_embedding`` and ``name_romanized``. Production carried
+    **0 of each** against 73.5M documents. The visible consequence was silent:
+    ``es_knn_helper`` runs its KNN over ``panphon_embedding``, matched nothing,
+    and ``find_similar_in_place`` returned ``[]`` for every place, so
+    training-pair selection was inert while reporting no error — ``mget``
+    answers ``found: true`` for a document that merely lacks a field.
+
+    If you add a field to the rebuild's STEP 4, add it here too, and verify by
+    COUNT rather than presence: a partial carry-forward looks like success from
+    a sample document.
+
     Workflow:
     1. rebuild_toponyms_index.py -> DuckDB (all toponyms)
     2. Train model on training subset
@@ -456,8 +476,14 @@ def run_index(args):
     import duckdb
     from datetime import datetime, timezone
     import json
+    import struct
     import os
     import tempfile
+    # Shared with the rebuild deliberately rather than re-implemented:
+    # two copies of a romanisation rule drift, and a silent divergence
+    # between what the rebuild wrote and what this stage rewrites is the
+    # failure class this whole patch exists to close.
+    from phonetics.extraction.rebuild_toponyms_index import romanize_for_search
 
     duckdb_path = Path(args.duckdb_file)
     embeddings_path = Path(args.embeddings_file)
@@ -537,12 +563,15 @@ def run_index(args):
                    t.lang,
                    t.lang_variant,
                    t.script,
+                   t.ipa,
+                   t.panphon_features,
                    GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
                    GROUP_CONCAT(DISTINCT ta.place_id) as attestations
             FROM toponyms t
             JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
             LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script,
+                     t.ipa, t.panphon_features
         ''')
 
         # Stream from DuckDB in batches
@@ -567,8 +596,8 @@ def run_index(args):
 
             for row in rows:
                 toponym_id = row[0]
-                namespaces = row[5].split(',') if row[5] else []
-                attestations = row[6].split(',') if row[6] else []
+                namespaces = row[7].split(',') if row[7] else []
+                attestations = row[8].split(',') if row[8] else []
 
                 # Lookup embedding from batch results
                 embedding = emb_lookup.get(toponym_id)
@@ -588,6 +617,27 @@ def run_index(args):
                     'attestations': attestations,
                     'indexed_at': indexed_at,
                 }
+
+                # Carry forward what STEP 4 of the rebuild computed. This index
+                # is DELETED and recreated above, so anything not restated here
+                # is destroyed — which is exactly what happened to `ipa`,
+                # `panphon_embedding` and `name_romanized`: the rebuild spent
+                # real Epitran and PanPhon time producing them, and this stage
+                # silently dropped all three. Production carried 0 of each
+                # against 73.5M documents, and `es_knn_helper`'s KNN over
+                # `panphon_embedding` therefore matched nothing, so
+                # `find_similar_in_place` returned [] for every place and
+                # training-pair selection was inert without ever erroring.
+                if row[5]:
+                    doc['ipa'] = row[5]
+                packed = row[6]
+                if packed:
+                    n_floats = len(packed) // 4
+                    doc['panphon_embedding'] = list(
+                        struct.unpack(f'{n_floats}f', packed))
+                romanized = romanize_for_search(row[1], row[4])
+                if romanized:
+                    doc['name_romanized'] = romanized
 
 
                 # Add embedding if available (as int8 list)
