@@ -500,7 +500,16 @@ def run_index(args):
         sys.exit(1)
 
     logger.info(f"Connecting to {args.es_host}...")
-    es = Elasticsearch(args.es_host, request_timeout=120, max_retries=3)
+    # ⚠ `retry_on_timeout` MUST be set: elasticsearch-py defaults it to False, so
+    # `max_retries` does NOT cover a ConnectionTimeout. A single slow bulk then
+    # kills the whole run — which is exactly what happened to job 11172723,
+    # dying after 4h31m at 52,384,466 of 73,479,069 documents (71%) with
+    # `elastic_transport.ConnectionTimeout`, against a staging cluster that was
+    # green throughout with 2.7 TB free. The stall is the dense_vector (HNSW)
+    # merge pressure this index generates while being written, so 120s is simply
+    # too short a ceiling for a bulk that lands mid-merge.
+    es = Elasticsearch(args.es_host, request_timeout=600, max_retries=5,
+                       retry_on_timeout=True)
 
     # Create temporary DuckDB database for embedding lookups
     logger.info(f"Building temporary embeddings index from {embeddings_path}...")
