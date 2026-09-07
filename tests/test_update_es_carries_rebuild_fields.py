@@ -135,8 +135,16 @@ class CarryForwardTest(unittest.TestCase):
                          "grouping key -- use ANY_VALUE (see job 11173564)")
         self.assertNotIn("t.ipa", group_by,
                          "ipa must not be in the grouping key -- use ANY_VALUE")
-        self.assertIn("ANY_VALUE(t.panphon_features)", sel)
-        self.assertIn("ANY_VALUE(t.ipa)", sel)
+        # The wide row must be PROJECTED, never aggregated: the narrow child
+        # tables are aggregated in subqueries and joined in afterwards.
+        self.assertIn("FROM toponym_namespaces", sel)
+        self.assertIn("FROM toponym_attestations", sel)
+        for gb in [seg for seg in sel.split("GROUP BY")[1:]]:
+            head = gb.strip().splitlines()[0]
+            self.assertNotIn("panphon", head,
+                             "no GROUP BY may carry the BLOB: " + head)
+            self.assertNotIn("t.name", head,
+                             "the wide row must not be grouped at all: " + head)
 
 
 if __name__ == "__main__":

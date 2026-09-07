@@ -584,32 +584,47 @@ def run_index(args):
         without_embedding = 0
 
         # Query all toponyms with their namespaces and attestations
+        # ⚠ AGGREGATE THE NARROW TABLES FIRST, THEN JOIN THE WIDE ROW.
+        #
+        # The obvious formulation — join all three tables and GROUP BY the
+        # toponym columns — builds one hash aggregate with 73.5M groups, and
+        # every group carries `panphon_features`, a ~768-byte BLOB. That is
+        # ~56 GB of aggregate state whether the BLOB sits in the grouping KEY
+        # or merely in an ANY_VALUE aggregate: moving it from key to aggregate
+        # (as a first fix did) changes nothing, because it is held either way.
+        # Job 11173564 spilled ~86 GB of it onto /vast and took production to
+        # within 9 GB of read-only; job 11173657 then hit a 64 GiB spill cap.
+        #
+        # So the BLOB must never enter an aggregate at all. `toponym_id` is the
+        # key of `toponyms`, so the wide row needs no aggregation — only the two
+        # narrow child tables do. Aggregating those first collapses 122.5M
+        # narrow rows into 73.5M narrow rows, and `toponyms` is then joined in
+        # and streamed. Grouping keys stay small and the BLOB is only ever
+        # projected.
         cursor = conn.execute('''
             SELECT t.toponym_id,
                    t.name,
                    t.lang,
                    t.lang_variant,
                    t.script,
-                   ANY_VALUE(t.ipa) as ipa,
-                   ANY_VALUE(t.panphon_features) as panphon_features,
-                   GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
-                   GROUP_CONCAT(DISTINCT ta.place_id) as attestations
+                   t.ipa,
+                   t.panphon_features,
+                   ns.namespaces,
+                   att.attestations
             FROM toponyms t
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+            JOIN (
+                SELECT toponym_id,
+                       GROUP_CONCAT(DISTINCT namespace) AS namespaces
+                FROM toponym_namespaces
+                GROUP BY toponym_id
+            ) ns ON ns.toponym_id = t.toponym_id
+            LEFT JOIN (
+                SELECT toponym_id,
+                       GROUP_CONCAT(DISTINCT place_id) AS attestations
+                FROM toponym_attestations
+                GROUP BY toponym_id
+            ) att ON att.toponym_id = t.toponym_id
         ''')
-        # ⚠ ANY_VALUE, *not* extra GROUP BY columns. `panphon_features` is a
-        # ~768-byte BLOB; putting it in the grouping key makes every one of the
-        # 73.5M hash-table entries carry 768 bytes of key, which is tens of GB
-        # of hash table and spills. Adding these two columns to the GROUP BY is
-        # what drove ~86 GB of spill and took /vast from 128 GB to 42 GB —
-        # under ES's flood-stage watermark — on job 11173564.
-        #
-        # ANY_VALUE is exact here, not a convenience: `toponym_id` is the key of
-        # `toponyms`, so `ipa` and `panphon_features` are functionally dependent
-        # on a group that already includes it. There is exactly one value to
-        # choose from.
 
         # Stream from DuckDB in batches
         batch_size = 1000
