@@ -925,9 +925,14 @@ no triplet produces gradient. InfoNCE / multiple-negatives with in-batch and
 ANN-mined hard negatives is the fix — and the **only** change that improves
 **recall into the pool as well as ordering within it**.
 
-**4. Cross-encoder reranker.** Converts v7's pairwise strength into ranking.
-Measured ceiling **R@10 0.294 → 0.482 (+63%)**, ⚠ **capped by construction**: ~48%
-of partners never enter the top 200 for *any* method.
+**4. Cross-encoder reranker — a PLANNED v8 COMPONENT, not a possibility.** Converts
+v7's pairwise strength (AUC 0.9324, already better than the baseline) into ranking,
+which is where it fails. **Measured ceiling: R@10 0.294 → 0.482 (+63% relative)
+corpus-wide, and 0.316 → 0.521 on non-Latin↔non-Latin.** ✅ **Needs no retraining** —
+it is a second pass over the candidates the existing index returns, so it can ship
+independently of the model. ⚠ **Capped by construction**: ~48% of partners never enter
+the top 200 for *any* method tested, **so reranking wins the half we can see and the
+training changes are what reach the half we cannot.**
 
 **5–7, live but unranked:** romanisation as auxiliary supervision (needs no
 language tag, so it reaches the 18.5M untagged); **Wikidata's explicit
@@ -4786,6 +4791,68 @@ and accidental exclusions break silently when adjacent things change — **and a
 things changed twice today** (the script enum split, and the proposed gate removal).
 And **if the IPA gate is removed** — now the largest available lever — **junk stops
 being filtered by phonetics at all.**
+
+### 🛑 THE PAIR SELECTOR HAS NOT BEEN RUNNING — `panphon_embedding` IS ABSENT FROM THE LIVE INDEX
+
+Measured by `indexing-04`, 7 Sep, **with positive controls so the zeros are real**:
+
+```
+exists(panphon_embedding)  ->            0 docs
+exists(ipa)                ->            0 docs
+exists(embedding)          ->   72,703,777   <- control passes
+exists(name) / exists(script) -> 72,703,777  <- controls pass
+
+mget _source=['panphon_embedding'] -> found=True, _source={}
+```
+
+✅ **Confirmed here from the schema side.** `schemas/toponyms.json` declares **12
+fields** — `attestations, embedding, embedding_version, indexed_at, lang,
+lang_variant, name, name_romanized, namespaces, primary_namespace, script,
+toponym_id` — and **neither `panphon_embedding` nor `ipa` is among them.** Yet
+`rebuild_toponyms_index.py:1657-1683` **does write both into the doc.** ⚠ The `_source`
+being **empty** rather than merely unindexed proves they were **never written to this
+generation**, not written-and-hidden.
+
+🛑 **THE CONSEQUENCE, traced then observed:** `batch_get_embeddings` mgets
+`_source=['panphon_embedding']` → `{}` → `if emb:` fails → returns `{}` →
+`find_similar_in_place` sees `n_with_emb == 0` → **returns `[]` for EVERY PLACE.**
+
+⚠ **So the selector is not filtering exonyms badly. It is not running.** And it
+reports no error, because **mget returns `found: true` on a document that simply lacks
+the field**. *Required input absent, empty substituted, stage reports success* — the
+signature this project has a postmortem for.
+
+**And `generator.py` carries five `exists: panphon_embedding` filters against
+`index="toponyms"`. Every one matches zero.**
+
+### ✅ BOUNDING THE ALARM — what this does and does not invalidate
+
+⚠ **`indexing-04` is right to stop before this went in the plan, and right that it is
+a candidate root cause for the scarcity the reassessment rests on.** Two bounds:
+
+* 🛑 **It DOES invalidate any pair-yield measured through ES.** A count of "how many
+  training pairs the corpus can produce", run against this index, returns near-zero
+  and would be read as **scarcity in the corpus** rather than **absence of a field**.
+* ✅ **It does NOT invalidate the 40,937 dated pairs.** §6.2c records that those are
+  harvested **from the staged extract, not from ES** — a decision made for a different
+  reason, which happens to have kept that figure clean.
+
+✅ **And it reconciles with what was already known rather than contradicting it.**
+v7 **was** trained on 31,113,585 IPA strings, so the fields existed then; §0 already
+records that they were **lost between v7's training and now**. `8b` measured `ipa`
+NULL across all 72,703,552 rows of the toponyms DuckDB. **So: DuckDB has no IPA → the
+rebuild's write branches never fire → the ES index has no `panphon_embedding` → the
+selector returns nothing.** One defect, traced end to end at last.
+
+🛑 **AND IT SHARPENS THE `und` FINDING.** `9c` read `generator.py:155`
+(`WHERE t.ipa IS NOT NULL`) as excluding the 1,398,790 `und` rows. **Measured, that
+predicate excludes ALL 72,703,777 documents.**
+
+⚠ **OPEN, and it is the question to ask next:** whether an *earlier* index generation
+carried these fields, and against what the training data now in use was generated.
+⚠ **And 9c's rebuild (11170631) has been running 16 hours — if it produces a new index
+against the same schema, the field will be absent again.** **The schema needs the two
+fields declared before that lands, or the rebuild reproduces the defect.**
 
 ### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
 
