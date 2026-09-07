@@ -4626,11 +4626,45 @@ and report the result as joint. **(c) is legitimate for a PoC; it is only
 illegitimate if the write-up implies (a).**
 
 ✅ **REQUIRED EITHER WAY, and free during the run while impossible afterwards:
-record the RULE-SET VERSION behind every toponym whose IPA enters the training
-corpus.** Not "which drafts were in" but *at what version* — reviewers will
-correct these rules, and the model will then have trained on superseded values
-with **no record of which rows are affected**. Same discipline as
-`generation-stamps`.
+record the **GIT BLOB SHA** of every rule file whose IPA enters the training
+corpus**, taken at the moment of reading:
+
+```
+git rev-parse HEAD:zenodo/epitran_extensions/<lang>-<Script>.csv
+git rev-parse HEAD:developer/epitran-drafts/<lang>-<Script>.csv
+```
+
+🛑 **NOT a database id.** My first instruction was "the rule-set version", whose
+natural reading is WHG's `RuleSetVersion.id` — **a Django autoincrement primary
+key**, which is environment-local (a rebuilt database renumbers everything) and,
+worse, **unverifiable**: you cannot check a PK against anything. **A provenance
+stamp nothing can falsify is a decoration** — the exact class of thing this
+campaign has spent a day removing, proposed by me.
+
+✅ **The blob sha IS the bytes** — recomputable from the file, identical in every
+environment, and resolvable by `git cat-file blob <sha>` **with no WHG database
+in the picture.** ⚠ **Take it from git, not from WHG's endpoint**, which can be a
+sync behind between the read and the stamp. Check at the reader.
+
+🛑 **AND GIT, NOT WHG, IS THE RIGHT STORE FOR THE STALENESS QUESTION** (`whg3-9d`).
+WHG's database holds *current* values with **no per-row history**, so it cannot
+say what a row said at an older version. Git holds every version of every file.
+So the question that will actually be asked —
+
+> *which toponyms trained on a value that has since been corrected?*
+
+— is **`git diff <stamped-sha> <current-sha>`**, answerable **entirely inside
+this repository**, with no dependency on WHG being up or in sync. **That removes
+a dependency rather than adding one.** What WHG uniquely holds is *which version
+a reviewer was looking at*, exposed as `reviewed_version` / `current_version` in
+`/phonetics/suggestions.json`.
+
+🛑 **AND THE JOINT RESULT MUST BE NAMED IN THE ARTEFACT, NOT INTENDED.** For a
+proof of concept, reporting objective and coverage **together** is the honest
+default — a PoC exists to show an effect is worth chasing, not to apportion it —
+so the failure mode lives **entirely in the write-up**. ⚠ **Intentions do not
+survive into a later summary.** The joint attribution goes in the published
+result at the time, or it will be read as an architecture win six weeks later.
 
 ### 🛑 v8 GATE ITEM — PROJECT A SPLIT THE **DETECTOR**, NOT THE **MODEL VOCABULARY**
 
