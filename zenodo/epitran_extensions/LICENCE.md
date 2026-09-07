@@ -98,7 +98,8 @@ interface.
 requiring anyone to establish what they are.
 
 **Credit is practice, everywhere, and not a licence condition.** Contributors are
-credited by name where they wish to be — in the dataset, and in the pull request when
-a row goes upstream. ⚠ **CC0 imposes no attribution requirement**, so this is a
+credited by name where they wish to be, in three places: **in WHG's own records**,
+where every correction is recorded against its contributor; **in the dataset**; and
+**in the pull request** when a row goes upstream. ⚠ **CC0 imposes no attribution requirement**, so this is a
 promise WHG makes rather than a term binding a recipient. Stated plainly so it is not
 mistaken for either more or less than it is.
