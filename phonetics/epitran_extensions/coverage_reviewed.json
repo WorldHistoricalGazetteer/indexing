@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Rule sets a reviewer has judged COMPLETE, with the reason. The sweep still",
+    "measures them and still prints their numbers — it only stops calling them",
+    "incomplete, so an exemption cannot hide a later regression, only a known",
+    "and argued one.",
+    "",
+    "⚠ An entry here is a CLAIM WITH A DATE AND AN AUTHOR, not a mute. If the",
+    "reason stops being true — a language comes into scope, Unicode adds to the",
+    "script — delete the entry rather than editing the reason to fit."
+  ],
+  "cmn-Bopo": {
+    "reviewed": "2026-09-07",
+    "by": "whg3-9d",
+    "reason": "COMPLETE for Mandarin: 37/37 zhuyin U+3105-3129 present. The 0/6 at U+312A-312F are Min Nan and Hakka letters — other languages sharing the script. The whole-script percentage (49%) is an artefact of Unicode's repertoire, not a gap.",
+    "in_scope_covered": "37/37"
+  },
+  "mya-Mymr": {
+    "reviewed": "2026-09-07",
+    "by": "whg3-9d",
+    "reason": "Myanmar Extended-A/B hold Khamti, Shan, Tai Laing, Aiton and Shwe Palaung letters — other languages in the Burmese script, not Burmese. Out of scope for a mya rule set. ⚠ NOT a statement about the primary block, which the run signal still judges.",
+    "in_scope_covered": "primary block only"
+  },
+  "bho-Deva": {
+    "reviewed": "2026-09-07",
+    "by": "whg3-9d",
+    "reason": "Devanagari Extended U+A8E0 is Vedic cantillation, out of scope for toponyms. ⚠ This exempts the BLOCK flag only — bho-Deva is 10/17 on independent vowels and that remains open work.",
+    "in_scope_covered": "block flag only"
+  }
+}

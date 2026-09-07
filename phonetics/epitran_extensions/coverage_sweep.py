@@ -204,9 +204,32 @@ def main():
                    if not p.name.endswith(".NOTES.tsv") and ".NOTES" not in p.name)
     results = [analyse(p, fold=not args.no_fold) for p in paths]
 
+    # Reviewed-complete exemptions. ⚠ These suppress the MECHANICAL label ONLY.
+    # Every set is still measured and still printed with its numbers, so an
+    # exemption cannot conceal a regression — only a gap someone has argued for
+    # in writing, with a date and an author. Without this the standing check
+    # re-flags cmn-Bopo for ever: it is 37/37 on Mandarin zhuyin and scores 49%
+    # because Unicode's Bopomofo repertoire also holds Min Nan and Hakka. A check
+    # that cries wolf on a correct file trains people to ignore it.
+    reviewed_path = Path(__file__).parent / "coverage_reviewed.json"
+    reviewed = {}
+    if reviewed_path.exists():
+        reviewed = {k: v for k, v in json.loads(reviewed_path.read_text()).items()
+                    if not k.startswith("_")}
+    for r in results:
+        if r["slug"] in reviewed and r.get("mechanical_blocks"):
+            r["reviewed_complete"] = reviewed[r["slug"]]
+            r["mechanical_blocks"] = []
+
     mech = [r for r in results if r.get("mechanical_blocks")]
+    exempt = [r for r in results if r.get("reviewed_complete")]
     print(f"{len(results)} rule set(s).  case-folding: {'OFF' if args.no_fold else 'ON'}.  "
-          f"{len(mech)} with a whole secondary block uncovered (mechanical).\n")
+          f"{len(mech)} with a whole secondary block uncovered (mechanical), "
+          f"{len(exempt)} reviewed-complete.\n")
+    for r in exempt:
+        print(f"  reviewed-complete: {r['slug']:12s} {r['reviewed_complete']['reason'][:96]}")
+    if exempt:
+        print()
 
     if mech:
         print("=" * 78)
