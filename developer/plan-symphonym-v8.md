@@ -4683,6 +4683,46 @@ Status honestly:
 
 **🛑 AND TWO OF THEM ARE WORTH MORE THAN THAT STATUS SUGGESTS.**
 
+### ✅ MEASURED — `historicFlag` ADDS 41.9%, AND ADDS IT MORE BROADLY THAN THE DATED SET
+
+`indexing-04`, 7 Sep. ✅ **Positive control first, and it validates the whole
+comparison:** its dated-only figures reproduce **40,937 pairs / 3,565 effective places
+/ 17 places carrying 50%** — identical to this document's numbers, which it had to
+infer the definition for. **So the two are like-for-like rather than two similar
+things.**
+
+```
+terms with a date         16,384        flagged historic      22,225
+flagged AND dated         12,905  58.1% of flagged
+flagged NOT dated          9,320  41.9% of flagged   <- what the flag ADDS
+```
+
+```
+                pairs    EFFECTIVE N (places)    50% carried by
+DATED only     40,937                  3,565          17 places
+FLAGGED only   22,562                  5,054         311 places
+UNION          59,182                  5,526          28 places
+
+places: 3,565 -> 5,526  (+1,961, +55.0%)
+pairs : 40,937 -> 59,182 (+18,245, +44.6%)
+```
+
+🛑 **THE FLAG GAINS MORE IN PLACES (+55.0%) THAN IN PAIRS (+44.6%) — the opposite of
+how a concentrated source behaves, and exactly what this set needed.** The mechanism
+is in the third column: **the flagged set spreads over 311 places to reach 50%,
+against the dated set's 17.** It is a genuinely broader signal, not more of the same.
+
+⚠ **BUT THE UNION'S CONCENTRATION IS 28 PLACES, NOT 311.** Adding a diffuse source to
+a concentrated one **does not fix the concentration** — the dated set's heavy places
+still dominate. Its largest single place falls from 4.6% to 3.2% of pairs: **an
+improvement, not a solution.** If the problem is that 17 places carry half the signal,
+the union makes that **28**, not 311.
+
+⚠ **REPORT PLACES, NOT PAIRS.** **59,182 reads well and misleads; 5,526 is the number
+that constrains what can be learned.** ✅ **And the judgement in §0 is unchanged: at
+5,526 places this remains a fine-tune and an evaluation stratum, not a co-equal
+objective.**
+
 **1. `historicFlag` is ADDITIVE to the dated set, not a subset of it.** The 40,937
 pairs come from term-level `estStart`/`estEnd` — **dates tell you *when*; the flag
 tells you *that a term is historic*, including for terms carrying no dates at all.**
