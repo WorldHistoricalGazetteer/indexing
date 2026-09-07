@@ -5979,6 +5979,49 @@ Three of those cross-check against the run's own independent logs — `73,479,06
 is the indexed document count, `481,995` is the `#250` mismatch figure, and
 `122,527,196` is the extracted-toponyms total.
 
+**The swapped copy was then verified at the reader**, not just at the writer
+(job 11172707, opening it read-only from a compute node): all six tables match
+`/ix1` exactly, and **`non-null panphon_features` = `non-null ipa` = 34,141,080**
+— two columns written by one pass over the same rows landing equal, which a
+partial write would be unlikely to reproduce. ⚠ **`9c`'s swap assertion compares
+sizes; that is a writer-side check.** Row counts at the consuming end are the
+independent one, and the file's whole job is to be read.
+
+### 13.1b `name_romanized` HAS NEVER SHIPPED — it is not a regression
+
+The `update_es.run_index` field-drop is usually described as three fields being
+lost in the last rebuild. **For `name_romanized` that understates it.**
+
+```
+                    new staging index    production
+panphon_embedding      34,141,080             0
+ipa                    34,141,080             0
+name_romanized         12,431,453             0     ← prod has NEVER had any
+embedding                       0    72,703,777
+```
+
+Every generation has computed `name_romanized` in the rebuild's STEP 4 and
+`run_index` has discarded it before it reached the index, every time. **So the
+corpus-wide benefit of the romanisation path has never been visible to a live
+query at all** — this is a capability that has never once been switched on, not
+a working feature that broke.
+
+⚠ **And 12,431,453 is a safe target precisely because it does NOT come from
+production.** It was computed by the rebuild calling `romanize_for_search(name,
+script)` over *this* DuckDB, post-script-fix; the patch calls the same function
+on the same columns of the same file. So this is a reproduction check between two
+callers of one function over one input, and **a match is the pass** — a
+divergence would mean the patch's row indices stopped lining up with
+`name`/`script` after the SELECT was widened, which is the silent-empty-field
+failure the field-drop patch exists to prevent.
+
+⚠ **This session argued the opposite and was wrong**, on the assumption that
+12,431,453 came from the live index — in which case validating against it would
+have certified the defect, since prod predates the script fix. The principle is
+right and has bitten this campaign before; **it simply cannot apply to a field
+production does not have.** Check where a baseline came from before reasoning
+about what it licenses.
+
 ### 13.2 The remediation, and the reflex that was wrong
 
 The instinct — mine — was to delete the superseded 37 GB generation. **That was
