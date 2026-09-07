@@ -4663,9 +4663,29 @@ record the **GIT BLOB SHA** of every rule file whose IPA enters the training
 corpus**, taken at the moment of reading:
 
 ```
-git rev-parse HEAD:zenodo/epitran_extensions/<lang>-<Script>.csv
-git rev-parse HEAD:developer/epitran-drafts/<lang>-<Script>.csv
+git hash-object <path>          # ✅ the bytes on disk — use this
 ```
+
+🛑 **CORRECTED — `git rev-parse HEAD:<path>` IS WRONG AND I SPECIFIED IT.** It reads
+the **committed** version, not the bytes read. Demonstrated by `indexing-17` running
+it: `rev-parse HEAD:` on a working Tifinagh draft returned the blob for the **37-rule
+committed** file while **45 rules** were on disk, and on a new uncommitted file it
+failed outright (`exists on disk, but not in 'HEAD'`). ⚠ **The recipe written to
+enforce check-at-the-reader broke check-at-the-reader.** `git hash-object` is the
+bytes actually read, works on uncommitted files, and is identical to `rev-parse` when
+the file is committed and unmodified.
+
+🛑 **AND A SHA THAT COMPUTES IS NOT A SHA THAT RESOLVES.** `git cat-file blob` on an
+uncommitted file's sha returns **`bad file`** — verified. So **a PoC trained on
+uncommitted drafts writes provenance that dereferences to an error**, ⚠ **which is
+worse than no stamp, because it passes inspection.** Either **commit the drafts before
+the run** (safest — the blob is then referenced and survives `gc`) or `git hash-object
+-w`, accepting that an unreferenced loose object can be collected.
+
+⚠ **Third instance of the same shape in two days**, and the sharpest: a database id
+could not be checked at all; this one *can* be checked and passes right up until
+someone dereferences it. **"Computable" and "resolvable" are different properties, and
+only the second is provenance.**
 
 🛑 **NOT a database id.** My first instruction was "the rule-set version", whose
 natural reading is WHG's `RuleSetVersion.id` — **a Django autoincrement primary
