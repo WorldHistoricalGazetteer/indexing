@@ -6451,3 +6451,78 @@ raised unconditionally would have satisfied every other test.
 `load_vocab_limits` falls back to `{'script': 25}` when the file cannot be read —
 **neither the old 20 nor the current 37** — so a *missing* vocabulary trained a
 model at an invented width and only logged a warning. Commit `10e8bab`, 5 tests.
+
+## 17. 🛑 §16 WAS WRONG AND IS CORRECTED — and the corroboration was a coincidence
+
+**`8b` measured what §16.1 inferred, and 68.959% was too generous. The real
+all-rule-work ceiling is 68.356%.** Corrected in the Artifact.
+
+⚠ **THE METHODOLOGICAL POINT IS THE ONE TO KEEP.** §16.1 justified its split by
+noting that 866,948 was "an exact match for the figure the Artifact already
+carried… a six-digit agreement, so the split is corroborated rather than
+assumed." **It was a coincidence of two different populations.** The romanisation
+cohort is **1,128,026, not 727,413** — the top-up's terminal bucket was only the
+`#250` recovery, and there are pre-existing `(lang, LATIN)` rows beyond it
+(`ota` 11,934, `map` 10,810, a long tail). So `1,594,361 − 727,413` does not
+partition anything; it subtracts one population from another and lands near a
+third.
+
+**A numeric agreement is evidence only if both figures are known to be about the
+same population.** I checked that the numbers matched and not that the sets did,
+which is the same error as [[corpus_property_as_model_property]] wearing
+arithmetic. **Six matching digits felt like proof and were not.**
+
+### 17.1 THE MEASURED DECOMPOSITION
+
+```
+no_route total              1,594,361   2.170%   across 3,508 cells
+  romanisation (LATIN)      1,128,026   1.535%
+  real lang, non-Latin        424,485   0.578%
+  not a language               41,850   0.057%
+
+and the non-Latin remainder splits BY REMEDY:
+  fixed by the SCRIPT SPLIT   172,237   0.234%   ← rule files ALREADY installed
+  needs a NEW RULE FILE       252,248   0.343%
+  not a language               14,301   0.019%
+```
+
+✅ **172,237 rows need no rule work at all.** They are `my`, `pa`, `bo`, `si`,
+`sat`, `km`, `am`, `or`, `lo`, `ti` sitting at `script=OTHER` because the store's
+inventory predates `aef25b7` — and `mya-Mymr`, `pan-Guru`, `bod-Tibt`,
+`sin-Sinh`, `sat-Olck`, `khm-Khmr`, `amh-Ethi`, `ori-Orya`, `lao-Laoo`,
+`tir-Ethi` are **all already installed**. A re-extract with the post-split
+detector routes them for free. **That is the script split paying off, and it
+should be counted as its own line rather than folded into rule work.**
+
+### 17.2 THE CEILING LADDER — each rung measured, and now in the Artifact
+
+```
+achieved                                          67.771%
++ retryable soft failures                         67.779%   no work at all
++ re-extract with post-split detector             68.013%   +172,237, NO rules
++ write every remaining rule file                 68.356%   +252,248
++ per-language Latin romanisation modes           69.891%   +1,128,026  ⚠ least certain
++ lift the quarantine                             74.534%   +3,411,436  POLICY
+```
+
+⚠ **The romanisation rung is legitimate but unscoped.** Writing a proper
+`fas-Latn`-style mode per language *is* rule work and would route those rows —
+what `9b84d27` measured and rejected was **imposing `eng-Latn` on them**, a
+different act. So 69.891% is reachable in principle but represents **seven new
+romanisation modes nobody has scoped**, and it is the least certain rung.
+⚠ **41,850 rows are not languages at all** (`etymology:wikidata`, `adjective`,
+`pronunciation`, `uicn`) and are excluded from every rung.
+
+### 17.3 THE QUARANTINE IS 13×, NOT 4× — AND IT IS NOT CLEAN GAIN
+
+Against a corrected 0.343% for all remaining rule work, the quarantine's 4.643%
+is **thirteen times** everything rule work can deliver, for no engineering at all.
+
+🛑 **But `8b` adds the qualification that must travel with it: those names were
+withheld because we believe them MISLABELLED.** Lifting the quarantine would
+transcribe **Cebuano phonology over Austrian mountains**. It buys 4.6 points of
+*real coverage at questionable quality* — a genuine trade to put in front of SG,
+**not a free win that was overlooked**. The original judgement rested on measured
+but circumstantial grounds (98.4% `wd` provenance, 82.6% name-sharing).
+
+Numbers: `/vast/ishi/ipa-v8/logs/noroute_split.json`, `other_script.json`.
