@@ -5945,17 +5945,39 @@ room at all, which is the failure that is hard to come back from.
 ### 13.1 The cause is ours, and it is a property of the toponym rebuild
 
 ```
-toponyms-undscript-20260906T160000Z.db   185G   ← 7 Sep
-toponyms-temporal-20260731T160000Z.db     37G   ← 4 Aug (previous generation)
+toponyms-undscript-20260906T160000Z.db   198 GB   ← 7 Sep, before compaction
+  after compaction                       121 GB   ← verified, row-for-row
+toponyms-temporal-20260731T160000Z.db     37 GB   ← 4 Aug (previous generation)
 ```
 
-**185 GB holding what 37 GB held, for +775,292 documents.** It measured 39.4 GB
-mid-run, so ~148 GB is not data. `rebuild_toponyms_index` writes back with
-`UPDATE toponyms SET ipa = …, panphon_features = …` across 73 M rows and closes
-with **no `CHECKPOINT`**; DuckDB retains the freed pages inside the file. Every
-future rebuild does this again unless the code changes.
+⚠ **CORRECTED — the first version of this section said ~148 GB was bloat. It was
+~77 GB.** The compacted file is **121 GB, not the ~40 GB first assumed**, so the
+difference between the generations is mostly *real data this one carries and its
+predecessor did not*: **34,141,080 `ipa` strings and the matching
+`panphon_features` blobs**. Comparing 198 GB against the previous 37 GB was never
+like-for-like, and reading the whole gap as waste overstated the defect by ~2×.
+
+**The defect is real and worth fixing at ~77 GB.** `rebuild_toponyms_index`
+writes back with `UPDATE toponyms SET ipa = …, panphon_features = …` across 73 M
+rows and closes with **no `CHECKPOINT`**; DuckDB retains the freed pages inside
+the file. Every future rebuild does this again unless the code changes.
 
 **Fix (`indexing-9c`, being raised as an issue): `CHECKPOINT` before close.**
+
+**Verified content after compaction** (`indexing-9c`'s per-table src-vs-dst
+assertion, independently reproduced by this session opening the compacted file
+read-only on job 11172704):
+
+```
+toponyms              73,479,069     toponym_attestations 122,527,196
+toponym_namespaces   122,527,196     skipped_toponyms         481,995
+observed_chars            32,915     script_stats                  20
+non-null ipa          34,141,080
+```
+
+Three of those cross-check against the run's own independent logs — `73,479,069`
+is the indexed document count, `481,995` is the `#250` mismatch figure, and
+`122,527,196` is the extracted-toponyms total.
 
 ### 13.2 The remediation, and the reflex that was wrong
 
