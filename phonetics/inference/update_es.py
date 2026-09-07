@@ -554,6 +554,24 @@ def run_index(args):
     logger.info(f"Reading toponyms from {duckdb_path}...")
     conn = duckdb.connect(str(duckdb_path), read_only=True)
 
+    # ⚠ PIN AND BOUND THE SPILL. DuckDB's temp_directory defaults to
+    # `<dbfile>.tmp` — BESIDE THE DATABASE. `--duckdb-file` lives on /vast,
+    # which is shared with production Elasticsearch, so the streaming GROUP BY
+    # below spilled ~86 GB onto /vast without /vast appearing anywhere in the
+    # command line. It took free space from 128 GB to 42 GB, under ES's 51 GB
+    # flood-stage watermark, and the files were orphaned when the job was
+    # killed because DuckDB only cleans them up on a clean exit.
+    #
+    # The default is inherited from where the DATA lives, which is why no
+    # amount of reading the invocation reveals it. Pin it to node-local scratch
+    # and CAP it, so a query that wants more fails loudly here instead of
+    # spending production's headroom.
+    spill_dir = Path(temp_dir) / 'duckdb_spill'
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    conn.execute(f"SET temp_directory = '{spill_dir}'")
+    conn.execute("SET max_temp_directory_size = '64GiB'")
+    logger.info(f"DuckDB spill pinned to {spill_dir}, capped at 64GiB")
+
     # Get total count
     total_rows = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
     logger.info(f"Total toponyms in database: {total_rows:,}")
@@ -572,16 +590,26 @@ def run_index(args):
                    t.lang,
                    t.lang_variant,
                    t.script,
-                   t.ipa,
-                   t.panphon_features,
+                   ANY_VALUE(t.ipa) as ipa,
+                   ANY_VALUE(t.panphon_features) as panphon_features,
                    GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
                    GROUP_CONCAT(DISTINCT ta.place_id) as attestations
             FROM toponyms t
             JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
             LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script,
-                     t.ipa, t.panphon_features
+            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
         ''')
+        # ⚠ ANY_VALUE, *not* extra GROUP BY columns. `panphon_features` is a
+        # ~768-byte BLOB; putting it in the grouping key makes every one of the
+        # 73.5M hash-table entries carry 768 bytes of key, which is tens of GB
+        # of hash table and spills. Adding these two columns to the GROUP BY is
+        # what drove ~86 GB of spill and took /vast from 128 GB to 42 GB —
+        # under ES's flood-stage watermark — on job 11173564.
+        #
+        # ANY_VALUE is exact here, not a convenience: `toponym_id` is the key of
+        # `toponyms`, so `ipa` and `panphon_features` are functionally dependent
+        # on a group that already includes it. There is exactly one value to
+        # choose from.
 
         # Stream from DuckDB in batches
         batch_size = 1000

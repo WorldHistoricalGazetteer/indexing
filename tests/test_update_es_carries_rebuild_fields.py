@@ -22,6 +22,14 @@ import struct
 import unittest
 
 
+def _shipped_select():
+    """Return run_index's SQL as shipped, so the tests read the real file."""
+    import pathlib
+    src = pathlib.Path("phonetics/inference/update_es.py").read_text(encoding="utf-8")
+    i = src.index("SELECT t.toponym_id")
+    return src[i:src.index(chr(39)*3, i)]
+
+
 def build_doc(row, indexed_at, romanize):
     """Mirror of run_index's per-row document construction.
 
@@ -101,14 +109,34 @@ class CarryForwardTest(unittest.TestCase):
 
     def test_the_shipped_select_actually_selects_the_columns(self):
         """Guards the other half: the doc code is useless if the SELECT drops them."""
-        import pathlib
-        src = pathlib.Path("phonetics/inference/update_es.py").read_text(encoding="utf-8")
-        i = src.index("SELECT t.toponym_id")
-        sel = src[i:src.index("''')", i)]
+        sel = _shipped_select()
         for col in ("t.ipa", "t.panphon_features"):
             self.assertIn(col, sel, f"{col} missing from run_index's SELECT")
-        self.assertIn("t.ipa", sel[sel.index("GROUP BY"):],
-                      "ipa must be in GROUP BY or the query errors")
+
+    def test_the_blob_is_not_in_the_grouping_key(self):
+        """Regression guard for a filesystem incident, not a style preference.
+
+        `panphon_features` is a ~768-byte BLOB. Adding it (and `ipa`) to the
+        GROUP BY made every one of 73.5M hash-table entries carry a 768-byte
+        key -- tens of GB of hash table, which DuckDB spilled to
+        `<dbfile>.tmp`, i.e. BESIDE THE DATABASE on /vast. That drove ~86 GB of
+        spill and took /vast from 128 GB to 42 GB, under Elasticsearch's 51 GB
+        flood-stage watermark, on job 11173564.
+
+        ANY_VALUE is exact rather than merely cheaper: `toponym_id` is the key
+        of `toponyms` and is already in the grouping key, so both columns are
+        functionally dependent on the group and there is exactly one value to
+        choose from.
+        """
+        sel = _shipped_select()
+        group_by = sel[sel.index("GROUP BY"):]
+        self.assertNotIn("panphon_features", group_by,
+                         "panphon_features is a BLOB and must NOT be in the "
+                         "grouping key -- use ANY_VALUE (see job 11173564)")
+        self.assertNotIn("t.ipa", group_by,
+                         "ipa must not be in the grouping key -- use ANY_VALUE")
+        self.assertIn("ANY_VALUE(t.panphon_features)", sel)
+        self.assertIn("ANY_VALUE(t.ipa)", sel)
 
 
 if __name__ == "__main__":
