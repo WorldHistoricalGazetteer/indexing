@@ -4597,6 +4597,41 @@ Myanmar row cannot trip it, and *adding* entries would have created a new class 
 drop for an unmeasured population. **The fourth would-be check-that-cannot-pass
 caught before shipping.**
 
+### 🛑 v8 GATE ITEM — THE PoC WILL CHANGE TWO THINGS AT ONCE AND CANNOT ATTRIBUTE THE RESULT
+
+Raised by `whg3-9d`, 7 Sep, sharpened here. Rules drafted "to the best of an
+agent's knowledge" enter the review corpus as `proposed` and **cannot leak into
+the shipped sets** — the posture separation prevents that. ⚠ **But if v8 TRAINS
+on them, the model learns from values no speaker has confirmed**, which is
+reasonable *knowingly* and bad *by accident*.
+
+🛑 **The deeper problem is attribution, not confirmation. v8 will differ from v7
+in TWO ways at once — a changed objective AND materially better rule coverage —
+so any improvement is attributable to either and the PoC cannot say which.**
+*"The model is better"* and *"the rules are better"* become indistinguishable
+after the fact.
+
+**So the run must state which difference it tests**, and hold the other constant,
+or accept up front that it measures both together and say so in the result. ⚠
+**This is a design decision for the run, not something recoverable afterwards** —
+and it is the discriminating-measurement problem this campaign keeps finding, one
+level up from where we have been finding it.
+
+⚠ **Note the asymmetry that makes "hold the rules constant" hard**: v7 cannot be
+re-embedded against the new rules, because **v7 consumes no IPA at inference**
+(`hf/inference.py`) — the rules affected v7 only through its *training* corpus.
+So the honest options are (a) train v8 on v7's rule state to isolate the
+objective, (b) hold the objective and change only coverage, or (c) change both
+and report the result as joint. **(c) is legitimate for a PoC; it is only
+illegitimate if the write-up implies (a).**
+
+✅ **REQUIRED EITHER WAY, and free during the run while impossible afterwards:
+record the RULE-SET VERSION behind every toponym whose IPA enters the training
+corpus.** Not "which drafts were in" but *at what version* — reviewers will
+correct these rules, and the model will then have trained on superseded values
+with **no record of which rows are affected**. Same discipline as
+`generation-stamps`.
+
 ### 🛑 v8 GATE ITEM — PROJECT A SPLIT THE **DETECTOR**, NOT THE **MODEL VOCABULARY**
 
 Found by `indexing-17`, 7 Sep, and verified here. **`hf/vocab/script_vocab.json`
