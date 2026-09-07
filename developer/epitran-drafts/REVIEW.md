@@ -360,6 +360,24 @@ toneless right? And `ㄦ` is redrafted `ɚ` → `ər`, which parses.
   Inuktitut has /u/, across dozens of rules, every one of them linting clean. Cree
   genuinely has /o/ there, which is precisely why the file must be per-language.
 
+## A REQUIREMENT for any romanisation rule set
+
+⚠ **A file that romanises must say WHICH SCHEME it targets, in the file.** This is
+not good practice, it is a precondition for review: Wylie and THL disagree on
+Tibetan, ISO 15919 and Hunterian on Kannada, and a reviewer handed an unlabelled
+file is checking values against a standard they have to guess. **They cannot tell a
+wrong value from a different convention**, so the review returns noise.
+
+The corpus sometimes says it outright — `kn:iso15919` names its own scheme in the
+language tag, the only case so far where a row declares that it is a romanisation
+rather than leaving it to be inferred from a script subtag. **Where the tag does
+not say, the file must.**
+
+This applies to `bod-Latn` (Wylie or THL?), `ota-Latn`, `kan-Latn` and the rest of
+the romanisation family, which are otherwise among the *easiest* sets to draft — a
+romanisation scheme is already a phonetic notation, so the map is a transcription
+of a transcription rather than a phonological judgement.
+
 ## Returning corrections
 
 Edit the `Phon` column and return the CSV, or annotate the `.NOTES.tsv` companions,
