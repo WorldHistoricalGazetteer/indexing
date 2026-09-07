@@ -8,13 +8,21 @@ distribution does not.
 
 **Dual, and the two halves apply to different outlets.**
 
-| | licence | applies to |
+**Both licences are granted to everyone.** Anyone receiving this content may rely on
+whichever of the two suits what they are doing.
+
+The table records **which grant WHG relies on for which outlet** — it is not a limit
+on what a recipient may rely on:
+
+| | licence | WHG relies on it for |
 |---|---|---|
 | **As a dataset** | **CC BY 4.0** | this directory as a whole, as published in WHG's citable Zenodo deposit |
-| **As an upstream contribution** | **MIT** | any individual rule contributed by WHG to the Epitran project |
+| **As an upstream contribution** | **MIT** | rows WHG contributes to the Epitran project |
 
-Either grant may be relied upon for its stated purpose. They are not alternatives
-offered for the recipient to choose between; each names the outlet it exists for.
+⚠ **A public MIT grant cannot be scoped after the fact.** Once a row is in Epitran
+under MIT it is MIT to everyone, and Epitran's users and packagers rely on exactly
+that. An outlet-scoped grant would fail upstream for the same reason a CC-BY-only one
+would.
 
 **Why the split, and it is a property of the format rather than a preference.**
 An Epitran map file is a bare two-column CSV with **no comment convention** — there
@@ -54,22 +62,44 @@ pan-Guru          62          44           5
 sin-Sinh          80          52          14
 ```
 
-Where values agree they agree convergently: the IPA for a given letter of a public
-writing system is a fact about that language, not creative expression, and two
-transcribers working independently arrive at the same answer. Note `khm-Khmr` shares
-no row at all, and `mya-Mymr` is a third the size of the upstream file it supposedly
-copies.
+**`khm-Khmr` shares no row at all**, and `mya-Mymr` is a third the size of the
+upstream file it would supposedly be copying — neither is a copy-with-edits shape in
+either direction.
+
+Where values do agree, we regard convergence as the better explanation than copying.
+There is essentially one way to express *"this letter makes this sound"*, and the
+compilation's selection (all letters of the script) and arrangement (codepoint order)
+are both determined rather than chosen. ⚠ **On that reasoning the percentages are
+corroboration rather than the argument** — even complete agreement would not imply
+copying, because there would be nothing chosen in the row to copy. Georgian is a poor
+case for a percentage argument in particular: its orthography is close to phonemic, so
+independent transcribers should converge heavily.
+
+⚠ **This is reasoning, not a legal opinion.** Whether these rows attract copyright or
+database rights at all is an open question, and nothing here should be read as
+settling it.
 
 ## Status of the content
 
-⚠ **These rule sets are not authoritative.** Several were measured in September 2026
-to convert as little as 16.6% of real toponyms usably, and defects have been found in
-shipped files at a rate of 81 rows across 38 of 115. They are under review by speakers
-of the languages concerned through the WHG review interface, and **values here may be
-wrong**. Corrections are welcome via that interface.
+⚠ **These rule sets are not authoritative.** Measurement in September 2026 found
+that some convert only a small minority of real toponyms into usable transcriptions,
+and that defects are present across a substantial minority of the files. Figures and
+methods are recorded in the project's issue tracker rather than restated here, since
+they change as the review proceeds.
+
+They are under review by speakers of the languages concerned through the WHG review
+interface, and **values here may be wrong**. Corrections are welcome via that
+interface.
 
 ## Contributions
 
 Contributions to these files are accepted under the dual grant above: **CC BY 4.0**
 for inclusion in the Zenodo dataset, **MIT** for any row WHG contributes upstream to
-Epitran. Contributors are credited by name where they wish to be.
+Epitran.
+
+**Credit differs between the two outlets, and the difference is stated rather than
+left to be discovered.** In the Zenodo dataset, attribution is a **condition of the
+licence** and contributors are credited by name where they wish to be. Upstream, the
+CSV format cannot carry a credit line at all, so contributors are **named in the pull
+request as a matter of practice** — not as a licence condition, because MIT imposes
+none that the file could satisfy.
