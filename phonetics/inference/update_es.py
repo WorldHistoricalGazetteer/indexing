@@ -483,7 +483,8 @@ def run_index(args):
     # two copies of a romanisation rule drift, and a silent divergence
     # between what the rebuild wrote and what this stage rewrites is the
     # failure class this whole patch exists to close.
-    from phonetics.extraction.rebuild_toponyms_index import romanize_for_search
+    from phonetics.extraction.rebuild_toponyms_index import (
+        romanize_for_search, _embedding_from_packed_features)
 
     duckdb_path = Path(args.duckdb_file)
     embeddings_path = Path(args.embeddings_file)
@@ -695,9 +696,22 @@ def run_index(args):
                     doc['ipa'] = row[5]
                 packed = row[6]
                 if packed:
-                    n_floats = len(packed) // 4
-                    doc['panphon_embedding'] = list(
-                        struct.unpack(f'{n_floats}f', packed))
+                    # ⚠ USE THE SHARED DERIVATION. `panphon_features` is NOT a
+                    # ready-made vector: it is N×24 floats, 24 PanPhon features
+                    # per IPA SEGMENT, so its length varies with the number of
+                    # segments in the name. `panphon_embedding` is the fixed
+                    # 192-d (8 position bins × 24 features) pooling of it.
+                    #
+                    # Unpacking the blob directly — as this did — yields vectors
+                    # of 192, 240, 360 … dims. The first document to arrive sets
+                    # the dynamic dense_vector mapping, and every document of a
+                    # different length is then rejected with
+                    # "Cannot update parameter [dims]". Job 11173713 lost
+                    # 31,757,518 of 73,479,069 documents that way and still
+                    # exited 0.
+                    emb = _embedding_from_packed_features(packed)
+                    if emb:
+                        doc['panphon_embedding'] = emb
                 romanized = romanize_for_search(row[1], row[4])
                 if romanized:
                     doc['name_romanized'] = romanized
@@ -749,6 +763,30 @@ def run_index(args):
     es.indices.refresh(index=args.index)
 
     logger.info(f"Indexing complete. Success: {success_count:,}, Errors: {error_count:,}")
+
+    # ⚠ A STAGE THAT LOSES DOCUMENTS MUST NOT REPORT SUCCESS.
+    #
+    # `helpers.parallel_bulk` counts failures and keeps going, so this function
+    # used to log an error total and then exit 0 — leaving a half-populated
+    # index that looks finished. Job 11173713 indexed 41,721,551 of 73,479,069
+    # documents, reported `Errors: 31,757,518`, created a snapshot, and exited
+    # 0:0. Every document of a differently-sized `panphon_embedding` had been
+    # rejected, and nothing downstream could tell.
+    #
+    # This is the fault class the ingestion postmortem registers repeatedly: a
+    # required input is absent, something plausible is substituted, and the
+    # stage reports success. So verify against the index itself — a count taken
+    # from Elasticsearch after the refresh, not the writer's own tally.
+    indexed = es.count(index=args.index)["count"]
+    logger.info(f"Index reports {indexed:,} documents")
+    if error_count or indexed != success_count:
+        raise SystemExit(
+            f"REFUSING TO REPORT SUCCESS: {error_count:,} bulk errors; "
+            f"index holds {indexed:,} documents against {success_count:,} "
+            f"reported successful. The index is incomplete and must not be "
+            f"promoted. Inspect the logged 'Error:' lines for the rejection "
+            f"reason before re-running."
+        )
 
     # Cleanup temporary DuckDB
     emb_conn.close()

@@ -21,6 +21,9 @@ number of DuckDB rows that supply it. Presence is not the property; parity is.
 import struct
 import unittest
 
+from phonetics.extraction.rebuild_toponyms_index import (
+    _embedding_from_packed_features)
+
 
 def _shipped_select():
     """Return run_index's SQL as shipped, so the tests read the real file."""
@@ -53,8 +56,9 @@ def build_doc(row, indexed_at, romanize):
         doc['ipa'] = row[5]
     packed = row[6]
     if packed:
-        n = len(packed) // 4
-        doc['panphon_embedding'] = list(struct.unpack(f'{n}f', packed))
+        emb = _embedding_from_packed_features(packed)
+        if emb:
+            doc['panphon_embedding'] = emb
     r = romanize(row[1], row[4])
     if r:
         doc['name_romanized'] = r
@@ -68,7 +72,10 @@ def fake_romanize(name, script):
 class CarryForwardTest(unittest.TestCase):
 
     def rows(self):
-        feats = struct.pack('3f', 0.0, 0.5, 1.0)
+        # a valid PanPhon blob is N x 24 floats (24 features per IPA segment);
+        # the first draft used 3 floats and the real derivation rightly
+        # returned None for it, which the count assertion caught
+        feats = struct.pack('48f', *([0.5] * 48))   # 2 segments
         return [
             # id, name, lang, variant, script, ipa, panphon, ns, attest
             ("北京@zh", "北京", "zh", None, "CJK", "peɪtɕiŋ", feats, "gn", "gn:1"),
@@ -93,9 +100,36 @@ class CarryForwardTest(unittest.TestCase):
                          "field counts must equal the rows that supply them — "
                          "a partial carry-forward passes a presence check")
 
-    def test_panphon_round_trips_to_the_right_values(self):
-        doc = build_doc(self.rows()[0], "2026-09-07", fake_romanize)
-        self.assertEqual(doc['panphon_embedding'], [0.0, 0.5, 1.0])
+    def test_panphon_embedding_is_always_192_dims(self):
+        """⚠ The property ES requires, and the one the first version violated.
+
+        `panphon_features` is N×24 floats — 24 PanPhon features per IPA
+        SEGMENT — so its length varies with the name. `panphon_embedding` is
+        the fixed 192-d (8 position bins × 24 features) pooling of it.
+
+        Unpacking the blob directly yields 192, 240, 360 … dims. ES sets the
+        dense_vector mapping from the FIRST document and rejects every
+        differently-sized one thereafter with "Cannot update parameter [dims]".
+        Job 11173713 lost 31,757,518 of 73,479,069 documents to exactly that
+        and still exited 0, because the bulk helper counts errors without
+        raising.
+
+        So the assertion is on INVARIANCE ACROSS INPUT LENGTHS, not on a value:
+        a test using one blob length would have passed against the bug.
+        """
+        for segments in (1, 2, 5, 17, 40):
+            packed = struct.pack(f"{segments*24}f", *([0.25] * (segments * 24)))
+            row = ("x@en", "X", "en", None, "CJK", "ipa", packed, "gn", "gn:1")
+            doc = build_doc(row, "2026-09-07", fake_romanize)
+            self.assertEqual(len(doc['panphon_embedding']), 192,
+                             f"{segments} segments must still yield 192 dims")
+
+    def test_a_malformed_blob_yields_no_field(self):
+        """Not a multiple of 24 floats: absent, never a wrong-length vector."""
+        row = ("x@en", "X", "en", None, "CJK", "ipa",
+               struct.pack("5f", *([0.1] * 5)), "gn", "gn:1")
+        doc = build_doc(row, "2026-09-07", fake_romanize)
+        self.assertNotIn('panphon_embedding', doc)
 
     def test_a_row_with_no_ipa_yields_no_ipa_field(self):
         """The absent case must stay absent, not become an empty string."""
