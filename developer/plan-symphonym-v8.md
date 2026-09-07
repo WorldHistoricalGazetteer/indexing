@@ -6362,3 +6362,92 @@ rather than by remembering where to type it.
 
 ⚠ **`8b` correctly did not action any of this.** Items changing what a retrain
 trains on are not a peer's call to make unilaterally.
+
+## 16. ✅ THE CEILING, MEASURED — and a policy lever worth four times all remaining rule work
+
+`8b`, over the whole corpus. **No pass was needed: the store already holds the
+transcriber's verdict for every row**, so this is a census, not a sample.
+
+```
+denominator      73,479,069
+NEVER EXAMINED            0     ← the store covers the inventory exactly
+ok               49,797,377   67.771%
+no_lang          18,543,250   25.236%
+quarantined       3,411,436    4.643%
+no_route          1,594,361    2.170%
+non_language_tag    126,394    0.172%
+echoed_input          6,240    0.008%
+empty_output             11    0.000%
+```
+
+The buckets sum to the denominator exactly (verified independently, delta 0), and
+**`NEVER EXAMINED` is 0** — so unlike every coverage figure before it, this one
+has no gap between what was measured and what exists.
+
+### 16.1 ⚠ TWO DIFFERENT CEILINGS, AND THEY ANSWER DIFFERENT QUESTIONS
+
+`8b` reported **67.779%** as "the ceiling under current policy". ⚠ **That is the
+ceiling with NO NEW RULE FILES WRITTEN** — achieved plus the 6,251 retryable soft
+failures. It is not the number this plan and the Artifact have meant by
+"ceiling", which has always been *if every rule file we could write were
+written*. **The two differ by the `no_route` bucket, which splits cleanly:**
+
+```
+no_route total        1,594,361   2.170%
+  romanisations         727,413   0.990%   deliberately unrouted (§14.1)
+  pre-existing          866,948   1.180%   "language known, no rules written for it"
+```
+
+⚠ **866,948 is an exact match** for the figure the Artifact already carried from
+an independent earlier measurement — a six-digit agreement, so the split is
+corroborated rather than assumed.
+
+```
+achieved                        67.771%
+ceiling, no new rule files      67.779%    ← 8b's figure
+ceiling, ALL rule work          68.959%    ← the Artifact's sense of "ceiling"
+ceiling, + quarantine lifted    73.602%
+```
+
+**Both belong, labelled.** The first says routing work on existing rules is
+essentially exhausted; the second says ~1.2 points of new rule files remain.
+**Neither is the old 69.53%**, which was measured on the pre-top-up denominator.
+
+### 16.2 🛑 THE POLICY LEVER IS WORTH ~4× ALL REMAINING RULE WORK
+
+**3,411,436 names — 4.643% — are withheld by a policy decision** (the
+`ceb`/`war`/`min`/`vo`/`mul` quarantine), **not by any missing rule.** That is
+**nearly four times** what every remaining rule file could deliver (1.180%), and
+it costs no engineering at all — only the reversal of a judgement.
+
+⚠ **This reframes §6 of the Artifact.** The story was "rule work buys 1.1 points,
+language identification buys 26". There is a third term between them that nobody
+had priced, and it is **available now**. Whether the quarantine *should* be
+lifted is a real question with reasons behind it — but it belongs on the table
+beside the engineering, not below it.
+
+### 16.3 Two self-caught defects worth more than the results
+
+⚠ **`8b`'s first artefact audit returned the right answer for the wrong reason.**
+It used `t.information_schema.tables` — wrong for an attached catalog — then
+failed to `DETACH` after the error, so the second database was never reached
+either. **It printed `ARTEFACTS HOLDING ENCODED SCRIPT IDS: 0` having inspected
+neither inventory.** A zero over an incomplete denominator, indistinguishable
+from the true answer. Re-run with a fresh connection per database and
+`duckdb_tables()`, it now reports **15 tables inspected** so the denominator is
+visible. ✅ **Result stands: every `script` column is `VARCHAR` — a name, not an
+id — across 15 tables and 5 parquet artefacts. Blast radius is one file.**
+
+🛑 **And the `num_scripts` gate was, in its first version, swallowed by the
+loader's own `except Exception`.** Placed inside `load_vocab_limits`'s `try`, the
+`VocabularyStaleError` would have been caught and downgraded to
+`logger.warning(… Using defaults.)` — **rebuilding the exact failure mode the
+gate exists to remove, one line lower.** Caught before commit; it now sits
+outside the handler with a regression test pinning it there, **and a positive
+control asserting that a CURRENT vocabulary passes** — without which a gate that
+raised unconditionally would have satisfied every other test.
+
+✅ **The gate also closes a second path nobody had asked about:**
+`load_vocab_limits` falls back to `{'script': 25}` when the file cannot be read —
+**neither the old 20 nor the current 37** — so a *missing* vocabulary trained a
+model at an invented width and only logged a warning. Commit `10e8bab`, 5 tests.
