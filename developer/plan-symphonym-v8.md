@@ -6101,3 +6101,64 @@ time there happened to be a 1.8 TB volume next door.
 **Standing consequence for the v8 schedule:** `/vast` is at 65 GB until `9c`'s
 compaction swaps (~145 GB expected back). Until then, nothing in this campaign
 should stage more than a few GB to `/vast`.
+
+
+### 13.5 A SECOND near-miss the same day — an INHERITED scratch path (18:10)
+
+`/vast` fell **128 GB → 42 GB in ~85 minutes**, below the ~51 GB flood stage,
+while `update_es index` (job 11172723) was running. Cancelled at 42 GB;
+DuckDB removed its own temp directory on exit and free space returned to 128 GB.
+**Production never tripped** — 0 blocked indices, both `places` and `toponyms`
+answering a `_bulk` write probe with `404 not_found`, gateway healthy. The cost
+was 3h30m of genuine indexing work (111% CPU, 3h46m CPU time, RSS 55 GB — it was
+progressing, not hung) and nothing else.
+
+```
+/vast/ishi/data/toponyms-undscript-20260906T160000Z.db.tmp/
+  duckdb_temp_storage_DEFAULT-5.tmp   20.0 GB
+  duckdb_temp_storage_DEFAULT-4.tmp   16.8 GB
+  ... 11 files > 1 GB, 86 GB total and still growing at ~1 GB / 15 s
+```
+
+🛑 **The mechanism, and why it was invisible: DuckDB's temp directory defaults to
+`<dbfile>.tmp`, beside the database file.** `--duckdb-file` points at `/vast`,
+so the spill went to `/vast`. **Nothing in the command line names `/vast` as
+scratch.** The job did not choose a bad path; it inherited one from where its
+input happens to live.
+
+**Fix for any resubmission — both halves, and `8b`'s are proven in anger:**
+
+```python
+SET temp_directory = '/ix1/…';          # path
+SET max_temp_directory_size = '…';      # bound — the half that fails loudly
+```
+
+⚠ **Bound it as well as move it.** Unbounded spill on `/ix1` moves the risk to a
+volume with more room to hide it. `8b`'s bounded job hit its ceiling and died
+with `/vast` untouched — a readable failure instead of a filesystem event.
+⚠ And **86 GB of spill to index 73 M rows is itself the finding**: something in
+the pass is materialising far more than it needs, which is the same question
+`8b` answered by materialising both sides of a join rather than raising a limit.
+Size it before accommodating it.
+
+### 13.6 THREE INSTANCES OF ONE ROOT CAUSE IN ONE DAY
+
+| # | where | shape |
+|---|---|---|
+| 1 | `rebuild_toponyms_index` | `UPDATE` without `CHECKPOINT`, then `shutil.copy2` promotes the bloat |
+| 2 | `8b`'s evaluation query | unbounded spill, explicit path |
+| 3 | `update_es index` | unbounded spill, **inherited** path |
+
+**So `#255`'s free-space assertion must cover scratch paths a job INHERITS, not
+only those it names** — (3) is invisible to any audit that reads command lines.
+An assertion that simply watches free space on `/vast` from inside the job and
+aborts catches all three regardless of which file is consuming.
+
+⚠ **And the monitoring lesson is mine.** A 66 GB drop over 85 minutes fired no
+rate alarm: my thresholds were a 40 GB fast drop between 5-minute polls and 80 GB
+over an hour, and a steady ~47 GB/hour drain passed under both. It surfaced only
+as a band change at 62 GB, leaving 11 GB of margin. **A rate alarm calibrated
+above the rate that actually kills you is a band alarm with extra steps.**
+Retuned to 2-minute polls with 15 GB / 25 GB / 40 GB triggers at 2 min / 15 min /
+1 hour, and it now names the consuming files in the alert rather than leaving
+that to be discovered.
