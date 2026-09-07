@@ -58,9 +58,32 @@ does not, the test is the defect.
 > Cross-Script Name Matching — Models and Evaluation Data*. Zenodo.
 > https://doi.org/10.5281/zenodo.18682017
 
-## Open questions for the project owner
+## Required of the v8 deposit
 
-1. **The deposit-level statement for v8.** The v7 Zenodo record is CC BY 4.0 at the record level while the rule sets within it are dedicated CC0. CC0 is the more permissive, so a recipient faces no conflict — but the relationship should be **stated at the deposit for v8** rather than left to be inferred.
+✅ **Decided (SG, 7 Sep 2026): the relationship between the record-level licence and
+the per-component terms must be STATED at the deposit for v8, not left to be
+inferred.**
+
+The v7 record states **CC BY 4.0** at record level while the rule sets inside it are
+dedicated **CC0**. CC0 is the more permissive, so a recipient relying on the
+record-level licence is never *wrong* — they would simply be over-complying for part
+of the deposit. That is an ambiguity rather than a conflict, and it is resolved by
+saying so.
+
+🛑 **Concretely, and this closes the defect that prompted the whole exercise: SHIP THE
+LICENCE FILES INSIDE THE DEPOSIT.** The v7 archive contains **no `LICENSE`, `COPYING`
+or `NOTICE` anywhere** — the CC BY 4.0 claim exists *only* in Zenodo's record
+metadata, so anyone who takes the files from the archive, or from GitHub, sees no
+licence at all. ⚠ **A licence that lives only in a catalogue record does not travel
+with the bytes.**
+
+So the v8 deposit must:
+
+1. **Contain `LICENCE.md` and `zenodo/epitran_extensions/LICENCE.md`**, so the terms
+   travel with the files.
+2. **State in the record description that the record-level licence is a floor**, with
+   per-component terms given inside — rather than implying one licence governs
+   everything in the deposit.
 
 ## Checked and found not to apply
 

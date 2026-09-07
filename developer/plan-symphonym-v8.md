@@ -4597,6 +4597,27 @@ Myanmar row cannot trip it, and *adding* entries would have created a new class 
 drop for an unmeasured population. **The fourth would-be check-that-cannot-pass
 caught before shipping.**
 
+### ✅ v8 RELEASE ITEM — THE DEPOSIT MUST CARRY ITS OWN LICENCE FILES
+
+**Decided by SG, 7 Sep 2026.** The v7 Zenodo record states CC BY 4.0 at record level
+while the rule sets inside it are dedicated **CC0**; the relationship must be
+**stated at the deposit for v8**, not left to be inferred.
+
+🛑 **The underlying defect is that the v7 archive contains NO licence file at all** —
+no `LICENSE`, `COPYING` or `NOTICE` anywhere in it. The CC BY 4.0 claim exists *only*
+in Zenodo's record metadata, so **anyone taking the files from the archive, or from
+GitHub, sees no licence.** ⚠ **A licence that lives only in a catalogue record does
+not travel with the bytes.**
+
+**Two things the v8 deposit must do**, and they are release actions rather than
+notes: **ship `LICENCE.md` and `zenodo/epitran_extensions/LICENCE.md` inside the
+archive**, and **say in the record description that the record-level licence is a
+floor** with per-component terms given inside.
+
+⚠ **Recorded here as well as in `LICENCE.md` deliberately**, because this is what gets
+read when v8 is prepared — a requirement that lives only in a licence file is the same
+failure as a licence that lives only in a catalogue record.
+
 ### 🛑 v8 GATE ITEM — THE PoC WILL CHANGE TWO THINGS AT ONCE AND CANNOT ATTRIBUTE THE RESULT
 
 Raised by `whg3-9d`, 7 Sep, sharpened here. Rules drafted "to the best of an
