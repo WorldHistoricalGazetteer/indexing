@@ -5924,3 +5924,84 @@ thing an hour earlier and it was already false when said.
 only true at the instant it is checked, and it must be checked against the live
 remote (`git ls-remote`) rather than a local tracking ref, which can itself be
 stale. Verify immediately before acting, never from memory of an earlier check.
+
+---
+
+## 13. The 7 September `/vast` flood-stage event — and the two disciplines it imposes on v8 work
+
+**Production Elasticsearch went write-blocked while v8 corpus work was in
+flight.** `/vast/ishi` — the 1 TB allocation ES shares with everything this
+campaign stages — fell to **23 GB free**, crossing ES's 95% flood-stage
+watermark and setting `index.blocks.read_only_allow_delete` on **22 indices**,
+`places` and `toponyms` among them.
+
+⚠ **"Flood stage" and "the site is down" are different claims, and conflating
+them mis-prices the incident.** Reads never stopped: `places` returned
+51,187,900, `toponyms` 72,703,777, and a live `Broxbourne` search served in
+0.44 s throughout. **The block stops writes only.** What was actually at risk was
+the remaining 23 GB of margin — one more staged output and ES would have had no
+room at all, which is the failure that is hard to come back from.
+
+### 13.1 The cause is ours, and it is a property of the toponym rebuild
+
+```
+toponyms-undscript-20260906T160000Z.db   185G   ← 7 Sep
+toponyms-temporal-20260731T160000Z.db     37G   ← 4 Aug (previous generation)
+```
+
+**185 GB holding what 37 GB held, for +775,292 documents.** It measured 39.4 GB
+mid-run, so ~148 GB is not data. `rebuild_toponyms_index` writes back with
+`UPDATE toponyms SET ipa = …, panphon_features = …` across 73 M rows and closes
+with **no `CHECKPOINT`**; DuckDB retains the freed pages inside the file. Every
+future rebuild does this again unless the code changes.
+
+**Fix (`indexing-9c`, being raised as an issue): `CHECKPOINT` before close.**
+
+### 13.2 The remediation, and the reflex that was wrong
+
+The instinct — mine — was to delete the superseded 37 GB generation. **That was
+wrong and `9c` corrected it.** `/ix1/ishi` had **1.8 TB free**, `8b` had built
+its IPA store against that file, and it was regenerable only by a 17-hour
+rebuild. A cross-volume move took **80 seconds**, so scarcity of time was not a
+reason either. **Move, don't delete** — `cp` → verify the destination byte count
+equals the source → `rm`, so the verification point is explicit rather than
+internal to `mv`.
+
+`/vast` 23 GB → 65 GB. The block **did not auto-release** after ~3 minutes and
+was cleared explicitly. ⚠ **The setting's absence is not evidence writes work**:
+verified with a `_bulk` **delete of a deliberately nonexistent id**, which
+returns `404 not_found` from an index accepting writes and
+`cluster_block_exception` from one still blocked. No ES or gateway restart was
+needed.
+
+### 13.3 Two disciplines that now bind every v8 job
+
+1. **Spill and large outputs go to `/ix1`, and bound them.** `8b` set
+   `max_temp_directory_size` to 16 GB with the spill on `/ix1`; the next query
+   hit the ceiling and **died with `/vast` unmoved**. A job failing instead of a
+   filesystem is a result, not a setback. ⚠ And the trap moves: bounding the
+   *seed* did not bound the *join*, because `toponym_attestations` has no index
+   on `place_id` and hashes ~200 M rows however small the seed. **Bounding the
+   input to a join is not bounding the join** — materialise both sides.
+2. **Resolve staged artefacts by name across both roots, never by a hard-coded
+   path.** Files are moving between `/vast` and `/ix1` as capacity is managed and
+   will move again when `9c`'s compaction swaps. A resolver should refuse to
+   match `*.compact.db`, since a compaction in flight is a file mid-write.
+
+### 13.4 What replaces the assurance that failed
+
+I had undertaken to watch `/vast` and did not. The signal was available: two
+sessions reported file sizes to me that day, and I recorded them as evidence
+about the rebuild rather than as capacity. `9c` generated the 185 GB file and ran
+`df` twice during the job without reading the number either.
+
+**So the correction is a mechanism, not a restatement of intent** — a threshold
+alarm now polls `/vast` and fires on band changes, and it fired on arming, which
+is how it is known to fire rather than merely to be quiet. The durable half is a
+**preflight and mid-run free-space assertion inside any job writing tens of GB to
+the volume production ES lives on**, so it refuses to start below a margin. This
+time there happened to be a 1.8 TB volume next door.
+
+**Standing consequence for the v8 schedule:** `/vast` is at 65 GB until `9c`'s
+compaction swaps (~145 GB expected back). Until then, nothing in this campaign
+should stage more than a few GB to `/vast`.
