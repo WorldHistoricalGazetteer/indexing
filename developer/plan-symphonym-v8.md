@@ -4662,6 +4662,50 @@ sets plus `zgh-Tfng`, `cop-Copt`, `div-Thaa` — **not** the 614,501 in covered 
    at inference**; so *"the model is better"* and *"the rules are better"* become
    indistinguishable afterwards unless the beta says so at the time.
 
+### ➡ GETTY METADATA FOR TRAINING — recorded, but only ONE of four is SCHEDULED
+
+SG asked whether the Getty metadata is still on the table. **It is all in this
+document — but as findings, and three of the four have been drifting as "recorded,
+not scheduled", which is the failure this plan keeps naming in other people's work.**
+Status honestly:
+
+| signal | rows | status |
+|---|---|---|
+| **TGN dated variants** | 40,937 pairs / **3,565 effective places** | ✅ **SCHEDULED** — the historic-orthography fine-tune, harvested from the staged extract (§6.2c) |
+| **`gvp:historicFlag`** | **22,198** `historic` | ⚠ recorded, **not scheduled** |
+| **`gvp:termFlag`** | **4,058,187** `Vernacular` | ⚠ explicitly *"available, not scheduled"* |
+| **`-Latn` romanisations** | ~1.16M | ⚠ blocked — recovered by #250, then need Latin routes that mostly do not exist |
+
+**🛑 AND TWO OF THEM ARE WORTH MORE THAN THAT STATUS SUGGESTS.**
+
+**1. `historicFlag` is ADDITIVE to the dated set, not a subset of it.** The 40,937
+pairs come from term-level `estStart`/`estEnd` — **dates tell you *when*; the flag
+tells you *that a term is historic*, including for terms carrying no dates at all.**
+⚠ Against a fine-tune whose *effective* N is **3,565 places**, 22,198 source-labelled
+historic terms is potentially a large multiple, not a rounding. ✅ **The measurement
+that sizes it is one query: how many of the 22,198 flagged terms are NOT in the dated
+set.** Nobody has run it.
+
+**2. `termFlag` is an ATTESTED answer to the exact question the pair selector guesses
+at.** `find_similar_in_place` takes co-attested names and uses **PanPhon to reject
+exonyms** — `Ayers Rock`/`Uluru` co-attest and are not phonetically related.
+**Getty's `termFlag` states outright which term is the vernacular form.** That is the
+same job, done by the source rather than by proxy.
+
+⚠ **It is `tgn`-only, so it cannot replace the filter** — but that is not the best use
+of it anyway. ✅ **Use it to MEASURE the filter**: on 4M rows we have an attested
+answer to a question the selector currently answers by inference, so it is a
+**validation set for pair selection, which nobody has.** ⚠ **That bears directly on
+"remove the IPA gate"** (optimisation #2), whose whole risk is that a
+romanised-edit-distance filter would be weakest where the model is strongest —
+**`termFlag` is the only way on the table to check that claim against ground truth
+rather than argue about it.**
+
+**Nothing here is a new commitment**; it is a status correction and two sized
+opportunities. ⚠ **But "recorded, not scheduled" for a signal this large is how a
+finding quietly becomes a footnote**, which is the same shape as a release
+requirement living only in a licence file.
+
 ### 🛑 DOES JUNK REMOVAL AFFECT SYMPHONYM? IT SPLITS, AND THE SPLIT IS THE ANSWER
 
 SG asked and invited the clause to be dropped if not. **It should not be dropped, but
