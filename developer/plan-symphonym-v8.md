@@ -7119,3 +7119,78 @@ records — to take effect.
 2. **At the three authority scripts** — or the next ingest reintroduces all of
    it. Same shape as the MultiPoint fix: without the code change the next
    re-ingest re-flattens.
+
+## 26. ✅ INCIDENCE INVERTED THE COVERAGE RANKING — and `ok` was the wrong column
+
+`17`, over all 73,479,069 toponyms. **The set both mechanical signals ranked
+FIRST has zero rows for both of its headline components.**
+
+```
+candidate                          rows   rows NOT ok   9d rank
+kat-Geor  Asomtavruli                 0             0         1
+kat-Geor  Nuskhuri                    0             0         1
+kat-Geor  Mtavruli                    4             1         1
+kat-Geor  archaic U+10F1-10FA       187           187         1
+khm-Khmr  independent vowels        364           363         2
+bod-Tibt  subjoined              10,890        10,886         3
+guj-Gujr  independent vowels      6,255           155         4
+nep/new-Deva independent vowels   48,887         4,702         5
+```
+
+🛑 **`kat-Geor` ranked first on a 38% coverage score and an argument about
+historical inscriptions, and the corpus contains NOT ONE Asomtavruli or Nuskhuri
+character.** The Khutsuri case is real linguistics and **zero rows here**.
+Georgian totals ~191. **Not worth a file** — and it is the clearest possible
+vindication of `9d`'s own boundary: *it can say where to look, not whether it is
+worth it.*
+
+### 26.1 🛑 "ROWS NOT OK" IS THE WRONG COLUMN — `ok` AND WRONG
+
+⚠ **A row containing an unmapped independent vowel can still be `status='ok'`:
+the route fires and the vowel is silently dropped from the output.** That is the
+Myanmar ha-hto situation exactly. So the two columns answer different questions:
+
+* **routing damage** — no IPA at all → `rows NOT ok`
+* **quality damage** — IPA produced, a phoneme missing → `rows`
+
+**`guj-Gujr` is the case that proves it: 6,255 rows contain a missing vowel and
+only 155 fail to route.** Ranking on `NOT ok` would have dismissed it as *155
+rows* when **6,100 are producing IPA with a phoneme silently absent.**
+
+⚠ **`17` nearly ranked on it, and says so.** The generalisation is worth more
+than the ranking: **a status field records whether the stage RAN, not whether its
+output is RIGHT** — so an error count measures the failures a pipeline noticed,
+never the ones it did not.
+
+### 26.2 THE WORK ORDER, RANKED BY QUALITY DAMAGE
+
+1. **`nep-Deva` / `new-Deva`** — **48,887 rows.** Also Trap 1: mechanically
+   flagged for the *wrong gap* (Vedic cantillation, out of scope) while 17 vowels
+   were missing from the primary block.
+2. **`bod-Tibt`** — 10,890 rows, **10,886 getting no IPA at all**, so worst by
+   routing damage. Trap 2: `blocks=1`, invisible to the mechanical list.
+3. **`guj-Gujr`** — 6,255 rows, nearly all transcribing *incorrectly* rather than
+   failing.
+4. `khm-Khmr` — 364. Marginal. 5. `kat-Geor` — ~191. **Do not author.**
+6. `bpy-Beng` — **unmeasured**; found only by measuring the category, so it has
+   neither a coverage flag nor an incidence figure. Measure before deciding.
+
+**~66,000 rows of quality damage, ~15,600 of them routing failures. Worth two or
+three files; everything below is not.**
+
+### 26.3 ⚠ THE TWO SIGNALS DISAGREE ALMOST PERFECTLY — WHICH IS THE ARGUMENT FOR BOTH
+
+**The two sets the mechanical signals handled WORST are ranks 1 and 2 by
+incidence** (`nep`/`new-Deva` mis-flagged, `bod-Tibt` invisible), **while the set
+both signals ranked first is 191 rows.** A clean agreement would have been weaker
+evidence than this disagreement: each instrument is measuring something the other
+cannot see, and neither is a completion criterion on its own.
+
+### 26.4 ✅ THE PROMOTION LANDED WITH BOTH CONDITIONS MET (`d53cb2c`)
+
+`install_epitran_extensions.sh:11` confirmed reading `phonetics/epitran_extensions/`,
+and **nothing outside `developer/` references `zenodo/epitran_extensions` at
+all** — so no sync exists to collapse the operational/deposit distinction.
+**Purely additive: 24 and 29 rules added, ZERO removed**, so nothing that works
+today can regress. `DIVERGENCE.md` in the operational directory; Q22 in
+`REVIEW.md`.
