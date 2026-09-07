@@ -300,6 +300,33 @@ for *toponyms* is a separate question.
 **Q17 — two Old Nubian letters left unmapped** (`ⳝ` 3 rows, `ⳟ` 1 row). Out of scope
 for a Coptic map and too few to guess at.
 
+🛑 **CORRECTION TO THE FIRST DRAFT — it was missing a third of the corpus, and the
+mechanism is a trap worth knowing.** Unicode **disunified** the Greek-derived Coptic
+letters into U+2C80+ and left the seven Demotic-derived ones behind at
+**U+03E2–U+03EF**. A rule set built by walking the Coptic block therefore omits
+exactly `ϣ ϥ ϧ ϩ ϫ ϭ ϯ` — **and the walk looks exhaustive**. Measured consequence:
+**347 of 971 `cop` toponyms (35.7%) contained one and could not transcribe at all**;
+`ϩ` HORI alone is 169 rows. Now fixed and verified end to end: **0% → 100% of those
+rows emit no Coptic letter, 98.0% fully PanPhon-parseable.**
+
+**Q20 — `ϯ` DEI is a SYLLABLE, not a segment.** It writes /ti/ and emits two phones
+by design (24 rows). If the pipeline should treat it as one unit, that is a
+different notation and a reviewer's call.
+
+**Q21 — `ϫ` GANGIA and `ϭ` SHIMA are on the SAME dialect axis as Q15.** Drafted
+`dʒ` and `tʃ`; Sahidic descriptions often give a palatal /kʲ/ for SHIMA and some
+Bohairic ones give /g/ for GANGIA. **Answer Q15 and these follow** — 104 rows between
+them.
+
+⚠ **Two mechanical findings recorded so nobody redoes them.**
+* **Epitran CASE-FOLDS**, measured: `Ⲍ` with no rule of its own transliterates as
+  `z` from the lowercase rule. **All 16 capital rules were inert and are removed**
+  rather than completed. Do not re-add without re-running that probe.
+* **6 of the 347 Demotic-bearing names detect as GREEK, not COPTIC**, because
+  U+03E2–U+03EF sits inside the GREEK range in `SCRIPT_RANGES`. Rules alone do not
+  reach them — that tail is a *detection* fix, and it is the same block-split
+  mechanism arriving a second time.
+
 ### Thaana — `div-Thaa.csv` (1,858 rows) — NEW
 
 46 distinct characters attested, 45 mapped. The 24 native consonants and 10 fili are
