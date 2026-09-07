@@ -570,7 +570,18 @@ def run_index(args):
     spill_dir.mkdir(parents=True, exist_ok=True)
     conn.execute(f"SET temp_directory = '{spill_dir}'")
     conn.execute("SET max_temp_directory_size = '64GiB'")
-    logger.info(f"DuckDB spill pinned to {spill_dir}, capped at 64GiB")
+    # Streaming a 73.5M-row join for a bulk index: row order is irrelevant to
+    # the consumer, and preserving it forces DuckDB to buffer. Turning it off
+    # is what makes this a streaming scan rather than a materialising one.
+    # Thread and memory limits are held down deliberately too — at the default
+    # thread count this query hit a DuckDB internal assertion in
+    # RowGroup::FetchRow (job 11173666); at 4 threads it streams cleanly.
+    # Verified before shipping: 3,000,000 rows in 77s with no spill growth.
+    conn.execute("SET preserve_insertion_order = false")
+    conn.execute("SET threads = 4")
+    conn.execute("SET memory_limit = '24GB'")
+    logger.info(f"DuckDB spill pinned to {spill_dir}, capped at 64GiB; "
+                f"streaming mode (preserve_insertion_order=false, threads=4)")
 
     # Get total count
     total_rows = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
