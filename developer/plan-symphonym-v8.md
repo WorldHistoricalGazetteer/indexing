@@ -7194,3 +7194,78 @@ all** — so no sync exists to collapse the operational/deposit distinction.
 **Purely additive: 24 and 29 rules added, ZERO removed**, so nothing that works
 today can regress. `DIVERGENCE.md` in the operational directory; Q22 in
 `REVIEW.md`.
+
+## 27. RECOVERABILITY — 11.47% of `osm`'s untagged names, and a projection NOT to make
+
+`04`, over the `osm` staged extract, generation-stamped stable across the read.
+
+```
+places                        20,622,228
+untagged toponyms (bare/und)  20,622,227   ← denominator: one per object, the bare `name`
+
+RECOVERABLE — the identical string also carries a language tag
+on the SAME object                2,365,980   11.47%
+not recoverable this way         18,256,247   88.53%
+
+of the recoverable:  exactly 1 candidate  2,155,490  91.10%   ← unambiguous
+                     2 candidates           171,546   7.25%
+                     3+                       38,944   1.65%
+
+top: zh 391,655 · ja 352,096 · ru 204,004 · ar 187,376 · uk 179,037 · en 177,394
+```
+
+➡ **About an eighth of `osm`'s untagged names have their language STATED BY THE
+SOURCE and discarded by us**, and nine in ten of those have a single unambiguous
+answer — **2,155,490 names taggable by string match against a sibling on the same
+object: no language identification, no model, no judgement.**
+
+### 27.1 🛑 DO NOT PROJECT 11.47% ONTO THE 18,543,286 — TWO REASONS
+
+⚠ **`04` flagged both, and this session immediately computed the forbidden ratio
+anyway before catching it:**
+
+```
+2,155,490 / 73,479,069 = 2.93%   ← WRONG. Different populations.
+```
+
+1. **Extract-level vs index-level.** This counts 20,622,227 untagged names in
+   `osm`'s **staged extract**. The index shows **9,659,290** no-lang docs
+   carrying `osm`, because toponyms are **globally deduplicated into distinct
+   `name@lang` rows and shared across namespaces**. The extract figure does not
+   convert without measuring the dedup, which nobody has.
+2. **`osm` is not representative.** Its untagged share is large *by
+   construction*. **`gn` contributes 10,598,144 — MORE than `osm`'s 9,659,290** —
+   and its mechanism is different and **entirely unmeasured.**
+
+**So the tempting comparison "8× all remaining rule work" is invalid until the
+dedup is measured. Stated because it is exactly the arithmetic someone will do.**
+
+### 27.2 THE ARTIFACT HEADLINE STANDS — narrower than either of us hoped
+
+The ~25 points are **not** inflated by junk (0.078%, §25) and **not wholly
+unreachable** — a material minority of `osm`'s share is recoverable by string
+match alone. But **88.53% of even `osm`'s untagged names have no sibling to
+recover from**, and **the larger contributor has not been measured at all.**
+
+✅ **`04`'s judgement, which I am backing: do NOT correct the headline on this
+evidence.** What it adds is that **a slice is cheaply reachable without any
+language-identification project** — which strengthens the case for doing the
+cheap part first, rather than weakening the case for the expensive part.
+
+**Commissioned: the same measurement over `gn`.** That is the number that would
+actually move the headline.
+
+### 27.3 ⚠ AN SSH THAT HANGS MID-HEREDOC LEAVES NOTHING BEHIND
+
+`04`'s original `und-recover` job **never existed**. The `ssh` to `crc0` hung
+part-way through a heredoc, so **neither the script nor the sbatch was ever
+written and `sbatch` never ran** — while the session believed a job was queued
+**for about an hour**.
+
+✅ **It was caught by checking through a DIFFERENT login node rather than
+inferring**: no `sacct` record, no output file, **no script on disk**. ⚠ The
+last of those is the decisive one — `sacct` silence is ambiguous during a login
+outage ([[slurm_queries_cannot_prove_absence]]), but a **missing script** is
+positive evidence the submission never happened.
+
+**`crc0`, `crc1` and `crc3` were all timing out; `crc2` was up throughout.**
