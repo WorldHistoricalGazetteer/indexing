@@ -7269,3 +7269,85 @@ outage ([[slurm_queries_cannot_prove_absence]]), but a **missing script** is
 positive evidence the submission never happened.
 
 **`crc0`, `crc1` and `crc3` were all timing out; `crc2` was up throughout.**
+
+## 28. ✅ `gn` IS TWICE AS RECOVERABLE AS `osm` — and the dedup conversion came out EXACT
+
+`04`, mechanism before rate as asked.
+
+### 28.1 THE MECHANISM DIFFERS; THE INSTRUMENT STILL FITS
+
+```
+geonames-places.py:90     primary `name` -> ALWAYS @und; allCountries.txt states no language
+geonames-toponyms.py:100  alternateNamesV2 HAS isolanguage; falls to und only when EMPTY
+geonames-toponyms.py:94   already SKIPS non-language codes {post, iata, icao, faac, unlc, tcid, abbr}
+```
+
+So `gn`'s untagged names come from **a structurally unlabelled primary field plus
+alternates whose language is blank** — not, as in `osm`, from a tag model with no
+language concept at all. **The string-match instrument fits both for the same
+reason:** a primary name reappearing as a language-tagged sibling has its
+language *stated by the source*.
+
+### 28.2 MEASURED
+
+```
+places                          13,454,817
+untagged toponym OCCURRENCES    16,875,284   ← denominator
+distinct untagged NAME strings  10,598,146
+DEDUP FACTOR                         1.592
+
+RECOVERABLE  4,034,726  23.91% of occurrences   (97.00% single-candidate)
+not          12,840,558  76.09%
+top: en 668,052 · es 615,762 · no 587,763 · fi 479,434 · id 391,911
+```
+
+➡ **`gn` is more than twice as recoverable as `osm` — 23.91% vs 11.47% — AND it
+is the larger contributor, AND it is cleaner (97.00% vs 91.10% single-candidate).
+The half nobody had looked at is the more tractable half.**
+
+### 28.3 ✅ THE DEDUP CONVERSION IS SETTLED, AND IT IS EXACT
+
+```
+distinct untagged names, staged gn   10,598,146
+gn no-lang docs in the index         10,598,144      ← a difference of TWO
+```
+
+**Out of 10.6 million.** So the staged→index mapping is **1:1 on distinct
+untagged names**, and `gn`'s factor is 1.592 occurrences per index row. ⚠ **That
+was the unmeasured quantity blocking every extract-level figure in this thread**
+(§27.1), and it fell out of the same pass.
+
+⚠ **BUT 23.91% IS OVER OCCURRENCES, NOT DISTINCT NAMES.** `04` did not capture
+distinct-recoverable, and says explicitly: **do not convert 23.91% onto
+10,598,144.** A name occurring twice and recoverable once counts differently in
+the two frames. **Commissioned as a second pass** rather than estimated.
+
+### 28.4 THE HEADLINE STILL STANDS — but "wall" is the wrong word
+
+With `gn` at 23.91% and `osm` at 11.47%, both above 90% single-candidate, **the
+"unreachable" framing is materially weaker than when only `osm` was measured.**
+✅ **`04`'s formulation, which I am adopting: it is not a wall. It is a wall with
+a measured door in it, and the door is cheap.**
+
+**Still not correcting the headline number** — the index-level rate is
+unmeasured and **76% of `gn`'s untagged names remain genuinely unstated.** The
+Artifact changes when the distinct-recoverable pass lands, not before.
+
+### 28.5 🛑 THE FIX FOR `osm`'s 201,486 JUNK TAGS ALREADY EXISTS IN THIS CODEBASE
+
+`gn` filters non-language codes at `geonames-toponyms.py:94`. `osm` does this:
+
+```python
+osm-places.py:239   result['names'][tag.k[5:]] = tag.v     # no filter of any kind
+```
+
+**Same repository, same project, one source got the discipline and the other
+never did** — which is how `genitive`, `uicn` and `left`/`right` came to sit in a
+language field (§25.3).
+
+⚠ **BUT THE SHAPES MUST DIFFER AND SOMEONE WILL COPY IT ACROSS ANYWAY.** `gn`'s
+is a small **deny-list**, and that is right because its codes come from a
+*controlled field* with a known set of intruders. **`osm`'s come from arbitrary
+tag keys**, so a deny-list is unbounded — 1,062 distinct junk values already, and
+the next mapper invents the 1,063rd. **`osm` needs an ALLOW-list** of valid
+language subtags. **Do not port `gn`'s list; port its discipline.**
