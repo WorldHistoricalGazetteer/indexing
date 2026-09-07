@@ -34,7 +34,58 @@ logger = logging.getLogger(__name__)
 import pyarrow.parquet as pq
 import pyarrow.dataset as ds
 
-def load_vocab_limits(data_dir: Path) -> Dict[str, int]:
+class VocabularyStaleError(RuntimeError):
+    """The vocabulary a training run would use does not match the code."""
+
+
+def assert_vocab_current(data_dir: Path, limits: Dict[str, int]) -> None:
+    """Refuse to train against a script vocabulary that is not the enum's.
+
+    WHY THIS FAILS RATHER THAN WARNS. `script_vocab.json` is DERIVED from
+    `Script` at extraction time, so it is only current if it was regenerated
+    after the enum last changed — and on 7 Sep 2026 every vocabulary on disk
+    held 20 entries while the enum held 37, including one written that same week
+    by a run whose STEP 2 did derive it correctly from the enum *as it stood at
+    that moment*. Nothing malfunctioned; the artefact was simply older than the
+    code.
+
+    A retrain against such a file silently bakes the `Script.OTHER` blackout
+    into the model, where no rule fix can reach it, and NOTHING downstream can
+    detect it: the file is internally consistent, `num_scripts` matches its own
+    length, and every embedding lookup succeeds. The only moment the mismatch is
+    visible is here, before the expensive thing happens.
+
+    ⚠ There is a second silent path this closes. `load_vocab_limits` falls back
+    to ``{'char': 5000, 'script': 25, 'lang': 1000}`` when the file cannot be
+    read, and 25 is neither the old 20 nor the current 37 — so a MISSING
+    vocabulary trains a model with an invented width and only logs a warning.
+    """
+    from phonetics.utils.script_detection import Script
+
+    vocab_path = Path(data_dir) / 'vocab' / 'script_vocab.json'
+    expected = len(list(Script))
+    got = limits.get('script')
+
+    if not vocab_path.exists():
+        raise VocabularyStaleError(
+            f"no script vocabulary at {vocab_path}. Training would fall back to "
+            f"a DEFAULT width ({got}), which is not derived from anything. "
+            f"Regenerate the vocabulary before training."
+        )
+    if got != expected:
+        raise VocabularyStaleError(
+            f"script vocabulary is stale: {vocab_path} has {got} entries, the "
+            f"Script enum has {expected}. Training now would bake the missing "
+            f"{expected - got} scripts into the model as OTHER, unrecoverably. "
+            f"Regenerate the vocabulary from the current enum first.\n"
+            f"⚠ Check the ids are PINNED before regenerating: if ids are derived "
+            f"from enum declaration order, regeneration can renumber existing "
+            f"scripts (OTHER moved 19 -> 36 on 7 Sep 2026) and silently "
+            f"reinterpret anything already encoded against the old numbering."
+        )
+
+
+def load_vocab_limits(data_dir: Path, strict: bool = True) -> Dict[str, int]:
     """
     Load vocabulary limits from the extracted data directory.
 
@@ -78,6 +129,14 @@ def load_vocab_limits(data_dir: Path) -> Dict[str, int]:
 
     except Exception as e:
         logger.warning(f"Could not load vocab limits from {vocab_dir}: {e}. Using defaults.")
+
+    # ⚠ OUTSIDE the try, deliberately. The first version of this gate sat inside
+    # it, where the `except Exception` above would have caught VocabularyStaleError
+    # and downgraded the refusal to a warning -- rebuilding, one line lower, the
+    # exact failure mode the gate exists to remove. A guard inside the handler
+    # that swallows it is not a guard.
+    if strict:
+        assert_vocab_current(data_dir, limits)
 
     return limits
 
