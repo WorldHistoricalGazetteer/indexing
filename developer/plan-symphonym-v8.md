@@ -7470,3 +7470,69 @@ direct index scan.
 
 **The 25-point number does not move. What moves is that it is not a wall — it is
 a wall with a measured door in it, and the door is cheap.**
+
+## 31. 🛑 11173713 "COMPLETED" HAVING LOST 31.7M DOCUMENTS — and this session reported it as a success
+
+```
+Indexing complete.  Success: 41,721,551   Errors: 31,757,518
+index _count                   41,721,551      ← 57% of the corpus
+exit code                             0:0      ← and it then SNAPSHOTTED
+```
+
+**The registered fault class in its purest form yet:** `helpers.parallel_bulk`
+counts failures and keeps going, **nothing compared the result against the
+input**, and the stage reported success — then produced an artefact.
+
+### 31.1 ⚠ THE READING FAILURE WAS THIS SESSION'S, AND IT CONTRADICTS §26.1
+
+I ran `sacct --format=State,ExitCode,Elapsed,MaxRSS`, got **`COMPLETED`, `0:0`,
+`05:36:47`, `64 GB`**, and reported to SG that *"the fourth attempt got
+through"*. **Every field was accurate. None is evidence about whether the stage
+did its job.**
+
+🛑 **I had written §26.1 hours earlier — *a status field records whether a stage
+RAN, not whether its output is RIGHT* — and then took an exit code as a result.**
+**One `_count` against the input would have caught it in a single call, and I did
+not run it.** ⚠ Knowing the rule, writing the rule down, and citing it to two
+other sessions did not make me apply it to the scheduler's own output. **The
+lesson is not "check the count"; it is that a rule you are teaching is not
+thereby a rule you are following.**
+
+### 31.2 THE CAUSE — a fixed-width field derived as if it were variable
+
+`panphon_features` is **N×24 floats — 24 PanPhon features per IPA SEGMENT** — so
+its length **varies with the name**. `panphon_embedding` is the fixed **192-d**
+(8 bins × 24) pooling of it, produced by the shared
+`_embedding_from_packed_features`. The carry-forward **unpacked the blob
+directly**, yielding 192-, 240-, 360-dim vectors; **ES fixes a `dense_vector`'s
+`dims` from the first document** and rejected every different one after it —
+`Cannot update parameter [dims] from [192] to [360]`.
+
+🛑 **`9c` names the shape and it is the sharpest self-observation in this
+campaign:** *"I imported `romanize_for_search` rather than reimplement it, wrote
+a comment about why reimplementation drifts, and hand-rolled this derivation one
+line later."* ⚠ **The discipline was applied to one field and not to the adjacent
+one, in the same function, minutes apart.**
+
+### 31.3 ✅ THE FIX MAKES THE CLASS UNREPEATABLE, NOT JUST THIS INSTANCE
+
+`11175185` (`c7f4d8b`) uses the shared derivation **and** adds a hard gate:
+`run_index` **counts the index after refresh and raises `SystemExit` if any bulk
+error occurred or the count disagrees with its own tally.** ✅ **A future run
+cannot exit 0 having lost a third of the corpus.**
+
+**The four counts are no longer a check — they are the only thing that would have
+caught this**, since neither the exit code nor the elapsed time nor the memory
+figure could.
+
+### 31.4 SIZING, AND WHAT IS NOT AFFECTED
+
+`9c`'s estimate from the partial index: 36.9 GB at 52,384,466 docs ≈ 0.70 KB/doc
+→ **~52 GB at 73.5M**, against today's live `toponyms` at 49 GB. **So 236 GB
+after the reclaim is comfortable**, and neither the `/ix1` twin nor the retired
+indices need to go. ⚠ **To be re-measured off the completed index rather than
+promoted on the estimate**, and the `/ix1` twin **kept regardless** — it is the
+second witness for a file now rebuilt twice.
+
+✅ **Unaffected: `04`'s recoverability chain** (staged trees + live index, neither
+touched) — **the 20.36% stands.** **`17`'s rule work** is likewise independent.
