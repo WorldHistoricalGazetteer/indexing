@@ -6949,3 +6949,83 @@ own `@und` convention, and how much is genuinely untagged** — per namespace,
 🛑 **If a material share is either, the ~25-point claim OVERSTATES the difficulty
 and language identification is a smaller project than we are telling people.**
 That must be settled before the Artifact is used to justify scope.
+
+## 24. 🛑 A CLEAN LINT IS NOT A COMPLETE RULE SET — and the Coptic gap is structural
+
+`whg3-9d` linted `17`'s three drafts (`3b628c9`): **0 flagged rows in all three.**
+✅ **And it proved that result could fail before believing it** — eight injected
+mutations (ASCII `g` for `ɡ`, ASCII `:` for `ː`, `?` for `ʔ`, `'` for `ʼ`, `∅`,
+the `ʤ` ligature, non-IPA junk, a duplicate grapheme) all flagged, three controls
+stayed clean. ⚠ One of its own mutation cases was wrong rather than the linter:
+Latin `c` is **legitimate IPA** (voiceless palatal plosive) and is rightly not a
+confusable. Provenance recorded: panphon 0.22.0, `ipa_all.csv` sha256 `0ec0052e…`.
+
+🛑 **THE FINDING THE LINT CANNOT SEE.** A lint measures **well-formedness**, not
+**completeness**. A rule set can be **0 defects and 30% complete**, and one of
+these is:
+
+```
+cop-Copt   30%  (33/110)   ← and missing ALL SEVEN Demotic-derived letters
+div-Thaa   90%  (45/50)
+zgh-Tfng   78%  (45/58)
+```
+
+### 24.1 THE COPTIC GAP IS A UNICODE ARTEFACT, NOT AN OVERSIGHT
+
+`cop-Copt` has **none of** ϣ shei, ϥ fei, ϧ khei, ϩ hori, ϫ gangia, ϭ shima,
+ϯ dei. **These are core Coptic, not dialectal** — ϩ and ϣ appear in a large
+fraction of Coptic toponyms.
+
+⚠ **The mechanism generalises and is the reason to sweep the other 119 rule
+sets:** Unicode **disunified the Greek-derived Coptic letters into U+2C80+ but
+left these seven behind at U+03E2–U+03EF**. So **a rule set built by walking the
+Coptic block alone systematically omits exactly them** — the omission is
+*produced* by the method, not scattered at random. `9d` verified there is no
+unqualified equivalent in U+2C80–2CFF: that block holds only CROSSED/OLD/
+CRYPTOGRAMMIC SHEI, AKHMIMIC/BOHAIRIC KHEI, DIALECT-P/OLD HORI and so on.
+
+**Consequence: any Coptic name containing one of the seven cannot transcribe at
+all.** A total failure, not a partial one — which is why it may carry a
+disproportionate share of the 0.343-point rule-work ceiling.
+
+Also flagged: `cop-Copt`'s uppercase coverage is **arbitrary** — 9 capitals of
+~24 — and should be all-or-nothing whichever way the pipeline case-folds.
+`div-Thaa`'s five omissions are an **inconsistent subset**, not a scope decision
+(it already carries most Arabic-loan letters but omits ޛ ޜ ޟ ޡ ޱ, and ޱ is
+native Dhivehi). `zgh-Tfng`'s 13 are mostly Tuareg/Ahaggar regional variants and
+arguably out of scope — **except U+2D7F TIFINAGH CONSONANT JOINER, which occurs
+in running text and is unmapped.**
+
+✅ **`9d` deliberately proposed no values** — a reviewer's call, not a linter's.
+
+### 24.2 COMMISSIONED — the coverage sweep over all 122 rule sets
+
+**This is the highest-value thing available in rule work**, because it changes
+what "done" means for all of them. The lint has been the completion criterion and
+it cannot see this class at all.
+
+### 24.3 ✅ NO ARTEFACT CARRIES THE INTERMEDIATE SCRIPT NUMBERING
+
+`17` asked whether anything written between Project A's enum change and
+`ab700bb` carries `enumerate`-derived ids (which would give `OTHER`=36,
+`MYANMAR`=19). **Measured rather than reasoned — every vocabulary on `/vast`:**
+
+```
+20 entries, OTHER=19, MYANMAR absent   data/v7/…
+20 entries, OTHER=19, MYANMAR absent   data/vtemporal-20260731T160000Z/…
+20 entries, OTHER=19, MYANMAR absent   data/vundscript-20260906T160000Z/…
+20 entries, OTHER=19, MYANMAR absent   symphonym-v7-hf/…
+```
+
+**All four pre-date the split; none shows the intermediate numbering.** Combined
+with §19.3 — nothing anywhere stores an integer script id — **the dangerous
+window produced no artefact.** No verification against a pre-`ab700bb` embedding
+is needed because no such embedding exists.
+
+### 24.4 ⚠ "READ-ONLY" IS NOT "WRITES NOTHING"
+
+`17` reports **four jobs today** that opened `/vast/ishi/ipa-v8/store/ipa.duckdb`
+**read-only with no `temp_directory` set** — so anything that spilled went to
+`/vast`, beside the data file. **Read-only describes the DATABASE, not the
+process**, and a read-only query still spills sorts and hash tables. Adds a
+fourth contributor to §13.6's list of paths nobody named.
