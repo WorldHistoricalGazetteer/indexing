@@ -6759,3 +6759,72 @@ function call and one ES clause.**
 Artifact is the colleague-facing case and everything in it is measured on both
 sides; a recall-only figure would be the first exception. It goes in when the
 negative-control pass lands, or not at all.
+
+## 21. ✅ PRECISION MEASURED — ship accent folding, hold full romanisation (`4937057`)
+
+Scored on the gateway's own tiers (exact 2.5, fuzzy 0.75, floor 0.5).
+
+```
+stratum              variant       TP   FP     prec   Δrecall
+latin_q_nonlatin_c   base      13,060    0   1.0000        —
+                     full-rom  13,956    0   1.0000   +0.0226
+                     diacritic 13,810    0   1.0000   +0.0189
+nonlatin_q_latin_c   full-rom   6,319    0   1.0000   +0.2573
+                     diacritic      0    0       --    0.0000
+both_nonlatin        full-rom   1,215    0   1.0000   +0.1211
+```
+
+🛑 **`FP=0` EVERYWHERE WAS TOO CLEAN, AND `8b` DID NOT REPORT IT AS-IS.** Precision
+`1.0000` in every cell is the shape of a check that cannot fail, so it measured
+whether the negatives are **capable** of firing: **98.22% score exactly 0** —
+trivially separable — but **1,319 (1.78%) reach 0.25–0.61**, with the worst at
+**0.6094 against a 0.6375 threshold**. So the set *can* approach firing and the
+1.0 is meaningful. ⚠ **It is also thinner than "precision 1.0" sounds.**
+
+### 21.1 ✅ ACCENT FOLDING IS INERT WHERE THE RISK IS — ship it separately
+
+```
+stratum              margin(diacritic)   margin(full-rom)
+latin_q_nonlatin_c        +0.0281             +0.0281
+nonlatin_q_latin_c        +0.6375             +0.0750
+both_nonlatin             +0.6375             +0.1142
+```
+
+**Diacritic folding introduces no above-zero negative scoring in either
+cross-script stratum — the margin is the ENTIRE threshold — because folding
+accents cannot bridge scripts.** ✅ **Not merely safer: inert there by
+construction.** It buys **+1.89%** recall on `latin_q_nonlatin_c` at no
+measurable precision cost, and it is the change a user would notice — typing
+`Valparaiso` and finding `Valparaíso`.
+
+**Recommendation: ship it on its own.** Measured on both sides, so it is in the
+Artifact.
+
+### 21.2 ⚠ FULL ROMANISATION — the risk is real, concentrated, and INHERITED
+
+Margin **+0.0281** on `latin_q_nonlatin_c` — **4.4% of the threshold**.
+
+✅ **`8b`'s own qualification, which matters: that margin is INHERITED from the
+base matcher, not created by the change** (base worst is also 0.6094). So the
+stratum is *already* close to admitting false positives under any variant, and
+full romanisation **does not make it closer**. ⚠ **But it means a lower threshold
+breaks that stratum first, and anyone tuning downward should know it.**
+
+### 21.3 🛑 THE INSTRUMENT WE DO NOT HAVE — a hard-negative set
+
+⚠ **`8b` states the limit of its own result rather than letting it travel
+further than it should:** these are the **corpus's** negatives, and they are
+**98% trivially separable.** A production query stream contains adversarially
+similar names a matched-negative corpus does not — *Springfield* against
+*Springfield*, *Newton* against *Newtown*.
+
+**So the margin is a LOWER BOUND ON DIFFICULTY, not an estimate of it.** The
+missing instrument is **a hard-negative set built from within-script
+near-duplicates**, and it does not exist. Until it does, **full query
+romanisation stays out of the Artifact** — every other figure there is measured
+on both sides and this would be the exception.
+
+⚠ **Note the shape:** a precision figure of 1.0000 over an easy negative set is
+the same class of result as §18.2's vacuous control and §16.3's zero over an
+incomplete denominator. **The number is right; the question is whether the set
+could ever have produced a different one.**
