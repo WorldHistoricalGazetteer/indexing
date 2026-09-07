@@ -35,14 +35,18 @@ carefully rather than asserting. CC0 is the more permissive of the two, so there
 conflict for a recipient — but there is an ambiguity, and it should be resolved at the
 deposit rather than left to be inferred.
 
-## Attribution
+## How to cite
 
 > World Historical Gazetteer, *Symphonym: Universal Phonetic Embeddings for
 > Cross-Script Name Matching — Models and Evaluation Data*.
 > Zenodo. https://doi.org/10.5281/zenodo.18682017
 
-This directory was published in that deposit on 2026-02-22 under CC BY 4.0. **The
-licence stated here matches the published record; it does not create a new one.**
+This directory was published in that deposit on 2026-02-22, and the v7 record states
+**CC BY 4.0 at the record level**. ⚠ **The dedication above is CC0 and does not match
+that record** — see the Grant section, where the mismatch is recorded, stands for v7,
+and is to be resolved at the deposit for v8.
+
+**Citation is asked here as scholarly practice. CC0 requires nothing of you.**
 
 ## Relationship to Epitran
 
