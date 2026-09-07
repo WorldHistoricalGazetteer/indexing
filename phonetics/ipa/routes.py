@@ -87,6 +87,58 @@ SCRIPT_TAG: Dict[str, str] = {
     "COPTIC": "Copt",
 }
 
+# Language aliases, keyed on (base language, script) -> the iso3 whose mode we
+# borrow. "*" as the script means the alias holds for every script.
+#
+# ⚠ AN ALIAS IS A WEAKER CLAIM THAN A NATIVE MODE, AND THE TABLE IS SCRIPT-SCOPED
+# FOR THAT REASON. `shn` (Shan) borrows `mya-Mymr` because that map is GRAPHEMIC —
+# measured: 42 of its 63 rules are consonant-only, it marks no tone though Burmese
+# is tonal, and it carries a full voiced-aspirate series though Burmese has none.
+# It is the Indic letter-series letter-for-letter, so borrowing it gives Shan a
+# transliteration of the shared graphemes rather than Burmese phonology. The same
+# borrowing in LATIN script would be nonsense, which is why the key carries the
+# script.
+#
+# ⚠ AND AN ALIAS MUST NEVER SHADOW A REAL MODE — `resolve` consults this table
+# only AFTER a direct `iso3-Tag` lookup has failed, so installing a native map
+# silently retires the alias rather than being masked by it.
+LANG_ALIAS: Dict[Tuple[str, str], str] = {
+    # Same language, different code. `ory` is the individual code for Odia and
+    # `ori` the macrolanguage; no phonology is being borrowed at all.
+    ("ory", "*"): "ori",
+
+    # Graphemic borrowings within one script. Each is a REVIEWABLE decision, and
+    # the Route's `reason` records the alias so an aliased row is never mistaken
+    # for a native one in an audit.
+    ("ber", "TIFINAGH"): "zgh",   # collective Berber -> Standard Moroccan Amazigh.
+                                  # Inert until zgh-Tfng is installed; correct then.
+    ("shn", "MYANMAR"): "mya",    # Shan is Tai, not Burmese — see the note above
+    ("mnw", "MYANMAR"): "mya",    # Mon is Austroasiatic
+    ("blk", "MYANMAR"): "mya",    # Pa'o Karen is Karenic
+    ("dz",  "TIBETAN"): "bod",    # Dzongkha, written in Tibetan script
+    ("syc", "SYRIAC"):  "aii",    # Classical Syriac -> Assyrian Neo-Aramaic
+
+    # ⚠ #250-CONTINGENT, AND DELIBERATELY LANDED FIRST. `cmn-Latn` ships with
+    # Epitran, but `to_iso3('zh')` returns the MACROLANGUAGE `zho`, so the router
+    # builds `zho-Latn`, finds nothing, and reports no_route beside an installed
+    # map. It moves ZERO rows today because `is_script_mismatch` discards
+    # source-declared romanisations upstream (#250) — there are no zh+LATIN rows
+    # in the store at all. It is here so that when #250 admits them, ~632k
+    # pinyin rows do not all file as `no_route` against a mode that was installed
+    # the whole time. Safe: yue/wuu/gan/nan/hak carry their own tags (~493k rows),
+    # so `zh` is the residue, and NEURAL_ROUTES already sends ("zh","CJK") to
+    # Mandarin — this is consistency with that, not a new assumption.
+    ("zho", "LATIN"): "cmn",
+    ("zh",  "LATIN"): "cmn",
+}
+
+# Candidates measured but NOT enabled, because nobody has agreed them. Listed so
+# the next reader does not have to re-derive the row counts:
+#   ("xmf", "GEORGIAN") -> "kat"   Mingrelian, 7,325 rows — same script, plausible
+#   ("mai", "DEVANAGARI") -> "hin" Maithili, 5,446 rows — arguable
+#   ("arc", "SYRIAC") -> "aii"     REFUSED: Official Aramaic (700-300 BCE) is
+#                                  2,500 years from Assyrian Neo-Aramaic
+
 BACKEND_EPITRAN = "epitran"
 BACKEND_CHARSIU = "charsiu"
 BACKEND_PHONIKUD = "phonikud"
@@ -255,10 +307,19 @@ class RouteTable:
             return None, "quarantined"
 
         iso3, tag = self.to_iso3(base), SCRIPT_TAG.get(script)
-        if iso3 and tag:
-            mode = f"{iso3}-{tag}"
-            if mode in self.modes:
-                return Route(BACKEND_EPITRAN, mode, "installed-mode"), "ok"
+        if tag:
+            if iso3:
+                mode = f"{iso3}-{tag}"
+                if mode in self.modes:
+                    return Route(BACKEND_EPITRAN, mode, "installed-mode"), "ok"
+            # Only now, so an alias can never shadow a native mode: installing a
+            # real map retires the alias by making the branch above win.
+            alias = LANG_ALIAS.get((base, script)) or LANG_ALIAS.get((base, "*"))
+            if alias:
+                mode = f"{alias}-{tag}"
+                if mode in self.modes:
+                    return Route(BACKEND_EPITRAN, mode,
+                                 f"alias:{base}->{alias}"), "ok"
         return None, "no_route"
 
     def summary(self) -> Dict[str, int]:
