@@ -29,6 +29,41 @@ measurably broken one *in the operational path*. The endorsement question stays 
 in `developer/epitran-drafts/REVIEW.md`, and the deposit does not move until it is
 answered.
 
+| `nep-Deva.csv` | 0 of 17 Devanagari independent vowels | 46 → 63, **17 added, 0 removed** |
+| `new-Deva.csv` | same | 46 → 63, **17 added, 0 removed** |
+| `guj-Gujr.csv` | 0 of 14 Gujarati independent vowels | 46 → 60, **14 added, 0 removed** |
+| `bpy-Beng.csv` | 0 of 12 Bengali independent vowels | 49 → 61, **12 added, 0 removed** |
+| `bod-Tibt.csv` | 0 of 45 subjoined consonants — ordinary Tibetan orthography, and **9,866 `bo` toponyms got no IPA at all** | 34 → 64, **30 added, 0 removed** |
+
+**Provenance of the added values, because it differs by file and changes how much
+weight each carries:**
+
+* **Devanagari** — ten of the seventeen are TRANSPLANTED from `bho-Deva`, which
+  already had them for the same script and characters (`अ→ə`, `आ→aː`, `ए→eː`,
+  `ऐ→ɛː`, `ओ→oː`, `औ→ɔː`…). Those are not drafts. The remaining seven (vocalic
+  `ऋ ऌ`, candra `ऍ ऑ`, short `ऄ ऎ ऒ`) are drafted. ⚠ `अ` is `ə` following the
+  sibling; **Nepali is closer to /ʌ/** and that is a reviewer question.
+* **Tibetan** — DERIVED, not drafted. A subjoined letter sits exactly `+0x50`
+  above its base, so each of the 30 takes its own base row's value. ⚠ **This is
+  correct only because the file is GRAPHEMIC** — measured: `ཀ་མདོ་` → `k་mdo་`,
+  letter-for-letter. In a *phonemic* Tibetan map it would be wrong, since
+  subjoined ra retroflexes the root and subjoined ya palatalises it rather than
+  adding a segment. Same mechanical rule, right in one register and a defect in
+  the other.
+* **Gujarati and Bengali** — drafted; no sibling map exists for either script.
+  Bengali deliberately has NO length contrast (`ই` and `ঈ` both `i`, `উ` and `ঊ`
+  both `u`), unlike Devanagari where the source register marks it.
+
+⚠ **ONE DERIVED ROW WAS CORRECTED RATHER THAN COPIED FAITHFULLY.** The `+0x50`
+rule reproduced `ག → g` (ASCII U+0067) as `ྒ → g`. PanPhon rejects ASCII `g`, so
+that value silently drops the /g/ — the derivation was faithful and wrong. The
+derived row takes `ɡ` (U+0261); **its base still carries the defect**, so the two
+disagree until the ASCII-`g` sweep lands. Each row is individually correct, which
+is the better inconsistency. ⚠ The same pre-existing defect remains in
+`new-Deva`, `guj-Gujr`, `bpy-Beng` (`ग`/`ગ`/`গ → g`) and every file here still
+carries `्ANY → ∅` (U+2205); **neither was touched, because mixing a known sweep
+into an additive change would cost the property that makes this safe.**
+
 ⚠ **The mechanism behind both, which predicts where else to look:** a rule-writer
 working from a **consonant chart** never meets the independent vowels, because the
 chart does not show them. That predicts the defect in **abugidas** specifically and
