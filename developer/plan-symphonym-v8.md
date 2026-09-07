@@ -4867,45 +4867,72 @@ week spent removing them.**
 out *silently dropped*; `_source={}` rules out *written-but-unindexed*. **Two
 mechanisms excluded, one conclusion.**
 
-### ✅ WHERE THE WRITE ACTUALLY STOPS — and it is §9e with a consequence nobody traced
+### 🛑 CORRECTED AGAIN — THE REBUILD *DOES* WRITE BOTH FIELDS. THE DEFECT IS ONE STAGE LATER.
 
-`:1654` is `if existing_ipa and existing_features:`, read from **the toponyms
-DuckDB** — whose `ipa` column `8b` measured **NULL across all 72,703,552 rows**. So
-the condition never holds.
-
-🛑 **And §9e already records why: there are TWO stores.** The **49,749,377 rows with
-IPA** live in `/vast/ishi/ipa-v8/store/ipa.duckdb`, **a separate file**, while every
-consumer reads the toponyms DuckDB. `8b`'s words: *"real, audited, and reachable by
-nothing."*
+**`indexing-9c` measured the index being written, and it carries them:**
 
 ```
-IPA computed → /vast/ishi/ipa-v8/store/ipa.duckdb   49,749,377 ok
-                        ↓  (nothing reads this)
-toponyms DuckDB `ipa`   NULL × 72,703,552
-                        ↓
-rebuild `if existing_ipa and existing_features:` → never fires
-                        ↓
-ES index has no panphon_embedding
-                        ↓
-find_similar_in_place returns [] for EVERY place
+mapping: 14 fields — INCLUDING ipa AND panphon_embedding
+indexed so far        21,542,500
+  panphon_embedding   10,003,934 -> 10,126,351   (growing between two reads)
+  ipa                 10,003,934 -> 10,126,351
+  embedding                    0   (correct — Symphonym is stage 2)
+
+'železniční most v Okrouhlici@cs'
+  ipa 'ʒelezɲɪt͡ʒɲiː most v oɡrouɦlɪt͡sɪ'   panphon_embedding len 192
 ```
 
-🛑 **THE FIX IS A PATH, NOT A SCHEMA — and it is the backfill already agreed with
-`8b`.** Its urgency has changed completely: not *"training would see 0% IPA"* but
-**"the pair selector returns nothing at all"**.
+🛑 **MY DIAGNOSIS WAS WRONG AND `9c` NAMED THE ERROR PRECISELY: I traced ONE BRANCH
+and concluded about the FUNCTION.** `:1654` `if existing_ipa and existing_features:`
+is **Priority 1 of four**. Priority 2 is a precomputed neural lookup; Priority 3 skips;
+**Priority 4 appends to `epitran_work` — a parallel Epitran pool that computes IPA
+fresh in STEP 3.** ⚠ **The DuckDB `ipa` being NULL disables Priority 1 ONLY.** `8b`
+measured that column correctly; **a true premise produced a false conclusion.**
 
-⚠ **AND THE AGREED ORDERING NOW HAS A GAP.** The backfill was scheduled *after* the
-inventory rebuild, because a fresh rebuild replaces the DuckDB. **But the ES write
-happens INSIDE the same job, before any backfill can run** — so a rebuild landing
-today produces an index that cannot feed pair selection **even after the backfill
-lands.** Either the rebuild reads the v8 store directly, or the DuckDB is populated
-before the ES phase, or it takes two passes. **This is the sequencing question that
-now matters most.**
+⚠ **And a second measurement trap, worth its own line.** The rebuild sets
+`refresh_interval: -1` for bulk load, **so any count against the index being written
+reads 0 until a manual `_refresh`** — the same answer in both worlds, and the seventh
+instance of that shape this week. ✅ **This does NOT explain `04`'s zeros**, which were
+measured on **production**, not mid-load: those are real, and the cause is below.
 
-⚠ **Still open:** whether an *earlier* generation carried these fields, and what the
-training data now in use was generated against. v7 **was** trained on 31,113,585 IPA
-strings, so they existed once — **this gives that loss a mechanism for the first
-time.**
+### ✅ THE REAL DEFECT — STAGE 2 REBUILDS EVERY DOCUMENT AND DROPS THREE FIELDS
+
+`phonetics/inference/update_es.py run_index` (`:581-599`) constructs each document
+from a **fixed eight-key dict** — `name, lang, lang_variant, script, namespaces,
+primary_namespace, attestations, indexed_at` — plus `embedding` /
+`embedding_version` when present. ✅ **Verified here.** ⚠ **`ipa`,
+`panphon_embedding` and `name_romanized` are not among them**, and its own docstring
+says it *"rebuilds the entire toponyms index"*.
+
+**So:**
+
+```
+STEP 1-3  rebuild computes IPA + PanPhon at real cost and WRITES them
+STEP 4    update_es.run_index REPLACES every document from a fixed field list
+          -> ipa, panphon_embedding, name_romanized silently discarded
+production shows 0 / 0 / 0
+```
+
+🛑 **This reconciles every measurement in the thread without needing the two-store
+story at all** — `04`'s production zeros, the mapping observation, and `9c`'s 10.1M on
+the run in flight.
+
+✅ **AND IT MAKES `04`'s FINDING NEWLY ACTIONABLE RATHER THAN MERELY ALARMING.** This
+run can be **the one that fixes the pair selector**, if stage 2 carries the three
+fields forward instead of dropping them. `9c` is patching `update_es.run_index` and
+will run it **against staging**, where the cost of being wrong is a rebuild rather
+than production. ⚠ **Before/after measurement pending — do not treat this section as
+closed until it lands.**
+
+⚠ **The v8-store backfill agreed with `8b` remains worth doing** — it would lift
+**Priority 1** and raise coverage above the **~46%** Epitran reaches unaided — **but
+it is NOT on the critical path for a usable index.**
+
+⚠ **Three successive diagnoses were wrong in this thread**: the schema (mine, retracted
+— `dynamic` is unset so the field would have been accepted), the two-store read path
+(mine and `04`'s, true premise / false conclusion), and only the fourth reading
+survived measurement. **Each was checked, each was plausible, and each described a
+real thing that was not the cause.**
 
 ### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
 
