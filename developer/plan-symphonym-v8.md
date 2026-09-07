@@ -7411,3 +7411,62 @@ reason to hold the Artifact one more pass rather than caveat it.
 ⚠ **But their RATES are unmeasured**, so a 60%-recoverable namespace among them
 would still matter. **Judged unlikely enough to skip; the skip is a judgement and
 is recorded as one.**
+
+## 30. ✅ THE UNION IS 20.36% — my assumption was wrong, and in the opposite direction
+
+```
+distinct untagged   gn 10,598,146   osm 9,659,336
+UNION                       18,077,898
+INTERSECTION                 2,179,584   untagged in BOTH
+
+recoverable UNION            3,774,921
+naive sum (double-counted)   3,891,159
+double-count removed           116,238
+
+union rate: 20.88% of the union · 20.36% of the 18,543,286 no-lang population
+```
+
+🛑 **THE PREMISE I GAVE WAS RIGHT AND THE CONCLUSION WAS BACKWARDS.** I refused
+the estimate on the grounds that *names attested by two independent gazetteers
+are precisely the population one would expect to differ*. ✅ **They do — the
+intersection recovers at 45.78%, more than DOUBLE the overall 20.88%.** But my
+estimated double-count of ~343k, giving a union near 19.1%, was **three times too
+large**: the actual removal is **116,238** and the union lands at **20.36%,
+ABOVE my estimate** and just under the 20.98% ceiling.
+
+⚠ **THE REASON IS A DISTINCTION NEITHER OF US DREW: "recoverable in the
+intersection" ≠ "recoverable in BOTH".** Of the 2,179,584 names untagged in both
+namespaces, **997,769 are recoverable in at least one — but only 116,238 in
+both.** **`gn` and `osm` recover largely DIFFERENT names.** The sources are
+**complementary, not redundant**, so combining them removes far less than a
+same-rate assumption predicts.
+
+**So the estimate would have understated the finding by 1.3 points, for a reason
+invisible until the two quantities are separated.** Measuring was right; the
+reasoning that justified measuring was itself only half right.
+
+### 30.1 ✅ AND IT BOUNDS THE SKIP THAT WAS RECORDED AS A JUDGEMENT
+
+`gn ∪ osm` distinct untagged = **18,077,898** against a no-lang total of
+18,543,286 — **97.49% of the population.** Everything else is **465,388 names**,
+so `tgn`/`ohm`/`whg` **could move the figure by at most +2.51 points even at 100%
+recoverable.** ✅ **§29.2's judgement is now bounded by measurement rather than
+resting on plausibility.**
+
+### 30.2 THE ARTIFACT FIGURE, PUBLISHED
+
+> **3,774,921 of the 18,543,286 untagged toponyms — 20.4% — have their language
+> stated by the source on the same record and discarded at extraction.**
+> Recoverable by string match against a sibling field: no model, no language
+> identification, no judgement.
+
+⚠ **Two caveats `04` attached, and they are kept:** the **98% single-candidate
+figure is per namespace** (98.19% `gn`, 98.59% `osm`), **not on the union** — a
+name unambiguous in `gn` and *differently* unambiguous in `osm` would be
+ambiguous in the union, and that is unmeasured. **The Artifact therefore says
+"within each source", not "of the union".** And the whole chain is **staged-tree
+measurement validated against index counts** (differences of 2 and 46), not a
+direct index scan.
+
+**The 25-point number does not move. What moves is that it is not a wall — it is
+a wall with a measured door in it, and the door is cheap.**
