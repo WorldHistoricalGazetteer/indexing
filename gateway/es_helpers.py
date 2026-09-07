@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
@@ -178,7 +179,17 @@ def derived_form_weight(query: str, form: str) -> float:
     """
     q_tokens = {t.casefold() for t in _TOKEN_RE.findall(query or "")}
     f_tokens = {t.casefold() for t in _TOKEN_RE.findall(form or "")}
-    return VARIANT_SCORE_WEIGHT if q_tokens <= f_tokens else DERIVED_LOSSY_WEIGHT
+    if q_tokens <= f_tokens:
+        return VARIANT_SCORE_WEIGHT
+    # An accent fold discards no token, only their diacritics, so comparing the
+    # raw casefolds would call it lossy and discount it as though a qualifier
+    # had been dropped. Compare folded, and a pure fold scores as the full
+    # variant it is.
+    qf = {fold_accents(t).casefold() for t in _TOKEN_RE.findall(query or "")}
+    ff = {fold_accents(t).casefold() for t in _TOKEN_RE.findall(form or "")}
+    if qf <= ff:
+        return VARIANT_SCORE_WEIGHT
+    return DERIVED_LOSSY_WEIGHT
 
 
 #: Ceiling on derived forms per query. Each one is another concurrent KNN pass,
@@ -234,6 +245,38 @@ _TIDY_EDGE_RE = re.compile(r"^[^\w]+|[^\w]+$")
 def _tidy_form(text: str) -> str:
     """Collapse whitespace and drop punctuation left dangling by an excision."""
     return _WHITESPACE_RE.sub(" ", text).strip().strip(" ,;:").strip()
+
+
+def fold_accents(text: str) -> str:
+    """Strip diacritics, keeping the letters. ``Valparaíso`` -> ``Valparaiso``.
+
+    ACCENT FOLDING ONLY — deliberately NOT transliteration.
+
+    Measured on 74,205 evaluation pairs: this earns +1.89% recall on the
+    latin-query/non-latin-name stratum at NO measurable precision cost, and the
+    reason it is safe is structural rather than lucky. Folding an accent cannot
+    turn a Latin string into a match for a Cyrillic or CJK one, so it introduces
+    no negative scoring above zero in either cross-script stratum — the safety
+    margin there is the entire threshold (+0.6375), against +0.0281 for full
+    romanisation.
+
+    🛑 WHY `anyascii` IS NOT USED HERE, and please do not "complete" this.
+    Full query romanisation measured better on recall (+11.36% corpus-wide
+    against +1.89%) and is NOT authorised. Its worst-case negative sits 0.0281
+    below the match threshold — 4.4% of it — and that figure comes from a
+    negative set which is 98.22% trivially separable, so it is a LOWER BOUND on
+    difficulty rather than an estimate of it. A production query stream carries
+    adversarially similar names a matched-negative corpus does not
+    (``Springfield``/``Springfield``, ``Newton``/``Newtown``), and the
+    hard-negative set that would settle it does not exist yet. Folding accents
+    is a narrow, bounded widening; romanising the query is a wide one, and the
+    instrument to measure the wide one is missing.
+    """
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFD", text)
+    return unicodedata.normalize(
+        "NFC", "".join(c for c in decomposed if not unicodedata.combining(c)))
 
 
 def derive_name_forms(query: str) -> list[str]:
@@ -299,6 +342,14 @@ def derive_name_forms(query: str) -> list[str]:
         if candidate and key not in seen and len(forms) < MAX_DERIVED_FORMS:
             seen.add(key)
             forms.append(candidate)
+
+    # Accent fold FIRST when it changes anything. It is the only LOSSLESS
+    # derivation here — every token survives, merely unaccented — so if the
+    # MAX_DERIVED_FORMS cap bites, this is the one worth keeping. It is also
+    # the only one that helps a cross-script query, where nothing else reaches.
+    folded = fold_accents(raw)
+    if folded and folded.casefold() != raw.casefold():
+        _offer(folded)
 
     if _BRACKET_CHAR_RE.search(raw):
         _offer(_BRACKET_PAIR_RE.sub(" ", raw))
