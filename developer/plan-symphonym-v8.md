@@ -4720,11 +4720,33 @@ returns `no_route` **with a working Mandarin romanisation map sitting right ther
 ⚠ Same class as `ory`/`ori`, and the same shape as `Script.OTHER`: **a mode that
 exists, unreachable through a lookup.**
 
-**That is the largest single item in the `-Latn` population** — `zh-Latn-pinyin`
-alone is ~632k rows — **and it is a dictionary entry, not linguistics.** ⚠ **But the
-risk is in that dictionary entry**: `zh` as a corpus tag may cover **Yue and Wu** rows
-that must not silently become Mandarin. **Answer that before making the one-line
-change**, and scope the mapping to the `Latn` case if not.
+✅ **`zho`→`cmn` IS SAFE, on better grounds than dialectology.** The other Chinese
+languages carry **their own tags** — `nan` 341,121, `yue` 49,635, `wuu` 49,527, `gan`
+37,258, `hak` 5,694, `cdo` 4,639, `lzh` 4,581 — ~493,000 rows separately tagged, so
+`zh` is the **residue, not the union**. ⚠ **And the corpus already treats `zh` as
+Mandarin**: `NEURAL_ROUTES[("zh","CJK")] = ("charsiu","cmn")`, verified resolving
+today. **So the mapping is consistency with existing practice, not a new assumption**
+— a much better footing than anyone's opinion on what `zh` "means".
+
+🛑 **BUT IT FIXES ZERO ROWS TODAY, AND I SIZED IT WRONG TO SG.** There are **no
+`zh`+LATIN rows in the IPA store at all** — `zh` is 1,587,205 rows of which 1,583,722
+are CJK. **The 632,401 pinyin figure is the population `is_script_mismatch` discards
+during the toponym build** — #250's own finding. Those rows never reach the store, so
+**there is nothing there for a router fix to route.**
+
+⚠ **Sized as *"one lookup unlocks 632k"* it is wrong today; sized as *"one lookup,
+which becomes worth 632k the moment #250 admits those rows"* it is right.**
+
+🛑 **ORDERING CONSTRAINT — MAKE THE LOOKUP FIX BEFORE OR WITH #250, NOT AFTER.**
+Otherwise #250 lands, **632k romanisations are admitted, and every one files as
+`no_route` against a mode that was installed the whole time.** ⚠ **That is the
+`Script.OTHER` failure exactly, arriving on a schedule we can already see.**
+
+✅ **What is unroutable TODAY in this family is small and non-contingent:** `cdo` Min
+Dong (4,580 LATIN + 57 CJK) and `lzh` Literary Chinese (4,426 CJK + 143 LATIN),
+**~9,200 rows, both at zero.** `yue`, `wuu`, `gan`, `nan` and `hak` all have their own
+`-Latn` modes and route today — **the Chinese romanisation family is mostly handled;
+only the biggest tag is blocked, and by a lookup.**
 
 ✅ **And `km`/`my` already route today**, on SG's own extensions rather than Epitran's.
 
@@ -4732,8 +4754,11 @@ change**, and scope the mapping to the `Latn` case if not.
 15919) — is among the EASIEST rule work available**, because **a romanisation scheme
 is already a phonetic notation**: the source has done the phonological work and the
 map transcribes a transcription. Same job as `cmn-Bopo`, which reached **99.8%
-parseable**. ⚠ **Pin WHICH scheme per file** — Wylie vs THL, ISO 15919 vs Hunterian —
-with `kn:iso15919` naming its own in the tag as the model case.
+parseable**. 🛑 **Pinning the scheme per file is not optional: a file that does not say which
+standard it targets CANNOT BE REVIEWED AT ALL**, because a reviewer would be checking
+values against a standard they have to guess. Wylie and THL disagree on Tibetan, ISO
+15919 and Hunterian on Kannada. **Where the tag names it — `kn:iso15919` — follow the
+tag; where it does not, the file must say.**
 
 **Nothing here is a new commitment**; it is a status correction and two sized
 opportunities. ⚠ **But "recorded, not scheduled" for a signal this large is how a
