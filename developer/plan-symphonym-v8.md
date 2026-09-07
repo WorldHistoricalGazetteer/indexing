@@ -6273,3 +6273,92 @@ campaign's disk pressure throughout. Its planner now pins `temp_directory` to
 `/ix1` and `max_temp_directory_size=32GB` **as module defaults rather than flags
 someone must remember** — which is the right place, since the failure mode is
 precisely that nobody names the path.
+
+## 15. 🛑 THE SCRIPT-VOCABULARY GATE IS REAL — a retrain today WOULD bake in the blackout
+
+`8b`, checked at the consumer, written up in
+[`developer/finding-script-vocabulary-gate.md`](finding-script-vocabulary-gate.md)
+(`6ae080c`). **Independently verified by this session** rather than taken on
+report.
+
+**Both writers derive the vocabulary from the enum** —
+`{s.value: i for i, s in enumerate(Script)}` at `rebuild_vocab.py:194` and
+`rebuild_toponyms_index.py:1157`. ⚠ **But training does not read the enum.**
+`data_loading.py:64` loads `vocab_dir/script_vocab.json` and takes `num_scripts`
+from its length; `encoder.py:131` does the same at serving. **So "it is derived,
+therefore it is current" is the wrong answer — it is an artefact question.**
+
+**Every vocabulary on disk is pre-split** (measured this session):
+
+```
+enum today                                        37 members, OTHER at 36
+data/v7/vocab/script_vocab.json                   20 entries, other -> 19
+data/vtemporal-20260731T160000Z/…                 20 entries, other -> 19
+data/vundscript-20260906T160000Z/…                20 entries, other -> 19
+symphonym-v7-hf/vocab/script_vocab.json           20 entries, other -> 19
+```
+
+⚠ **Including the one written YESTERDAY.** The `vundscript` vocab was written
+15:15:36 on 6 Sep, inside job 11170631's window, so STEP 2 *did* run and *did*
+derive from the enum — **the enum had 20 members at that moment**, and `aef25b7`
+reached the checkout afterwards. Nothing is broken. **The artefact is simply
+older than the code**, which is precisely the case "derived, so fine" cannot see.
+
+### 15.1 🛑 AND REGENERATING IS NOT A SAFE NO-OP
+
+Ids come from **enum declaration order**, and the 17 new members were inserted
+**above** `OTHER`:
+
+```
+ids PRESERVED  19    LATIN … KATAKANA
+ids MOVED       1    OTHER  19 -> 36
+ids ADDED      17    MYANMAR 19, GURMUKHI 20 … COPTIC 35
+```
+
+`OTHER` is not an ordinary member: `encode_script` falls back to it for every
+unrecognised script (`tokenise.py:323`), making it **the most-used id in the
+table for exotic input**. A model trained at `num_scripts=20` served a
+regenerated vocabulary **looks up index 36 in a 20-row embedding table**, and any
+artefact already carrying encoded script ids means something different under the
+new numbering.
+
+### 15.2 ✅ THE FIX: PIN IDS SO THE CHANGE IS PURELY ADDITIVE
+
+`8b` offered two options — regenerate (breaks artefacts) or move `OTHER` to the
+end of the enum (fixes the instance, leaves the fault). ⚠ **There is a third that
+is strictly better than both: pin the ids explicitly, assigning the ORIGINAL 20
+their CURRENT values and the 17 new scripts ids 20–36.**
+
+```
+LATIN 0 … KATAKANA 18, OTHER 19        ← unchanged, every existing artefact stays valid
+MYANMAR 20, GURMUKHI 21 … COPTIC 36    ← additive
+ids MOVED: 0
+```
+
+**This makes the change purely additive**: v7 continues to serve against its own
+20-entry vocabulary, no stored artefact is reinterpreted, and a v8 model trained
+at 37 is a strict superset. Moving `OTHER` to the end would renumber it and
+invalidate exactly the artefacts we most rely on.
+
+**The underlying fault, which is `8b`'s and is the part worth fixing:**
+`enumerate(Script)` couples a model's **embedding indices** to the **textual
+order of an enum declaration**. Any insertion above a member silently renumbers
+it, **and nothing downstream can detect it** — the vocabulary file is
+self-consistent either way, and a model loading it gets plausible ids for the
+wrong scripts. Explicit ids make adding a script additive *by construction*
+rather than by remembering where to type it.
+
+### 15.3 THE PRE-PoC GATE, ORDERED
+
+1. **Pin the ids** as §15.2, so regeneration is additive. *(design change — agreed
+   approach, not yet implemented)*
+2. **Audit for stored encoded script ids** — anything holding an id rather than a
+   name must be regenerated in the same pass, or confirmed to store names.
+   *(investigative, safe, in progress)*
+3. **Assert `num_scripts` at train time against the vocabulary actually loaded,
+   and FAIL rather than warn.** *(pure safety; authorised)*
+4. **Regenerate `script_vocab.json` as part of the retrain, never before it** —
+   no artefact encoded under one numbering may be read under the other.
+
+⚠ **`8b` correctly did not action any of this.** Items changing what a retrain
+trains on are not a peer's call to make unilaterally.
