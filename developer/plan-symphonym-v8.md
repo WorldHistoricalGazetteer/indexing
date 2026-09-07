@@ -6828,3 +6828,71 @@ on both sides and this would be the exception.
 the same class of result as §18.2's vacuous control and §16.3's zero over an
 incomplete denominator. **The number is right; the question is whether the set
 could ever have produced a different one.**
+
+## 22. ✅ SHIPPED — script-id pinning (`ab700bb`) and accent folding (`fe2963a`)
+
+**SG authorised both, 7 Sep 2026.**
+
+### 22.1 PINNING — and the defect was worse than §15.1 described
+
+`SCRIPT_ID` in `script_detection.py` pins all 37 explicitly; **0–19 are the
+values read off `symphonym-v7-hf/vocab/script_vocab.json`, not inferred from
+declaration order.** All three `enumerate(Script)` call sites now go through one
+`build_script_vocab()`. Import-time guard **raises rather than warns** — the
+failure is invisible at runtime, so a warning would be indistinguishable from
+working.
+
+🛑 **Verified against the pre-fix tree rather than assumed to discriminate
+(`git archive HEAD` into scratch), and it revealed a second, quieter failure:**
+
+```
+pre-fix OTHER   -> 36     out of range for a 20-row table  (the loud failure)
+pre-fix MYANMAR -> 19     <-- OTHER's OLD SLOT             (the silent one)
+```
+
+**§15.1 described only the out-of-range lookup.** But `MYANMAR` takes 19, so a
+v7-trained model **reads Burmese as the catch-all** — no crash, no warning, just
+silently wrong, **and for one of the ten languages this campaign exists to
+reach.** Only visible because the test was run against the old tree.
+
+### 22.2 ACCENT FOLDING — implemented as a derived NAME FORM, not a new clause
+
+`8b`, diacritic folding only; `anyascii` is deliberately absent and the docstring
+says why, pointing at the hard-negative gap and the 0.0281-vs-0.6375 margin **so
+the next reader meets the argument rather than the veto.**
+
+Implemented through `derive_name_forms` so it earns its score via the **existing
+lexical tiers** — matching how the gain was measured. ⚠ **One adjustment was
+required:** `derived_form_weight` compared *raw* casefolds, so `Valparaíso` vs
+`Valparaiso` read as **LOSSY** and was discounted as though a qualifier had been
+dropped. It now compares **folded token sets first**, so a pure fold scores
+`VARIANT_SCORE_WEIGHT` 0.9 and clears the 0.7 tier-ordering floor.
+
+**Offered FIRST among derived forms**, because it is the only **lossless** one —
+every token survives, merely unaccented — so a `MAX_DERIVED_FORMS` cap that bites
+keeps it over a speculative bracket reading.
+
+**10 tests, three of them controls that keep the scope honest:** unaccented text
+unchanged (else every query gains a spurious form and another KNN pass);
+CJK/Cyrillic/Arabic **not** transliterated (the scope boundary — the test that
+catches someone "completing" it); and a genuinely lossy form still discounted
+(without which the fold-aware comparison could have made everything full-weight).
+
+### 22.3 🛑 AN `ImportError` IS NOT A BEHAVIOURAL FAILURE
+
+`8b`'s first proof ran the new test file against the pre-change tree and got
+`ImportError: cannot import name 'fold_accents'`. ⚠ **That proves the SYMBOL is
+new and nothing else** — a renamed function fails identically, as does a typo or
+a module that never existed. **The behavioural assertion was never exercised.**
+
+The valid form imports a symbol present in **both** trees and compares behaviour
+in separate processes:
+
+```
+PRE-CHANGE   derive_name_forms('Valparaíso') -> []               FAIL
+POST-CHANGE  derive_name_forms('Valparaíso') -> ['Valparaiso']   PASS
+```
+
+**The failure you demonstrate must be the failure the test is FOR.** Pre-change
+tree size-checked at 58,196 bytes so a silently-empty extraction could not pass
+as a run.
