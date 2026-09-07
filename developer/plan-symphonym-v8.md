@@ -4907,7 +4907,53 @@ week spent removing them.**
 out *silently dropped*; `_source={}` rules out *written-but-unindexed*. **Two
 mechanisms excluded, one conclusion.**
 
-### 🛑 CORRECTED AGAIN — THE REBUILD *DOES* WRITE BOTH FIELDS. THE DEFECT IS ONE STAGE LATER.
+### ✅ 11170631 COMPLETED — #250 VERIFIED FIXED, AND THE DIAGNOSIS BELOW IS CONFIRMED
+
+**Exit 0:0, 17h43m. 73,479,069 docs** (live 72,703,777, **+775,292 net-new**) into
+`toponyms_undscript-20260906t160000z` on staging, snapshot `toponyms_v6`.
+
+✅ **#250's ACCEPTANCE TEST PASSED ON EVERY LANGUAGE — using the CORRECTED test**
+(`lang=<x> AND script=LATIN`, not the `lang: zh-Latn` form that would have read 0 on a
+perfect run):
+
+```
+lang=zh + script=LATIN   467,161     fa  97,045     ja  63,373
+lang=el   45,146   kk 47,877   ru 25,093   ko 13,522   ar 10,704
+lang_variant=Latn       451,072
+```
+
+**Every one of these was 0 before the fix.** ⚠ The `+775,292` corpus growth
+**corroborates and is deliberately NOT the criterion**, for the dedup reason recorded
+earlier. ⚠ And note **467,161 against the ~632k census figure** — that gap *is* the
+global toponym dedup, exactly as flagged.
+
+✅ **FIELD COVERAGE — and this settles the whole `panphon_embedding` thread:**
+
+```
+                    staging (new)     production
+panphon_embedding    34,141,080            0
+ipa                  34,141,080            0
+name_romanized       12,431,453            0
+embedding                     0            0   ← correct, Symphonym is stage 2
+```
+
+🛑 **So the run produced exactly the index my retraction said it could not**, and the
+causal chain below is **measured rather than inferred**.
+
+⚠ **TWO COVERAGE NUMBERS THAT ARE NOT IN CONFLICT, because they measure different
+things.** The new index carries **46.5%** (34.1M of 73.5M) — that is **Epitran
+computing fresh during the rebuild**. The IPA store holds **68.43%** — that is
+`8b`'s recomputation, which no consumer reads. ✅ **The gap between them IS the value
+of the v8-store backfill**: it lifts Priority 1 and should close most of ~22 points.
+**Still worthwhile, still not a precondition for a usable index, and it was never
+racing this job.**
+
+⚠ **`dynamic` was never a factor in either direction.** 9c's staging mapping went from
+the schema's **12** declared fields to **14** the moment a document carried
+`ipa`/`panphon_embedding` — exactly as `dynamic: true` should. **Do not record the
+schema as a cause, a fix, or an obstacle.**
+
+### 🛑 THE DEFECT IS ONE STAGE LATER — CONFIRMED BY MEASUREMENT
 
 **`indexing-9c` measured the index being written, and it carries them:**
 
@@ -4968,11 +5014,20 @@ closed until it lands.**
 **Priority 1** and raise coverage above the **~46%** Epitran reaches unaided — **but
 it is NOT on the critical path for a usable index.**
 
-⚠ **Three successive diagnoses were wrong in this thread**: the schema (mine, retracted
-— `dynamic` is unset so the field would have been accepted), the two-store read path
-(mine and `04`'s, true premise / false conclusion), and only the fourth reading
-survived measurement. **Each was checked, each was plausible, and each described a
-real thing that was not the cause.**
+⚠ **THREE SUCCESSIVE DIAGNOSES WERE WRONG IN THIS THREAD, AND THE FOURTH IS NOW
+MEASURED.** The schema (mine, retracted — `dynamic` unset, so the field would have
+been accepted); the two-store read path (mine and `04`'s — **true premise, false
+conclusion**, from tracing one of four branches); and *"this run cannot produce a
+usable index"* (mine — it produced 34.1M of both fields). **Only `9c`'s reading
+survived, and it survived because it was checked against the index being written
+rather than against the code.**
+
+✅ **The lesson is not "we were sloppy" — each was checked and each described a real
+thing.** It is that **every one was a claim about a system, verified by reading a
+part.** The schema was real and not the obstacle; the NULL column was real and
+disabled one branch of four; the empty production fields were real and caused one
+stage later. ⚠ **Reading the code tells you what a path does; only the artefact tells
+you which path ran.**
 
 ### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
 
