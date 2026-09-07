@@ -7351,3 +7351,63 @@ is a small **deny-list**, and that is right because its codes come from a
 tag keys**, so a deny-list is unbounded — 1,062 distinct junk values already, and
 the next mapper invents the 1,063rd. **`osm` needs an ALLOW-list** of valid
 language subtags. **Do not port `gn`'s list; port its discipline.**
+
+## 29. ✅ INDEX-LEVEL AT LAST — and the 1:1 mapping confirmed twice, independently
+
+`04`. **This is the frame the Artifact can quote from.**
+
+```
+                          gn            osm
+distinct untagged     10,598,146     9,659,336    ← index-level denominator
+index no-lang docs    10,598,144     9,659,290    ← differ by 2 and by 46
+dedup factor               1.592         2.135
+
+recoverable UNAMBIGUOUS  2,533,409  23.90%    1,292,730  13.38%
+recoverable AMBIGUOUS       46,568   0.44%       18,452   0.19%
+NOT recoverable          8,018,169  75.66%    8,348,154  86.43%
+recoverable TOTAL        2,579,977  24.34%    1,311,182  13.57%
+```
+
+✅ **THE MAPPING IS CONFIRMED TWICE UNDER DIFFERENT CONDITIONS** — differently
+sized namespaces, **different dedup factors (1.592 vs 2.135)** — and `04`'s
+argument for why that matters is right: **one near-exact match is a coincidence;
+two, with the conditions varied, is the mapping.** Same shape as §26.3, where the
+instruments disagreeing was stronger evidence than agreement.
+
+✅ **AMBIGUITY IS NEGLIGIBLE AT INDEX LEVEL: 98.19% (`gn`) and 98.59% (`osm`) of
+recoverable names have a SINGLE candidate.** That is what makes this **a mapping,
+not a disambiguation problem**, and what lets the Artifact say *no model and no
+judgement* without hedging.
+
+⚠ **And the two frames barely differ** — `gn` 23.91% → 24.34%, `osm` 11.47% →
+13.57%. So `04`'s refusal to convert **was right in principle and cheap in
+practice**. Neither of us could have known that in advance, and **it is the
+refusals that turn out cheap which make the expensive ones credible.**
+
+### 29.1 🛑 THE COMBINED FIGURE IS A CEILING, NOT AN ESTIMATE
+
+```
+gn 2,579,977 + osm 1,311,182 = 3,891,159   ->  at most 20.98% of 18,543,286
+```
+
+⚠ **`namespaces` is multi-valued and these two overlap:** 10,598,144 + 9,659,290
+− 18,543,286 = **1,714,148 no-lang rows attested by BOTH**, and any name
+recoverable in both is counted twice.
+
+**This session then bounded it and is NOT publishing the bound:** if the ~20% rate
+applied to the overlap, the union would land near **19.1%**. 🛑 **That assumes the
+recoverable rate in the intersection equals the rate overall — and names attested
+by two independent gazetteers are exactly the population one would expect to
+differ**, being better attested and likelier to carry a language-tagged sibling
+somewhere. **The assumption is load-bearing and untested. Measuring instead.**
+
+⚠ **Also: "at most 20.98%" will be read as "21%".** A ceiling stated in a document
+meant to persuade becomes an estimate on second reading, which is the practical
+reason to hold the Artifact one more pass rather than caveat it.
+
+### 29.2 (2) SKIPPED — recorded as a JUDGEMENT, not a measurement
+
+`tgn` 1,398,787, `ohm` 307,224, `whg` 207,028 — **under 11% of the population.**
+⚠ **But their RATES are unmeasured**, so a 60%-recoverable namespace among them
+would still matter. **Judged unlikely enough to skip; the skip is a judgement and
+is recorded as one.**
