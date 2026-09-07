@@ -4630,6 +4630,60 @@ framing unsafe.
 read when v8 is prepared — a requirement that lives only in a licence file is the same
 failure as a licence that lives only in a catalogue record.
 
+### ✅ THE RELEASE PLAN — v8-beta, then full (SG, 7 Sep 2026)
+
+**Proposed:** release **v8-beta** once the machine-crafted Epitran rules are settled
+and the TGN re-ingest is available; **full release** after contributor work arrives
+through the whg3 phonetics UI, and after junk removal.
+
+✅ **The beta/full split is well matched to the posture separation already built:
+beta = trained on our best guess, full = trained on reviewed rules.** The rule blob
+stamps are what make the two comparable.
+
+**🛑 ONE HARD BLOCKER IS MISSING FROM THAT LIST — the script vocabulary.**
+`script_to_id` has 20 entries and `MYANMAR`, `TIFINAGH`, `BOPOMOFO`, `SINHALA`,
+`KHMER` are all absent. **Project A made the IPA reachable; it did not make the
+scripts representable.** ⚠ **If v8-beta trains against the same 20-entry file it
+reproduces the blackout exactly**, and it would present as *"we fixed the scripts and
+the blackout persisted"* — the worst debugging position available.
+
+**⚠ "RULES SETTLED AS FULLY AS POSSIBLE" MUST BE BOUNDED OR IT CANNOT CLOSE.**
+`indexing-17` withdrew "91.7% reachable by alias" as an artefact, and the honest shape
+is **428,162 Latin rows needing per-language maps** — months of linguistics, not a
+tranche. ✅ **So the beta gate means TRANCHE 1 LINTED AND COMMITTED** — the shipped
+sets plus `zgh-Tfng`, `cop-Copt`, `div-Thaa` — **not** the 614,501 in covered scripts.
+
+**✅ TWO THINGS v8-beta MUST CARRY**, both free now and impossible afterwards:
+
+1. **The rule blob shas** — `git hash-object`, with the drafts **committed before the
+   run** so the shas resolve rather than dereferencing to an error.
+2. **A joint attribution statement in the release notes.** v8 changes objective *and*
+   coverage at once; the obvious control is unavailable because **v7 consumes no IPA
+   at inference**; so *"the model is better"* and *"the rules are better"* become
+   indistinguishable afterwards unless the beta says so at the time.
+
+### 🛑 DOES JUNK REMOVAL AFFECT SYMPHONYM? IT SPLITS, AND THE SPLIT IS THE ANSWER
+
+SG asked and invited the clause to be dropped if not. **It should not be dropped, but
+the effect is narrower than the issue's scope suggests.** Tested rather than assumed:
+
+* **Identifier junk** (`840`, `#01237`, `(19)`, `,`) — ⚠ **Epitran ECHOES IT BACK
+  UNCHANGED**, so the IPA gate does not stop it. What stops it is `detect_script`
+  returning **`OTHER`** because there are no letters to classify. 🛑 **It is excluded
+  by ACCIDENT, not by design.**
+* **Type-as-name junk** (`Pond`, `Wood`, `Car Park`) — detects as **LATIN**, gets IPA,
+  and is **fully in the training corpus today.** The larger OSM class.
+
+✅ **So junk removal mostly improves SEARCH PRECISION rather than the model** — ten
+thousand `Pond`s are retrieval distractors more than bad training pairs, since a
+generic name usually has no co-attested partner to form a positive with.
+
+⚠ **Two exceptions, and both are live.** The identifier exclusion is **accidental**,
+and accidental exclusions break silently when adjacent things change — **and adjacent
+things changed twice today** (the script enum split, and the proposed gate removal).
+And **if the IPA gate is removed** — now the largest available lever — **junk stops
+being filtered by phonetics at all.**
+
 ### 🛑 THE CEILING — ALL RULE WORK EVER TOPS OUT AT 69.53%
 
 Measured by `indexing-17` on the whole store (72,703,552 rows), 7 Sep. **This bounds
