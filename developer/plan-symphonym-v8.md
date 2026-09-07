@@ -7619,3 +7619,75 @@ after this filter was written.
 
 **Still forward-only:** the 199,572 already stored need re-extraction. **Two
 parts, one item.**
+
+## 33. ✅ THE FILTER IMPLEMENTED — and it caught a bug the FIX would have introduced
+
+`04`, `authorities/osm-places.py`, **reproducing the measurement to the
+document** — which is the check that it is the same thing that was validated
+rather than something resembling it:
+
+```
+accepted    1,290 distinct   53,960,919 docs   99.6315%
+rejected    1,147 distinct      199,572 docs    0.3685%
+normalised (simple/en1-4 -> en)  2,534 docs
+expected from the measurement:   199,572 / 2,534   -> MATCH
+```
+
+### 33.1 🛑 `result['names']` WAS A DICT — THE FIX WOULD HAVE MERGED WHAT IT RECOVERED
+
+`en1` and `en2` both normalise to `en`. **The structure was keyed by language, so
+the second would have silently overwritten the first** — *the exact merge
+identified as "the actual error", introduced by the fix for it.*
+
+✅ Now a **list of `(lang, value)` pairs**; an object with `name:en1` and
+`name:en2` yields `[('en','Foo Town'), ('en','Old Foo')]`, **both preserved.**
+
+⚠ **A normalisation that maps two keys onto one is a COLLISION waiting for a
+container that cannot hold both.** The recovery and the loss were the same edit.
+
+### 33.2 ✅ IT FAILS SAFE — added unprompted, and it is the campaign's signature fault
+
+If `pycountry` is unavailable, `_build_language_allowlist()` returns `None` and
+the filter is **DISABLED — every subkey accepted** — rather than rejecting
+everything. Verified by simulating the `ImportError`, and the run summary says so
+explicitly.
+
+🛑 **An allow-list is exactly the shape that deletes everything when its
+dependency is missing:** *a required input is absent, something plausible is
+substituted, and the stage reports success.* **A missing import must not silently
+delete every localised name in the corpus.**
+
+### 33.3 ✅ REJECTION LOG — distinct subkey → count, summarised at end of run
+
+Top 40 plus a tally of the remainder; **never per document.** So a subtag the
+registries gain after this filter was written **appears as a rising count against
+an unfamiliar name**, rather than as a name that quietly stopped existing (§32.4).
+
+### 33.4 🛑 THE SAME DEFECT IS UNFIXED IN TWO MORE FILES
+
+A consumer sweep confirms `04`'s change is **self-contained** — `osm-places.py`
+is internally consistent (`:325` list, `:334` append, `:240` pair iteration) and
+nothing else reads that structure. ⚠ **But the defect it fixes is present
+elsewhere, untouched:**
+
+```
+authorities/ohm-places.py:254        result['names'][tag.k[5:]] = tag.v    ← no filter, dict, 945K places
+authorities/ohm-places.py:179        for lang, val in tags['names'].items()
+authorities/backfill_admin_levels.py:254   alt_names[k[5:]] = v
+```
+
+**`ohm` carries BOTH faults — the missing allow-list and the overwriting dict —
+and its share of the 201,486 is inside the corpus-wide figure.** Fixing `osm`
+alone leaves it. ⚠ **`ohm` uses the same tag schema as OSM by design**, so the
+port is mechanical; the reason to do it is that nobody will remember it later.
+
+### 33.5 ⚠ WHAT IS NOT TESTED
+
+**The filter has never seen a live PBF.** It was validated against the 2,437
+`lang` values the corpus contains and against **synthetic tag objects** — so the
+`osmium` tag iteration itself has been exercised only with a stand-in. **A pass
+over a small extract is wanted before the full re-extract**, and that is a
+different failure surface from the one measured.
+
+**Not committed** (`04` does not commit unasked); **98 insertions, 3 deletions,
+one file.** Still forward-only — the 199,572 already stored need re-extraction.
