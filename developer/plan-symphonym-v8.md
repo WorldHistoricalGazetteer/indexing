@@ -5964,6 +5964,37 @@ the file. Every future rebuild does this again unless the code changes.
 
 **Fix (`indexing-9c`, being raised as an issue): `CHECKPOINT` before close.**
 
+**Filed as `#255`, and scoped at the WRITER rather than at one script** —
+`CHECKPOINT` before close wherever we close a DuckDB written at scale, plus a
+free-space assertion in front of any job writing tens of GB to `/vast`. Naming
+one script guarantees a third rediscovery in a third file.
+
+### 13.1c THE AUDIT TRIPLE — test the property, not the technology
+
+This session flagged `symphonym_cache.duckdb` as the next likely instance on the
+grounds that it is *the same technology written across a long job*. ⚠ **That
+reasoning generates good candidates and reaches bad conclusions: the cache is
+clean.** Measured across the very run that prompted the flag, it **shrank
+343,932,928 bytes while gaining 126,601 embeddings** — it already checkpoints and
+reclaims more than it adds. No compaction, no action.
+
+**The discriminating questions are narrower than "is it a DuckDB":**
+
+| | question | why it matters |
+|---|---|---|
+| 1 | Does it **`UPDATE` rows it has already written**, or is it insert-only? | Free pages only accumulate from rewrites. Insert-only never enters the failure mode. |
+| 2 | Does anything **`CHECKPOINT` before close**? | Without it the freed pages stay in the file. |
+| 3 | Is the artefact then **copied**? | `shutil.copy2` of an unchecked file **copies the free pages too** — this is how the bloat reaches the artefact everyone else reads. |
+
+**`rebuild_toponyms_index` answers yes / no / yes — the worst combination**, and
+that is what took production read-only. Note (3) is not incidental: the copy at
+`rebuild_toponyms_index.py:2175` is the step that promotes an internally bloated
+working file into the published artefact.
+
+**`symphonym_cache.duckdb` answers *no* to (1)**, so it never enters the mode at
+all — which is why the technology-level heuristic would have condemned a healthy
+file. **Audit against the triple, not against the file extension.**
+
 **Verified content after compaction** (`indexing-9c`'s per-table src-vs-dst
 assertion, independently reproduced by this session opening the compacted file
 read-only on job 11172704):
