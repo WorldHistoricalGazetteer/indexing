@@ -387,6 +387,35 @@ toneless right? And `ㄦ` is redrafted `ɚ` → `ər`, which parses.
   Inuktitut has /u/, across dozens of rules, every one of them linting clean. Cree
   genuinely has /o/ there, which is precisely why the file must be per-language.
 
+## 🛑 A DEFECT IN THE SHIPPED MAPS, and the reviewer sees both files together
+
+**The maps WHG currently installs are missing every independent vowel in several
+abugidas.** Not a gap in coverage — a defect: a name beginning with a vowel loses
+it entirely.
+
+| installed map | independent vowels present |
+|---|---|
+| `pan-Guru` | **0 of 10** — ਅ ਆ ਇ ਈ ਉ ਊ ਏ ਐ ਓ ਔ all absent |
+| `sin-Sinh` | **0 of 18** — අ ආ ඇ ඈ ඉ ඊ උ ඌ … all absent |
+| `mya-Mymr` | 1 of 10 |
+| `bpy-Beng` 0/12 · `guj-Gujr` 0/14 · `khm-Khmr` 0/17 · `nep-Deva` 0/17 · `new-Deva` 0/17 | still unrepaired |
+
+⚠ **The mechanism predicts exactly where to look next:** a rule-writer working from
+a **consonant chart** never meets the independent vowels, because the chart does not
+show them. That predicts the defect in **abugidas** and not in alphabets — and the
+measurement matches, which is why the list above is enumerable rather than a search.
+
+**What has been done about it, and what has not.** `pan-Guru` and `sin-Sinh` have
+been promoted into the *operational* path (`phonetics/epitran_extensions/`), purely
+additively — 24 and 29 rules added, **none removed**, so nothing that transcribes
+correctly today can regress. ⚠ **They have NOT been published** — `zenodo/epitran_extensions/`
+is unchanged, because that is the deposit WHG cites and these values are drafted
+rather than reviewed. See `phonetics/epitran_extensions/DIVERGENCE.md`.
+
+**Q22 — are the promoted vowel values right?** This is the question the promotion
+does not answer. A speaker confirming the ten Gurmukhi and eighteen Sinhala
+independent vowels closes it, and the deposit can then follow.
+
 ## A REQUIREMENT for any romanisation rule set
 
 ⚠ **A file that romanises must say WHICH SCHEME it targets, in the file.** This is
