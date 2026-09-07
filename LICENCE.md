@@ -60,7 +60,27 @@ does not, the test is the defect.
 
 ## Open questions for the project owner
 
-1. **Which NEH awards funded which components.** ✅ The *terms* are settled: NEH General Terms §XI.B–C (2 CFR §200.315–316) leave intangible property with the recipient while the Federal Government retains a non-exclusive, royalty-free, irrevocable licence to reproduce, prepare derivative works from, publish and use it. **Open licensing is a superset of what the Government reserves, so this constrains nothing above.** Which awards funded which parts is not known here and is not inferred.
-2. **The deposit-level statement for v8.** The v7 Zenodo record is CC BY 4.0 at the record level while the rule sets within it are dedicated CC0. CC0 is the more permissive, so a recipient faces no conflict — but the relationship should be **stated at the deposit for v8** rather than left to be inferred.
+1. **The deposit-level statement for v8.** The v7 Zenodo record is CC BY 4.0 at the record level while the rule sets within it are dedicated CC0. CC0 is the more permissive, so a recipient faces no conflict — but the relationship should be **stated at the deposit for v8** rather than left to be inferred.
 
-✅ **Resolved and removed:** `whg3`'s `NOTICE.md` previously read as applying **CC BY-NC 4.0** to contributed datasets. ⚠ **The error was scope, not licence** — NC is WHG's *curation overlay*, asserted alongside each source's own terms, and applying it to other people's material was self-defeating besides, since CC BY 4.0 §2(a)(5)(B) forbids imposing downstream restrictions on material WHG received under it. Corrected in `whg3` (`080bc72c4`).
+## Checked and found not to apply
+
+**NEH funding.** ✅ **All of the work in this repository postdates the NEH funding, so
+NEH's terms do not reach any of it** (SG, 7 Sep 2026). Recorded rather than left
+silent, because the question will be asked again and re-deriving the answer costs more
+than reading it.
+
+⚠ **What the terms would have required, had they applied, and one part of it is not
+what people expect.** NEH General Terms §XI.B–C (2 CFR §200.315–316) leave intangible
+property with the recipient, while the Federal Government retains a **non-exclusive,
+royalty-free, irrevocable** licence to reproduce, prepare derivative works from,
+publish and use it, and to authorise others to do so. Open licensing is a *superset*
+of that, so it would have constrained nothing here — **but because the reservation is
+irrevocable and non-exclusive, it would block an EXCLUSIVE commercial licence over
+anything it did cover.** 🛑 **That is a live consideration for WHG generally, even
+though it does not touch this repository**, and it is the half most likely to be
+overlooked, since the reservation reads as permissive until someone tries to grant
+exclusivity.
+
+## Resolved elsewhere
+
+✅ `whg3`'s `NOTICE.md` previously read as applying **CC BY-NC 4.0** to contributed datasets. ⚠ **The error was scope, not licence** — NC is WHG's *curation overlay*, asserted alongside each source's own terms, and applying it to other people's material was self-defeating besides, since CC BY 4.0 §2(a)(5)(B) forbids imposing downstream restrictions on material WHG received under it. Corrected in `whg3` (`080bc72c4`).
