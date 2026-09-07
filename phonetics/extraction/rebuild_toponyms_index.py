@@ -84,9 +84,9 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from phonetics.utils.script_detection import (, build_script_vocab
+from phonetics.utils.script_detection import (
     Script, detect_script, get_primary_namespace,
-    SCRIPT_RANGES
+    SCRIPT_RANGES, build_script_vocab
 )
 from processing.settings import ES_HOST, IX1_BASE, STAGING_REPO_NAME
 
@@ -2273,9 +2273,16 @@ def main():
                 logger.info(f"Extracted {toponyms_count:,} toponyms from {places_count:,} places")
                 logger.info(f"Skipped {skipped_count:,} pre-romanized/mismatched toponyms")
 
-                # Checkpoint DB to persistent storage
-                logger.info("--- Checkpointing database to persistent storage ---")
+                # ⚠ TWO different things are called "checkpoint" here, and
+                # conflating them cost production a write-blocked afternoon on
+                # 7 Sep 2026. `CHECKPOINT` is DuckDB returning its free blocks;
+                # the copy below is promotion to persistent storage. The log
+                # line said "checkpointing" and meant only the copy, which is
+                # why nobody noticed the real one was absent for months.
+                logger.info("--- CHECKPOINT: reclaiming DuckDB free blocks ---")
+                conn.execute("CHECKPOINT")
                 conn.close()
+                logger.info("--- Promoting database to persistent storage ---")
                 shutil.copy2(temp_db_path, final_db_path)
 
                 # Record which artefact each namespace contributed. The scan
@@ -2335,10 +2342,17 @@ def main():
                 num_workers=args.num_workers,
                 precomputed_phonetics=precomputed,
             )
+            # 🛑 CHECKPOINT BEFORE CLOSE, AND BEFORE THE COPY. The write-back
+            # above UPDATEs ipa/panphon_features across ~73M rows; without this
+            # DuckDB keeps the freed pages inside the file, and `shutil.copy2`
+            # then copies the free pages too — which is how internal bloat
+            # reaches the artefact everyone else reads. Measured 7 Sep 2026:
+            # 198 GB holding what 121 GB holds after a CHECKPOINT.
+            logger.info("--- CHECKPOINT: reclaiming DuckDB free blocks ---")
+            conn.execute("CHECKPOINT")
             conn.close()
 
-            # CRITICAL: Checkpoint DB with PanPhon features to persistent storage
-            logger.info("--- Checkpointing DuckDB with PanPhon features to persistent storage ---")
+            logger.info("--- Promoting DuckDB with PanPhon features to persistent storage ---")
             shutil.copy2(temp_db_path, final_db_path)
             logger.info(f"DuckDB saved to: {final_db_path}")
 
