@@ -6162,3 +6162,54 @@ above the rate that actually kills you is a band alarm with extra steps.**
 Retuned to 2-minute polls with 15 GB / 25 GB / 40 GB triggers at 2 min / 15 min /
 1 hour, and it now names the consuming files in the alert rather than leaving
 that to be discovered.
+
+### 13.7 ✅ THE CAUSE — A 768-BYTE BLOB IN A `GROUP BY` KEY (`e5f82f0`)
+
+The 86 GB was not `update_es` being inherently greedy. **`f15ea0c` — the
+field-drop patch itself, added that morning — put `t.ipa` and
+`t.panphon_features` into the SELECT and therefore into the `GROUP BY`.**
+`panphon_features` is a **~768-byte BLOB**, so every one of 73.5 M hash-table
+entries acquired a 768-byte key. Tens of GB of hash table, which spilled.
+
+```sql
+-- fix: functionally dependent, so exactly one value exists per group
+ANY_VALUE(t.ipa), ANY_VALUE(t.panphon_features)
+GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+```
+
+`ANY_VALUE` is **exact here, not merely cheaper**: `toponym_id` is the key of
+`toponyms` and is already in the grouping key, so both columns are functionally
+dependent on the group — there is precisely one value to choose from.
+
+**Containment as well as fix:** `temp_directory` pinned to node-local `/scratch`,
+`max_temp_directory_size` capped at 64 GiB — deliberately not 16 GB, so the first
+run under the fix *reports* the real spill figure rather than dying on a guessed
+ceiling. It cannot reach `/vast` either way.
+
+🛑 **AND THE TEST HAD ENCODED THE DEFECT.** `9c`'s own test asserted that `t.ipa`
+**must be in** the `GROUP BY`. **It pinned the implementation rather than the
+requirement, so it went green on the thing that caused a filesystem incident.**
+It now asserts the BLOB is *not* in the grouping key, with the incident in the
+docstring so the next reader understands why rather than reverting it.
+
+⚠ **The general form: a test written by copying what the code does can only ever
+confirm that the code still does it.** It cannot fail on the defect it was
+written beside — which is exactly when a green suite is most misleading.
+
+**Refined framing of §13.6, and this is `9c`'s** — the three are not merely one
+root cause, they are **storage consumed by a path nobody named**:
+
+| | | |
+|---|---|---|
+| `rebuild_toponyms_index` | free pages inside a file | never returned |
+| `8b`'s spill | named | unbounded |
+| `update_es index` | **neither named nor bounded** | `temp_directory` defaults to `<dbfile>.tmp` |
+
+Which is why the fix that covers all three is the one that ignores paths
+entirely: **watch free space on `/vast` from inside the job and abort.**
+
+✅ **And the cancellation cost nothing that mattered.** The pass that died was
+producing a wrong-shaped query; it would have been discarded on arrival.
+Cancelling it saved roughly four more hours of a run that had to be rerun anyway
+— so the instinct to size the spill rather than accommodate it was what found the
+bug.
