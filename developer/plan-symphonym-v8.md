@@ -4609,10 +4609,22 @@ in Zenodo's record metadata, so **anyone taking the files from the archive, or f
 GitHub, sees no licence.** ⚠ **A licence that lives only in a catalogue record does
 not travel with the bytes.**
 
-**Two things the v8 deposit must do**, and they are release actions rather than
+**Three things the v8 deposit must do**, and they are release actions rather than
 notes: **ship `LICENCE.md` and `zenodo/epitran_extensions/LICENCE.md` inside the
-archive**, and **say in the record description that the record-level licence is a
-floor** with per-component terms given inside.
+archive**; **say in the record description that the record-level licence is a floor**
+with per-component terms given inside; and ⚠ **attribute the UPSTREAM sources, not
+only WHG** — the obligations are *inherited*, with GeoNames (CC BY 4.0) and Getty TGN
+(ODC-By 1.0) each requiring attribution of themselves, so *"CC BY 4.0, attribute WHG"*
+understates it.
+
+✅ **The "floor" framing was verified before being relied on** (`whg3-34`), and the
+check generalises: **a floor is only safe if nothing above it is MORE restrictive**,
+or a recipient **over-claims** rights rather than over-complying. Training inputs are
+GeoNames CC BY 4.0, Wikidata CC0, Getty TGN ODC-By 1.0 — **no share-alike, no
+NonCommercial** — so the most restrictive is attribution-required and the record
+matches. ⚠ **This could have gone the other way**: the index as a whole is ~42.7%
+share-alike, dominated by OSM/ODbL, and ODbL in the *training set* would have made the
+framing unsafe.
 
 ⚠ **Recorded here as well as in `LICENCE.md` deliberately**, because this is what gets
 read when v8 is prepared — a requirement that lives only in a licence file is the same

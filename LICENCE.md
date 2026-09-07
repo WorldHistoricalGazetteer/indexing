@@ -84,6 +84,23 @@ So the v8 deposit must:
 2. **State in the record description that the record-level licence is a floor**, with
    per-component terms given inside — rather than implying one licence governs
    everything in the deposit.
+3. **Attribute the upstream sources, not only WHG.** ⚠ The attribution obligations in
+   the deposit are **inherited**: GeoNames (**CC BY 4.0**) and Getty TGN (**ODC-By
+   1.0**) both require attributing *them*. **A record saying "CC BY 4.0, attribute
+   WHG" understates the obligation.** Name GeoNames and Getty TGN as upstream sources
+   — which is also the house position everywhere else: WHG asserts its terms
+   *alongside* each source's, never instead of them.
+
+✅ **The "floor" framing was checked before being relied on, and the check is the
+generalisable part.** *"The record-level licence is a floor"* is only safe if **nothing
+in the deposit is MORE restrictive than the record** — otherwise a recipient relying on
+it **over-claims rights**, which is a worse failure than over-complying. Verified
+against the training inputs: GeoNames **CC BY 4.0**, Wikidata **CC0**, Getty TGN
+**ODC-By 1.0** — **no share-alike and no NonCommercial**, so the most restrictive input
+is attribution-required and the record-level CC BY 4.0 matches it. ⚠ **This could
+easily have gone the other way**: WHG's index as a whole is ~42.7% share-alike,
+dominated by OSM/ODbL, and an ODbL or NC source in the *training set* would have raised
+a real question. Those sources are not in it.
 
 ## Checked and found not to apply
 
