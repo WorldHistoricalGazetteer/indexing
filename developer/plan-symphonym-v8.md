@@ -6678,3 +6678,84 @@ both**, but the figures are the rebuild's.
 
 ✅ **No `vundscript` training parquet exists yet, so nothing is committed either
 way.**
+
+## 20. QUERY-SIDE ROMANISATION — scoped, not proposed (`d33acaa`)
+
+`8b`, over the same 74,205 positives. Numbers at
+`/vast/ishi/ipa-v8/logs/query_rom_scope.json`.
+
+```
+stratum                  n   reach today   +exact   +near   new reach
+latin_q_nonlatin_c  39,618        13,060      137     759       2.26%
+nonlatin_q_latin_c  24,555             0    3,689   2,630      25.73%
+both_nonlatin       10,032             0      573     642      12.11%
+
+corpus-wide  8,430 of 74,205 = 11.36%   →  QUOTE 5.43% (4,031 near half)
+```
+
+⚠ **`8b` corrects its own earlier figure: this addresses TWO zero-reach strata,
+not one.** §18.3 said 13.5% of positives were unreachable, meaning
+`both_nonlatin` alone. **`nonlatin_q_latin_c` — 24,555 pairs, a third of the
+corpus — is ALSO at zero reach today**, and is fixed by the same change through a
+different route: against a Latin candidate, the romanised query matches the **raw
+name**, no stored field involved.
+
+🛑 **So 34,587 positives — 46.6% — currently have NO lexical path at all**, and
+one query-time function call addresses both halves.
+
+**We quote 5.43%, not 11.36%**, on the same reasoning as §18.1: the exact half
+carries this corpus's own transliteration provenance.
+
+### 20.1 ✅ A CONTROL THAT MOVED WHEN IT SHOULD NOT HAVE — and it was a FINDING
+
+Romanising a *Latin* query is near-identity, so `latin_q_nonlatin_c` should have
+gained ~0. It gained **2.26%**. ⚠ **`8b` neither accepted nor dismissed the
+number — it read all 896 cases**, and found **896 of 896** are queries that
+changed under `anyascii`, every one diacritic or macron folding:
+
+```
+Fāshān        -> fashan        matches  Фашан         -> fashan
+Valparaíso    -> valparaiso    matches  ভালপারাইসো    -> bhalparaiso
+Áspra Spítia  -> aspra spitia  matches  Άσπρα Σπίτια  -> aspra spitia
+Yağlı         -> yagli         matches  ЙагӀли        -> yaghli
+```
+
+✅ **That is a second, unlooked-for capability arriving free with the same
+change: diacritic-insensitive matching.** A user typing `Valparaiso` reaches
+`Valparaíso`.
+
+**The control was UNDER-SPECIFIED, not violated** — and reporting it that way,
+rather than folding 2.26% quietly into the headline, is what turned an anomaly
+into a feature. ⚠ **An unexpected control result is a question, not a nuisance.**
+
+⚠ The `both_latin` control remains **VACUOUS** (0 pairs, cross-script corpus) and
+is reported as proving nothing. Twice now — see §18.2.
+
+### 20.2 COST — cheap, except for the part nobody has measured
+
+`anyascii` **already ships** (`baselines.py`, `romanize_for_search`), costs
+microseconds, and needs **no reindexing** — the stored field is populated by the
+rebuild regardless. **One query-time call, one extra ES clause.**
+
+🛑 **THE REAL COST IS PRECISION AND IT IS UNMEASURED.** Every figure above is
+**recall over POSITIVES only**. More clauses admit more matches, and a romanised
+query is a blunter instrument — `fashan` reaches things `Fāshān` would not, some
+of them wrong. **Before this ships it needs a negative-control pass over the
+corpus's negatives**, scored the way the existing lexical tiers are
+(`LEXICAL_EXACT_BOOST` vs `LEXICAL_FUZZY_BOOST`).
+
+✅ **`8b` did not run it, deliberately: "scoping a payoff and validating a change
+are different jobs."** That is the right line. **Authorised now**, because a
+proposal without a precision number is not decidable and SG will ask for it
+first.
+
+### 20.3 THE SKETCH FOR SG — NOT YET IN THE ARTIFACT
+
+**~5.4% more positives reached corpus-wide, up to 25.7% on the stratum where a
+non-Latin query meets a Latin name, plus diacritic-insensitive matching, for one
+function call and one ES clause.**
+
+⚠ **Deliberately held out of the Artifact until precision is measured.** The
+Artifact is the colleague-facing case and everything in it is measured on both
+sides; a recall-only figure would be the first exception. It goes in when the
+negative-control pass lands, or not at all.
