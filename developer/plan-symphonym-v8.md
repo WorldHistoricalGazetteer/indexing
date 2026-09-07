@@ -6526,3 +6526,68 @@ transcribe **Cebuano phonology over Austrian mountains**. It buys 4.6 points of
 but circumstantial grounds (98.4% `wd` provenance, 82.6% name-sharing).
 
 Numbers: `/vast/ishi/ipa-v8/logs/noroute_split.json`, `other_script.json`.
+
+## 18. ✅ `name_romanized` PRICED — and the path it serves reaches 0% today
+
+`8b`, commit `535089d`, measured as **incremental reachability over 74,205
+positive pairs**. Numbers at `/vast/ishi/ipa-v8/logs/romanized_gain.json`.
+
+```
+stratum                              n     raw   +exact   +near     gain
+latin_query_nonlatin_candidate  39,618       0    8,082   4,978   32.96%
+nonlatin_query_latin_candidate  24,555       0        0       0    0.00%
+both_nonlatin                   10,032       0        0       0    0.00%
+```
+
+🛑 **RAW REACHABILITY IS ZERO IN EVERY STRATUM, AND THAT IS THE FINDING UNDER THE
+FINDING.** A Latin query and a non-Latin name **share no characters**, so no
+amount of BM25 on `name` reaches them at all. **`name_romanized` is not an
+improvement on an existing path — it IS the path.** Which is also why **two
+gateway clauses referencing it have been contributing literally nothing since
+they were written** (§13.1b: production holds zero).
+
+### 18.1 THE HEADLINE SPLITS, AND THE BIGGER HALF MEANS LESS
+
+```
+exact romanisation match   20.40%   ← provenance-contaminated
+near  romanisation match   12.56%   ← the defensible capability figure
+                           32.96%   total
+```
+
+⚠ **The exact half includes pairs whose Latin side is ITSELF a transliteration of
+the non-Latin one**, so matching it measures how the test corpus was assembled as
+much as what the field can do — the same artefact that makes romanised edit
+distance a near-oracle on CJK↔Latin ([[romanised_baseline_measures_provenance]]).
+
+**We quote 12.56%.** Quoting 33% flat would be the romanisation shortcut again,
+this time in our own favour. The Artifact states the 33% only with the split
+attached and says explicitly that we are not quoting it.
+
+**The honest one-line price:** `name_romanized` buys **~12.6% additional reach on
+the 53% of positives where a Latin query meets a non-Latin name, on a path that
+currently reaches 0% of them.**
+
+### 18.2 ⚠ A DESIGNED CONTROL THAT PASSED VACUOUSLY — and printed PASS
+
+`8b`'s `both_latin` control existed to prove the measurement invents no gains.
+**The corpus is cross-script by construction and holds ZERO both-Latin
+positives**, so `bl.get(…,0) + bl.get(…,0) == 0` was **true of an empty dict**.
+It passed by having nothing to check, and said `PASS`. It now detects vacuity and
+prints **`VACUOUS — 0 pairs, proves nothing`**.
+
+✅ **The control that actually holds is `nonlatin_query_latin_candidate`:** 24,555
+pairs, gain exactly 0, and **required** to be 0 because `romanize_for_search`
+returns `None` for Latin-script names, so the field cannot exist on those
+candidates. **Non-vacuous, and it does the job the other was meant to do.** This
+is [[a-check-that-cannot-fail]] in its purest form — an assertion of absence with
+no presence in the same call.
+
+### 18.3 A DESIGN LIMIT WORTH PRICING SEPARATELY — flagged, not proposed
+
+`both_nonlatin` gains **0% over 10,032 pairs — 13.5% of all positives**. Not a
+defect: **only the CANDIDATE is romanised**, so two non-Latin scripts are never
+bridged. **Romanising the QUERY at search time would reach them** — which is what
+`levenshtein_romanised` does implicitly and what the gateway does not.
+
+⚠ **That is a gateway change, not an indexing one, and it is unscoped.** Recorded
+as a flag rather than a proposal.
