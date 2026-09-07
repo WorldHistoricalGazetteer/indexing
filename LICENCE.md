@@ -9,8 +9,8 @@ exclusion that must never become untrue.
 | component | status |
 |---|---|
 | **`zenodo/epitran_extensions/`** — grapheme→IPA rule sets | ✅ **Contributions under CC0 1.0.** WHG proceeds on the basis that such rows attract no rights, and the CC0 dedication exists so nothing turns on it. ⚠ The v7 Zenodo record states CC BY 4.0 at the record level; that stands for v7 and is to be revisited for v8. See [`zenodo/epitran_extensions/LICENCE.md`](zenodo/epitran_extensions/LICENCE.md). |
-| **Model weights** (`hf/model.safetensors`) | ⚠ **Published CC BY 4.0** within the Zenodo deposit (DOI [10.5281/zenodo.18682017](https://doi.org/10.5281/zenodo.18682017), 2026-02-22). The HuggingFace licence field must be checked to match; if it does not, that is an inconsistency to resolve, not an open choice. |
-| **WHG's own code** | 🛑 **NOT YET DECIDED.** No licence is asserted here. `WorldHistoricalGazetteer/whg3` uses BSD 3-Clause scoped to "WHG's own code", which is offered as precedent only. |
+| **Model weights** (`hf/model.safetensors`) | ✅ **CC BY 4.0**, as published within the Zenodo deposit (DOI [10.5281/zenodo.18682017](https://doi.org/10.5281/zenodo.18682017), 2026-02-22). ✅ Checked 2026-09-07: `hf/README.md` already declares `license: cc-by-4.0`, so the model card and the deposit agree. |
+| **WHG's own code** | ✅ **BSD 3-Clause** — see [`LICENSE`](LICENSE). Matches `WorldHistoricalGazetteer/whg3`, same copyright holder (University of Pittsburgh), same scoping to "WHG's own code". |
 | **Third-party dependencies** | Unchanged, under their own terms. Nothing here alters them. |
 | **Ingested authority data** | Not licensed by WHG; see below. |
 
@@ -60,8 +60,7 @@ does not, the test is the defect.
 
 ## Open questions for the project owner
 
-1. **The code licence** for this repository. Not decided; BSD 3-Clause is `whg3`'s precedent.
-2. **Which NEH awards funded which components.** ✅ The *terms* are settled: NEH General Terms §XI.B–C (2 CFR §200.315–316) leave intangible property with the recipient while the Federal Government retains a non-exclusive, royalty-free, irrevocable licence to reproduce, prepare derivative works from, publish and use it. **Open licensing is a superset of what the Government reserves, so this constrains nothing above.** Which awards funded which parts is not known here and is not inferred.
-3. **The deposit-level statement for v8.** The v7 Zenodo record is CC BY 4.0 at the record level while the rule sets within it are dedicated CC0. CC0 is the more permissive, so a recipient faces no conflict — but the relationship should be **stated at the deposit for v8** rather than left to be inferred.
+1. **Which NEH awards funded which components.** ✅ The *terms* are settled: NEH General Terms §XI.B–C (2 CFR §200.315–316) leave intangible property with the recipient while the Federal Government retains a non-exclusive, royalty-free, irrevocable licence to reproduce, prepare derivative works from, publish and use it. **Open licensing is a superset of what the Government reserves, so this constrains nothing above.** Which awards funded which parts is not known here and is not inferred.
+2. **The deposit-level statement for v8.** The v7 Zenodo record is CC BY 4.0 at the record level while the rule sets within it are dedicated CC0. CC0 is the more permissive, so a recipient faces no conflict — but the relationship should be **stated at the deposit for v8** rather than left to be inferred.
 
 ✅ **Resolved and removed:** `whg3`'s `NOTICE.md` previously read as applying **CC BY-NC 4.0** to contributed datasets. ⚠ **The error was scope, not licence** — NC is WHG's *curation overlay*, asserted alongside each source's own terms, and applying it to other people's material was self-defeating besides, since CC BY 4.0 §2(a)(5)(B) forbids imposing downstream restrictions on material WHG received under it. Corrected in `whg3` (`080bc72c4`).
