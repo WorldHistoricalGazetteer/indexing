@@ -7029,3 +7029,93 @@ is needed because no such embedding exists.
 `/vast`, beside the data file. **Read-only describes the DATABASE, not the
 process**, and a read-only query still spills sorts and hash tables. Adds a
 fourth contributor to §13.6's list of paths nobody named.
+
+## 25. ✅ THE ARTIFACT'S 25-POINT CLAIM SURVIVES — measured, and my hypothesis was wrong
+
+I proposed (§23.3) that the `no_lang` population might be substantially junk,
+which would mean the Artifact **overstates** the difficulty. ✅ **`04` measured it
+and the hypothesis is dead.** Denominator **18,543,286** (25.505%):
+
+```
+pattern            in no-lang              corpus-wide
+all digits        10,965  0.0591%     115,952  0.1595%
+single character     870  0.0047%       2,994  0.0041%
+contains ';'       2,561  0.0138%      22,492  0.0309%
+contains a URL        43  0.0002%         381  0.0005%
+union             14,428  0.078%
+```
+
+🛑 **0.078%, and on three of four patterns the untagged population is CLEANER
+than the corpus at large** — the opposite of what I expected. **So the ~25 points
+are not inflated by records that should never have been ingested, and the
+Artifact needs no correction on that axis.** If it is overstated it is overstated
+on *recoverability*, which is the measurement now running.
+
+### 25.1 ⚠ A RETRACTION CAUGHT BY A CONTROL — `@und` is UNMEASURED, not zero
+
+`04` queried `{"wildcard":{"toponym_id":"*@und"}}`, got **0**, then ran the
+control it should have run first: **`*@en` also returns 0.** `toponym_id` is
+mapped `keyword` but **not populated in `_source`** — the pattern lives only in
+`_id`. **Every `@und` figure measured nothing.**
+
+✅ **The control is what turned a confident zero into a known unknown**, and it
+cost one extra query. ⚠ This is [[filters_must_report_denominator]] again: a
+predicate that could never have matched, returning the answer that looks like
+good news.
+
+### 25.2 THE `@und` CONVENTION HAS NEVER SHIPPED — the TGN finding again
+
+The live index has **no `@und` ids at all**; untagged ids end with a **bare `@`**
+(`'Le Grand Potron@'`). **`991c06c` is in the code and not in the index** —
+exactly the shape established for the 1,277,683 nameless `tgn` places. **A
+convention that exists only in source cannot be counted in an index**, so
+category (2) was never countable this way. ⚠ **Third instance today of code and
+artefact disagreeing, and each time the code was the misleading witness.**
+
+### 25.3 🛑 THE LANG-FIELD SWEEP: 201,486, NOT 41,850 — ONE MECHANISM
+
+Nearly **5× the incidental figure**, across **1,062 distinct junk-shaped
+values**, 0.277% of the corpus (denominator: 2,437 distinct lang values over
+54,160,491 docs).
+
+```
+lauc               71,605     genitive       34,665     ar1            20,124
+be:word_stress     18,540     uicn           10,649     kn:iso15919     7,944
+etymology:wikidata  7,652     etymology       6,056     ja_rm           3,249
+adjective           2,415     ru:word_stress  1,813     left/right        943
+```
+
+**All one mechanism: OSM `name:*` subkeys read as language tags** —
+`result['names'][tag.k[5:]] = tag.v` takes *everything* after `name:`. `genitive`
+and `adjective` are grammatical annotations, `left`/`right` are relation roles,
+`uicn`/`geoid`/`nuts` are identifiers. **None is a language.**
+
+⚠ **`04` is correcting its own earlier `#249` comment**, which called
+`name:suffix`/`name:prefix` a small incidental defect. **It is an order of
+magnitude larger.**
+
+⚠ **These are NOT part of the 18.5M** — they have a lang value, a *wrong* one, so
+they are a separate and much smaller problem. **Stated because the two would
+otherwise be summed.**
+
+### 25.4 THE DEFECT IS IN THREE FILES, AND THE FIX POINT MATTERS
+
+```
+authorities/osm-places.py:239            result['names'][tag.k[5:]] = tag.v
+authorities/ohm-places.py:254            result['names'][tag.k[5:]] = tag.v
+authorities/backfill_admin_levels.py:254 alt_names[k[5:]] = v
+```
+
+⚠ **I first assumed the imminent re-extract would clean this for free. It will
+not, and the distinction matters:** the re-extract rebuilds *toponyms from ES
+`places`*, and these junk lang values are **already in `places`**. Fixing the
+authority scripts corrects the *source* but needs an OSM re-ingest — 20.6 M
+records — to take effect.
+
+**So two fix points, and both are wanted:**
+
+1. **At toponym extraction, before the re-extract** — a lang-value filter, cheap,
+   immediate, and it makes the imminent rebuild clean.
+2. **At the three authority scripts** — or the next ingest reintroduces all of
+   it. Same shape as the MultiPoint fix: without the code change the next
+   re-ingest re-flattens.
