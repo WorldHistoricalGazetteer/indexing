@@ -21,7 +21,7 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from phonetics.utils.script_detection import Script, SCRIPT_RANGES
+from phonetics.utils.script_detection import Script, SCRIPT_RANGES, build_script_vocab
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -191,7 +191,8 @@ def generate_vocabulary(conn, output_dir: Path):
         json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, indent=2)
     logger.info(f"Language vocabulary: {len(lang_vocab)} entries")
 
-    script_vocab = {s.value: i for i, s in enumerate(Script)}
+    # ⚠ pinned ids, NOT enumerate(Script) — see script_detection.SCRIPT_ID
+    script_vocab = build_script_vocab()
     with open(output_dir / 'script_vocab.json', 'w') as f:
         json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)
     logger.info(f"Script vocabulary: {len(script_vocab)} entries")

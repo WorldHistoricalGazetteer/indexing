@@ -84,7 +84,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from phonetics.utils.script_detection import (
+from phonetics.utils.script_detection import (, build_script_vocab
     Script, detect_script, get_primary_namespace,
     SCRIPT_RANGES
 )
@@ -1154,7 +1154,8 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Language vocabulary saved: {lang_path} ({len(lang_vocab):,} languages)")
 
     # Script vocabulary
-    script_vocab = {s.value: i for i, s in enumerate(Script)}
+    # ⚠ pinned ids, NOT enumerate(Script) — see script_detection.SCRIPT_ID
+    script_vocab = build_script_vocab()
     script_path = output_dir / 'script_vocab.json'
     with open(script_path, 'w', encoding='utf-8') as f:
         json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)

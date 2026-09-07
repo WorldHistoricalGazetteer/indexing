@@ -61,6 +61,127 @@ class Script(str, Enum):
     OTHER = "OTHER"
 
 
+# ---------------------------------------------------------------------------
+# Pinned script -> embedding id mapping
+# ---------------------------------------------------------------------------
+# 🛑 THESE INTEGERS ARE A MODEL CONTRACT, NOT A CONVENIENCE. A trained model's
+# script embedding table is indexed by them. Change one and every artefact and
+# serving path that used it is silently reinterpreted.
+#
+# They were formerly derived as `{s.value: i for i, s in enumerate(Script)}`,
+# which tied an embedding index to the LINE POSITION of an enum member. The 17
+# scripts added by the blackout fix were declared ABOVE `OTHER`, so `OTHER`
+# moved 19 -> 36 — and `OTHER` is the fallback `encode_script` uses for every
+# unrecognised script, i.e. the most-used id in the table for exotic input. A
+# model trained with 20 rows, served a regenerated vocabulary, would have looked
+# up index 36 in a 20-row table.
+#
+# ⚠ Nothing downstream could have detected that: the vocabulary file is
+# self-consistent under either numbering, and a model loading it gets plausible
+# ids for the wrong scripts.
+#
+# 0-19 are pinned to the values in the SHIPPED v7 vocabulary — verified 7 Sep
+# 2026 against `symphonym-v7-hf/vocab/script_vocab.json`, not inferred from
+# declaration order — so every existing artefact stays valid. New scripts take
+# the next free id, which makes adding one ADDITIVE BY CONSTRUCTION.
+#
+# ⚠ TO ADD A SCRIPT: append to the enum AND add an entry here with the next
+# unused integer. Never renumber an existing entry. Never reuse a retired one.
+SCRIPT_ID: Dict[str, int] = {
+    # --- the original 20, frozen at their shipped v7 values ---
+    "LATIN": 0,
+    "CYRILLIC": 1,
+    "GREEK": 2,
+    "ARABIC": 3,
+    "HEBREW": 4,
+    "DEVANAGARI": 5,
+    "BENGALI": 6,
+    "TAMIL": 7,
+    "TELUGU": 8,
+    "MALAYALAM": 9,
+    "KANNADA": 10,
+    "GUJARATI": 11,
+    "THAI": 12,
+    "GEORGIAN": 13,
+    "ARMENIAN": 14,
+    "HANGUL": 15,
+    "CJK": 16,
+    "HIRAGANA": 17,
+    "KATAKANA": 18,
+    "OTHER": 19,
+    # --- added by the blackout fix; ids continue from 20 so nothing moves ---
+    "MYANMAR": 20,
+    "GURMUKHI": 21,
+    "TIBETAN": 22,
+    "SINHALA": 23,
+    "KHMER": 24,
+    "OL_CHIKI": 25,
+    "TIFINAGH": 26,
+    "ETHIOPIC": 27,
+    "ORIYA": 28,
+    "LAO": 29,
+    "MONGOLIAN": 30,
+    "CANADIAN_ABORIGINAL": 31,
+    "BOPOMOFO": 32,
+    "THAANA": 33,
+    "NKO": 34,
+    "SYRIAC": 35,
+    "COPTIC": 36,
+}
+
+# Ids that shipped in v7 and may never move. Kept separate from SCRIPT_ID so the
+# guard below compares against a literal record of what was released, rather than
+# against the table it is checking.
+_V7_SHIPPED_IDS: Dict[str, int] = {
+    "LATIN": 0, "CYRILLIC": 1, "GREEK": 2, "ARABIC": 3, "HEBREW": 4,
+    "DEVANAGARI": 5, "BENGALI": 6, "TAMIL": 7, "TELUGU": 8, "MALAYALAM": 9,
+    "KANNADA": 10, "GUJARATI": 11, "THAI": 12, "GEORGIAN": 13, "ARMENIAN": 14,
+    "HANGUL": 15, "CJK": 16, "HIRAGANA": 17, "KATAKANA": 18, "OTHER": 19,
+}
+
+
+def _validate_script_ids() -> None:
+    """Fail at import if the pinned table has drifted from the enum.
+
+    ⚠ Deliberately raises rather than warns. The failure this guards against is
+    invisible at runtime — a model reads plausible ids for the wrong scripts —
+    so a warning would be indistinguishable from working.
+    """
+    missing = {s.value for s in Script} - set(SCRIPT_ID)
+    if missing:
+        raise RuntimeError(
+            f"Script members with no pinned id: {sorted(missing)}. "
+            f"Add each to SCRIPT_ID with the next unused integer; do NOT renumber."
+        )
+    extra = set(SCRIPT_ID) - {s.value for s in Script}
+    if extra:
+        raise RuntimeError(
+            f"SCRIPT_ID has ids for non-members: {sorted(extra)}. "
+            f"Retired scripts must keep their id reserved, not be re-pointed."
+        )
+    if len(set(SCRIPT_ID.values())) != len(SCRIPT_ID):
+        dupes = [v for v in SCRIPT_ID.values() if list(SCRIPT_ID.values()).count(v) > 1]
+        raise RuntimeError(f"Duplicate script ids: {sorted(set(dupes))}")
+    drifted = {k: (SCRIPT_ID[k], v) for k, v in _V7_SHIPPED_IDS.items() if SCRIPT_ID.get(k) != v}
+    if drifted:
+        raise RuntimeError(
+            f"Pinned ids moved from their SHIPPED v7 values: {drifted}. "
+            f"Every stored artefact and every served model uses these."
+        )
+
+
+_validate_script_ids()
+
+
+def build_script_vocab() -> Dict[str, int]:
+    """The script -> id mapping written to `script_vocab.json`.
+
+    Single source for every writer. Previously each writer built its own with
+    `enumerate(Script)`, which is what coupled the ids to declaration order.
+    """
+    return {s.value: SCRIPT_ID[s.value] for s in Script}
+
+
 # Scripts that should be romanized (AnyAscii) rather than read natively
 ROMANIZE_SCRIPTS = {Script.CJK, Script.HIRAGANA, Script.KATAKANA}
 

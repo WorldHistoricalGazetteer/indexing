@@ -418,7 +418,9 @@ class ScriptVocabulary:
     """
 
     def __init__(self):
-        self.script_to_id = {s: i for i, s in enumerate(Script)}
+        # ⚠ pinned ids, NOT enumerate(Script) — declaration order is not a contract
+        from phonetics.utils.script_detection import SCRIPT_ID
+        self.script_to_id = {s: SCRIPT_ID[s.value] for s in Script}
         self.id_to_script = {i: s for s, i in self.script_to_id.items()}
 
     def __len__(self) -> int:
