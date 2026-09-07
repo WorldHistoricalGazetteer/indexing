@@ -7536,3 +7536,86 @@ second witness for a file now rebuilt twice.
 
 ✅ **Unaffected: `04`'s recoverability chain** (staged trees + live index, neither
 touched) — **the 20.36% stands.** **`17`'s rule work** is likewise independent.
+
+## 32. ✅ THE `osm` ALLOW-LIST — and the OBVIOUS version deletes real languages
+
+`04`, validated against the real distribution rather than proposed from the shape.
+
+### 32.1 🛑 THE NAIVE FILTER REJECTS 41,485 DOCS OF REAL LANGUAGE DATA
+
+`pycountry.languages` alone drops **50 tags that are genuine language codes**:
+
+```
+map 10,811 (Austronesian)   roa 9,507 (Romance)    ber 8,734 (Berber)
+nah  5,657 (Nahuatl)        eml 2,717              mo  1,023 (Moldavian, deprecated)
+bat    724 (Baltic)         mly   526 (retired)    bh    525 (Bihari, deprecated)
+gem    248 (Germanic)  ·  aus 103 · fiu 39 · sal 26 · smi 16 · myn 15 · cel 14
+```
+
+These are **ISO 639-2/639-5 collective codes and deprecated ISO 639-1 codes** —
+legitimate, in use, and absent from `pycountry.languages`, which covers
+**individual languages only**. ⚠ **17% of what the naive filter rejects is real
+data.**
+
+🛑 **A filter that deletes real language tags is worse than the junk it removes**
+— and it is the deny-list's failure in mirror image. **The deny-list is unbounded
+and lets junk through; the naive allow-list is under-specified and throws data
+away.** Neither is discovered by inspecting the design; both need measuring
+against the distribution.
+
+### 32.2 ✅ THE VALIDATED FILTER
+
+**BCP-47 shape AND base subtag in (ISO-639 individual ∪ ISO-639-5 families ∪
+known legacy).**
+
+```
+                  distinct        docs    % of tagged corpus
+ACCEPTED             1,285  53,958,385           99.6268%
+REJECTED             1,152     202,106            0.3732%
+naive version        1,202     243,591    ← 41,485 of them FALSE
+```
+
+`pycountry.language_families` supplies 115 ISO 639-5 codes, of which the corpus
+uses **at least 18**. Legacy set small and explicit:
+`mo bh sh in iw ji jw mly eml qwe md tw`.
+
+**What it still rejects is clean:** `lauc` 71,605 · `genitive` 34,665 · `ar1`
+20,124 · `be:word_stress` 18,540 · `uicn` 10,649 · `kn:iso15919` 7,944 ·
+`etymology:wikidata` 7,652 · `adjective` 2,415 · `geoid` · `nuts` ·
+`prefix`/`suffix` · `left`/`right` · `carnaval`. **Grammatical annotations,
+identifier schemes, transliteration markers, relation roles.**
+
+✅ **The shape constraint holds: bounded by the ISO registries rather than by the
+corpus**, so the 1,063rd invented `name:*` subkey is rejected **without anyone
+updating anything** — which was the whole argument for an allow-list.
+
+### 32.3 DECIDED — the two judgement cases NORMALISE, they do not drop
+
+`04` surfaced rather than silently dropping, which was right. **Decision:
+normalise both to `en`.**
+
+* **`simple` (555)** — Wikipedia's Simple English is an **editorial register, not
+  a language**; BCP-47 has no such subtag. → `en`.
+* **`en1` 1,051 · `en2` 521 · `en3` 260 · `en4` 147 (1,979)** — the numbering is
+  a **mapper's disambiguation device**, not a language distinction. → `en`.
+  ⚠ An object with `name:en1` and `name:en2` yields **two `en` names**, which is
+  correct: a place may have several English names.
+
+**Recovers 2,534 names that would otherwise be discarded.** Rejected total falls
+202,106 → **199,572**.
+
+### 32.4 ⚠ THE LIMITATION `04` STATED, AND THE GUARD IT IMPLIES
+
+*"I validated against the `lang` values present in the corpus today. A tag no
+mapper has used yet cannot appear in that distribution, so this measures the
+filter's behaviour on observed data, not in general."*
+
+**The ISO-registry basis is what makes it generalise; the measurement does not
+prove it.** ⚠ **So the filter MUST LOG WHAT IT REJECTS.** A legitimate tag we
+have not seen — a newly registered subtag, a collective code the registries add —
+must **surface in a log rather than vanish silently**. Without that, §32.1's
+failure recurs invisibly the first time OSM adopts a code the registries gain
+after this filter was written.
+
+**Still forward-only:** the 199,572 already stored need re-extraction. **Two
+parts, one item.**
