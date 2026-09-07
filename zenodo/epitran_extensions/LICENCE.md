@@ -6,33 +6,34 @@ distribution does not.
 
 ## Grant
 
-**Dual, and the two halves apply to different outlets.**
+**WHG proceeds on the basis that a single grapheme→IPA row attracts no rights at
+all** — that there is essentially one way to express *"this letter makes this
+sound"*, and that nothing in such a row is chosen rather than determined.
 
-**Both licences are granted to everyone.** Anyone receiving this content may rely on
-whichever of the two suits what they are doing.
+🛑 **But nothing here depends on that being right.** Contributions are dedicated to
+the **public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)**,
+which waives *"Copyright and Related Rights"* **without enumerating what they are**
+and supplies a fallback licence wherever a waiver is ineffective. ✅ **That is the
+point of the instrument: it makes the question not need answering.**
 
-The table records **which grant WHG relies on for which outlet** — it is not a limit
-on what a recipient may rely on:
+**Why not a licence with conditions.** An Epitran map file is a bare two-column CSV
+with **no comment convention** — there is physically nowhere in the file for an
+attribution notice to live, so CC BY's single substantive condition cannot be
+delivered by the artefact that travels. And Epitran operates no CLA and no DCO, so a
+pull request's inbound licence is GitHub's Terms of Service §D.6 — *"you license that
+Content under the same terms, and you agree that you have the right to license that
+Content under those terms"* — which an attribution-conditioned row would make false
+against an MIT project. **CC0 dissolves both: it permits everything MIT permits, and
+imposes no condition the format cannot carry.**
 
-| | licence | WHG relies on it for |
-|---|---|---|
-| **As a dataset** | **CC BY 4.0** | this directory as a whole, as published in WHG's citable Zenodo deposit |
-| **As an upstream contribution** | **MIT** | rows WHG contributes to the Epitran project |
-
-⚠ **A public MIT grant cannot be scoped after the fact.** Once a row is in Epitran
-under MIT it is MIT to everyone, and Epitran's users and packagers rely on exactly
-that. An outlet-scoped grant would fail upstream for the same reason a CC-BY-only one
-would.
-
-**Why the split, and it is a property of the format rather than a preference.**
-An Epitran map file is a bare two-column CSV with **no comment convention** — there
-is physically nowhere in the file for an attribution or licence notice to live. CC BY
-4.0's single substantive condition therefore cannot be delivered by the artefact that
-travels. Separately, Epitran operates no CLA and no DCO, so the inbound licence for a
-pull request is GitHub's Terms of Service §D.6 — *"you license that Content under the
-same terms, and you agree that you have the right to license that Content under those
-terms"* — and a contribution carrying CC-BY-only rows would make that warranty false
-against an MIT project. Either finding alone settles it.
+⚠ **The published deposit and this dedication are not yet aligned, and that is
+recorded rather than smoothed over.** The v7 Zenodo record (below) states **CC BY
+4.0** at the record level, covering models, vocabulary and evaluation data as well as
+these rule sets. **That statement stands for v7 and is to be revisited for v8**, where
+the relationship between a CC0 dedication and a CC BY 4.0 deposit needs stating
+carefully rather than asserting. CC0 is the more permissive of the two, so there is no
+conflict for a recipient — but there is an ambiguity, and it should be resolved at the
+deposit rather than left to be inferred.
 
 ## Attribution
 
@@ -62,22 +63,21 @@ pan-Guru          62          44           5
 sin-Sinh          80          52          14
 ```
 
-**`khm-Khmr` shares no row at all**, and `mya-Mymr` is a third the size of the
-upstream file it would supposedly be copying — neither is a copy-with-edits shape in
-either direction.
+**`khm-Khmr` shares no row at all** — the strongest single fact — and `mya-Mymr` is a
+third the size of the upstream file it would supposedly be copying. Neither is a
+copy-with-edits shape in either direction.
 
-Where values do agree, we regard convergence as the better explanation than copying.
-There is essentially one way to express *"this letter makes this sound"*, and the
+Where values do agree, convergence is the better explanation than copying: the
 compilation's selection (all letters of the script) and arrangement (codepoint order)
-are both determined rather than chosen. ⚠ **On that reasoning the percentages are
-corroboration rather than the argument** — even complete agreement would not imply
-copying, because there would be nothing chosen in the row to copy. Georgian is a poor
-case for a percentage argument in particular: its orthography is close to phonemic, so
-independent transcribers should converge heavily.
+are both determined rather than chosen. ⚠ **The percentages are corroboration, not
+the argument** — on that reasoning even complete agreement would not imply copying,
+because there would be nothing chosen in the row to copy. Georgian is a poor case for
+a percentage argument in particular: its orthography is close to phonemic, so
+independent transcribers should converge heavily, and 35% is arguably *lower* than
+independence predicts.
 
-⚠ **This is reasoning, not a legal opinion.** Whether these rows attract copyright or
-database rights at all is an open question, and nothing here should be read as
-settling it.
+⚠ **This is WHG's working basis, not a legal opinion**, and the CC0 dedication above
+exists precisely so that nothing turns on whether it is correct.
 
 ## Status of the content
 
@@ -93,13 +93,12 @@ interface.
 
 ## Contributions
 
-Contributions to these files are accepted under the dual grant above: **CC BY 4.0**
-for inclusion in the Zenodo dataset, **MIT** for any row WHG contributes upstream to
-Epitran.
+**Contributions are accepted under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)**
+— a dedication to the public domain, waiving whatever rights may subsist without
+requiring anyone to establish what they are.
 
-**Credit differs between the two outlets, and the difference is stated rather than
-left to be discovered.** In the Zenodo dataset, attribution is a **condition of the
-licence** and contributors are credited by name where they wish to be. Upstream, the
-CSV format cannot carry a credit line at all, so contributors are **named in the pull
-request as a matter of practice** — not as a licence condition, because MIT imposes
-none that the file could satisfy.
+**Credit is practice, everywhere, and not a licence condition.** Contributors are
+credited by name where they wish to be — in the dataset, and in the pull request when
+a row goes upstream. ⚠ **CC0 imposes no attribution requirement**, so this is a
+promise WHG makes rather than a term binding a recipient. Stated plainly so it is not
+mistaken for either more or less than it is.
