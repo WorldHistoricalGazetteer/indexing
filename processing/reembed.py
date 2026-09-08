@@ -135,6 +135,52 @@ CONTROL_MIN_ROWS = 200
 BEGIN_MARKER = "# --- BEGIN CANONICAL TOKENISER ---"
 END_MARKER = "# --- END CANONICAL TOKENISER ---"
 
+#: 🛑 THE TOKENISER IS FOUR FILES, AND ONLY TWO OF THEM CARRY A CANONICAL BLOCK.
+#: `verify_tokeniser` hashes `phonetics/tokenise.py` against `hf/inference.py`,
+#: so a partial application that updates those two and misses these two passes
+#: EVERY existing check. Found by indexing-04 by asking which partial the gate
+#: cannot see, rather than which partial is most likely — the answer was the one
+#: outside the gate, not the one inside it.
+#:
+#: These two get only fragments of the D-A/D5 patch (`char_vocab.py` casefold +
+#: NFKC; `script_detection.py` the fold-before-counting line), which is exactly
+#: why nobody thought of them as tokeniser files. `script_detection.py` matters
+#: most: D5 changes script ASSIGNMENT, and assignment is consumed well outside
+#: the tokeniser — rebuild_toponyms_index, index_namespace, inference/search,
+#: ipa/routes — so it moves what `is_script_mismatch` accepts.
+#:
+#: ⚠ WHOLE-FILE hash, deliberately, and it will fire on a comment-only edit.
+#: That false positive costs one re-pin; the false NEGATIVE costs 73M names
+#: embedded under a tokenisation half of the code does not implement, with
+#: nothing raised. There is no principled subset to hash — the "behaviourally
+#: relevant part" of these two files is not delimited by anything, which is the
+#: reason they never got a canonical block in the first place.
+AUX_TOKENISER_FILES = (
+    "phonetics/vocab/char_vocab.py",
+    "phonetics/utils/script_detection.py",
+)
+
+
+def _aux_tokeniser_hashes(repo: Path) -> dict:
+    """Whole-file sha256 of the tokeniser files that carry no canonical block."""
+    out = {}
+    for rel in AUX_TOKENISER_FILES:
+        path = repo / rel
+        if not path.exists():
+            raise SystemExit(
+                f"ABORT: {path} is missing. It is one of the four files the "
+                f"tokeniser is implemented across; its absence is not an empty "
+                f"contribution, it is a tree that cannot tokenise.")
+        data = path.read_bytes()
+        if not data.strip():
+            raise SystemExit(
+                f"ABORT: {path} is empty; its hash would be the hash of nothing "
+                f"({SHA256_OF_NOTHING[:12]}), which two failed producers agree "
+                f"on perfectly.")
+        out[rel] = hashlib.sha256(data).hexdigest()
+    return out
+
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -372,6 +418,7 @@ def cmd_pin(args) -> None:
         "pinned_by_python": platform.python_version(),
         "pinned_by_unicodedata": unicodedata.unidata_version,
         "pinned_at": datetime.now(timezone.utc).isoformat(),
+        "aux_tokeniser_sha256": _aux_tokeniser_hashes(repo),
     }
     if pin["tokeniser_block_sha256"] != pin["hf_inference_block_sha256"]:
         raise SystemExit(
@@ -698,6 +745,30 @@ def verify_tokeniser(pin: dict) -> str:
             f"the pinned one; mixing the two would UNDER-count, because a shard "
             f"running post-fix code compares canonical against canonical, finds "
             f"nothing, and is indistinguishable from a clean shard.")
+    # The two files with no canonical block. Checked at the READER, from the
+    # repo this process would actually import, for the same reason the block is:
+    # a task requeued onto a changed tree must die here, not after the weights.
+    want_aux = pin.get("aux_tokeniser_sha256")
+    if want_aux is None:
+        raise SystemExit(
+            "ABORT: this run's pin carries no `aux_tokeniser_sha256`, so it "
+            "predates the check that two of the four tokeniser files were never "
+            "gated at all. Re-pin. Treating the absent key as 'nothing to check' "
+            "is precisely the fault this gate exists to catch — an absent input "
+            "read as an empty one.")
+    got_aux = _aux_tokeniser_hashes(repo)
+    for rel in AUX_TOKENISER_FILES:
+        if got_aux[rel] != want_aux.get(rel):
+            raise SystemExit(
+                f"ABORT: {rel} hashes {got_aux[rel][:12]} but the run is pinned "
+                f"to {str(want_aux.get(rel))[:12]}. The tokeniser is implemented "
+                f"across four files and this is one of the two carrying no "
+                f"canonical block, so a partial update reaching only the gated "
+                f"pair would otherwise have run clean. Shards already computed "
+                f"used the pinned tree; mixing tokenisations inside one KNN "
+                f"space is worse than applying none, because every cosine stays "
+                f"a plausible number.")
+
     want_unicode = pin.get("unicodedata_version")
     if want_unicode and unicodedata.unidata_version != want_unicode:
         raise SystemExit(
@@ -712,7 +783,8 @@ def verify_tokeniser(pin: dict) -> str:
             f"for the export and apply phases and does not tokenise.")
     print(f"[compute] tokeniser verified at the reader: {hf_inference} "
           f"block sha256 {got[:12]} == pin · unicodedata "
-          f"{unicodedata.unidata_version} == pin")
+          f"{unicodedata.unidata_version} == pin · "
+          f"{len(AUX_TOKENISER_FILES)} un-blocked files == pin")
     return got
 
 

@@ -412,6 +412,8 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         pin = {"tokeniser_block_sha256": reembed._canonical_block_hash(
                    Path(reembed.__file__).resolve().parents[1] / "phonetics" / "tokenise.py"),
                "git_commit": "c" * 40,
+               "aux_tokeniser_sha256": reembed._aux_tokeniser_hashes(
+                   Path(reembed.__file__).resolve().parents[1]),
                "unicodedata_version": "99.0.0"}   # never any real table
         with self.assertRaises(SystemExit) as ctx:
             reembed.verify_tokeniser(pin)
@@ -423,9 +425,72 @@ class TestThePinStopsAMixedRun(unittest.TestCase):
         pin = {"tokeniser_block_sha256": reembed._canonical_block_hash(
                    repo / "phonetics" / "tokenise.py"),
                "git_commit": "c" * 40,
+               "aux_tokeniser_sha256": reembed._aux_tokeniser_hashes(repo),
                "unicodedata_version": unicodedata.unidata_version}
         self.assertEqual(reembed.verify_tokeniser(pin),
                          pin["tokeniser_block_sha256"])
+
+    # --- the two tokeniser files that carry no canonical block -------------
+    #
+    # The gate hashed phonetics/tokenise.py against hf/inference.py, so the
+    # partial it could NOT see was the one that updated exactly those two and
+    # missed the other half of the same patch. These four tests are the gate's
+    # own falsification: the first must fail if the aux check is removed.
+
+    def _pin_for_real_tree(self, **over):
+        repo = Path(reembed.__file__).resolve().parents[1]
+        pin = {"tokeniser_block_sha256": reembed._canonical_block_hash(
+                   repo / "phonetics" / "tokenise.py"),
+               "git_commit": "c" * 40,
+               "aux_tokeniser_sha256": reembed._aux_tokeniser_hashes(repo),
+               "unicodedata_version": unicodedata.unidata_version}
+        pin.update(over)
+        return pin
+
+    def test_a_partial_that_misses_script_detection_aborts(self):
+        """The exact partial the canonical-block gate cannot see.
+
+        D5 changes script ASSIGNMENT, which is consumed outside the tokeniser
+        (rebuild_toponyms_index, index_namespace, inference/search, ipa/routes),
+        so this is the costlier half of the patch to drop.
+        """
+        pin = self._pin_for_real_tree()
+        pin["aux_tokeniser_sha256"] = dict(pin["aux_tokeniser_sha256"])
+        pin["aux_tokeniser_sha256"]["phonetics/utils/script_detection.py"] = "0" * 64
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.verify_tokeniser(pin)
+        self.assertIn("script_detection.py", str(ctx.exception))
+
+    def test_a_partial_that_misses_char_vocab_aborts(self):
+        pin = self._pin_for_real_tree()
+        pin["aux_tokeniser_sha256"] = dict(pin["aux_tokeniser_sha256"])
+        pin["aux_tokeniser_sha256"]["phonetics/vocab/char_vocab.py"] = "1" * 64
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.verify_tokeniser(pin)
+        self.assertIn("char_vocab.py", str(ctx.exception))
+
+    def test_a_pin_predating_the_check_aborts_rather_than_skipping(self):
+        """An absent key is not an empty one.
+
+        Reading a missing `aux_tokeniser_sha256` as 'nothing to verify' would
+        make every pre-existing pin silently exempt from the check written to
+        catch it — the campaign's signature defect, an absent input treated as
+        nothing to do.
+        """
+        pin = self._pin_for_real_tree()
+        del pin["aux_tokeniser_sha256"]
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.verify_tokeniser(pin)
+        self.assertIn("predates", str(ctx.exception))
+
+    def test_cmd_pin_records_all_four_tokeniser_files(self):
+        reembed.cmd_pin(SimpleNamespace(out_dir=str(self.dir), model_dir=None,
+                                        unicodedata_version=None))
+        pin = reembed.load_pin(self.dir)
+        self.assertIn("tokeniser_block_sha256", pin)
+        self.assertIn("hf_inference_block_sha256", pin)
+        self.assertEqual(sorted(pin["aux_tokeniser_sha256"]),
+                         sorted(reembed.AUX_TOKENISER_FILES))
 
     def test_repinning_a_moved_tree_aborts(self):
         self._write_pin(tokeniser_block_sha256="d" * 64, hf_inference_block_sha256="d" * 64)
