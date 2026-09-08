@@ -798,6 +798,24 @@ To cleanly re-ingest an authority (e.g. adding new OSM tag keys):
 5. Rebuild the hard-link overlay (`processing/submit_hardlinks_slurm.py`) —
    **not** `es -cluster`, which no longer exists
 
+🛑 **OSM/OHM ONLY — A RE-INGEST DESTROYS 10.76 M WAY POLYGONS UNLESS THE HANDLER
+IS FIXED FIRST** ([`place#256`](https://github.com/WorldHistoricalGazetteer/place/issues/256)).
+`osm-places.py:305` and `ohm-places.py:313` build **every** way with
+`create_linestring`, area-tagged or not. The 10.5 M polygons restored in July
+(`place#145`) were an **in-place augmentation pass, not an ingest-handler fix** —
+measured 8 Sep 2026 as still present (`osm:w*` 10,078,925, `ohm:w*` 681,970).
+
+So a re-ingest silently returns every closed area-way to a LineString:
+`has_geom: true` with no usable polygon, `h3_cover` collapsed to one centroid
+hex, and **`containment=exact` degrading to a `repr_point` test with no error**.
+
+**Either** fix the handler first (port the `area()` handling from
+`processing/osm_way_area_geometry.py`, which is a working reference), **or**
+re-run `processing.osm_way_area_geometry` afterwards as a mandatory step, exactly
+as the relation boundary pass is re-run. ⚠ **The eligibility gates are
+source-specific — `osm` 7 tag keys, `ohm` 13; using the OSM set for OHM silently
+drops ~57 k ways.**
+
 ### Incremental single-namespace add (one authority, between full rebuilds)
 
 To fold **one** (small) authority into the **live** indices without a full
