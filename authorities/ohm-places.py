@@ -25,7 +25,9 @@ import osmium
 import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
-from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.helpers import (enrich_geometry, write_staged_place_doc,
+                               language_subtag_or_none, record_rejected_name_subkey,
+                               report_rejected_name_subkeys)
 from processing.settings import ES_HOST, DATA_DIR, OHM_STATE_FILE
 from processing.temporal import lifespan
 
@@ -176,7 +178,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
     toponyms = [primary_toponym]
 
     if 'names' in tags:
-        for lang, val in tags['names'].items():
+        for lang, val in tags['names']:
             entry = {'toponym_id': f"{val}@{lang}"}
             if timespans:
                 entry['timespans'] = timespans
@@ -245,13 +247,22 @@ def process_tags(tags):
 
     # Extract tags
     result = {'name': tags['name']}
-    result['names'] = {}
+    result['names'] = []
 
     wanted_keys = set(TYPE_TAG_KEYS) | EXTRA_TAG_KEYS
 
     for tag in tags:
         if tag.k.startswith('name:'):
-            result['names'][tag.k[5:]] = tag.v
+            # Same two defects as osm-places.py, and ohm uses the OSM tag schema
+            # by design so it inherited both: every `name:*` subkey minted a
+            # language tag, and a dict keyed by language silently dropped one of
+            # two names sharing a language (`name:en1` + `name:en2`).
+            subkey = tag.k[5:]
+            lang = language_subtag_or_none(subkey)
+            if lang is None:
+                record_rejected_name_subkey(subkey)
+                continue
+            result['names'].append((lang, tag.v))
         elif tag.k in wanted_keys:
             result[tag.k] = tag.v
 

@@ -6,6 +6,7 @@ High-Performance Single-Pass OSM Ingestion.
 
 import json
 import os
+import re
 import sys
 import gc
 import time
@@ -18,7 +19,10 @@ import osmium
 import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
-from processing.helpers import enrich_geometry, write_staged_place_doc
+
+from processing.helpers import (enrich_geometry, write_staged_place_doc,
+                               language_subtag_or_none, record_rejected_name_subkey,
+                               report_rejected_name_subkeys)
 from processing.settings import DATA_DIR, OSM_STATE_FILE
 from processing.temporal import attested_at, dated_or_attested, parse_osm_year
 
@@ -149,7 +153,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
     }]
 
     if 'names' in tags:
-        for lang, val in tags['names'].items():
+        for lang, val in tags['names']:
             toponyms.append({
                 'toponym_id': f"{val}@{lang}",
                 'timespans': ts,
@@ -232,11 +236,18 @@ def process_tags(tags):
 
     # Extract tags
     result = {'name': tags['name']}
-    result['names'] = {}
+    # A LIST, not a dict: `name:en1` and `name:en2` both normalise to `en` and
+    # are two distinct names. A dict keyed by language would silently drop one.
+    result['names'] = []
 
     for tag in tags:
         if tag.k.startswith('name:'):
-            result['names'][tag.k[5:]] = tag.v
+            subkey = tag.k[5:]
+            lang = language_subtag_or_none(subkey)
+            if lang is None:
+                record_rejected_name_subkey(subkey)
+                continue
+            result['names'].append((lang, tag.v))
         elif tag.k in {'place', 'natural', 'water', 'waterway', 'historic', 'landuse', 'boundary', 'admin_level',
                        'population', 'elevation', 'wikidata',
                        # #246 item 1. These were parsed by ohm-places.py and

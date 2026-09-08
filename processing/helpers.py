@@ -21,6 +21,7 @@ from shapely.ops import transform
 from shapely.validation import make_valid as shapely_make_valid
 from pyproj import Transformer, CRS
 from typing import Iterable
+import re
 import json
 import logging
 import math
@@ -1827,3 +1828,95 @@ if __name__ == "__main__":
     naive_lat = sum(c[1] for c in coords) / len(coords)
     print(f"  Naive centroid: {{'lon': {naive_lon}, 'lat': {naive_lat}}}")
     print(f"  Difference matters at high latitudes!")
+
+
+# ---------------------------------------------------------------------------
+# `name:*` subkeys are NOT all languages.
+#
+# This file previously did `result['names'][tag.k[5:]] = tag.v`, so EVERY
+# `name:*` subkey minted a language tag. Measured over the live corpus that put
+# 1,062 distinct non-language values into the `lang` field across 201,486
+# toponyms — `genitive`, `pronunciation`, `etymology:wikidata`, `uicn`, `geoid`,
+# `left`/`right`, `be:word_stress`. A deny-list cannot fix this: the keys are
+# arbitrary and the next mapper invents the 1,063rd. Hence an ALLOW-list, bounded
+# by the ISO registries rather than by what anyone has noticed.
+#
+# ⚠ It must include ISO 639-5 COLLECTIVE codes and deprecated 639-1 codes.
+# `pycountry.languages` covers individual languages only, and an allow-list built
+# from it alone rejects 41,485 real toponyms across 50 tags — `map` (Austronesian),
+# `roa` (Romance), `ber` (Berber), `nah`, `mo`, `bh`, `bat`, `gem`. That is 17% of
+# its rejections, and losing real names is worse than keeping junk.
+_LANG_SHAPE = re.compile(r'^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$')
+
+# Deprecated/retired codes still in live use in OSM.
+_LEGACY_LANG_CODES = {"mo", "bh", "sh", "in", "iw", "ji", "jw", "mly", "eml",
+                      "qwe", "md", "tw"}
+
+# Not languages, but the intent is unambiguous, so normalise rather than drop.
+# `simple` is an editorial register (Simple English); `en1`..`en4` are a mapper's
+# disambiguation device. An object carrying name:en1 AND name:en2 yields TWO `en`
+# names, which is correct — a place may have several names in one language.
+_LANG_NORMALISE = {"simple": "en", "en1": "en", "en2": "en", "en3": "en", "en4": "en"}
+
+
+def _build_language_allowlist():
+    """ISO 639 individual + ISO 639-5 collective + known legacy codes.
+
+    Returns None when pycountry is unavailable, which DISABLES the filter rather
+    than rejecting everything. A missing dependency must not silently delete every
+    localised name in the corpus.
+    """
+    try:
+        import pycountry
+    except ImportError:
+        return None
+    codes = {l.alpha_2 for l in pycountry.languages if getattr(l, "alpha_2", None)}
+    codes |= {l.alpha_3 for l in pycountry.languages if getattr(l, "alpha_3", None)}
+    try:
+        codes |= {f.alpha_3 for f in pycountry.language_families
+                  if getattr(f, "alpha_3", None)}
+    except AttributeError:  # older pycountry without 639-5
+        pass
+    return codes | _LEGACY_LANG_CODES
+
+
+_LANG_ALLOWLIST = _build_language_allowlist()
+
+# Distinct rejected subkey -> count. Logged as a SUMMARY at the end of the run,
+# never per document (20.6 M objects). The point is to notice a NEW rejected tag:
+# when OSM adopts a subtag the registries gain after this filter was written, it
+# shows up here as a rising count against an unfamiliar name and someone can add
+# it — instead of the name vanishing with nothing recording a decision was made.
+_REJECTED_NAME_SUBKEYS = {}
+
+
+def record_rejected_name_subkey(subkey):
+    """Count one rejection. Shared by every authority on the OSM tag schema."""
+    _REJECTED_NAME_SUBKEYS[subkey] = _REJECTED_NAME_SUBKEYS.get(subkey, 0) + 1
+
+
+def language_subtag_or_none(subkey):
+    """Return a language tag for a `name:<subkey>`, or None if it is not one."""
+    if subkey in _LANG_NORMALISE:
+        return _LANG_NORMALISE[subkey]
+    if _LANG_ALLOWLIST is None:
+        return subkey
+    if not _LANG_SHAPE.match(subkey):
+        return None
+    base = subkey.split('-')[0].split('_')[0].split(':')[0].lower()
+    return subkey if base in _LANG_ALLOWLIST else None
+
+
+def report_rejected_name_subkeys():
+    """Print the rejection summary. Empty output is itself informative."""
+    if _LANG_ALLOWLIST is None:
+        print("\nname:* language filter DISABLED (pycountry unavailable) "
+              "— every subkey was accepted as a language.")
+        return
+    total = sum(_REJECTED_NAME_SUBKEYS.values())
+    print("\nname:* subkeys rejected as non-languages: "
+          f"{len(_REJECTED_NAME_SUBKEYS)} distinct, {total:,} occurrences")
+    for k, n in sorted(_REJECTED_NAME_SUBKEYS.items(), key=lambda kv: -kv[1])[:40]:
+        print(f"    {n:>10,}  name:{k}")
+    if len(_REJECTED_NAME_SUBKEYS) > 40:
+        print(f"    ... {len(_REJECTED_NAME_SUBKEYS) - 40} more distinct subkeys")
