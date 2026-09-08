@@ -7761,3 +7761,65 @@ caution was right and the answer is that there is nothing to fix.**
 
 **Next: the PBF smoke test** — the one surface untested, since synthetic tag
 objects are not `osmium`'s tag iteration.
+
+## 35. ✅ PBF SMOKE TEST PASSES — and finds a subkey shape nobody had seen
+
+`04`, real `osmium` tag iteration over **300,000 objects** through the patched
+`process_tags`:
+
+```
+objects through process_tags     300,000   ← denominator
+with at least one name:xx         46,113   15.37%
+STRUCTURE VIOLATIONS                NONE   all list-of-2-tuples
+objects with 2+ names sharing a language: 31
+distinct languages accepted          694
+REJECTED                         100 distinct, 33,951 occurrences
+```
+
+✅ **The question set was narrow — do real tags flow through the new list
+structure — and they do.** Every `names` value a list of `(lang, value)`
+2-tuples; the assertion would have raised on the first violation and did not.
+**The 31 objects with two names sharing a language are the `en1`/`en2` case
+occurring in real data**, which §33.1 predicted and the old dict would have
+silently merged.
+
+### 35.1 ⚠ COMPOUND SUBKEYS — a real language subtag INSIDE a non-language key
+
+```
+name:prefix:ru   name:prefix:be   name:be:word_stress   name:tr:suffix
+```
+
+**Only the flat forms appeared in the corpus aggregation.** These are rejected
+correctly — but ⚠ **by the BCP-47 SHAPE test, before the allow-list is
+consulted.** So the two halves of the filter catch different things, and **an
+allow-list alone would have admitted `prefix:ru`** on the strength of a valid
+subtag buried in it.
+
+### 35.2 🛑 THE SMOKE-TEST RATES DO NOT PROJECT, AND `04` SAYS SO UNPROMPTED
+
+`name:prefix` at **7,081 in 300k objects** against a corpus total of **483** —
+because the sample is **the first 300,000 name-bearing objects in PBF order,
+which is geographic.** The language mix (ru, de, pl, be, uk, be-tarask) is
+Eastern Europe. ✅ **A structural test on real data, not a representative
+sample.** The corpus-wide figures remain the aggregation over all 2,437 tags.
+
+### 35.3 ✅ AND IT DID NOT TOUCH THE DEPLOYED TREE
+
+Built an isolated **299 MB** copy at `/vast/ishi/langsmoke`, overlaid the three
+patched files there, ran against that, **removed it afterwards.** `/vast` back to
+124 GB; `git status` on `/vast/ishi/elastic` clean for `authorities/` and
+`processing/`. ⚠ **Testing a patched extractor by patching the deployed
+checkout is how a shared tree acquires changes nobody remembers making.**
+
+### 35.4 HANDOVER STATE
+
+```
+DONE   filter in processing/helpers.py; osm-places.py and ohm-places.py ported
+       validated THREE ways: corpus distribution (199,572 / 2,534 exact),
+       synthetic edge cases, real PBF tags
+HELD   NOT COMMITTED — needs SG's word.
+       /vast/ishi/patches/langfilter-3files.patch, verified to reapply
+OPEN   re-extraction for the 199,572 already stored (the fix is forward-only)
+OPEN   M2 — gated on 11175185 succeeding AND promoting
+NOTED  backfill_admin_levels.py settled as dead; nothing to fix
+```
