@@ -893,13 +893,47 @@ READBACK_SAMPLE = 3000
 #: So D5 gets its own denominator and its own draw, selected by construction
 #: rather than by luck. Compute names them (it is the only phase holding the
 #: names); apply reads them back. Sizing and measurements from indexing-04.
-D5_SAMPLE_PER_SHARD = 8
+#: 🛑 KEYED ON COMPATIBILITY CLASS, NOT ON ROWS. The first version took the
+#: first 8 compatibility-only rows a shard yielded — and document order is
+#: script-clumped, so on many shards those 8 are all Thai. Measured by
+#: indexing-04 over the export's own slicing (PIT + `_shard_doc`): slice 1's
+#: first compatibility-only rows are THAI:7, while a corpus-wide RANDOM draw of
+#: the same population is CYRILLIC 4, LATIN 4, THAI 4, KATAKANA 2, CJK 1,
+#: GREEK 1. Head-of-shard is clumped; random is not.
+#:
+#: ⚠ Only 4 of Unicode's 17 compatibility classes fire in this corpus and they
+#: are DIFFERENT MECHANISMS — Thai U+0E33 grows the string, `<wide>` folds
+#: fullwidth punctuation, `<compat>` turns № into "No", `<super>` lifts a digit.
+#: An all-Thai read-back validates one mechanism and reports coverage of D5:
+#: a sample that cannot fail for the classes it never draws.
+#:
+#: Keying on class also turns the empty-sample flag into something sharper —
+#: "no `<wide>` rows in any shard" is a finding, where "8 rows, all Thai" reads
+#: as success. Filling the quota is not at risk: the export slices by `_id`
+#: HASH (no `field` in the slice body), which is uniform with respect to
+#: content, so each shard holds thousands of eligible rows.
+D5_SAMPLE_PER_CLASS = 2
 
 
 def is_compatibility_only(name: str) -> bool:
     """D5's population: NFC leaves it alone, NFKC does not."""
     return (unicodedata.normalize("NFC", name) == name
             and unicodedata.normalize("NFKC", name) != name)
+
+
+def compatibility_classes(name: str) -> set:
+    """The Unicode compatibility tags present, e.g. `{"<wide>", "<compat>"}`.
+
+    The mechanism, not the script: two names can both be `control-nfkc` and
+    change for entirely unrelated reasons, and a sample spanning scripts is not
+    the same as one spanning mechanisms.
+    """
+    out = set()
+    for ch in name:
+        dec = unicodedata.decomposition(ch)
+        if dec.startswith("<"):
+            out.add(dec.split()[0])
+    return out
 
 
 def _failed_ids(c_errs) -> set:
@@ -1109,7 +1143,7 @@ def cmd_compute(args) -> None:
             or is_control(names[i], scripts[i])]
     print(f"[compute]   embedding {len(keep):,} of {len(ids):,} (scope={args.scope})")
 
-    d5_ids: list = []
+    d5_by_class: dict = {}
     folds_case, folds_compat = tokeniser_folds()
     if folds_case != folds_compat:
         # Named directly rather than inferred from a control failure, because
@@ -1162,9 +1196,11 @@ def cmd_compute(args) -> None:
                 else:
                     changed_non_candidate += 1
                 diffs.append((ids[i], quant[row].tolist()))
-                if (len(d5_ids) < D5_SAMPLE_PER_SHARD
-                        and is_compatibility_only(names[i])):
-                    d5_ids.append(ids[i])
+                if is_compatibility_only(names[i]):
+                    for cls in compatibility_classes(names[i]):
+                        bucket = d5_by_class.setdefault(cls, [])
+                        if len(bucket) < D5_SAMPLE_PER_CLASS:
+                            bucket.append(ids[i])
         if start and start % (args.batch_size * 50) == 0:
             print(f"[compute]   {start:,}/{len(keep):,} "
                   f"({start / (time.time() - t0):.0f}/s)", flush=True)
@@ -1243,13 +1279,19 @@ def cmd_compute(args) -> None:
         "git_commit": _git_commit(in_dir),
         "pinned_git_commit": pin["git_commit"],
         "seconds": round(time.time() - t0, 1),
-        "d5_sample_ids": d5_ids,
+        "d5_sample_ids": sorted({i for v in d5_by_class.values() for i in v}),
+        # Which MECHANISMS this shard actually contained, so an absent class is
+        # visible as an absence rather than inferred from a sample's diversity.
+        "d5_classes_seen": {k: len(v) for k, v in sorted(d5_by_class.items())},
         "written_at": datetime.now(timezone.utc).isoformat(),
     }
     _finish_shard(final, temp, done, meta)
     for stratum in sorted(examined):
         print(f"[compute]   {stratum:<12} changed {changed.get(stratum, 0):>7,} "
               f"of {examined[stratum]:>9,} examined")
+    if folds_compat:
+        print(f"[compute]   D5 sample by compatibility class: "
+              f"{ {k: len(v) for k, v in sorted(d5_by_class.items())} or 'NONE' }")
     print(f"[compute] shard {args.shard_id:04d} done: {len(diffs):,} MATERIAL "
           f"differences (max|delta| >= {MATERIAL_DELTA}) of {len(keep):,} embedded; "
           f"{sum(noise.values()):,} more differ by one int8 step and are "

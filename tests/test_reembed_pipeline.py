@@ -387,6 +387,30 @@ class TestTheControlSurvivesACaseFoldingTokeniser(unittest.TestCase):
         self.assertFalse(reembed.control_must_change(
             "control-nfkc", folds_case=True, folds_compat=False))
 
+    def test_the_D5_sample_spans_MECHANISMS_not_rows(self):
+        """A quota of N rows draws whatever clusters early in the shard.
+
+        Document order is script-clumped — measured over the export's own
+        slicing, one slice's first compatibility-only rows were 7 Thai, against
+        a corpus-wide random draw of the same population spanning six scripts.
+        Only 4 of Unicode's 17 compatibility classes fire in this corpus and
+        they are different mechanisms, so an all-Thai sample validates one and
+        reports coverage of D5: it cannot fail for the classes it never draws.
+        """
+        self.assertEqual(reembed.compatibility_classes("\u0e01\u0e33"), {"<compat>"})
+        self.assertEqual(reembed.compatibility_classes("\uff34"), {"<wide>"})
+        self.assertEqual(reembed.compatibility_classes("\u2116"), {"<compat>"})
+        self.assertEqual(reembed.compatibility_classes("x\u00b2"), {"<super>"})
+        self.assertEqual(reembed.compatibility_classes("London"), set())
+
+    def test_only_compatibility_only_names_are_D5_subjects(self):
+        """NFC-changing names belong to D1 and are already handled."""
+        self.assertTrue(reembed.is_compatibility_only("\uff34"))
+        self.assertTrue(reembed.is_compatibility_only("\u0e01\u0e33"))
+        self.assertFalse(reembed.is_compatibility_only("London"))
+        self.assertFalse(reembed.is_compatibility_only(
+            unicodedata.normalize("NFD", "\u00c5re")))
+
     def test_the_two_probes_are_reported_separately(self):
         import unittest.mock as mock
         import phonetics.tokenise as tok
