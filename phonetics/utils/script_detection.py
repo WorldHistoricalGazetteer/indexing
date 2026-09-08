@@ -7,6 +7,7 @@ supporting the hybrid vocabulary strategy where alphabetic scripts
 are read natively while CJK scripts are romanized.
 """
 
+import unicodedata
 from typing import Tuple, Dict, Optional
 from collections import Counter
 from enum import Enum
@@ -443,6 +444,12 @@ def detect_script(text: str) -> Tuple[Script, Dict[Script, int]]:
     """
     if not text:
         return Script.OTHER, {}
+
+    # D-A/D5: fold compatibility forms BEFORE counting. Without this the
+    # ligature U+FB01 resolves to ARMENIAN and fullwidth U+FF34 to OTHER,
+    # because neither sits in a named script range. NFKC maps them to their
+    # base letters. This changes script ASSIGNMENT, not merely characters.
+    text = unicodedata.normalize('NFKC', text)
 
     counts: Counter = Counter()
 

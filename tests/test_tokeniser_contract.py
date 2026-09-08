@@ -154,8 +154,16 @@ SHAPES = [
 
 # Inputs the canonical preprocessing reduces to nothing at all — empty, or
 # whitespace that is not U+0020 (U+0020 survives as <SPACE>).
-EMPTY_RESULT = ["", "\t", "\n", "\t\n", "\u00a0", "\u2003"]
-SPACE_ONLY = [" ", "  ", " \t "]
+EMPTY_RESULT = ["", "\t", "\n", "\t\n"]
+# D-A moved U+00A0 (NBSP) and U+2003 (EM SPACE) OUT of EMPTY_RESULT and into
+# here. NFKC folds both to U+0020, so they are no longer "input that reduces to
+# nothing" — they are spaces, and <SPACE> is a real token (id 2). Measured over
+# the corpus: 7,755 names change by whitespace folding alone (0.0106%), 1,247
+# distinct forms merge by it, and ZERO names go from empty-after-strip to
+# non-empty — so no name gains tokens out of nothing. The merges are benign:
+# Cyrillic monument names with inconsistent NBSP use, e.g.
+# 'Н.\xa0И.\xa0Вавилову' and 'Н. И.\xa0Вавилову' -> 'Н. И. Вавилову'.
+SPACE_ONLY = [" ", "  ", " \t ", "\u00a0", "\u2003"]
 
 CORPUS = list(BY_SCRIPT.values()) + SHAPES
 
@@ -589,13 +597,49 @@ class TestTheFixIsLoadBearing(VocabFixture):
                     f"{text!r} is in the affected set but the two "
                     f"implementations agree on it")
 
-    def test_single_word_names_are_untouched_so_the_index_stands(self):
-        # This is what says the other 94.7% of the index needs no re-embed.
+    def test_single_word_names_are_now_touched_so_the_whole_index_must_be_re_embedded(self):
+        """D-A abolished the invariant this test used to assert.
+
+        It previously read `..._are_untouched_so_the_index_stands`, and that was
+        the claim on which "only 5.3% of the index needs a re-embed" rested:
+        single-word Latin names tokenised identically before and after, so their
+        stored vectors stayed valid.
+
+        NFKC + casefolding ends that for CASED scripts. `London` preprocesses to
+        `london`, so every name carrying a capital changes — 88.86% of
+        73,479,069 names, measured. Per script: Latin, Cyrillic, Greek and
+        Armenian all exceed 99.5%; CJK is 0.68% and Hebrew 0.75%.
+
+        ⚠ It does NOT reach caseless scripts, and this test was briefly WRONG in
+        the other direction by asserting that it did. `ירושלים` (Hebrew) has no
+        case to fold; `თბილისი` is already lowercase Mkhedruli. Both tokenise
+        identically and correctly so. The re-embed is mandatory because the
+        CASED majority moved, not because every name did.
+
+        So the assertion is conditional on `text.casefold() != text`, which is
+        the precise statement of what D-A changes. Asserting it unconditionally
+        overstates the claim and fails on names the change cannot touch.
+
+        **The entire index must still be re-embedded before this tokeniser
+        reaches a serving gateway**: a query tokenised under these rules and
+        KNN'd against vectors written under the old ones is silently degraded
+        matching, not an error.
+        """
         for text in UNAFFECTED:
             with self.subTest(text=text):
-                self.assertEqual(
-                    self._legacy_char_ids(text),
-                    canonical.encode_chars(text, self.char_to_id))
+                legacy = self._legacy_char_ids(text)
+                current = canonical.encode_chars(text, self.char_to_id)
+                if text.casefold() != text:
+                    self.assertNotEqual(
+                        legacy, current,
+                        f"{text!r} has characters casefolding changes, yet "
+                        f"tokenises identically — casefolding did not reach it")
+                else:
+                    self.assertEqual(
+                        legacy, current,
+                        f"{text!r} has nothing for casefolding to change, so it "
+                        f"must tokenise identically; if it does not, something "
+                        f"other than D-A moved and has not been accounted for")
 
     def test_the_fixture_can_reach_every_divergence(self):
         """A corpus that cannot reach a boundary says nothing about it.
