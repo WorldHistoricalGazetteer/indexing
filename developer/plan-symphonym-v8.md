@@ -7879,3 +7879,36 @@ plus boundaries                 ~176 GB    ← comfortable
 
 ⚠ **1.4 GB is not headroom, it is a coincidence.** `boundaries` should be
 settled — as it now is — before the promotion rather than during it.
+
+## 37. ⚠ WHAT `boundaries` IS — 98.2% superseded, but NOT purely redundant
+
+Investigated rather than assumed. **It stores full polygon geometry IN
+ELASTICSEARCH** — the thing the `/vast` geom store exists to replace:
+
+```
+877,120 docs, 21 GB, all indexed_at 2026-04-07/08
+fields:  boundary_id · namespace · name · source · admin_level
+         geom (MultiPolygon) · hull · bounds · repr_point
+by source: osm 747,148 · ohm 67,535 · m49 30
+by admin_level: 8→267,426 · 10→249,483 · 9→176,303 · 6→66,938 … 0→6
+```
+
+**Random sample of 400 checked against `/vast/ishi/geom/index.sqlite`:**
+
+```
+ALSO in the geom store   393   98.2%
+NOT in the geom store      7    1.8%
+   of those 7: 5 ARE live in `places`, 2 are not
+```
+
+✅ **So SG's suspicion is right — it is a pre-geom-store artefact and 98.2%
+duplicates geometry we hold elsewhere.** ⚠ **But it is NOT purely redundant:
+~1.25% of the sample are LIVE places whose polygon is in `boundaries` and absent
+from the geom store** — extrapolating, on the order of 10,000 features. That is
+consistent with the known OSM/OHM way-polygon gap in the store.
+
+🛑 **Revised advice: do NOT treat the 21 GB as free.** It is recoverable from
+three April SUCCESS snapshots and the geometry is re-derivable from the OSM PBF,
+so nothing is unrecoverable — **but deleting it silently drops polygons for live
+places, which is exactly the class of loss this campaign keeps finding.** If the
+headroom is needed, extract the non-duplicated subset first.
