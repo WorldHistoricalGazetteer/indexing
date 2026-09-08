@@ -8165,3 +8165,75 @@ pool** — and nothing measured tells us whether that 52% is reachable at all.
 **"Add a romanised lexical re-order to the pool"** — not *"add a v7
 cross-encoder"*. Cheaper, easier to explain, and it changes what we claim the v8
 *model* is for. **Nothing deployed; no gateway code touched.**
+
+## 42. 🛑 `origin/main` IS A LIVE DEPLOYMENT CHANNEL — found after ~40 pushes
+
+`indexing-04`, 8 Sep. **Four sessions had pushed roughly forty times between them
+believing commits were inert.**
+
+```
+cron on pitt, every 2 minutes:
+  */2 * * * *  scripts/gateway_watchdog.sh          executable, live
+  */2 * * * *  scripts/es_watchdog.sh               NOT executable — never has run
+
+gateway unhealthy
+  -> gateway_watchdog.sh:99   gaz_request.sh gateway-restart
+  -> gateway_ctl do_restart() git pull --ff-only    (failure NON-fatal)
+  -> restarts on whatever was pulled
+```
+
+**The pull is deliberate** — *"Pull FIRST, while the gateway keeps serving on its
+old (in-memory) code."* Correct for its purpose, **and it makes `origin/main` a
+deployment channel for the serving path with no human in the loop.**
+
+⚠ **THE TRIGGER IS THE GATEWAY BEING UNHEALTHY.** Untested code ships **precisely
+when production is already degraded**, and any regression is attributed to the
+outage rather than to a deployment nobody knew had happened. **A deployment that
+only occurs during incidents is one nobody will correlate.**
+
+⚠ **A SHARED WORKTREE MAKES "MY COMMIT IS SAFE" INSUFFICIENT.** One session
+pushing for its own reasons **carries every other session's commits as
+ancestors**. *"Do not push"* is an all-sessions invariant, not a per-session
+discipline.
+
+### 42.1 WHAT WAS ALREADY ARMED — checked, not assumed
+
+**`indexing-db` (~20 pushes).** The dangerous one was `ab700bb`: the enum now has
+37 members against a shipped 20-entry vocabulary, and if `ScriptVocabulary.load()`
+built from `SCRIPT_ID` the model would size to 37 against a 20-row checkpoint and
+**the gateway would fail to start.** Tested against the actual shipped file rather
+than read: **`len(script_vocab) = 20`, MATCH.** ✅ Safe **because ids 0–19 were
+pinned to their shipped values** — the property that made the change additive is
+the same one that makes it deployable. ⚠ **Chosen for artefact compatibility, not
+for a deployment channel nobody knew existed.**
+
+**`indexing-9c` (12 pushes).** None touches a file the gateway imports —
+`processing/index_namespace.py`, `update_es.py`, `rebuild_toponyms_index.py`,
+`tgn-places.py`, `symphonym.sh`, `tests/*`. The gateway's non-`gateway/` imports
+are `clustering.sqlite_overlay`, `processing.staging_contract`,
+`processing.geom_store`, `validate_hard_link_row`. **No overlap.**
+
+### 42.2 ⚠ THE GAP NOBODY HAS CLOSED — "imports" is not "starts"
+
+`9c` verified the two changed files in the gateway graph (`gateway/es_helpers.py`,
+`hf/inference.py`) **import** cleanly at HEAD — **by import, not parse** — and
+then stated its own limit: it could not import `gateway.app`, `search`,
+`reconcile`, `spatial` or `proxy`, because **its venv lacks
+`fastapi`/`pydantic`/`starlette` and the gateway runs as the `gazetteer` service
+account under an environment other accounts cannot read.**
+
+🛑 **So "the changed modules import" is established and "the gateway would start"
+is NOT.** The only real test is a restart — and **the gateway is currently
+serving old in-memory code, so a restart is the moment of truth and it is
+currently scheduled to happen unattended, during an incident.**
+
+➡ **RECOMMENDATION: a deliberate, watched gateway restart AFTER the promotion
+completes** — converting an uncontrolled deploy-during-outage into a controlled
+test with everyone present and `/vast` healthy.
+
+### 42.3 ⚠ ANOTHER PROGRESS INDICATOR THAT LOOKS THE SAME IN BOTH WORLDS
+
+`9c` reports the promotion tool printing `… 1/4 shards` on a loop, **which reads
+exactly like a stall** — it counts *completed* shards while all four stream. It
+took a `_status` query showing bytes and file counts to distinguish *"no shard has
+finished yet"* from *"nothing is happening"*.
