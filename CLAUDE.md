@@ -171,7 +171,7 @@ search symptom that motivated it.**
 nested truth, and read by nothing — **`geometries.h3_cover` is the real one.**
 
 The July/August re-ingestion is complete in production — 51.2 M
-places, 72.7 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
+places, 73.5 M toponyms, Symphonym embeddings at 100%. Its *publication* half is
 not: a partial retile on 7 August ran against the geom store while it was
 destroyed, so **nine gazetteer boundary layers are on the live map today as
 points with no polygons** (`clio`, `kain_par`, `po`, `vob_lgd`, `vob_rd`,
@@ -281,7 +281,7 @@ from `/vast` flash. The same small-file pathology is why ES data lives on
 ```
 Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.x (CRC)
                                                             ├── places   (51.2M docs)
-                                                            └── toponyms (72.7M docs)
+                                                            └── toponyms (73.5M docs)
                                                      (clusters: RETIRED, see below)
 ```
 
@@ -514,7 +514,7 @@ returns nothing. What replaced them:
 | Index | Schema | Content |
 |-------|--------|---------|
 | `places` | `schemas/places.json` | **51,187,900** place records with nested toponyms, geometries, types, relations (measured 2 Sep 2026) |
-| `toponyms` | `schemas/toponyms.json` | **72,703,777** deduplicated toponym records with Symphonym embeddings and attestation lists (measured 2 Sep 2026) |
+| `toponyms` | `schemas/toponyms.json` | **73,479,069** deduplicated toponym records with Symphonym embeddings and attestation lists (measured live 8 Sep 2026 against the alias) |
 | `clusters` | `schemas/clusters.json` | ⚠️ **LEGACY / being retired** — static offline cluster membership (`clusters_20260325`). Superseded by **client-side clustering**: the gateway ships hard-link edges + per-hit signal fuel and the browser (`clustering.js`) runs Union-Find at a user θ. See `developer/plan-outstanding-2026-07.md` §1. |
 | `types` | `schemas/types.json` | AAT place-type hierarchy with cross-vocabulary mappings, fclasses, materialized paths, multilingual labels/notes |
 
@@ -735,13 +735,20 @@ sbatch processing/es_staging.sbatch
   | alias | concrete index | built |
   |-------|----------------|-------|
   | `places` | `places_h3ccode-20260805t120000z` | created 2026-08-06, promoted 6 Aug |
-  | `toponyms` | `toponyms_temporal-20260731t160000z` | created 2026-08-05, promoted 5 Aug |
+  | `toponyms` | `toponyms_undscript-20260906t160000z` | promoted 6 Sep 2026 |
 
   ⚠ **The asymmetry is correct, not a half-finished swap.** There is no
   `toponyms_h3ccode-*`: the `h3ccode` run rebuilt **places only** — H3 is a
-  places-level field — so `toponyms` legitimately stays on the `temporal`
-  generation. A mismatched pair is *also* what a missed alias swap looks like, so
-  check before concluding either way.
+  places-level field — so `toponyms` carries its own generation. A mismatched
+  pair is *also* what a missed alias swap looks like, so check before concluding
+  either way.
+
+  🛑 **THIS TABLE WAS 776,000 DOCUMENTS AND ONE GENERATION STALE FOR TWO DAYS**
+  (it named `toponyms_temporal-20260731t160000z` / 72,703,777 until 8 Sep), and
+  four sessions scoped work from it in that window. ⚠ **The warning below about
+  dated names rotting was already here and did not help** — it sits *under* the
+  table, and the table is what people read. A caveat placed after the thing it
+  qualifies is decoration.
 
   ⚠ **A dated name written here is a snapshot of a fact, and it rots.** This entry
   claimed `*_postbarrier-20260502` for four months after two promotions superseded

@@ -9408,3 +9408,57 @@ manual fetch as `stg135` fails.
 🛑 **The real trap is the readout:** `git status -sb` reports `[ahead 127]`
 because the tracking ref froze on 6 Sep. **Anyone glancing at that checkout is
 told it is ahead of a remote it is well behind — no error required.**
+
+## 55. ✅ DECISION (SG, 8 Sep 2026) — NFKC's Thai decomposition is ACCEPTED
+
+**Question put to SG:** NFKC decomposes `U+0E33 THAI CHARACTER SARA AM`, which
+appears in **13.73%** of Thai toponyms — the highest per-script D5 rate in the
+corpus, 86× the corpus-wide 0.16%. Those names would be tokenised from a
+character sequence no Thai user would type. **Decision: proceed, if it makes
+good sense and is documented.** This section is that documentation.
+
+### 55.1 ⚠ IT MAKES GOOD SENSE FOR A REASON THE ORIGINAL FRAMING MISSED
+
+```
+U+0E33 THAI CHARACTER SARA AM   <compat> -> U+0E4D NIKHAHIT + U+0E32 SARA AA
+```
+
+The framing everyone (including me) carried was *"we are mangling Thai into a
+form nobody types"*, which sounds like damage tolerated for uniformity. **The
+decomposition is phonologically informative.** SARA AM is /am/; NIKHAHIT is the
+nasal and SARA AA is the vowel /aː/. **For a PHONETIC embedding, splitting them
+hands the model the nasal and the vowel as separate units instead of one opaque
+glyph** — which is what the model is for.
+
+⚠ **So this is not "acceptable damage", it is arguably an improvement** — but
+recorded as *arguably*, because it has not been measured. Nothing here claims a
+retrieval gain; the claim is only that the transformation is not destroying
+information, which is the question that was actually asked.
+
+### 55.2 THE CONDITIONS THIS DECISION DEPENDS ON
+
+* ✅ **The stored `name` is untouched.** Normalisation happens inside the
+  tokeniser, so display, `name.raw`, exact match and every lexical pass see the
+  composed form exactly as contributed. **No user-facing text changes.**
+* 🛑 **Query-side and index-side normalisation MUST be identical.** A query
+  typed normally carries `U+0E33`; if the index were built decomposed and the
+  query tokenised composed, every Thai name with this vowel would silently stop
+  matching. This is guaranteed only by the standing rule that **the tokeniser
+  change and a full re-embed land together, neither alone** (§51, §54.3), and it
+  is the strongest reason that rule exists.
+* ⚠ **The string GROWS, 1 → 2 characters.** That meets the 256-token cap
+  (`f9737da`) from the other direction, so the acceptance criterion is: assert
+  **no name crosses the cap after NFKC that did not before**, reported as
+  "0 of N" and not a bare 0. Worst case Unicode-wide is `U+FDFA` at 18
+  characters; worst observed in-corpus is +1.
+* ⚠ **Thai is the D5 VALIDATION STRATUM** precisely because of this rate — it is
+  the only script where D5 is easy to sample. **But an all-Thai sample validates
+  one mechanism and reports coverage of D5** (§54.4), which is why the
+  read-back quota is keyed on compatibility class rather than on rows.
+
+### 55.3 ⚠ WHAT WOULD REOPEN THIS
+
+Measured Thai retrieval getting **worse** after the re-embed. That is the test
+this decision has not had, and 17's census under Unicode 14.0.0 is the input for
+it — **all figures here are from 13.0.0, and NFKC is a different function
+between versions.**
