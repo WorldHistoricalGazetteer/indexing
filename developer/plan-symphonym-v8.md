@@ -8658,3 +8658,60 @@ Japanese answer for `zh` is a finding rather than an artefact.**
 tagged `lang=zh`** (`若狹姬神社`, `岸町五丁目`). **But `南佛罗里达都会区` — "South
 Florida metropolitan area" in simplified characters — also got Japanese IPA.**
 **Mislabelled data is part of this and cannot be all of it.**
+
+### 48.4 CORRECTED PREVALENCE — 89.3%, and the flawed control was HIDING the severity
+
+```
+zh+CJK rows with ipa   1,583,722       sampled 120,000 (filtered before sampled)
+Japanese-only markers    107,107   89.256%
+Mandarin-only markers        637    0.531%
+both                         441    0.367%
+neither                   11,815    9.846%
+```
+
+⚠ **Removing `ɕ` from the Mandarin set collapsed "both" from 33.9% to 0.367% and
+moved essentially all of it onto Japanese.** 🛑 **The flawed discriminator was
+UNDERSTATING the defect, not inflating it** — and the instinct on discovering a
+bad control is to assume the opposite. **≈1.41 M of 1,583,722 carry Japanese IPA,
+against ~8,400 with Mandarin markers.**
+
+✅ **`8b`'s reading is the right one: 0.531% is not a model that CANNOT produce
+Mandarin — the same converter returns tone-marked Mandarin for some `zh` and
+Cantonese for `yue` in the same run. It is a model that almost never chooses to
+for this input distribution.**
+
+➡ **DECISION NEEDED BEFORE THE RETRAIN, and it is not "fix or ignore":**
+**for TRAINING, wrong IPA is worse than absent IPA.** A row with no IPA is simply
+excluded from pair selection; **a row with Japanese IPA for a Chinese name
+teaches a false grapheme→phoneme mapping and pollutes every pair it enters.**
+⚠ **So the live question is whether `zh`+`CJK` should be EXCLUDED from the v8
+training corpus rather than used** — 1.41 M rows, and `zh` is the largest CJK
+population. **Not urgent; nothing user-facing reads `ipa`.**
+
+### 48.5 🛑 A THIRD RUN ON STALE CODE — and the fix is a script, not a resolution
+
+`8b`'s `stratum_of` run printed `9,609` again. **It checked the DEPLOYED file
+rather than assuming:**
+
+```
+grep -c "scripts_for"  <remote>/evaluation/recall_ceiling.py  ->  0
+deployed sha 32eb8806…      local sha 5f0a87dc…
+```
+
+**Committed and never deployed** — the third time today, after the 32 shard tasks
+dying on `invalid choice: 'run'` and the merge that ran without its provenance
+stamp. ⚠ **Each time the job WORKED. It simply was not running the code that had
+been written.**
+
+✅ **`87d68a4` — `developer/sbatch-templates/deploy.sh`: scp, clear
+`__pycache__`, compare hashes, AND assert named symbols are present.**
+
+🛑 **The symbol check is not redundant with the hash, and the reason is the
+sharp part:** a matching hash proves the bytes travelled; **a matching hash with a
+MISSING SYMBOL means you deployed the wrong LOCAL file** — a different fault
+entirely, which the hash alone reports as success.
+
+⚠ **And the session's theme, stated once more:** *"the run did not fail. It
+produced a plausible number that happened to be the number I was trying to
+change, and only a check against the DEPLOYED ARTEFACT — not against my
+expectation — separated 'the fix did not work' from 'the fix was not there.'"*
