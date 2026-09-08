@@ -82,6 +82,11 @@ def main() -> int:
                     help="same value as reranker.py, so the split matches")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--chunk", type=int, default=128)
+    ap.add_argument("--balanced", type=int, default=0, metavar="PER_PAIR",
+                    help="use rank_curve/-8's BALANCED sample (up to N per script "
+                         "pair) instead of a natural draw. 100 reproduces -8's "
+                         "population. The two answer different questions and "
+                         "neither is 'the real one' -- see the docstring.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -96,12 +101,31 @@ def main() -> int:
         name_to_idx.setdefault(n, i)
 
     usable = [p for p in pos if p["partner"] in name_to_idx]
-    # ⚠ SAME shuffle, seed, and slice as reranker.py, so "the held-out test
-    # split" means the same 3,000 queries there and here. Any divergence in
-    # these four lines silently compares different populations.
-    rng.shuffle(usable)
-    usable = usable[:a.queries]
-    test = usable[len(usable) // 2:]
+    if a.balanced:
+        # 🛑 §8's population, not this corpus's. `balanced_query_sample` takes up
+        # to N per SCRIPT PAIR, evening out rare pairs; a natural draw is ~86%
+        # latin<->nonlatin, which is exactly where romanisation is strongest.
+        # That difference — not a harness cap — is why a natural-sample R@200 of
+        # 0.59 does not refute §8's 0.4768. Same scorers, same haystack,
+        # different question.
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for r in usable:
+            groups[(script_of(r["query"]), script_of(r["partner"]))].append(r)
+        test = []
+        for pair, items in sorted(groups.items()):
+            test.extend(items if len(items) <= a.balanced
+                        else rng.sample(items, a.balanced))
+        rng.shuffle(test)
+        print(f"BALANCED sample: {a.balanced}/script-pair over "
+              f"{len(groups)} pairs -> {len(test):,} queries", flush=True)
+    else:
+        # ⚠ SAME shuffle, seed, and slice as reranker.py, so "the held-out test
+        # split" means the same 3,000 queries there and here. Any divergence in
+        # these four lines silently compares different populations.
+        rng.shuffle(usable)
+        usable = usable[:a.queries]
+        test = usable[len(usable) // 2:]
     print(f"positives {len(pos):,} · partner present {len([p for p in pos if p['partner'] in name_to_idx]):,}"
           f" · TEST {len(test):,} (same split as reranker.py)", flush=True)
     print(f"haystack {len(hay_names):,} names — rank is over ALL of them", flush=True)

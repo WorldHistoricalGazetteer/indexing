@@ -111,7 +111,27 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     print(f"uniform sample          : {len(ipas):,}", flush=True)
 
     conv = IPAConverter()
-    conv.to_features("a")                       # pay the FeatureTable load once
+
+    # 🛑 POSITIVE CONTROL BEFORE MEASURING ANYTHING. An import that resolves is
+    # not a derivation that works: this module reaches across a hybrid import
+    # path into another tree, and the failure modes there are a missing symbol
+    # (loud) and a DIFFERENT implementation of the same name (silent). A rate
+    # measured through a wrong `to_features` is a rate for the wrong thing.
+    #
+    # `word_fts` on a two-segment IPA string must give exactly 2 x 24 float32 =
+    # 192 bytes, the layout `_embedding_from_packed_features` unpacks by. If the
+    # segment count or the feature width ever moves, every blob this writes is
+    # unreadable by the consumer and nothing downstream would say so.
+    probe = features_for_ipa(conv, "pa")
+    if probe is None or len(probe) % (FEATURES_PER_SEGMENT * 4) != 0:
+        raise SystemExit(
+            f"to_features control FAILED: /pa/ gave {probe!r}. Expected a blob "
+            f"of N x {FEATURES_PER_SEGMENT} float32. Refusing to benchmark a "
+            f"derivation that does not agree with the consumer's layout."
+        )
+    print(f"control: /pa/ -> {len(probe)} bytes "
+          f"({len(probe) // 4 // FEATURES_PER_SEGMENT} segments) — layout ok",
+          flush=True)
     t0 = time.perf_counter()
     ok = ragged_or_empty = 0
     nbytes = 0
