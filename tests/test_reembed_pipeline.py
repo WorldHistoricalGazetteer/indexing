@@ -74,22 +74,45 @@ class TestCandidateAndControl(unittest.TestCase):
                                  and reembed.is_control(name, "LATIN"))
 
     def test_the_control_FAMILY_is_exactly_the_non_candidates(self):
-        """The control family must be exactly the non-candidates.
-
-        It was not: D4 names fell into it, and the first partial census showed
-        184 changes in a bucket whose whole meaning is that it cannot change.
-
-        ⚠ The family is now three labels, because under D-A/D5 a name that MUST
-        change was still landing in one called `control` — 391 of 6,720 sampled
-        rows, all Thai U+0E33. The split is a REFINEMENT of `is_control`, never a
-        second definition of it: a second derivation forks the grouping and both
-        computations are then correct about different populations.
+        """⚠ TAUTOLOGICAL SINCE `is_control` DERIVES FROM `stratum_of`, and kept
+        only to pin that it still derives. It cannot detect a wrong answer —
+        both sides move together — so the real contract is the test below.
         """
-        for name in ("London", "Москва", "Gherke", "SO-10731", "New York",
-                     "東京", "O'Brien", "ปทุมธานี"):
+        for name, script in (("London", "LATIN"), ("New York", "LATIN"),
+                             ("SO-10731", "LATIN"), ("東京", "CJK")):
             with self.subTest(name=name):
-                in_family = reembed.stratum_of(name, "LATIN") in reembed.CONTROL_STRATA
-                self.assertEqual(in_family, not reembed.is_candidate(name, "LATIN"))
+                self.assertEqual(
+                    reembed.stratum_of(name, script) in reembed.CONTROL_STRATA,
+                    reembed.is_control(name, script))
+
+    def test_majority_non_alphabetic_names_are_NOT_controls(self):
+        """The guard `is_control` used to own privately, asserted on real rows.
+
+        🛑 These are why the equivalence above was worthless before the two
+        computations were merged: Burmese, Gujarati and Bengali carry enough
+        combining marks, viramas and asat characters to cross 0.5, so they were
+        `control` by stratum and not by predicate — and the old equivalence test
+        passed anyway, because its corpus contained no name of this shape. An
+        equivalence asserted over inputs that cannot disagree certifies nothing.
+        Rows from indexing-04, against 22,000 real toponyms.
+
+        A control vouches for the WEIGHTS, so a name whose script id the two
+        detectors may disagree about must not be one.
+        """
+        for name, script in (("အရှေ့တောင်ရပ်ကွက်", "OTHER"),
+                             ("બિક્કાવોલું", "GUJARATI"),
+                             ("কারেয়াকু", "BENGALI"),
+                             ("တောင်မင်းကျောင်း", "OTHER"),
+                             ("ကော့ယောင်း", "OTHER")):
+            with self.subTest(name=name):
+                # ⚠ Guards the FIXTURE, not the code. It has already earned its
+                # keep: an abbreviated version of these names sat at exactly
+                # 0.50 and would have tested nothing while passing.
+                self.assertGreater(
+                    sum(not c.isalpha() for c in name) / len(name), 0.5,
+                    "fixture no longer has the property under test")
+                self.assertEqual(reembed.stratum_of(name, script), "punctuated")
+                self.assertFalse(reembed.is_control(name, script))
 
     def test_bare_control_really_cannot_change_under_either_fold(self):
         """The label has to be true of the set, not merely conventional."""
@@ -352,11 +375,41 @@ class TestTheControlSurvivesACaseFoldingTokeniser(unittest.TestCase):
                                lambda x, s=None: x.casefold()):
             self.assertTrue(reembed.tokeniser_folds_case())
 
-    def test_the_stratum_split_follows_D_A_not_a_guess(self):
-        self.assertEqual(reembed.control_stratum("Paris"), "must-change")
-        self.assertEqual(reembed.control_stratum("paris"), "stable")
-        self.assertEqual(reembed.control_stratum("\ufb01ord"), "must-change")  # NFKC
-        self.assertEqual(reembed.control_stratum("\u062f\u0645\u0634\u0642"), "stable")
+    def test_the_routing_is_derived_from_the_stratum_and_the_regime(self):
+        """One classifier, regime applied at the point of use."""
+        both = dict(folds_case=True, folds_compat=True)
+        self.assertTrue(reembed.control_must_change("control-case", **both))
+        self.assertTrue(reembed.control_must_change("control-nfkc", **both))
+        self.assertFalse(reembed.control_must_change("control", **both))
+        # and each stratum answers to its OWN regime, not to either
+        self.assertFalse(reembed.control_must_change(
+            "control-case", folds_case=False, folds_compat=True))
+        self.assertFalse(reembed.control_must_change(
+            "control-nfkc", folds_case=True, folds_compat=False))
+
+    def test_the_two_probes_are_reported_separately(self):
+        import unittest.mock as mock
+        import phonetics.tokenise as tok
+        with mock.patch.object(tok, "preprocess_text",
+                               lambda x, s=None: unicodedata.normalize("NFKC", x)):
+            self.assertEqual(reembed.tokeniser_folds(), (False, True))
+        with mock.patch.object(tok, "preprocess_text",
+                               lambda x, s=None: x.casefold()):
+            self.assertEqual(reembed.tokeniser_folds(), (True, False))
+        with mock.patch.object(tok, "preprocess_text",
+                               lambda x, s=None: unicodedata.normalize("NFKC", x).casefold()):
+            self.assertEqual(reembed.tokeniser_folds(), (True, True))
+
+    def test_the_compat_probe_is_not_defeated_by_full_case_folding(self):
+        """`str.casefold()` already decomposes U+FB01 to "fi".
+
+        A ligature probe therefore answers True under casefold ALONE and cannot
+        separate the regimes — which is also §40.3's interaction stated in one
+        line: D-A relocates D5's motivating example without D5.
+        """
+        self.assertEqual("\ufb01".casefold(), "fi")
+        self.assertEqual("\uff34".casefold(), "\uff54")   # stays fullwidth
+        self.assertEqual(unicodedata.normalize("NFKC", "\uff34"), "T")
 
     def test_names_that_must_change_and_did_not_abort_the_run(self):
         with self.assertRaises(SystemExit) as ctx:

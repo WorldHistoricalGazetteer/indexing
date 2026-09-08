@@ -340,9 +340,19 @@ def is_control(name: str, script: str | None) -> bool:
     single-word Latin names on which the two SCRIPT detectors disagree, so they
     are not controls even though every other test would call them one.
     """
-    if not name or is_candidate(name, script):
-        return False
-    return sum(not c.isalpha() for c in name) / len(name) <= 0.5
+    # 🛑 DERIVED, not re-derived. This used to compute the answer a second time
+    # — `not is_candidate(...)` plus the majority-non-alphabetic guard — while
+    # `stratum_of` computed it from its own cascade, and the two agreed only by
+    # inspection. They did not agree: 9 of 22,000 real toponyms (0.04%) were
+    # `control` by stratum and False here, every one Burmese, Gujarati or
+    # Bengali, where combining marks, viramas and asat characters push the
+    # non-alphabetic share past 0.5.
+    #
+    # ⚠ The equivalence TEST passed throughout, because the corpus it ran over
+    # contained no name of that shape. An equivalence asserted over inputs that
+    # cannot disagree certifies nothing, and that is the one failure a pinning
+    # test exists to prevent. Found by indexing-04 against real rows.
+    return stratum_of(name, script) in CONTROL_STRATA
 
 
 #: The control FAMILY. `stratum_of(...) in CONTROL_STRATA` is exactly
@@ -359,6 +369,11 @@ def stratum_of(name: str, script: str | None) -> str:
         return "multi-word"
     if unicodedata.normalize("NFC", name) != name:
         return "not-NFC"
+    # The majority-non-alphabetic guard, which `is_control` used to own
+    # privately. It lives here now because this is the single classifier;
+    # `punctuated` is where it belongs, since that is what the guard is aimed at.
+    if name and sum(not c.isalpha() for c in name) / len(name) > 0.5:
+        return "punctuated"
     if is_candidate(name, script):
         # D4: single-word, already NFC, non-romanised, and still a candidate —
         # so it carries a digit or a punctuation mark. Split out because the
@@ -925,24 +940,54 @@ def tokeniser_folds_case() -> bool:
     of the two changes it exists to witness is worse than no gate, because the
     run reports a healthy control either way. Found by indexing-04.
     """
-    from phonetics.tokenise import preprocess_text
-    folds_case = preprocess_text("A") == preprocess_text("a")
-    folds_compat = preprocess_text("\ufb01") == preprocess_text("fi")
-    return folds_case or folds_compat
+    return any(tokeniser_folds())
 
 
-def control_stratum(name: str) -> str:
-    """`stable` (must reproduce) or `must-change` (must NOT), under D-A.
+def tokeniser_folds() -> tuple:
+    """`(folds_case, folds_compat)` — the two regimes, reported SEPARATELY.
 
-    ⚠ This encodes D-A's SPECIFIC transformation — NFKC then casefold. It is
-    not a general "will the tokeniser change this name?" predicate and must be
-    revisited if preprocessing ever changes in some other way. Stated because a
-    classifier that silently stops matching the thing it classifies is exactly
-    how `is_control` came to be wrong here.
+    🛑 OR-ing them reaches the right verdict with the wrong diagnosis. Under D5
+    alone, 88.50% of must-change rows reproduce and Gate 1b aborts saying "the
+    fold is not working", which sends the operator to the checkpoint and the
+    weights when the true cause is that NFKC landed and casefold did not. It
+    aborts on every shard, so that is a whole debugging session spent in the
+    wrong file. Measured by indexing-04:
+
+        D-A + D5 (intended)        0/3,401   0.00%   PASS
+        D5 alone (NFKC only)   3,010/3,401  88.50%   ABORTS, wrong reason given
+        D-A alone (case only)    391/3,401  11.50%   ABORTS, wrong reason given
     """
-    if unicodedata.normalize("NFKC", name) != name or name.casefold() != name:
-        return "must-change"
-    return "stable"
+    # ⚠ The compatibility probe is a FULLWIDTH letter, not the ﬁ ligature.
+    # `str.casefold()` performs FULL case folding, which already decomposes
+    # U+FB01 to "fi" — so a ligature probe answers True under casefold alone and
+    # cannot separate the two regimes at all. U+FF34 casefolds to the fullwidth
+    # lowercase U+FF54 and only NFKC maps it to ASCII "T", so it moves under
+    # exactly one of them. Caught by the test rather than by reading.
+    #
+    # 🛑 That the ligature moves under casefold ALONE is §40.3's interaction in
+    # one line: NFKC is not needed to shift `ﬁ`, so D-A relocates D5's motivating
+    # example whether or not anyone intends it.
+    from phonetics.tokenise import preprocess_text
+    return (preprocess_text("A") == preprocess_text("a"),
+            preprocess_text("\uff34") == preprocess_text("T"))
+
+
+def control_must_change(stratum: str, folds_case: bool, folds_compat: bool) -> bool:
+    """Must this control row's vector change, given what the tokeniser does?
+
+    ⚠ There is no `control_stratum` any more. It classified names a SECOND time,
+    alongside `stratum_of`, which already encodes the answer: `control` is stable
+    under either regime, `control-case` changes iff casefold is active,
+    `control-nfkc` iff NFKC is active. Deriving the routing here removes the
+    second definition rather than repairing it — one classifier, with the regime
+    applied at the point of use. indexing-04's observation, and it is better than
+    making the second classifier regime-aware, which is what I had proposed.
+    """
+    if stratum == "control-case":
+        return folds_case
+    if stratum == "control-nfkc":
+        return folds_compat
+    return False
 
 
 def check_positive_control(cosines, shard_id: int = -1) -> dict:
@@ -1065,7 +1110,19 @@ def cmd_compute(args) -> None:
     print(f"[compute]   embedding {len(keep):,} of {len(ids):,} (scope={args.scope})")
 
     d5_ids: list = []
-    folds_case = tokeniser_folds_case()
+    folds_case, folds_compat = tokeniser_folds()
+    if folds_case != folds_compat:
+        # Named directly rather than inferred from a control failure, because
+        # the control failure describes it wrongly and aborts on every shard.
+        raise SystemExit(
+            f"ABORT: the tokeniser folds case={folds_case} and compatibility "
+            f"forms={folds_compat}. D-A and D5 must land TOGETHER — NFKC moves "
+            f"script assignment whether or not anyone intends D5, so half of "
+            f"this patch is a tokeniser no version of the index was written "
+            f"with. This is the direct test; without it Gate 1b would abort on "
+            f"every shard saying the fold is not working, and send you to the "
+            f"checkpoint and the weights instead of to the four tokeniser "
+            f"files.")
     # When the tokeniser does NOT fold, every control belongs to the stable
     # stratum and this is byte-identical to the pre-D-A behaviour — no D1/D2/D4/
     # D7 run changes meaning because of this split.
@@ -1090,7 +1147,7 @@ def cmd_compute(args) -> None:
                 b = stored[i].astype(np.float32)
                 denom = float(np.linalg.norm(a) * np.linalg.norm(b)) or 1.0
                 cos = float(np.dot(a, b) / denom)
-                if folds_case and control_stratum(names[i]) == "must-change":
+                if control_must_change(stratum, folds_case, folds_compat):
                     control_change_cos.append(cos)
                 else:
                     control_cos.append(cos)
@@ -1118,15 +1175,16 @@ def cmd_compute(args) -> None:
           f"{control['rows']:,} rows at cos >= {CONTROL_MIN_COSINE} "
           f"(mean {control['mean_cos']:.5f}, min {control['min_cos']:.5f})")
     neg = None
-    if folds_case:
+    if folds_case or folds_compat:
         # --- Gate 1b: and the names that MUST have changed ------------------
         neg = check_negative_control(control_change_cos, args.shard_id)
         print(f"[compute]   negative control: {neg['unchanged_rate']:.4%} of "
               f"{neg['rows']:,} must-change rows still reproduce their stored "
               f"vector (max cos {neg['max_cos']:.5f}) — the fold landed")
     else:
-        print(f"[compute]   tokeniser does not fold case; every control is in "
-              f"the stable stratum and Gate 1b does not apply")
+        print(f"[compute]   tokeniser folds neither case nor compatibility "
+              f"forms; every control is in the stable stratum and Gate 1b does "
+              f"not apply")
 
     check_free_space(in_dir, args.min_free_gb, f"before writing shard {args.shard_id:04d}")
     final, temp, done = shard_paths(in_dir, "diff", args.shard_id)
