@@ -9154,3 +9154,136 @@ headroom question by removing it rather than satisfying it.
 existing `final_db_path` to scratch and **skips extraction**, then proceeds
 through vocab, PanPhon and index on stale data reporting success. **Rule: a
 re-extract points at a NEW run-scoped `--db-path` that does not yet exist.**
+
+## 53. 🛑 §52.5 WAS PRESENT-TENSE ABOUT A REVERTED COMMIT — and scoped to 1.2% of the change
+
+### 53.1 🛑 CORRECTION TO §52.5 — D5 IS NOT IN THE TREE
+
+§52.5 says "no input can reach the conflict". **That is false today.** D5 was
+reverted at 11:25 by `e4dc45f`; `script_detection.py` and `hf/inference.py`
+carry no NFKC, `detect_script('ﬁ')` is **ARMENIAN**, `Ｔ` and `Ⅱ` are **OTHER**.
+✅ The tree is *consistent*, not partially applied — the revert touched all five
+files and the 30 contract tests pass, so `93de316`'s gate has nothing to catch.
+
+**The unreachability argument is correct ABOUT D5 and conditional on a commit
+that is presently reverted.** 🛑 Written as a present-tense fact it would tell
+the next reader that the `FB00` conflict is dead code, **which is false now**, so
+it must read *"once D5 lands…"* wherever it appears.
+
+### 53.2 🛑 I MEASURED 1.2% OF WHAT D5 DOES — the fifth instance, and mine
+
+I measured NFKC over `U+FB00–FB4F` and concluded the range conflict was
+unreachable. ⚠ **NFKC is not scoped to that block.** Verified independently:
+
+```
+codepoints NFKC changes, whole of Unicode : 4,807
+  inside U+FB00-FB4F (what motivated D5)  :    57
+  OUTSIDE it, UNASSESSED                  : 4,750     ← 98.8%
+```
+
+**D5 changes script assignment for 4,750 codepoints nobody has looked at** —
+Roman numerals, fullwidth forms, circled and parenthesised letters,
+superscripts, CJK compatibility ideographs. `17` found **`Ⅱ` ×449 and `Ⅰ` ×291**
+in the census, plus `㈜` in Hangul rows: all `OTHER` today, all moving.
+
+🛑 **THE MEASUREMENT WAS SCOPED TO THE POPULATION THAT MOTIVATED THE CHANGE
+RATHER THAN TO WHAT THE CHANGE DOES.** That is the same shape as the four copy-
+count findings, and this one is mine. ✅ **The re-embed's acceptance criteria
+must be written against the 4,750, not the 57**, or the first surprise will be
+somewhere nobody looked. Not an argument against D5 — `Ｔ` → LATIN is right.
+
+### 53.3 🛑 THE LEDGER RECORDED *ATTEMPTED*, NOT *WRITTEN* (`435df8e`)
+
+Worse than §52.3, because §52.3 at least stops.
+
+```python
+s_ids.extend(tid for tid, _ in chunk)     # every id, success or failure
+```
+
+`s_ids` is what the marker and `ledger.json` record as `toponym_ids`. **A
+sub-threshold drip never trips the gate and never appears: 0.9% against
+`--max-error-rate 0.01` leaves 587,642 documents on their OLD vectors, RECORDED
+AS APPLIED** — the half-and-half corpus, arriving **through the one artefact you
+would use to repair it.** Fixed: failed ids excluded, recorded separately, and
+the run **exits non-zero** — an exit code rather than a log line, precisely
+because the rate stays below every threshold.
+
+⚠ **A bare error COUNT now aborts** rather than reading as "none failed": a count
+cannot name its ids.
+
+### 53.4 ⚠ THREE MORE FROM THE SAME READING
+
+* **`--max-error-rate` is RELATIVE**, so at 65M documents 1% licenses **652,935**
+  absolute failures — trips fast on an early burst (small denominator), never on
+  a steady drip. Absolute cap of 5,000 added.
+* 🛑 **The read-back was `rows[0]` of the first 40 shards** — a **fixed
+  position**, never random, and **never the tail of the run**, which is exactly
+  where cumulative merge pressure would show. Even unbiased, **n=40 detects a 1%
+  failure rate with 33.1% probability and 0.1% with 3.9%.** Now a seeded
+  reservoir sample of **3,000** over every written row (0.1% at 95%), trivial
+  against 65M.
+* 🛑 **My fold probe tested casefolding ONLY**, so **D5 without D-A answered
+  False, every control fell into `stable`, and Gate 1b went inert exactly when a
+  fold-only change shipped.** Both regimes probed now.
+
+### 53.5 🛑 DISK IS THE BINDING CONSTRAINT — a go/no-go, not a tuning knob
+
+Every update is delete+insert. `docs.deleted` is **0** today; the run drives it to
+**~65M on a 73.5M index — ~89gb of deleted docs against a 100gb index** — while
+`disk.avail` is **208.2gb**, *before* merge scratch, on the volume shared with
+prod ES **that has flooded twice**. ✅ **Run in tranches with a disk check
+between shards; the shard structure already supports it.**
+
+⚠ **Throttle is the WRONG DIAL** — 13–23% of wall time, so lowering buys almost
+nothing and raising costs almost nothing. Take throughput from a 50k `--canary`
+and compute, rather than picking a number now.
+
+```
+docs to write 65,293,501 · 32,647 batches @2000
+throttle-only 2.7h  ·  +0.5s/bulk 7.3h  ·  +1.0s 11.8h  ·  +2.0s 20.9h  ·  +3.0s 29.9h
+```
+
+⚠ `refresh_interval` **1s** over a 20-hour 65M-doc write is a segment storm;
+30–60s for the run is reversible and search stays live. **Watch HNSW merge heap,
+not request rate** — that is the documented cause of the prod OOM/429s.
+
+### 53.6 🛑 THE DOCUMENTED DENOMINATOR IS STALE — anyone scoping from it is 776k out
+
+```
+live toponyms   toponyms_undscript-20260906t160000z   73,479,069 docs
+CLAUDE.md says  toponyms_temporal-20260731t160000z    72,703,777
+```
+
+⚠ **CLAUDE.md's own warning that a dated name rots is doing its job here — but
+only for a reader who reaches it.** The generation moved under all of us today.
+**Not edited: a peer relay is not SG's instruction to change CLAUDE.md.** Raised
+with SG.
+
+### 53.7 ✅ THE PREFLIGHT SCRIPTS CLOSED A–D (`fa7c2d7`)
+
+**The composite was the point: `SRC_DB` unasserted → a read-write attach
+MANUFACTURES an empty DB → a 0-row parquet → `[ -s ]` passes (PAR1 magic plus
+footer is a few hundred bytes) → the rebuild skips zh/ko/yue/gan/wuu via
+Priority 3 → both jobs COMPLETED 0:0 with five languages unvoiced.** Each half
+looks survivable alone.
+
+✅ Now: `SRC_DB` probed **read-only** (it *errors* where read-write
+*manufactures*) and required >50M rows; assertion 4 counts **rows not bytes**,
+>1M overall **and** >500k zh — the second because the first passes on a parquet
+full of everything except the languages the run exists to fix; and job 1 checks
+**its own output**, two-sided:
+
+```
+zh rows with Japanese-only phonemes (ɯ/ɴ)    must be < 10%   (55.7% under `cmn`)
+zh rows with Mandarin tone letters (˥˦˧˨˩)   must be > 50%
+```
+
+⚠ **Two-sided deliberately: "Japanese markers absent" alone passes on empty
+strings.** Requiring the tone letters *present* makes it a positive
+identification. **The discriminating pair was already written in the script's own
+header comment and had not been turned into a check** — the evidence was
+recorded and then not used.
+
+✅ **The scripts, not these plan sections, are the artefact of record.** A plan
+section asserts what we learned; **a preflight assertion fails the job if we stop
+being right.**
