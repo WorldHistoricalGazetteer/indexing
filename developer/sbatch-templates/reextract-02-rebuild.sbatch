@@ -51,8 +51,24 @@ assert M.get('zh') == 'zho-s', f'ABORT: lang map is {M.get(\"zh\")!r}, not zho-s
 # 3. CHECKPOINT before both promoting copies (5e66a43): else 198 GB holds 121 GB
 [ "$(grep -c 'conn.execute("CHECKPOINT")' phonetics/extraction/rebuild_toponyms_index.py)" -ge 2 ] \
   || { echo "ABORT: fewer than two CHECKPOINT calls"; exit 1; }
-# 4. THIS RUNID's neural phonetics, not a stale generation's
-[ -s "$NEURAL" ] || { echo "ABORT: $NEURAL missing — run job 1 first"; exit 1; }
+# 4. ⚠ THIS RUNID's neural phonetics, checked BY ROW COUNT not by size.
+#    `[ -s ]` tests non-zero bytes, and an EMPTY parquet is not zero bytes: it
+#    carries PAR1 magic at both ends plus footer metadata, so a 0-row file is a
+#    few hundred bytes and passes. Job 1 producing an empty parquet — which is
+#    what happens if its source inventory is missing — would then sail through
+#    here, Priority 2 would supply nothing, Priority 3 would skip
+#    zh/ko/yue/gan/wuu entirely, and both jobs would exit 0:0.
+[ -f "$NEURAL" ] || { echo "ABORT: $NEURAL missing — run job 1 first"; exit 1; }
+python - "$NEURAL" <<'PY'
+import sys, duckdb
+con = duckdb.connect()
+n = con.execute(f"select count(*) from read_parquet('{sys.argv[1]}')").fetchone()[0]
+zh = con.execute(f"select count(*) from read_parquet('{sys.argv[1]}') "
+                 f"where lang='zh' and ipa is not null").fetchone()[0]
+print(f"  neural parquet: {n:,} rows, {zh:,} zh with ipa")
+assert n  > 1_000_000, f"ABORT: parquet holds only {n:,} rows — job 1 produced an empty or partial file"
+assert zh >   500_000, f"ABORT: only {zh:,} zh rows with ipa — the languages this run exists to fix are missing"
+PY
 # 5. run-scoped DB must NOT exist, or --resume can adopt a previous corpus
 [ -e "$DB" ] && { echo "ABORT: $DB exists; --resume would adopt it"; exit 1; }
 # 6. staging ES must be up and must not already hold the target index
