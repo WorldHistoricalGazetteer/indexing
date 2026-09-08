@@ -116,8 +116,31 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     # NOT stand is the sample SIZE — report the count actually measured on, not
     # the one the SQL asks for.
     #
-    # 🛑 It is a hypothesis fitting to 0.33%, not a proof. If an exact n is ever
-    # needed, sample from a filtered subquery instead of trusting this.
+    # ✅ CONFIRMED by an independent synthetic reproduction (session 04): the
+    # sample is applied BEFORE the WHERE in the same SELECT, so this is "a
+    # sample of the table, filtered" and not "a sample of the filtered table".
+    # The fix is one subquery -- FILTER FIRST, THEN SAMPLE:
+    #     SELECT * FROM (SELECT ... WHERE pred) USING SAMPLE n ROWS  -- exact n
+    # Row sampling is exact; PERCENT sampling is not. And the same shape bites
+    # far harder elsewhere: `SELECT DISTINCT x FROM t USING SAMPLE 200000` gives
+    # the distinct values OF A 200,000-ROW SAMPLE, silently.
+    #
+    # ⚠ WHAT THE WRONG FRAME DOES AND DOES NOT MOVE. A RATE is unaffected --
+    # yield is a ratio within whatever rows were drawn, so 99.9993% stands.
+    # Anything CONDITIONED ON THE PREDICATE carries the wrong frame, and the
+    # mean blob size below is in that category: it is a mean over
+    # sampled-then-filtered rows, not over sampled-from-filtered rows. Harmless
+    # only if blob length does not correlate with ipa-presence, which is likely
+    # and is not verified.
+    #
+    # 🛑 AND ONE RESIDUAL THE MECHANISM DOES NOT EXPLAIN. Measured selectivity
+    # is 0.683486 (50,221,897 of 73,479,069), so 200,000 rows should filter to
+    # 136,697. Observed 136,241 -- short by 456, which is -2.19 sigma on a
+    # binomial sd of 208. The mechanism is right and the number is slightly off,
+    # and a plausible reason is that this table is ORDERED while reservoir
+    # sampling runs per-morsel: if ipa-presence varies along the file, the draw
+    # is not uniform over it. Not chased, because nothing here depends on it --
+    # but do not reuse this sample for a per-script or per-region breakdown.
     rows = con.execute(f"""
         SELECT ipa FROM inv.toponyms
         WHERE ipa IS NOT NULL AND ipa <> ''
