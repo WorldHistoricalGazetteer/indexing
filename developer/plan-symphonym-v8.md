@@ -8527,3 +8527,65 @@ One run with `rank_curve`'s own `stratum_of` settles it.
 Until then §8's retrieval anchors and `8b`'s cannot be quoted in the same
 sentence, and **the disagreement is about how good v7 is relative to a baseline** —
 which is the question the whole v8 case rests on.
+
+## 47. ✅ PROMOTED — and `find_similar_in_place` returns groups for the first time ever
+
+**All four counts PASS against the LIVE alias, not staging:**
+
+```
+alias toponyms -> toponyms_undscript-20260906t160000z
+alias places   -> places_h3ccode-20260805t120000z   (unchanged, as intended)
+
+total               73,479,069
+embedding           73,479,069   PASS
+ipa                 34,141,080   PASS
+panphon_embedding   34,141,080   PASS
+name_romanized      12,431,453   PASS   ← the reproduction check; a MATCH is the pass
+```
+
+**`#250` is live in production. Every one of these was 0 before today:**
+`zh` 467,161 · `fa` 97,045 · `ja` 63,373 · `kk` 47,877 · `el` 45,146 · `ru` 25,093.
+
+### 47.1 🛑 THE FUNCTIONAL TEST — the one the counts cannot make
+
+```
+place wd:Q119745925
+batch_get_embeddings   2 of 2   dims [192]
+find_similar_in_place -> 1 group:
+   ['Ecole maternelle Le Jardin de Concy@fr',
+    'école maternelle Le Jardin de Concy@fr']
+```
+
+**It returned a GROUP instead of `[]`** — which it had returned for every place, for
+this system's entire history, because the field was discarded every generation
+(§13.1b). ✅ **So the field is not merely present, it is behaving.**
+
+⚠ **And note WHAT it grouped: an accented and unaccented variant of one name** —
+precisely the class **D-A's casefolding** (§40) and **accent folding** (§21.1)
+target from different directions. **Three independent routes converging on one
+phenomenon**, which is corroboration of a kind none of them could supply alone.
+
+✅ **`9c` ran the REAL `ESKNNHelper`** — installing `hdbscan` to import it rather
+than reimplementing its two ES calls — **on the grounds that today has produced
+several reimplementations that diverged from their originals.** Testing the actual
+consumer, not a model of it.
+
+### 47.2 THE DROP, AND THE CHECKS AROUND IT
+
+Old index dropped **after** confirming it held **no alias** and that **two
+snapshots retain it** (`places-temporal-…`, `promote-temporal-…`) — recoverable,
+not merely gone.
+
+```
+/vast   159 GB -> 209 GB      ES: disk.avail 208.2gb, 79%
+low watermark 164.9 GB (ES's decimal figure)   -> ~43 GB of margin
+write probe {"errors":false, "result":"not_found"} routed via the ALIAS to the NEW index
+```
+
+⚠ **The NFS caching trap fired again and is now twice-confirmed: the first `df`
+after the delete read 159 GB — identical to before.** Reporting then would have
+said the drop had failed. A re-read 25 s later gave 209 GB. **Never trust a single
+`df` after a large delete on that mount.**
+
+**Cluster `yellow` — the pre-existing unassigned replica on a single-node cluster,
+unchanged by this work.**
