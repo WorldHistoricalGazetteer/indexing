@@ -8397,3 +8397,73 @@ infrastructure. Fixed by symlink, **target verified byte-identical to the repo
 copy (`756877ab…`)**, so the benchmarked derivation is the shipped one. ⚠ The
 symlink makes that path a hybrid whose `script_detection.py` differs three ways —
 **harmless for `to_features`, not harmless for `to_ipa`.**
+
+## 45. ✅ THE MERGE PLAN, REVERSED ON PUSHBACK — copy-then-swap beats a fresh rewrite
+
+**`inspect` (11177528) settled what the swap must reproduce:**
+
+```
+toponyms   73,479,069 rows · 7 cols · ALL nullable · NO PK · NO constraints
+           BUT 3 INDEXES: idx_toponyms_id (the column update_es JOINS by),
+                          idx_toponyms_lang, idx_toponyms_script
+observed_chars   PK(char,script) + 2 NOT NULL
+script_stats     PK(script)      + 1 NOT NULL
+toponym_attestations  2 NOT NULL · 122,527,196 rows · 3 indexes
+toponym_namespaces    2 NOT NULL · 122,527,196 rows · 1 index
+```
+
+⚠ **This session predicted the constraint hazard would be empty. Half right — and
+the wrong half mattered:** the table being *changed* has no constraints, but the
+tables being *carried across untouched* have PKs and NOT NULLs, and
+`CREATE TABLE x AS SELECT * FROM src.x` **silently drops every one.** **The hazard
+lives in the boring part of the operation.**
+
+⚠ **And a CTAS drops three indexes — including the one `update_es` joins by.**
+Not a correctness fault: **right rows, right values, right counts, and a query
+plan nobody diffs.**
+
+### 45.1 🛑 RULING REVERSED — and `8b` won it on this session's own axis
+
+I ruled for a **fresh file**, on the grounds that untouched tables should keep
+their guarantees **by construction rather than by remembering** — then specified
+a plan achieving that only if five tables' DDL is reproduced *correctly*.
+
+**`8b` proposed COPY-THEN-SWAP: `cp` the file, then replace `toponyms` in place on
+the copy.**
+
+> **"`cp` cannot silently drop a constraint; a hand-written `CREATE TABLE` can."**
+
+```
+                        untouched tables      the risky step
+fresh rewrite (mine)    DDL reproduced        get 5 tables' DDL + 7 indexes right
+copy-then-swap (8b's)   NEVER TOUCHED         cp a file
+```
+
+* **The retained original is stronger** — never opened for writing at all, versus
+  *"a file we stopped writing to"*. I had treated those as equivalent.
+* **The `CHECKPOINT` concern evaporates** on a copy nobody reads.
+* **The surface needing correctness shrinks to `toponyms`** — the one table with
+  **no constraints** — plus three `CREATE INDEX` statements DuckDB emits verbatim.
+* **Blast radius is one atomic rename**, not a window spanning a 242 GB rebuild.
+
+✅ **Storage is ~309 GB on `/ix1` under BOTH plans, so this was never a cost
+trade.** ⚠ **And the `cp` window is not the mid-flight hazard of §13.5: there the
+partial file WAS the path everyone used; here it is invisible until the rename.**
+
+### 45.2 STORAGE CORRECTED 2.5× BEFORE THE SWAP, NOT DURING IT
+
+```
+rate      29,591 rows/s/core        compute  0.5 core-hours (~1 min on 32)
+yield     50,221,528 of 50,221,897  1 unsegmentable in 136,240
+mean blob 1,340 bytes  ← NOT the assumed 768; ~14 segments, not 8
+blobs     67.3 GB      inventory -> ~188 GB (was projected 121)
+```
+
+**Compute is free; storage was always the only variable, and it was the guessed
+one.** ✅ **The yield figure is what stops a future false alarm — 369 short is
+PanPhon, not data loss.**
+
+⚠ **Sample caveat reported rather than smoothed:** `USING SAMPLE … (reservoir)`
+returned **136,241 of a requested 200,000**. At a yield of 0.999993 no plausible
+artefact moves the conclusion, **but a sampler silently delivering 68% of what was
+asked is worth understanding before it is used where the COUNT matters.**
