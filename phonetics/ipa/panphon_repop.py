@@ -56,6 +56,7 @@ import argparse
 import json
 import struct
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -346,6 +347,7 @@ def merge(inventory_db: str, shard_glob: str, buckets: int, work_db: str,
         return 0
 
     # --- 1. copy, then prove the copy ---------------------------------------
+    src_sha = ""
     t0 = time.perf_counter()
     print(f"copying {src.stat().st_size / 1e9:,.1f} GB -> {dst} …", flush=True)
     shutil.copy2(src, dst)
@@ -364,6 +366,7 @@ def merge(inventory_db: str, shard_glob: str, buckets: int, work_db: str,
 
         t0 = time.perf_counter()
         a_, b_ = sha(src), sha(dst)
+        src_sha = a_
         print(f"sha256 {a_[:16]}… both sides, {time.perf_counter() - t0:,.0f}s",
               flush=True)
         if a_ != b_:
@@ -454,6 +457,63 @@ def merge(inventory_db: str, shard_glob: str, buckets: int, work_db: str,
     if problems:
         raise SystemExit("VERIFICATION FAILED: " + "; ".join(problems) +
                          " — toponyms_new left in place, original untouched")
+
+    # --- 3b. STAMP WHICH ipa THESE FEATURES CAME FROM -----------------------
+    # 🛑 THE CANDIDATE HAS A DEPENDENCY ON AN IPA GENERATION AND NOTHING ELSE
+    # RECORDS IT. These blobs derive from the `ipa` column as it stood in the
+    # source file, and rule-file fixes landing the same day change that column
+    # for ~38,000 rows on the NEXT recompute (Gurmukhi/Sinhala independent
+    # vowels, Devanagari, Gujarati, Tibetan subjoined, Coptic). Those are
+    # installed-map changes: they take effect forward, not retroactively.
+    #
+    # So if this candidate is renamed into place AFTER an IPA recompute, the ipa
+    # and panphon_features columns disagree for those rows with nothing saying
+    # why. The source file's sha256 pins the exact ipa bytes consumed — it IS
+    # the generation stamp, and it is already computed above for the copy check.
+    #
+    # ⚠ Deliberately NOT stamping the epitran rule files. The features depend on
+    # the ipa COLUMN, not on the rules; the column was computed under some
+    # earlier rule state and stamping today's rules would assert a lineage that
+    # is not the one that produced these bytes. A stamp naming inputs the
+    # artefact never saw is worse than no stamp, because it invites someone to
+    # reason from it -- a wrong REFERENT rather than a wrong value, which is the
+    # harder one to notice.
+    #
+    # ➡ WHAT WILL NEED REDOING, AND WHERE TO FIND THE POPULATION. The eight rule
+    # files changed 8 Sep 2026 and their verified per-file row counts are in
+    # `phonetics/epitran_extensions/DIVERGENCE.md`. After the next IPA pass those
+    # rows carry different ipa and these blobs go stale for them; the fix is a
+    # re-run of the same 32-shard job, about half a core-hour. That is a
+    # statement about what this artefact must BECOME and is kept OUT of the
+    # provenance record, which says only what it IS -- collapsing the two is how
+    # a provenance record starts making claims about the future.
+    stamp = {
+        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_db": str(src),
+        "ipa_source_sha256": src_sha or "NOT COMPUTED (--no-verify-copy)",
+        "source_rows": before[0],
+        "features_written": after[1],
+        "shards": buckets,
+        "shard_glob": shard_glob,
+        "derivation": "IPAConverter.to_features -> struct.pack('<N>f'), 24 float32/segment",
+        "note": ("REPLACED AND EXTENDED, not restored: rows that never had the "
+                 "field, and different values on the overlap because the ipa "
+                 "changed. Features are valid ONLY for the ipa column whose "
+                 "sha256 is above."),
+    }
+    con.execute("""
+        CREATE OR REPLACE TABLE panphon_provenance(
+            created_utc VARCHAR, source_db VARCHAR, ipa_source_sha256 VARCHAR,
+            source_rows BIGINT, features_written BIGINT, shards INTEGER,
+            shard_glob VARCHAR, derivation VARCHAR, note VARCHAR)
+    """)
+    con.execute("INSERT INTO panphon_provenance VALUES (?,?,?,?,?,?,?,?,?)",
+                [stamp[k] for k in ("created_utc", "source_db",
+                                    "ipa_source_sha256", "source_rows",
+                                    "features_written", "shards", "shard_glob",
+                                    "derivation", "note")])
+    Path(str(dst) + ".provenance.json").write_text(json.dumps(stamp, indent=2))
+    print(f"stamped: ipa_source_sha256 {stamp['ipa_source_sha256'][:16]}…")
 
     con.execute("DROP TABLE toponyms")
     con.execute("ALTER TABLE toponyms_new RENAME TO toponyms")
