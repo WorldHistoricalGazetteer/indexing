@@ -8091,3 +8091,77 @@ result: it will NOT be all ß.** The casefold-only folds that are not ß mostly
 cannot appear in a–b — **Greek final sigma `ς`/`σ`** (casefold merges, `lower()`
 does not) is the strongest candidate, then Cherokee and the Armenian ligatures.
 **Wanted back: the cause distribution, not more examples.**
+
+## 41. 🛑 THE RERANKER HYPOTHESIS IS FALSIFIED — the gain is lexical, not v7
+
+`8b`, `bb97cf5`, `evaluation/reranker.py`. Held-out test, **split by query** so a
+query's pool cannot appear in both halves. n=3,000, pool=200.
+
+```
+method              R@1      R@5     R@10     R@50    R@200
+v7_pool_order    0.0887   0.2223   0.2667   0.3703   0.4680
+lexical_only     0.1627   0.3533   0.3857   0.4403   0.4680
+reranked         0.1687   0.3687   0.4010   0.4450   0.4680
+```
+
+🛑 **§4 called the reranker *"a PLANNED v8 COMPONENT… converts v7's pairwise
+strength (AUC 0.9324) into ranking."* THAT IS NOT WHAT HAPPENS.** Lexical
+ordering **alone** reaches 0.3857; blending v7 in adds **+0.0153 — 4% of the
+gain.** The mechanism is **romanised lexical similarity re-ordering a pool that
+v7 retrieved**. v7's contribution is *retrieval*, plus a small ordering increment.
+
+✅ **Coherent with a figure already in the record, which strengthens it:** §8's
+anchors had `levenshtein_romanised` at **R@10 0.3230 against v7's 0.2940** — **the
+baseline already beat v7 at ordering.** Two independent routes to the same
+conclusion.
+
+**Per stratum (R@10, v7 → reranked):** `latin_q_nonlatin_c` 0.2812 → 0.4101;
+`nonlatin_q_latin_c` 0.2473 → 0.4090; `both_nonlatin` 0.2593 → 0.3457. ⚠ **Gain
+smallest exactly where romanisation cannot help both sides** — a weak
+confirmation of the mechanism, and `8b` labels it as weak.
+
+### 41.1 ⚠ THE HARD-NEGATIVE SET CANNOT FAIRLY EVALUATE A LEXICAL RE-RANKER
+
+```
+scorer              AUC       AP   pos mean   neg mean
+v7_cosine_only   0.7687   0.3183     0.7409     0.5067
+lexical_only     0.4965   0.2870     0.5664     0.5671
+blend_w0.3       0.7314   0.3291     0.6885     0.5248
+```
+
+🛑 **`mine_hard_negatives` SELECTS pairs at lexical similarity ≥ 0.80** (sampled
+rows sit at 1.000). **A scorer cannot discriminate on an axis the sampling frame
+holds constant**, so lexical's 0.4965 is a property of the *corpus*, not of
+lexical matching — [[corpus_property_as_model_property]] in a new costume.
+
+**Both consequences are directional, which is what makes it usable:**
+
+* **The blend's 0.7314 is a FLOOR, not an estimate** — dragged toward chance by a
+  component this set was built to defeat. **True precision cost is at most that.**
+* **AP rises anyway**, 0.3183 → 0.3291.
+* ⚠ v7's 0.7687 here is **not** comparable to its published 0.9324 (different
+  negative sets); it is comparable only to the other two rows.
+
+✅ **Found by the set's own author, stated before anyone quoted the number.**
+
+### 41.2 ➡ THE ORDERING QUESTION IS CLOSED; THE 52% IS NOW THE WHOLE GAME
+
+**R@200 = 0.4680 for EVERY method.** Re-ordering the pool is nearly saturated by
+a cheap lexical pass, so **all remaining retrieval value is recall INTO the
+pool** — and nothing measured tells us whether that 52% is reachable at all.
+
+**Commissioned: an R@k curve to k=1,000 and 5,000**, v7 and
+`levenshtein_romanised`, per stratum.
+
+* **flat at ~0.47** → the embedding is the constraint, not the pool. **Makes the
+  retrain's success criterion concrete: move R@200, not R@10.**
+* **rises to ~0.7** → much of the 52% is *already retrievable* and `k=200` is
+  discarding it. **A configuration change worth more than the reranker.**
+* **curves diverge** → v7 and edit distance stop failing on the same pairs, which
+  contradicts the R@200 agreement to 0.0002 and must be explained first.
+
+### 41.3 THE HONEST FRAMING FOR SG
+
+**"Add a romanised lexical re-order to the pool"** — not *"add a v7
+cross-encoder"*. Cheaper, easier to explain, and it changes what we claim the v8
+*model* is for. **Nothing deployed; no gateway code touched.**
