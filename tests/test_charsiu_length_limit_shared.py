@@ -28,9 +28,13 @@ import pathlib
 import unittest
 
 
+#: Every module that constructs a CharsiuG2P call. There were THREE, not two:
+#: the sweep that found the third was prompted by asking "is the rebuild the
+#: only divergent copy?" rather than assuming the two known ones were all.
 CALL_SITES = [
     "phonetics/ipa/backends.py",
     "phonetics/extraction/rebuild_toponyms_index.py",
+    "phonetics/extraction/precompute_neural_phonetics.py",
 ]
 
 

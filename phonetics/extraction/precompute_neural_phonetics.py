@@ -89,10 +89,18 @@ class BatchCharsiuG2P:
         import transformers
 
         logger.info("Loading CharsiuG2P model...")
+        # Third of three Charsiu call sites; the constants are shared so a
+        # change to the bound cannot leave one behind. This copy was already
+        # CORRECT (bounded at 256) and is the path whose output survives in the
+        # store — but it hard-coded all three values, which is how the rebuild's
+        # copy came to diverge unnoticed.
+        from phonetics.ipa.backends import (
+            CHARSIU_MAX_NEW_TOKENS, CHARSIU_MODEL, CHARSIU_TOKENIZER)
+        self._max_new_tokens = CHARSIU_MAX_NEW_TOKENS
         self.model = transformers.T5ForConditionalGeneration.from_pretrained(
-            "charsiu/g2p_multilingual_byT5_small_100"
+            CHARSIU_MODEL
         )
-        self.tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+        self.tokenizer = transformers.ByT5Tokenizer.from_pretrained(CHARSIU_TOKENIZER)
         self.device = device
         self.model.to(device)
         self.model.eval()
@@ -129,7 +137,7 @@ class BatchCharsiuG2P:
             with self.torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=256,
+                    max_new_tokens=self._max_new_tokens,
                 )
 
             results = []
@@ -157,7 +165,8 @@ class BatchCharsiuG2P:
         input_text = f"<{char_iso}>: {text}"
         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
         with self.torch.no_grad():
-            outputs = self.model.generate(**inputs, max_new_tokens=256)
+            outputs = self.model.generate(
+                **inputs, max_new_tokens=self._max_new_tokens)
         decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         return decoded if decoded.strip() else None
 
