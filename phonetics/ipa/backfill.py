@@ -52,8 +52,47 @@ def census(con, alias: str = "st") -> Dict[str, int]:
     ).fetchall())
 
 
+def assert_real_inventory(path: str) -> None:
+    """Refuse a path that is not actually the inventory.
+
+    🛑 ATTACHING READ-WRITE TO A MISSING PATH CREATES AN EMPTY DATABASE. It does
+    not error. On 8 Sep 2026 the inventory was moved from /vast to /ix1 between
+    this backfill's dry run and its execute run; the execute run attached
+    read-write to the old path, DuckDB created a 12 KB empty database there, and
+    the only reason it failed loudly was that a later statement named a table.
+    Had the first statement been a CREATE or an INSERT it would have written
+    happily into nothing and reported success.
+
+    Worse, the empty file then SITS AT THE CANONICAL PATH as a decoy: any
+    resolver that checks existence — including the one in
+    evaluation/romanisation_fidelity.py — would have preferred it over the real
+    file, because `exists()` is not `is the artefact`.
+
+    So check for content, not presence, before doing anything.
+    """
+    import duckdb
+    probe = duckdb.connect()
+    try:
+        probe.execute(f"ATTACH '{path}' AS chk (READ_ONLY)")
+        n = probe.execute("SELECT count(*) FROM chk.toponyms").fetchone()[0]
+    except Exception as exc:
+        raise SystemExit(
+            f"{path} is not a usable inventory: {type(exc).__name__}: {exc}\n"
+            f"⚠ If it exists but has no tables it is probably an EMPTY database "
+            f"created by attaching read-write to a path whose file had moved. "
+            f"Find the real one before rerunning.")
+    finally:
+        probe.close()
+    if n == 0:
+        raise SystemExit(f"{path} has a toponyms table with ZERO rows — "
+                         f"refusing to treat it as the inventory.")
+
+
 def backfill(store_db: str, inventory_db: str, execute: bool = False) -> dict:
     import duckdb
+
+    # BEFORE any read-write attach, which is what can create the decoy.
+    assert_real_inventory(inventory_db)
 
     con = duckdb.connect()
     con.execute("PRAGMA memory_limit='60GB'")

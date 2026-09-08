@@ -58,19 +58,45 @@ sys.path.insert(0, "/vast/ishi/elastic")
 # file being written, and reading one mid-write is the same mid-flight hazard
 # as reading an inventory between its two checkpoints.
 DB_NAME = "toponyms-undscript-20260906T160000Z.db"
+#: After the 7 Sep compaction the live inventory is the .compact.db on
+#: /ix1; the uncompacted /vast original was removed. Both names are
+#: tried so a resolver written before or after the swap still works.
+DB_NAMES = (DB_NAME, "toponyms-undscript-20260906T160000Z.compact.db")
 DB_ROOTS = ("/vast/ishi/data", "/ix1/ishi/data")
 
 
 def resolve_db(name: str = DB_NAME) -> str:
+    """First root holding a NON-EMPTY inventory of this name.
+
+    🛑 `exists()` IS NOT `is the artefact`. Attaching read-write to a path whose
+    file has moved makes DuckDB CREATE an empty database there, silently — and
+    that 12 KB decoy then sits at the canonical path, where a resolver checking
+    only existence prefers it over the real file on the other volume. That
+    happened on 8 Sep 2026 when the inventory moved /vast -> /ix1 between two
+    runs. So probe for content and skip a file that has none.
+    """
     from pathlib import Path as _P
+    import duckdb
     tried = []
     for root in DB_ROOTS:
-        c = _P(root) / name
-        tried.append(str(c))
-        if c.exists():
+      for nm in ({name},) if name != DB_NAME else DB_NAMES:
+        c = _P(root) / nm
+        if not c.exists():
+            tried.append(f"{c} (absent)")
+            continue
+        con = duckdb.connect()
+        try:
+            con.execute(f"ATTACH '{c}' AS chk (READ_ONLY)")
+            n = con.execute("SELECT count(*) FROM chk.toponyms").fetchone()[0]
+        except Exception as exc:
+            tried.append(f"{c} (unusable: {type(exc).__name__})")
+            continue
+        finally:
+            con.close()
+        if n > 0:
             return str(c)
-    raise SystemExit("inventory DB not found under any known root; tried:\n  "
-                     + "\n  ".join(tried))
+        tried.append(f"{c} (EMPTY — likely a decoy from a read-write attach)")
+    raise SystemExit("no usable inventory DB found; tried:\n  " + "\n  ".join(tried))
 
 # language -> its native script in this corpus
 NATIVE = {"fa": "ARABIC", "el": "GREEK", "ru": "CYRILLIC", "ar": "ARABIC",
