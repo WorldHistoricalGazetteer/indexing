@@ -8317,3 +8317,83 @@ its job.
 
 ✅ **`04` refused to green a suite whose failures are the change working as
 designed.** That is the correct instinct and the tests are correct to fail.
+
+## 44. 🛑 §8's "SAME 52% MISSED BY BOTH" IS FALSE — and hybrid retrieval is on the table
+
+`8b`, job 11177396. Full haystack (1,053,229), held-out n=3,000, **both scorers
+ranking ALL names independently** — not one re-ordering the other's pool.
+
+```
+retriever                R@1     R@10    R@200   R@1000   R@5000
+v7_cosine             0.0890   0.2667   0.4680   0.5793   0.6983
+levenshtein_romanised 0.2717   0.4400   0.5900   0.6657   0.7250
+
+rank percentiles          p25      p50      p75      p90      p99
+v7_cosine                   8      341   13,112  258,604  883,136
+levenshtein_romanised       1       32   11,234  369,159  961,212
+```
+
+**THE 2×2, which had never been tested:**
+
+```
+k=200    both 1,121 · v7-only 283 · lev-only 649 · neither 947
+         UNION 0.6843  vs best single 0.5900   +0.0943
+k=1,000  both 1,473 · v7-only 265 · lev-only 524 · neither 738   +0.0883
+k=5,000  both 1,814 · v7-only 281 · lev-only 361 · neither 544   +0.0937
+```
+
+🛑 **§8 says *"the same ~52% is missed by edit distance and by v7 alike."* FALSE
+AS STATED — only 947 of 3,000 (31.6%) are missed by both**, and **v7 finds 283
+partners at k=200 that edit distance misses entirely**, stable to k=5,000. ⚠ The
+inference was always invalid: **equal failure RATES are equally consistent with
+disjoint failure SETS** (§41), and this is the measurement that settles it.
+
+### 44.1 ➡ HYBRID RETRIEVAL — bigger than the reranker, and also needs no retraining
+
+**The reranker buys ORDERING over a fixed 0.4680 ceiling. A union of the two
+candidate sets moves the CEILING** — +0.094, reaching into the pool, which is the
+half reranking cannot touch by construction. **200 from each retriever is 400
+candidates: a latency question, not a research one.** Shape to cost: union, then
+the existing re-order over the merged pool.
+
+### 44.2 ✅ `both_nonlatin` IS THE MECHANISM — v7 BEATS lexical there
+
+n=410: **v7 0.449 vs lexical 0.439 at R@200**, holding to k=5,000 (0.615 vs
+0.585). **v7's value is concentrated exactly where romanising both sides destroys
+the signal** — the first evidence in this campaign that v7 is *complementary*
+rather than merely *worse*, and a better argument for the model than any headline
+recall figure. ⚠ `both_latin` is **n=1** and reported as noise, so its absence is
+not read as a gap.
+
+### 44.3 ⚠ THE ABSOLUTE NUMBERS ARE POPULATION-DEPENDENT — DO NOT COMPARE THEM TO §8
+
+`8b` first suspected §8's baseline had been scored inside v7's pool, **checked,
+found `rank_curve.py` passes `pool=None` and `cdist`s the full haystack, and
+retracted before sending.** The real difference is the **query population**: §8
+uses `balanced_query_sample` (≤100 per script pair); this is a natural draw, so
+**86% is latin↔nonlatin — exactly where romanisation is strongest** (lev p50 rank
+**16**).
+
+🛑 **So 0.5900 does NOT refute §8's 0.4768.** Different populations; neither is
+"the real one". **Reporting it as a correction would be corpus-property-as-model-
+property in the other direction.** ⚠ `8b` flagged this against its own headline.
+
+✅ **What survives regardless: the 2×2 is INTERNALLY valid** — both scorers ranked
+**the same 3,000 queries**, so disjointness is a within-sample fact and cannot be
+an artefact between methods. **Magnitude may move on a balanced sample; existence
+cannot.** Balanced re-run commissioned to match §8 exactly.
+
+### 44.4 ⚠ A PARTIAL PACKAGE EARLIER ON `PYTHONPATH` SHADOWS A COMPLETE ONE LATER
+
+The three 1-second benchmark deaths were **not** the login-node weather.
+`PYTHONPATH=/vast/ishi/ipa-v8/code:/vast/ishi/elastic`, where the first entry
+holds a **partial** `phonetics` package with no `extraction`. **Python resolves
+the package in the first entry that has it and never looks further**, so
+`from phonetics.extraction import IPAConverter` raised `ModuleNotFoundError`
+**with the module plainly present in the second entry.**
+
+🛑 **The error names the MODULE, not the SHADOWING** — which is why it read as
+infrastructure. Fixed by symlink, **target verified byte-identical to the repo
+copy (`756877ab…`)**, so the benchmarked derivation is the shipped one. ⚠ The
+symlink makes that path a hybrid whose `script_detection.py` differs three ways —
+**harmless for `to_features`, not harmless for `to_ipa`.**
