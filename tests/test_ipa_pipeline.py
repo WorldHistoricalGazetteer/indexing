@@ -542,3 +542,54 @@ class TestBackfill(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStoreExistenceGuard(unittest.TestCase):
+    """A missing --store-db must be REFUSED, not created.
+
+    🛑 The failure this pins is not a crash. DuckDB obliges a read-write attach
+    to a missing path by creating an empty database; the planner's LEFT JOIN
+    then finds no completed rows and emits a plausible full-recompute plan for
+    73M rows of work already done. Nothing errors and nothing is corrupted --
+    which is why only a test can hold the door shut.
+    """
+
+    def test_missing_path_is_refused(self):
+        from phonetics.ipa.plan import assert_store_exists
+        with tempfile.TemporaryDirectory() as td:
+            missing = str(Path(td) / "not-a-store.db")
+            with self.assertRaises(SystemExit):
+                assert_store_exists(missing)
+            # ⚠ AND IT MUST NOT HAVE CREATED ONE ON THE WAY PAST. A guard that
+            # refuses *after* manufacturing the decoy leaves the hazard behind.
+            self.assertFalse(Path(missing).exists(),
+                             "the guard itself created the empty database")
+
+    def test_empty_store_is_refused(self):
+        """`exists()` is not `is the artefact` -- a schema-only store is empty."""
+        import duckdb
+        from phonetics.ipa import store as S
+        from phonetics.ipa.plan import assert_store_exists
+        with tempfile.TemporaryDirectory() as td:
+            p = str(Path(td) / "empty.db")
+            con = duckdb.connect(p)
+            con.execute(S.DDL)
+            con.close()
+            self.assertTrue(Path(p).exists())          # the decoy's whole trick
+            with self.assertRaises(SystemExit):
+                assert_store_exists(p)
+
+    def test_populated_store_passes(self):
+        """The positive control: without it the two refusals above are vacuous."""
+        import duckdb
+        from phonetics.ipa import store as S
+        from phonetics.ipa.plan import assert_store_exists
+        with tempfile.TemporaryDirectory() as td:
+            p = str(Path(td) / "real.db")
+            con = duckdb.connect(p)
+            con.execute(S.DDL)
+            con.execute("INSERT INTO ipa (toponym_id, name_sha, status, run_id, "
+                        "computed_at) VALUES ('x@en', 'deadbeefdeadbeef', 'ok', "
+                        "'r1', now())")
+            con.close()
+            assert_store_exists(p)      # must not raise

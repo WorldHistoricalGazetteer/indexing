@@ -187,13 +187,53 @@ def inventory_lang_witness(inventory_db: str, namespace: str = "tgn") -> dict:
     return out
 
 
+def assert_store_exists(path: str) -> None:
+    """Refuse a store path that is not already a populated store.
+
+    🛑 ATTACHING READ-WRITE TO A MISSING PATH CREATES AN EMPTY DATABASE — DuckDB
+    does not error, it obliges. A mistyped or moved --store-db therefore yields
+    a fresh, schema-valid, EMPTY store, and this planner's LEFT JOIN then finds
+    no completed rows and plans a full 73M-row recompute. That is not a crash
+    and not a silent corruption; it is a plausible plan for work already done,
+    which is the expensive shape of this campaign's recurring fault.
+
+    ⚠ `exists()` is not `is the artefact` — an empty DuckDB file exists. Probe
+    READ_ONLY (which fails on a missing path, the safe direction) and require
+    the store's own table to be present.
+
+    First runs are the legitimate exception, so the caller opts in explicitly
+    with --create-store rather than the default silently allowing it.
+    """
+    import duckdb
+
+    probe = duckdb.connect()
+    try:
+        probe.execute(f"ATTACH '{path}' AS chk (READ_ONLY)")
+        n = probe.execute("SELECT count(*) FROM chk.ipa").fetchone()[0]
+    except Exception as exc:
+        raise SystemExit(
+            f"--store-db {path!r} is not an existing IPA store ({exc}).\n"
+            f"Attaching it read-write would CREATE an empty one and plan a full "
+            f"recompute of work already done. Pass --create-store if this really "
+            f"is a first run."
+        ) from exc
+    finally:
+        probe.close()
+    if n == 0:
+        raise SystemExit(
+            f"--store-db {path!r} attaches but holds 0 rows in `ipa`. "
+            f"Pass --create-store if this really is a first run."
+        )
+
+
 def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                retry_statuses: Optional[List[str]] = None,
                allow_quarantined: bool = False,
                max_rows_per_shard: int = MAX_ROWS_PER_SHARD,
                work_dir_override: Optional[Path] = None,
                temp_dir: str = DEFAULT_TEMP_DIR,
-               max_temp: str = DEFAULT_MAX_TEMP) -> Dict:
+               max_temp: str = DEFAULT_MAX_TEMP,
+               create_store: bool = False) -> Dict:
     import duckdb
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -215,6 +255,8 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
         logger.warning("could not set DuckDB spill limits: %s", exc)
     con.execute("SET preserve_insertion_order=false")
     con.execute(f"ATTACH '{inventory_db}' AS inv (READ_ONLY)")
+    if not create_store:
+        assert_store_exists(store_db)
     con.execute(f"ATTACH '{store_db}' AS st")
     con.execute(S.DDL.replace("CREATE TABLE IF NOT EXISTS ",
                               "CREATE TABLE IF NOT EXISTS st."))
@@ -333,6 +375,9 @@ def main():
                     help="accept a plan with zero rows to do; without it a "
                          "zero is REFUSED, because it cannot be told apart "
                          "from a stale inventory")
+    ap.add_argument("--create-store", action="store_true",
+                    help="permit --store-db to be absent or empty (FIRST RUN ONLY); "
+                         "without it a missing store is refused rather than created")
     ap.add_argument("--ignore-stale-inventory", action="store_true",
                     help="proceed even though a staged extract is newer "
                          "than the inventory DuckDB")
