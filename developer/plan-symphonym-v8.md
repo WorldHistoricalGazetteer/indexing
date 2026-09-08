@@ -7967,3 +7967,52 @@ would drop real data.
 ➡ **OPEN, RAISED BY SG: "the known OSM/OHM way-polygon gap" was news to them.**
 That gap is why `boundaries` is not purely redundant. **To be picked up
 separately** — it is a corpus-completeness question, not a disk one.
+
+## 39. ✅ FILTER COMMITTED (`96b0479`) — and a test retired by a DECISION, not a defect
+
+`04`, 3 files, 124 insertions, 9 deletions. **It confirmed with SG directly
+before committing**, despite the relay being accurate — on the grounds that *"the
+rule I held earlier does not stop applying once the answer goes my way."* ✅
+**Right, and worth recording as right.**
+
+The commit message leads with the naive-filter finding — 41,485 real toponyms
+across 50 ISO 639-2/639-5 collective and deprecated codes — **because the wrong
+version looks correct and that is what a reader in six months most needs.**
+
+### 39.1 ⚠ IT DID NOT BRANCH, DELIBERATELY, AND THE REASONING IS RIGHT
+
+Standing guidance is to branch before committing to a default branch. ⚠ **On a
+worktree shared by three sessions, `git checkout -b` moves HEAD for ALL of
+them** — so branching would have been the *more* destructive option with live
+uncommitted work present. It staged three explicit paths on `main`, which is what
+every commit in today's history has done.
+
+⚠ **It named the protected files as mine. They are `8b`'s** —
+`phonetics/ipa/store.py` (untracked since 09-06, the module behind the entire IPA
+top-up) and `phonetics/ipa/plan.py` (29 uncommitted insertions). **So the session
+whose work was being protected did not know it was at risk.** Flagged to `8b`.
+
+### 39.2 🛑 A DECISION CAN RETIRE A TEST, AND THE TEST THEN REPORTS CORRECT BEHAVIOUR AS FAILURE
+
+`04` retired its own acceptance criterion unprompted. I had told it to check
+`panphon_embedding` **by count against 34,141,080** rather than by `exists` —
+sound advice against the old plan.
+
+**Under (b) that check is meaningless against production: the field is absent BY
+DESIGN rather than by defect.** ⚠ **A test written for the superseded decision
+would report a correctly-behaving system as broken** — and it would look
+authoritative doing it, because the number in it was measured.
+
+> **When a decision changes, the tests written for the old decision do not merely
+> become obsolete — they invert. They fail the thing that is now correct.**
+
+**Whoever picks up M2 needs a new read path AND a new acceptance criterion**, not
+the one previously agreed.
+
+### 39.3 OPEN AFTER `04`'s HANDOVER
+
+```
+OPEN   re-extraction for the 199,572 already-stored junk tags (the fix is forward-only)
+OPEN   M2, on the corrected read path and a new acceptance criterion
+DONE   filter committed 96b0479; backfill_admin_levels.py settled as dead
+```
