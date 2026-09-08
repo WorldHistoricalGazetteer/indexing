@@ -151,9 +151,24 @@ BACKEND_PHONIKUD = "phonikud"
 # while the Katakana control returned IPA.
 NEURAL_ROUTES: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("he", "HEBREW"): (BACKEND_PHONIKUD, "he"),
-    ("zh", "CJK"): (BACKEND_CHARSIU, "cmn"),
-    ("gan", "CJK"): (BACKEND_CHARSIU, "cmn"),
-    ("wuu", "CJK"): (BACKEND_CHARSIU, "cmn"),
+    # 🛑 `cmn` IS NOT A TAG CharsiuG2P KNOWS, AND IT DOES NOT SAY SO. The prompt
+    # is built as `<{tag}>: {text}` (backends.py:71) and a byte-level ByT5 does
+    # not error on an unrecognised tag — it generates anyway, and for Han input
+    # what it generates is Japanese on'yomi. Measured on the model, same strings:
+    #
+    #   北京   <cmn>   -> hokːjoɯ        ("hokkyō", Japanese)
+    #          <jpn>   -> hokːjoɯ        identical
+    #          <zho-s> -> peɪ˨˩˦tɕɪŋ˥˥   ("běijīng", correct Mandarin)
+    #   上海   <cmn>   -> ɕaɴhai         <zho-s> -> ʂɑŋ˥˩xaɪ˨˩˦
+    #
+    # 881,588 of the 1,583,722 stored `zh` rows carry Japanese-only phonemes
+    # (ɯ, ɴ) — 55.7%, and every one records backend=charsiu mode=cmn, so the
+    # route fired exactly as written and the model substituted a language.
+    # ⚠ The output is well-formed IPA, so residue, parseability and drop-rate
+    # checks all pass it: only asking whether it is the RIGHT LANGUAGE finds it.
+    ("zh", "CJK"): (BACKEND_CHARSIU, "zho-s"),
+    ("gan", "CJK"): (BACKEND_CHARSIU, "zho-s"),   # approximated by Mandarin, as before
+    ("wuu", "CJK"): (BACKEND_CHARSIU, "zho-s"),   # likewise
     ("yue", "CJK"): (BACKEND_CHARSIU, "yue"),
     ("ko", "HANGUL"): (BACKEND_CHARSIU, "kor"),
     ("ko", "CJK"): (BACKEND_CHARSIU, "kor"),
