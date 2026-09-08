@@ -8780,3 +8780,79 @@ private copy. 🛑 **Third instance in one module in one day** — re-deriving
 `self_hash` note), and now a second rank convention.
 
 > **A second implementation is a second definition.**
+
+## 50. ✅ FINAL POSITION ON RETRIEVAL — §8 WAS RIGHT, AND HYBRID IS STRONGER
+
+**Supersedes §44.1, §44.2, §44.3, §46 and §49.1.** Both anchors now reproduce on
+§8's exact population with the shared rank function, from capability-verified
+deployed code.
+
+```
+                 §8       measured      Δ
+v7   R@10     0.2942     0.2945     0.0003
+     R@200    0.4766     0.4815     0.0049
+lev  R@10     0.3230     0.3259     0.0029      ← was 0.0523 out
+     R@200    0.4768     0.4799     0.0031      ← was 0.0548 out
+```
+
+🛑 **§8's "AGREEMENT TO 0.0002" WAS CORRECT ALL ALONG.** Corrected gap at R@200:
+**v7 0.4815 vs lev 0.4799 = 0.0016.** They do tie. **The plan's anchor was right
+and the harness was wrong, and this session spent a day reporting otherwise.**
+
+### 50.1 🛑 RETRACTED: "lexical beats v7 at every k". THE CURVES CROSS.
+
+```
+          v7        lev
+R@1    0.0651    0.0718     lex ahead
+R@10   0.2945    0.3259     lex ahead
+R@200  0.4815    0.4799     v7 ahead   ← crossover
+R@1000 0.5759    0.5602     v7 ahead
+R@5000 0.6606    0.6396     v7 ahead
+p50       275       289     ← was 341 vs 32 under the optimistic convention
+```
+
+**Lexical wins shallow, v7 wins deep, crossing near k=200.** ⚠ **The "p50 of 32"
+was an artefact of placing the target ahead of every tie; the honest figure is
+289, level with v7's 275.**
+
+### 50.2 ✅ HYBRID RETRIEVAL CONFIRMED — and the gain went UP
+
+```
+k=200        both   v7-only   lev-only   neither    union   best single    gain
+optimistic  3,156     1,039      1,476     3,042   0.6509      0.5316    +0.1193
+CORRECTED   2,912     1,283      1,269     3,249   0.6271      0.4815    +0.1456
+```
+
+⚠ **The predicted direction held — `lev-only` fell, `v7-only` rose — but the NET
+was unpredictable and went the other way: the union gain rose from +0.119 to
++0.146, because the best single fell further than the union did.**
+
+✅ **And `v7-only` now slightly EXCEEDS `lev-only`**, so the complementarity is
+**near-symmetric rather than lexical-dominated.** Stable at k=1,000 (+0.128) and
+k=5,000 (+0.114). **§44.1 comes off pending: hybrid retrieval is established.**
+
+### 50.3 ✅ `both_nonlatin` IS BACK — as NEW evidence, not vindication
+
+```
+both_nonlatin  n=5,237    v7 R@200 0.458   lev 0.407   (+0.051)
+                          p50: v7 449, lev 1,169;  holds to R@5000 (0.626 vs 0.577)
+latin_q_nonlatin_c        lex 0.605 vs v7 0.545        ← v7 loses where one side is Latin
+```
+
+🛑 **DO NOT restore §44.2's text.** That claim rode on **+0.010 at n=410** and
+**reversed** under a balanced sample. **This is a different measurement — §8's
+population, correct tie handling, 13× the n — that happens to agree.** ⚠ **An
+underpowered claim later corroborated was still wrong when it was made**, and
+recording it as vindication would teach exactly the habit that produced it.
+
+**Mechanism, now properly supported: v7 wins where romanising BOTH sides destroys
+the signal, and loses where one side is already Latin.**
+
+### 50.4 WHAT THIS MEANS FOR THE v8 CASE
+
+✅ **The Artifact's figures came from §8 and are CONFIRMED — nothing there needs
+changing.** ⚠ **But its "~48% of correct answers never appear in the candidates
+for any method" is the BEST-SINGLE figure.** Under hybrid retrieval the
+never-retrieved share falls to **37.3%** — **so the ceiling reranking cannot
+reach is smaller than the Artifact currently implies.** To be updated once the
+hybrid design is costed rather than measured.
