@@ -66,14 +66,34 @@ CHARSIU_LANGS = {'zh', 'ko', 'gan', 'wuu', 'yue'}
 PHONIKUD_LANGS = {'he'}
 NEURAL_LANGS = CHARSIU_LANGS | PHONIKUD_LANGS
 
-# CharsiuG2P language code mapping
-CHARSIU_LANG_MAP = {
-    'zh': 'cmn',
-    'ko': 'kor',
-    'gan': 'cmn',
-    'wuu': 'cmn',
-    'yue': 'yue',
-}
+# CharsiuG2P language code mapping — DERIVED, not restated.
+#
+# 🛑 This map used to hard-code {'zh': 'cmn', 'gan': 'cmn', 'wuu': 'cmn'}, and
+# `cmn` is not a tag CharsiuG2P knows. A byte-level ByT5 does not error on an
+# unrecognised tag — it generates anyway, and for Han input it generates
+# Japanese on'yomi:
+#
+#     北京   <cmn>   -> hokːjoɯ         ("hokkyō", Japanese)
+#            <zho-s> -> peɪ˨˩˦tɕɪŋ˥˥    ("běijīng", correct Mandarin)
+#
+# `c37d927` corrected the routing table in `phonetics/ipa/routes.py`. It did NOT
+# reach this file, which carried its own copy — so the parquet this module
+# produces was still the defective mapping, and a re-extract consuming it would
+# have re-imported the very defect the re-extract exists to fix.
+#
+# Deriving from NEURAL_ROUTES means the next correction cannot leave this copy
+# behind. `tests/test_charsiu_tags.py` and
+# `tests/test_precompute_lang_map_matches_routes.py` hold the two in step.
+def _charsiu_lang_map():
+    from phonetics.ipa.routes import NEURAL_ROUTES, BACKEND_CHARSIU
+    out = {}
+    for (lang, _script), (backend, tag) in NEURAL_ROUTES.items():
+        if backend == BACKEND_CHARSIU:
+            out.setdefault(lang, tag)
+    return out
+
+
+CHARSIU_LANG_MAP = _charsiu_lang_map()
 
 
 class BatchCharsiuG2P:
