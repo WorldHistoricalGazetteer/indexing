@@ -7912,3 +7912,58 @@ three April SUCCESS snapshots and the geometry is re-derivable from the OSM PBF,
 so nothing is unrecoverable — **but deleting it silently drops polygons for live
 places, which is exactly the class of loss this campaign keeps finding.** If the
 headroom is needed, extract the non-duplicated subset first.
+
+## 38. SG'S DECISIONS, 8 September
+
+### 38.1 ✅ `panphon_embedding` — (b): STAYS A STAGING/DuckDB ARTEFACT
+
+**It does not go to production.** The field serves offline training-pair
+selection, not user-facing search, and costs ~50–55 GB all-in on a volume that
+was below its low watermark yesterday.
+
+```
+                    restore   after   after dropping old toponyms
+(a) ship it           131 GB   106 GB          155 GB   ← 1.4 GB over the line
+(b) staging only       76 GB   161 GB          210 GB   ← 56 GB of margin
+```
+
+⚠ **CONSEQUENCE NOT YET COSTED: the index already built CONTAINS the field**, so
+(b) is a *build* decision rather than a promotion one. It needs either a flag, a
+code change plus a re-run, or a reindex — **and if it costs a full re-run, SG
+chose (b) without that being on the table.** Put to `9c`; to be taken back to SG
+if the answer is hours.
+
+⚠ **And `es_knn_helper` reads `panphon_embedding` from `_source`.** Under (b) it
+will not find it in production. **Whether anything calls it against the live
+index is unestablished** — if so, (b) breaks a consumer nobody has named.
+
+🛑 **M2's premise is void.** `04` must read PanPhon from the DuckDB or staging,
+**not** from prod. Told.
+
+### 38.2 ✅ `04`'s LANGUAGE FILTER — COMMIT
+
+SG's own word, in response to being told the work was complete and held. Relayed
+verbatim, with the distinction `04` correctly drew preserved: **a peer relay is
+not SG asking, and that does not stop mattering because the answer is yes.**
+
+### 38.3 ⏸ THE QUARANTINE — DEFERRED, MARKED FOR v9
+
+**Not acted on now.** 3,411,436 names withheld on a language-provenance
+judgement (`ceb`/`war`/`min`/`vo`/`mul`); worth **4.6 points** against **0.343**
+for all remaining rule work, **but buying real coverage at questionable quality**
+— the transcription would be Cebuano phonology over Austrian mountains.
+
+➡ **CARRY INTO ANY v9 SCOPING.** The reasons it was deferred are quality, not
+cost, so a v9 revisit should start from *"has anything changed about our
+confidence in those labels"*, not from the coverage arithmetic.
+
+### 38.4 ⚠ `boundaries` — NOT deleted, and NOT the free headroom I described
+
+It sits on the same volume (`path /vast/ishi/es/data, mount /vast/ishi`), so
+deleting it *would* free 21 GB. **Under (b) it is not needed** — and §37 found it
+holds ~10,000 live-place polygons the geom store lacks, so wholesale deletion
+would drop real data.
+
+➡ **OPEN, RAISED BY SG: "the known OSM/OHM way-polygon gap" was news to them.**
+That gap is why `boundaries` is not purely redundant. **To be picked up
+separately** — it is a corpus-completeness question, not a disk one.
