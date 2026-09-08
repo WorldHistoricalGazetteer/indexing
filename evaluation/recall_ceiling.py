@@ -236,7 +236,41 @@ def main() -> int:
     def pcts(ranks: np.ndarray) -> dict:
         return {f"p{p}": int(np.percentile(ranks, p)) for p in PCTS}
 
+    # 🛑 MATERIALISE THE PER-PAIR RANKS, NOT ONLY THE AGGREGATES.
+    # Aggregates say the totals moved; per-pair says WHICH pairs moved and in
+    # which direction — the difference between "v8 is 0.02 better" and "v8 is
+    # better on non-Latin and worse on short Latin names". §50's whole finding
+    # was that the curves CROSS, and that structure lives at pair level.
+    #
+    # ⚠ This baseline is recoverable rather than perishable: the corpus is a
+    # materialised directory and a v7 rank is a pure function of (corpus,
+    # weights). But that holds ONLY while BOTH survive —
+    #   /vast/ishi/symphonym-eval/20260905T2000Z/
+    #   /vast/ishi/models/phonetic/checkpoints/v7/
+    # `hf/` is a symlink farm into the second, so v8 must land in `v8/` rather
+    # than overwrite `v7/`. That convention is load-bearing and undocumented,
+    # and a tidy-up of `hf/` would break it silently.
+    ranks_path = Path(a.out).with_name(Path(a.out).stem + ".ranks.jsonl")
+    with ranks_path.open("w", encoding="utf-8") as fh:
+        for i, r in enumerate(test):
+            qs, ps = scripts_for(r)
+            v, l = int(v7_rank[i]), int(lev_rank[i])
+            fh.write(json.dumps({
+                "query": r["query"], "partner": r["partner"],
+                "query_script": qs, "partner_script": ps,
+                "stratum": strata[i],
+                "place_id": r.get("place_id"), "namespace": r.get("namespace"),
+                "v7_rank": v, "lev_rank": l,
+                "cell@200": ("both" if v <= 200 and l <= 200 else
+                             "v7-only" if v <= 200 else
+                             "lev-only" if l <= 200 else "neither"),
+            }, ensure_ascii=False) + "\n")
+    print(f"per-pair ranks -> {ranks_path}", flush=True)
+
     rep = {"n_test": len(test), "haystack": len(hay_names),
+           "corpus": str(corpus), "model_dir": str(a.model_dir),
+           "tie_convention": "pessimistic (retrieval.ranks_from_scores)",
+           "ranks_jsonl": str(ranks_path),
            "overall": {}, "percentiles": {}, "strata": {}}
     for label, ranks in (("v7_cosine", v7_rank), ("levenshtein_romanised", lev_rank)):
         rep["overall"][label] = curve(ranks)
