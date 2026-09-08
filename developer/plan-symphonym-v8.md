@@ -9021,3 +9021,136 @@ can be submitted at all.** Three sessions independently reported "blocked" for
 three different reasons while the real constraint was shared and environmental.
 A wake-up is armed rather than promised, per the standing rule that discrete
 polls arm nothing.
+
+## 52. 🛑 THE RELEASE WAS PREMATURE — a fourth copy, and Gate 1 would have aborted every shard
+
+**§51 declared the re-extract released. It was wrong within the hour**, and both
+reasons were found by peers who kept reading after the question was closed.
+
+### 52.1 🛑 A FOURTH COPY — the re-extract would have RE-IMPORTED the defect it fixes
+
+`precompute_neural_phonetics.py:70` carried **its own** `CHARSIU_LANG_MAP` with
+`{'zh': 'cmn', 'gan': 'cmn', 'wuu': 'cmn'}`. `c37d927` corrected `routes.py` and
+never reached it. That module writes `neural_phonetics.parquet`, which the
+rebuild consumes as **Priority 2 for exactly those languages**, so **both routes
+were poisoned**: reuse the existing parquet (dated 2026-02-19, built with `cmn`)
+or regenerate it from the unfixed map. ⚠ **And "just omit it" fails via Priority
+3** — `lang in NEURAL_LANGS` sends zh/ko/yue/gan/wuu to `neural_skipped` and they
+get **no IPA at all**. There was no correct third option.
+
+🛑 **A run that would have completed, reported success, and left the corpus wrong
+in the same way — with a fresh timestamp arguing it had been fixed.** Now derived
+from `NEURAL_ROUTES`, with a test failing against `HEAD~1` on `'cmn' != 'zho-s'`.
+
+**FOUR INSTANCES IN ONE WEEK, one subsystem:**
+
+```
+the tokeniser        4 implementations   (§43)
+Charsiu              3 wrappers          (§51.1)
+CHARSIU_LANG_MAP     2 copies            (here)
+the tokeniser gate   2 of 4 files gated  (§51.5)
+```
+
+✅ **Adopted: "how many copies are there?" is a MANDATORY question before any fix
+is called landed.** "Is the fix in?" cannot return a surprise; the other one can.
+
+### 52.2 🛑 GATE 1 WOULD HAVE ABORTED EVERY SHARD UNDER D-A (`101048a`)
+
+`is_control` says nothing about **case** — it excludes romanised, multi-word,
+non-NFC and punctuated forms. Under D-A every remaining name casefolds, so the
+recomputed vector cannot reproduce the stored one. **Measured on 3,000 live
+toponyms:**
+
+```
+control rows                     936   (31.2% of sample)
+  changed by casefold            885   (94.55%)
+projected Gate 1 pass rate      5.45%  against a 99% floor  ->  EVERY SHARD ABORTS
+```
+
+⚠ **Not a bug in the gate: D-A INVERTS its premise.** Gate 1 was built for
+D1/D2/D4/D7, where the control genuinely cannot change. Under a change touching
+88.86% of names, "names that cannot change" is no longer findable by excluding
+romanised, non-NFC and punctuated forms.
+
+🛑 **THE CHEAP REPAIR WAS MEASURED AND REJECTED.** Redefining the control as
+case-invariant names leaves **51 of 936**, dominated by scripts with **no case at
+all** — ARABIC 21, THAI 6, GEORGIAN 4, TELUGU 4, TAMIL 3. At shard scale that
+**clears `CONTROL_MIN_ROWS` and is still blind to the change being shipped** —
+worse than failing the row check, because *a gate that cannot fail is
+unfalsifiable from inside.*
+
+✅ **The control now splits, and the second half is the witness Gate 1 never had:**
+
+```
+stable       NFKC-stable AND casefold-invariant   MUST reproduce      >= 99%
+must-change  everything D-A alters                must NOT reproduce  <=  1%
+```
+
+**Gate 1 alone answers "did these reproduce?" — and a run with the fold silently
+absent answers YES to everything.** Gate 1b's abort names the likeliest cause:
+a partial across the four tokeniser files, `tokenise.py` folding while the
+encoder used does not — **which is §51.5 from the other side, so the two gates
+now cover each other.** The regime is **probed** (`preprocess_text("A") ==
+preprocess_text("a")`), not configured: a flag is one more thing that can
+disagree with the code, and this run already has four files' worth of that.
+
+✅ **When the tokeniser does not fold, every control lands in `stable` and
+behaviour is byte-identical** — no D1/D2/D4/D7 run changes meaning.
+
+⚠ **Two admitted weaknesses:** `control_stratum` encodes D-A's *specific*
+transformation and is not a general predicate; `CONTROL_MAX_UNCHANGED_RATE=0.01`
+is a symmetric guess, not a measurement.
+
+### 52.3 ✅ `apply` SKIPPED THE SHARD IT STOPPED INSIDE
+
+`partial` was **written on abort and read nowhere** — the resume predicate was a
+bare `marker.exists()`. So a re-run skipped that shard and left its remainder
+**permanently unapplied**, while the totals stayed coherent because `ok` is
+carried over from the marker. 🛑 **The abort message says "Re-run to resume" and
+the resume path did the opposite of what the message promises.** Redoing is safe:
+the updates are idempotent, which is the whole reason a partial can be re-run.
+
+### 52.4 ⚠ THE SCALE REGIME IS CALIBRATED ON THE WRONG NUMBERS — OPEN
+
+Measured: **1,364 differing of 283,609** in shard 0000 — and that 0.48% is **fp32
+hardware noise, not tokenisation signal.** D-A changes 88.86% of names, so
+`apply` performs roughly **185× the writes against live prod**. Throttle,
+wall-clock, `/vast` headroom and `--max-error-rate` are all set for the old
+regime — **and tripping the error rate is the path into §52.3's bug, so it became
+most likely exactly when it became most expensive.** Largest un-worked item.
+
+### 52.5 ✅ D5 MAKES THE `FB00` CONFLICT UNREACHABLE, NOT NARROWER
+
+`HEBREW [(0x0590,0x05FF),(0xFB00,0xFB4F)]` and `ARMENIAN [(0x0530,0x058F),
+(0xFB00,0xFB17)]` both claim FB00 and neither should. **But D5 is neither a
+precedence flip nor a range narrowing** — it NFKC-folds *before* counting, so
+`ﬁ` decomposes to `fi` and never reaches the table. **Measured over the block:**
+
+```
+U+FB00–FB4F codepoints NFKC leaves unchanged:  1 of 58 assigned
+the survivor: U+FB1E HEBREW POINT JUDEO-SPANISH VARIKA, category Mn
+```
+
+**A non-spacing mark, dropped by the `isalpha()` filter before the range lookup.
+So no input can reach the conflict** — do not add ranges nothing exercises.
+
+⚠ **The warning survives in two better forms.** The ranges stay wrong **as
+documentation**, invisibly, so anyone "fixing the precedence" later will believe
+they changed behaviour and will not have. And **the unreachability depends on
+NFKC reaching EVERY implementation**: land D5 in `tokenise.py` but not
+`script_detection.py` and the table is live again. **That is §51.5's partial, and
+the two findings only connect if someone states them together.**
+
+### 52.6 ✅ THE REBUILD SHOULD NOT TOUCH `/vast` AT ALL
+
+I asked for output paths on `/vast` out of habit from the DuckDB emergency.
+⚠ **`temp_db_path` is node-local throughout and `/vast` only ever received a
+`shutil.copy2` of the finished file — the write-performance argument never
+applied to it.** `--db-path` and `--output-dir` go to `/ix1` (the shipped
+default), and the rebuild then touches `/vast` **not at all**, which answers the
+headroom question by removing it rather than satisfying it.
+
+🛑 **And `--resume` adopts a previous run's corpus silently:** it copies an
+existing `final_db_path` to scratch and **skips extraction**, then proceeds
+through vocab, PanPhon and index on stale data reporting success. **Rule: a
+re-extract points at a NEW run-scoped `--db-path` that does not yet exist.**
