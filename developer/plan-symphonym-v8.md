@@ -8856,3 +8856,168 @@ for any method" is the BEST-SINGLE figure.** Under hybrid retrieval the
 never-retrieved share falls to **37.3%** — **so the ceiling reranking cannot
 reach is smaller than the Artifact currently implies.** To be updated once the
 hybrid design is costed rather than measured.
+
+## 51. ✅ THE RE-EXTRACT IS RELEASED — and all three blockers dissolved differently
+
+I was holding the re-extract on three items. **None of them turned out to be
+what I thought it was**, and only one was a real blocker.
+
+| held on | actual state | why I was wrong |
+|---|---|---|
+| Charsiu truncation | ✅ fixed — but there were **THREE** copies, not two (`0d5acc3`) | I asked whether the fix landed, not how many places needed it |
+| D-A/D5 in the tree | ✅ **never a blocker** — the re-extract is tokeniser-INDIFFERENT | I inherited "D-0 is the first gate" and never asked *gate on what* |
+| 17's three rule files | ✅ built and pushed hours earlier, under my own approval | I asked for a decision I had already made |
+
+### 51.1 🛑 A THIRD CHARSIU IMPLEMENTATION — and it was the CORRECT one
+
+`9c` swept for the model name instead of accepting the two known sites, and
+found `phonetics/extraction/precompute_neural_phonetics.py`: its own wrapper,
+hard-coded model and tokenizer, **two** `generate()` calls with a literal
+`max_new_tokens=256`.
+
+⚠ **That copy is right, and it is the reason the current store's CJK escaped
+truncation at all** — `8b`'s `max_bytes = 256` traces to its `:160`. So the
+neural path carried the whole corpus while the rebuild's copy truncated.
+🛑 **But it hard-codes all three values, which is exactly how the rebuild's copy
+diverged unnoticed.** All three now import the shared constants and the test's
+`CALL_SITES` names all three, so the coupling is enforced repo-wide rather than
+across the two sites anyone happened to know about.
+
+**This is §43 again — the tokeniser being four implementations when everyone
+believed it was one — one week later, in a different subsystem. The general
+form: "is the fix in?" is a weaker question than "how many implementations are
+there?", and only the second one can return a surprise.**
+
+### 51.2 🛑 THE RULE FILES ARE A *QUALITY* FIX, NOT A *COVERAGE* FIX
+
+Rows containing the characters the rules add, and how many get **no IPA today**:
+
+```
+nep-Deva    3,799       0
+new-Deva    7,292       2
+guj-Gujr    6,103       3
+bpy-Beng   11,004       1
+bod-Tibt    9,866   9,866  ← and NOT for the reason it looks like
+```
+
+**For three of the four, the rules convert essentially ZERO failures into
+successes.** Those names already receive IPA — **IPA with a phoneme missing**, a
+Nepali or Punjabi name losing its initial vowel, `status='ok'` throughout. The
+work was worth doing (0% → 100% letter-clean on the affected rows) but **it is
+not what the coverage ledger said it was.**
+
+⚠ **`bod-Tibt`'s 9,866 fail for a DIFFERENT reason** — stored `script='OTHER'`
+from before the enum split, so they never reached a Tibetan route. Already
+counted in Project A's 172,210; **no rule file could ever have fixed them.**
+`17` had called it "the worst routing case", found that double-counted across
+two ledgers, and corrected it (`e1fddc7`).
+
+🛑 **§26 said incidence inverted the coverage ranking. This is one turn further
+on: the REASON FOR FAILURE then inverted the incidence ranking.** `kat-Geor`
+looked worst by coverage and has 0 rows; these four look like coverage fixes and
+are quality fixes. **The character repertoire, the row count, and the reason for
+failure are three different questions, and each one reordered the answer.**
+
+### 51.3 ⚠ MY `zh` FIGURE AGAINST 17's — a floor, not a rival estimate
+
+I have been quoting **1.41 M / 89.3%**; `17` measured **881,588 of 1,583,722 =
+55.66%**. **Not a contradiction:** 17's counts only rows containing `ɯ` or `ɴ`,
+so it is a **floor by construction**. Use `8b`'s. ⚠ Recorded because two numbers
+for one quantity is how a corrected figure gets "refuted" by a lower bound six
+weeks later.
+
+### 51.4 ✅ DECISION REVERSED BEFORE IT REACHED SG — don't exclude `zh`, SEQUENCE
+
+I was going to put "exclude `zh`+CJK from v8 training" to SG. **`9c` measured the
+cost and it is not a tail:**
+
+```
+trainable pool (has panphon_embedding)   34,141,080
+  non-LATIN                               6,344,636   18.6% of pool
+  zh + CJK                                1,293,547   20.4% OF THE NON-LATIN POOL
+  all CJK                                 1,412,288   → exclusion removes 91.6% of ALL CJK
+```
+
+🛑 **Excluding removes the CJK script from training almost entirely — and CJK
+sits inside the one stratum where §50.3 shows v7 beating the lexical baseline.
+That is trading the evidence for the hygiene.**
+
+✅ **And the exclusion is unnecessary**, which is the better outcome: training
+data is generated FROM the ES `toponyms` index (`generator.py:190`) and the
+pipeline order is rebuild-toponyms → precompute-phonetics → generate-training-data
+→ train. **The re-extract necessarily precedes training-data generation**, so
+this was a sequencing question wearing an exclusion's clothes.
+
+**Adopted rule: no training-data generation from an index predating the
+`c37d927` re-extract.** If circumstances ever force it, exclude for that run
+only, record it in the run metadata, and treat the resulting non-Latin numbers
+as not comparable with §50's baseline.
+
+⚠ Two smaller reasons pointing the same way: exclusion also discards the ~10.7%
+of `zh`+CJK that are **correct**, and a `(lang=zh, script=CJK)` predicate cannot
+catch `zh` rows mislabelled some other way — **so it is not even a complete
+exclusion.**
+
+### 51.5 🛑 TWO OF THE FOUR TOKENISER FILES WERE NEVER GATED (`93de316`)
+
+`verify_tokeniser` (Gate 4, before the GPU) hashed `phonetics/tokenise.py`
+against `hf/inference.py`. `04` asked **which partial the gate cannot see**,
+rather than which partial is most likely:
+
+```
+phonetics/tokenise.py                 block=1 stamp=1   GATED
+hf/inference.py                       block=1 stamp=1   GATED
+phonetics/vocab/char_vocab.py         block=0 stamp=0   *** NOT GATED ***
+phonetics/utils/script_detection.py   block=0 stamp=0   *** NOT GATED ***
+```
+
+**The four files receive DIFFERENT SUBSETS of the patch** — `char_vocab.py` gets
+casefold+NFKC only, `script_detection.py` the fold-before-counting line only —
+**so a partial updating the gated pair and missing these two passed every check
+that existed.** Fixed: whole-file sha256 of both, in the pin and verified at the
+reader. **Falsified, not asserted** — with only the comparison loop removed and
+everything else intact, both new tests fail; 63 pass with it.
+
+⚠ **`script_detection.py` is the costlier half to drop**: D5 changes script
+ASSIGNMENT, consumed well outside the tokeniser (`rebuild_toponyms_index`,
+`index_namespace`, `inference/search`, `ipa/routes`), so it moves what
+`is_script_mismatch` accepts — which already drops declared romanisations (#250).
+
+🛑 **And the worst partial is not code at all: it is a partially re-embedded
+corpus.** 88.86% of names change under D-A. **Mixed tokenisation regimes inside
+one KNN space is strictly worse than applying nothing** — with none, every vector
+is consistently old and comparisons stay self-consistent; with half, cosines
+cross regimes and *every one of them is still a plausible number.* **Check the
+re-embed's resumability BEFORE it starts, not at 40%.**
+
+⚠ **A cross-repo partial no gate here can catch:** `whg3` and
+`London_Customs_Accounts` both vendor the canonical block. `whg3` records a
+second witness (`2fe733d0c`); `London_Customs_Accounts` is unverified. Per the
+block's own comment, a copy checking only its own stamp detects local
+modification and **never upstream movement.**
+
+### 51.6 ✅ MY PRE-PUSH HOOK GUARDED EVERY REF — fixed
+
+It discarded both ref fields, so it refused `v8-tokeniser` as readily as `main`.
+🛑 **That is worse than not guarding it: it makes `ALLOW_TOKENISER_DEPLOY=1` a
+routine gesture for a non-deploy act, and the next person to type it is doing
+something ordinary.** Now `case "$_remoteref" in refs/heads/main)`. Proven three
+ways — main+`47725a9` refuses, `v8-tokeniser`+`47725a9` passes, main+HEAD passes.
+
+✅ **And the branch is unnecessary anyway:** `47725a9` is reachable from
+`origin/main` because `e4dc45f` is a *revert*, whose parent chain contains it.
+**Pinned by a pushed ref, so immune to gc** — no branch to remember, no 90-day
+reflog horizon.
+
+⚠ **Push is not the only route to production.** The gateway runs from the shared
+tree, so **checking out** any branch in `/vast/ishi/elastic` makes it live on the
+next restart. The hook guards the watchdog's `git pull`; **it cannot guard a
+checkout.**
+
+### 51.7 🛑 THE ACTUAL BLOCKER IS THE ONE NOBODY LISTED
+
+`crc0`–`crc3` are **all down** and have been for hours; `pitt` is up. **Nothing
+can be submitted at all.** Three sessions independently reported "blocked" for
+three different reasons while the real constraint was shared and environmental.
+A wake-up is armed rather than promised, per the standing rule that discrete
+polls arm nothing.
