@@ -588,6 +588,25 @@ def run_index(args):
     total_rows = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
     logger.info(f"Total toponyms in database: {total_rows:,}")
 
+    # ⚠ READER-SIDE WITNESS. Count what the SOURCE can supply, before writing.
+    #
+    # The completion check below compares the index against this writer's own
+    # tally — two witnesses on the same side of the boundary, which agree even
+    # when every document is missing a field. `panphon_embedding` is derived
+    # from the DuckDB's `panphon_features`, so if that column is emptied
+    # upstream (it legitimately was, from 34,141,080 to 424,520, when the IPA
+    # store was corrected) this stage writes the field on 1.2% of the documents
+    # it should and every count still agrees.
+    #
+    # So take the source counts here and assert against them after the write.
+    source_counts = conn.execute(
+        "SELECT count(*) FILTER (WHERE ipa IS NOT NULL), "
+        "       count(*) FILTER (WHERE panphon_features IS NOT NULL) "
+        "FROM toponyms").fetchone()
+    src_ipa, src_panphon = source_counts
+    logger.info(f"Source supplies: ipa {src_ipa:,}, "
+                f"panphon_features {src_panphon:,} of {total_rows:,}")
+
     indexed_at = datetime.now(timezone.utc).isoformat()
 
     def generate_actions():
@@ -779,7 +798,26 @@ def run_index(args):
     # from Elasticsearch after the refresh, not the writer's own tally.
     indexed = es.count(index=args.index)["count"]
     logger.info(f"Index reports {indexed:,} documents")
-    if error_count or indexed != success_count:
+
+    # Reader-side comparison: what the index HOLDS against what the source
+    # COULD SUPPLY. A field silently collapsing upstream is invisible to any
+    # count taken on the writer's side.
+    got_ipa = es.count(index=args.index,
+                       query={"exists": {"field": "ipa"}})["count"]
+    got_pan = es.count(index=args.index,
+                       query={"exists": {"field": "panphon_embedding"}})["count"]
+    logger.info(f"Carried forward: ipa {got_ipa:,} (source {src_ipa:,}), "
+                f"panphon_embedding {got_pan:,} (source {src_panphon:,})")
+    carried_short = (got_ipa != src_ipa) or (got_pan != src_panphon)
+    if carried_short:
+        logger.error(
+            f"CARRY-FORWARD SHORTFALL: ipa {got_ipa:,} vs source {src_ipa:,}; "
+            f"panphon_embedding {got_pan:,} vs source {src_panphon:,}. "
+            f"Either the derivation failed or the source column was emptied "
+            f"upstream. Do NOT promote this index."
+        )
+
+    if error_count or indexed != success_count or carried_short:
         raise SystemExit(
             f"REFUSING TO REPORT SUCCESS: {error_count:,} bulk errors; "
             f"index holds {indexed:,} documents against {success_count:,} "
