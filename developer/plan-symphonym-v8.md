@@ -8715,3 +8715,68 @@ entirely, which the hash alone reports as success.
 produced a plausible number that happened to be the number I was trying to
 change, and only a check against the DEPLOYED ARTEFACT — not against my
 expectation — separated 'the fix did not work' from 'the fix was not there.'"*
+
+## 49. ✅ §8 IS SOLVED — and every lexical figure today OVERSTATES the baseline
+
+**Population reproduced exactly**, by reading the corpus's stored
+`query_script`/`partner_script` instead of re-deriving them (§44.4):
+
+```
+100/script-pair over 291 pairs -> 8,713 queries   ✅ EXACTLY §8's 8,713
+                                 (was 448 pairs -> 9,609 under a re-derived script)
+```
+
+**With the population identical, v7 REPRODUCES §8 and lexical does NOT:**
+
+```
+              §8        8b        Δ
+v7   R@10   0.2942    0.2945    0.0003
+     R@200  0.4766    0.4815    0.0049     ← reproduces
+lev  R@10   0.3230    0.3753    0.0523
+     R@200  0.4768    0.5316    0.0548     ← does NOT
+```
+
+🛑 **THE ASYMMETRY IS THE DIAGNOSIS.** `retrieval.ranks_from_scores` is
+**pessimistic** — `(row > t).sum() + (row == t).sum()`, the target placed after
+every candidate scoring the same, **with a docstring saying why: optimistic tie
+handling reports a saturated scorer as a good one.** `recall_ceiling` computed
+`1 + (scores > target).sum()` — **optimistic.**
+
+✅ **And the mechanism PREDICTS the asymmetry rather than merely fitting it**,
+demonstrated on synthetic rows before spending a node:
+
+```
+cosine-like      (rare ties)   optimistic 501   pessimistic   501      1.0x
+levenshtein-like (heavy ties)  optimistic   1   pessimistic 2,474   2474x
+```
+
+**Cosines almost never tie, so v7 is unaffected. Normalised edit similarity over
+a 1,053,229-name haystack ties enormously.** *v7 matching and lexical missing is
+exactly what this convention difference must produce.*
+
+### 49.1 🛑 WHAT THIS RETRACTS — pending the corrected run
+
+**Every full-haystack lexical figure in §44 and §46 is optimistic and overstates
+romanised Levenshtein**, including *"lexical beats v7 at every k"*, the p50 rank
+of **32 against v7's 341**, and **both 2×2s** — `lev-only` was counted under a
+convention that flatters it, **so the union gain is probably smaller and v7's
+share of it larger.**
+
+⚠ **The DIRECTION is knowable in advance — pessimistic ranks can only move
+lexical DOWN. Whether the complementarity (§44.1) survives is NOT**, and `8b` is
+not guessing it. **Corrected curve, corrected 2×2, and an explicit statement of
+which earlier claims survive, to follow.**
+
+✅ **UNAFFECTED: the reranker (§41).** Its `+0.0153` and its recall gains were
+computed **inside v7's own pool with a single convention applied to both
+methods**, so they are internally consistent. **It is the full-haystack lexical
+retrieval numbers that move.**
+
+### 49.2 ⚠ THE BUG WAS A SECOND IMPLEMENTATION OF SOMETHING THE CODEBASE HAD
+
+Fixed by **calling the shared function** (`0ba5609`), not by correcting the
+private copy. 🛑 **Third instance in one module in one day** — re-deriving
+`script_script` instead of reading it (§44.4), the wrong-referent stamp (§47's
+`self_hash` note), and now a second rank convention.
+
+> **A second implementation is a second definition.**
