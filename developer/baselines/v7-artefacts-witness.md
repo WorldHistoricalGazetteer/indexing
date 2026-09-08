@@ -36,6 +36,45 @@ apparent, not real, and anyone reasoning "there are two checkpoints, so there is
 a spare" is wrong. Preserve by **copying to a new path**, never by relying on the
 second name.
 
+### 🛑 AND `final_model.pt` DENOTES DIFFERENT CONTENT ON THE TWO FILESYSTEMS
+
+**The obvious recovery installs the wrong model and every filename still looks
+right.** Verified independently, 8 Sep:
+
+```
+name              filesystem   sha256
+final_model.pt    /vast        f2493fd62a07afea…   <- what production LOADS
+phase3_best.pt    /vast        f2493fd62a07afea…   <- same inode as the above
+final_model.pt    /ix1         24c82b67310cf877…   <- a DIFFERENT MODEL
+phase3_best.pt    /ix1         f2493fd62a07afea…   <- the TRUE spare
+```
+
+✅ **A genuine independent spare exists** — `/ix1/…/v7/phase3_best.pt` is
+production's content at `links=1` on a different filesystem, so the recovery path
+is real and a protective copy into `/vast` is belt-and-braces rather than the only
+defence. `/ix1` also holds the full epoch series (`phase2_epoch5…50`,
+`phase3_epoch5…30`) that `/vast` does not.
+
+🛑 **RESTORE FROM `/ix1/…/v7/phase3_best.pt`, AND VERIFY BY HASH, NEVER BY NAME.**
+Copying `/ix1/…/v7/final_model.pt` — the obvious move, matching name to name —
+silently installs `24c82b67…`, which is not the model production has been serving
+or the one every measurement in this plan was taken against.
+
+⚠ **`hf/` points at the shared inode, so the exposure is production and not an
+archive.** `hf/final_model.pt` is a symlink to `/vast/…/checkpoints/v7/final_model.pt`;
+`torch.save` truncates through both the symlink and the hardlink, so a write to
+the *deployed* path destroys the weights the gateway is serving.
+
+✅ **Checked and clear: `hf/vocab`.** It symlinks to `/vast/…/data/v7/vocab`,
+which is a plain directory (`links=2` is the normal self-plus-parent count) whose
+three files are all `links=1`. **No hardlink trap on the vocabulary.**
+
+⚠ **The near-miss is part of the finding.** `indexing-04` first measured
+`/ix1/…/checkpoints/v7` — three distinct inodes, all `links=1`, three different
+hashes — and was one report away from reporting the hardlink finding as false.
+**Same directory name, two filesystems, different structure**, and only one of
+them is what production resolves to.
+
 ## 2. The evaluation corpus
 
 ```
@@ -78,3 +117,19 @@ next run materialises it; that cannot run until a login node returns.
 **So the rule is: `checkpoints/v7/` and `symphonym-eval/20260905T2000Z/` must
 survive until §50's per-pair ranks have been materialised. After that they are
 merely valuable.**
+
+
+## 4. The generalisation this file exists to serve
+
+Two rules, both earned today rather than assumed:
+
+* **Ask every irreversible step what measurement it makes impossible, before it
+  runs.** The answer is usually capturable cheaply and read-only — often exactly
+  when everything else is blocked.
+* 🛑 **Ask every identifier whether it denotes ONE object.** Four instances in a
+  day where it did not: two names for one inode (`final_model.pt` /
+  `phase3_best.pt` on `/vast`); one name for two models (`final_model.pt` across
+  `/vast` and `/ix1`); two computations for one population (`stratum_of` and
+  `is_control`, §54.1); and one directory name for two different structures
+  (`checkpoints/v7` on the two filesystems). **`indexing-04`'s formulation, and
+  it is the sibling of the first rule rather than a separate lesson.**
