@@ -143,6 +143,87 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     return 0
 
 
+def inspect(inventory_db: str, out: Optional[str]) -> int:
+    """Report everything a CTAS + swap must reproduce — and what it cannot.
+
+    🛑 A CTAS LOSES WHAT IT DOES NOT SELECT. `CREATE TABLE t AS SELECT ...`
+    reproduces columns and values and silently drops PRIMARY KEY, NOT NULL,
+    UNIQUE and every index. The rewritten inventory would hold the right rows
+    with fewer guarantees, and nothing downstream would notice until a duplicate
+    or a null arrived months later. So the merge must recreate them explicitly —
+    which means knowing them, not assuming them.
+
+    ⚠ This exists because writing the merge against a GUESSED schema is the same
+    fault as the rest of this campaign: reasoning correctly about a shape the
+    store does not have. Run it, read it, then write the merge.
+    """
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        con.execute(f"ATTACH '{inventory_db}' AS inv (READ_ONLY)")
+    except Exception as exc:
+        raise SystemExit(f"cannot attach {inventory_db!r} read-only: {exc}") from exc
+
+    rep: dict = {"database": inventory_db}
+
+    tables = con.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_catalog = 'inv' AND table_schema = 'main'
+        ORDER BY table_name
+    """).fetchall()
+    rep["tables"] = {}
+    print(f"tables in {inventory_db}:")
+    for (t,) in tables:
+        n = con.execute(f'SELECT count(*) FROM inv.main."{t}"').fetchone()[0]
+        cols = con.execute("""
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_catalog='inv' AND table_schema='main' AND table_name=?
+            ORDER BY ordinal_position
+        """, [t]).fetchall()
+        rep["tables"][t] = {"rows": n,
+                            "columns": [{"name": c, "type": d, "nullable": nl}
+                                        for c, d, nl in cols]}
+        print(f"  {t:<24} {n:>14,} rows, {len(cols)} columns")
+        for c, d, nl in cols:
+            print(f"      {c:<24} {d:<28} {'NULL' if nl == 'YES' else 'NOT NULL'}")
+
+    # The DDL DuckDB itself would emit — the only faithful source for the parts
+    # information_schema does not carry.
+    for view, key in (("duckdb_tables()", "table_sql"),
+                      ("duckdb_indexes()", "indexes"),
+                      ("duckdb_constraints()", "constraints")):
+        try:
+            rows = con.execute(f"SELECT * FROM {view}").fetchdf()
+            rows = rows[rows.get("database_name", "inv") == "inv"] if "database_name" in rows else rows
+            rep[key] = json.loads(rows.to_json(orient="records"))
+            print(f"\n--- {view} ---")
+            print(rows.to_string(max_colwidth=110))
+        except Exception as exc:
+            rep[key] = f"UNAVAILABLE: {exc}"
+            print(f"\n--- {view} --- UNAVAILABLE: {exc}")
+
+    # The column the repopulation touches, stated as it is now.
+    cur = con.execute("""
+        SELECT count(*) AS rows,
+               count(ipa) FILTER (ipa <> '') AS with_ipa,
+               count(panphon_features) AS with_features
+        FROM inv.toponyms
+    """).fetchone()
+    rep["toponyms_now"] = {"rows": cur[0], "with_ipa": cur[1],
+                           "with_features": cur[2]}
+    print(f"\ntoponyms: {cur[0]:,} rows · ipa {cur[1]:,} · panphon_features {cur[2]:,}")
+    print("⚠ with_features is the POST-BACKFILL figure. The run replaces and "
+          "extends it; it does not restore the 34,141,080.")
+    con.close()
+
+    if out:
+        Path(out).write_text(json.dumps(rep, indent=2, default=str))
+        print(f"\n-> {out}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -151,9 +232,14 @@ def main() -> int:
     b.add_argument("--sample", type=int, default=200_000)
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--out")
+    i = sub.add_parser("inspect", help="what a CTAS + swap must reproduce")
+    i.add_argument("--inventory-db", required=True)
+    i.add_argument("--out")
     a = ap.parse_args()
     if a.cmd == "benchmark":
         return benchmark(a.inventory_db, a.sample, a.seed, a.out)
+    if a.cmd == "inspect":
+        return inspect(a.inventory_db, a.out)
     return 1
 
 
