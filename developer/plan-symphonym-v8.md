@@ -7823,3 +7823,59 @@ OPEN   re-extraction for the 199,572 already stored (the fix is forward-only)
 OPEN   M2 — gated on 11175185 succeeding AND promoting
 NOTED  backfill_admin_levels.py settled as dead; nothing to fix
 ```
+
+## 36. ✅ RECLAIM DONE, AND THE PROMOTION FALLBACK IS SETTLED IN ADVANCE
+
+**`/vast` 124 → 237 GB.** Twins verified at `121396801536` immediately before
+removal, `fuser` clear, `/ix1` twin intact after. **ES's own figure agrees:
+`236.5gb avail, 76%`** — the low watermark (153.6 GB) is clear with 83 GB margin.
+
+⚠ **The first `df` after the `rm` still read 124 GB — stale NFS attribute cache.**
+A re-read five seconds later gave 237 GB. **Do not trust a single `df`
+immediately after a large delete on that mount**; this session nearly reported
+the reclaim as having failed.
+
+### 36.1 🛑 THE FALLBACK IS SMALLER THAN ASSUMED — `wdgn` AND `whg` ARE LIVE ALIASES
+
+The full alias list, not the truncated one previously consulted:
+
+```
+wdgn   -> wdgn_20240316     ← LIVE ALIAS, 5 GB
+whg    -> whg_2025_11_12    ← LIVE ALIAS, 1 GB
+pub    -> pub_v2 · cluster_state -> cluster_state_20260325 · types -> types_20260404_150351
+```
+
+**And `scripts/gateway_watchdog.sh:6` states it outright:** *"Django reaches the
+legacy `whg,pub,wdgn` indexes THROUGH the gateway."* ✅ **So the recollection that
+deleting `wdgn` once broke the Reconciliation API is confirmed by the alias, not
+merely remembered.** Neither of those 6 GB is available.
+
+### 36.2 ✅ `boundaries` IS GENUINE HEADROOM — 21 GB, established BEFORE it is needed
+
+```
+alias                none
+writer               backfill_admin_levels.py — DEAD (§34.3)
+readers              none; the two gateway hits are PROSE in comments about
+                     geometry boundaries, not the index
+snapshots            3 × SUCCESS in staging_repo (2026-04-07, -07, -08)
+```
+
+✅ **Orphaned and recoverable.** ⚠ **But the snapshots are April**, so deletion is
+recoverable *to the April state*, not to today's — and nothing establishes
+whether it has been written since. **Adequate for a reclaim, not for an
+assumption that nothing would be lost.**
+
+**Not deleted: it is not needed.** The point was to make it a *known option*
+rather than a mid-promotion scramble.
+
+### 36.3 THE PROMOTION ARITHMETIC, CORRECTED
+
+```
+now                              237 GB
+after restoring ~131 GB         ~106 GB    ← below the low watermark
+after deleting old toponyms     ~155 GB    ← clears by ~1.4 GB
+plus boundaries                 ~176 GB    ← comfortable
+```
+
+⚠ **1.4 GB is not headroom, it is a coincidence.** `boundaries` should be
+settled — as it now is — before the promotion rather than during it.
