@@ -53,6 +53,7 @@ def _load(p: Path):
 
 
 def script_of(s: str) -> str:
+    """Derive a script from the string. FALLBACK ONLY — see `scripts_for`."""
     for ch in s:
         if ch.isalpha():
             try:
@@ -61,6 +62,27 @@ def script_of(s: str) -> str:
                 continue
             return nm.split()[0]
     return "UNKNOWN"
+
+
+def scripts_for(row: dict) -> tuple[str, str]:
+    """Prefer the corpus's OWN stored scripts over re-deriving them.
+
+    🛑 THIS IS WHY A BALANCED SAMPLE HERE WAS NOT §8's BALANCED SAMPLE.
+    `rank_curve` reads `query_script`/`partner_script` as STORED FIELDS on the
+    corpus row (`corpus.py`), and balances on those. This module was recomputing
+    them from the string with `script_of` — first alphabetic character's Unicode
+    name. Same 100-per-pair rule over a DIFFERENT pair partition therefore gives
+    a different population: 9,609 queries against §8's 8,713.
+
+    ⚠ Re-deriving a value the artefact already carries is not a neutral
+    convenience. It silently forks the grouping, and every stratum and every
+    balanced draw downstream then answers a question nobody asked.
+    """
+    qs = row.get("query_script")
+    ps = row.get("partner_script")
+    if qs and ps:
+        return qs, ps
+    return script_of(row["query"]), script_of(row["partner"])
 
 
 def stratum_of(qs: str, cs: str) -> str:
@@ -111,7 +133,7 @@ def main() -> int:
         from collections import defaultdict
         groups = defaultdict(list)
         for r in usable:
-            groups[(script_of(r["query"]), script_of(r["partner"]))].append(r)
+            groups[scripts_for(r)].append(r)
         test = []
         for pair, items in sorted(groups.items()):
             test.extend(items if len(items) <= a.balanced
@@ -119,6 +141,19 @@ def main() -> int:
         rng.shuffle(test)
         print(f"BALANCED sample: {a.balanced}/script-pair over "
               f"{len(groups)} pairs -> {len(test):,} queries", flush=True)
+        # ➡ FALSIFIABLE: §8 reports 8,713 queries at 100/pair on this corpus.
+        # Using the corpus's OWN stored scripts should reproduce that exactly.
+        # If it does, the population is matched and any remaining metric gap is
+        # a HARNESS difference, not a sampling one. If it does not, the stored
+        # scripts are not the whole explanation and this says so rather than
+        # letting a near-miss pass as a match.
+        if a.balanced == 100:
+            if len(test) == 8713:
+                print("   ✅ EXACTLY §8's 8,713 — population reproduced.", flush=True)
+            else:
+                print(f"   🛑 §8 reports 8,713 at 100/pair; this is {len(test):,}. "
+                      f"The stored scripts are NOT the whole difference — do not "
+                      f"read the numbers below as §8's population.", flush=True)
     else:
         # ⚠ SAME shuffle, seed, and slice as reranker.py, so "the held-out test
         # split" means the same 3,000 queries there and here. Any divergence in
@@ -131,7 +166,7 @@ def main() -> int:
     print(f"haystack {len(hay_names):,} names — rank is over ALL of them", flush=True)
 
     targets = np.array([name_to_idx[r["partner"]] for r in test], dtype=np.int64)
-    strata = [stratum_of(script_of(r["query"]), script_of(r["partner"])) for r in test]
+    strata = [stratum_of(*scripts_for(r)) for r in test]
 
     # ---------- v7 ----------
     sys.path.insert(0, str(Path(a.model_dir).resolve()))
