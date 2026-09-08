@@ -8016,3 +8016,78 @@ OPEN   re-extraction for the 199,572 already-stored junk tags (the fix is forwar
 OPEN   M2, on the corrected read path and a new acceptance criterion
 DONE   filter committed 96b0479; backfill_admin_levels.py settled as dead
 ```
+
+## 40. ✅ D-A MEASURED OVER THE REAL CORPUS — safe, and the per-script cut earned its keep
+
+`04`, over all 73,479,069 names. **SG approved D-0; this is the measurement that
+had to precede it.**
+
+```
+changed by NFKC          142,945    0.1945%
+changed by casefold   65,293,885   88.8605%
+changed by BOTH       65,374,253   88.9699%
+```
+
+⚠ **89% is not the risk and is trivially true of any corpus with capitals.** The
+risk is collisions:
+
+```
+distinct raw                       42,015,621
+distinct after NFKC+casefold       41,247,130
+total merged                          768,491   1.83% of distinct
+  PURE CASE VARIANTS (lower() merges them too)  758,283
+  NOT case variants (only casefold merges)       10,208   0.02474%
+```
+
+✅ **The discriminator is the good part: a merge `lower()` also makes is an
+intended case-variant merge; a merge only `casefold()` makes is something else.**
+That splits 768,491 into what was wanted and what was feared, **without needing a
+judgement about any individual pair.**
+
+**Every non-case merge sampled is German ß** — `ackermannstrasse`/`ackermannstraße`,
+`altlussheim`/`altlußheim`, `anschluss`/`anschluß`. **The same place spelled two
+ways**, so arguably *correct* merges rather than damage.
+
+### 40.1 ✅ THE TURKISH TRAP DOESN'T MATERIALISE — with a mechanism and a trigger
+
+520,930 names contain `İ` or `ı`, and **no Turkish case appears among the
+non-case merges** — because Python's `casefold()` and `lower()` treat them
+identically. **The dotted/dotless hazard is a LOCALE-AWARE casing problem, and
+locale-aware casing is not in play.** ⚠ **It returns if anyone introduces
+`str.lower(locale)`.** A negative with a mechanism *and* a trigger.
+
+### 40.2 ➡ THAI IS AN NFKC OUTLIER AT 14.58% — 75× THE CORPUS RATE
+
+```
+script        names        NFKC%    casefold%
+LATIN      60,920,805     0.0482%    99.5238%
+THAI          261,989    14.5792%     0.1699%   ← 75x
+ARMENIAN      165,304     5.2655%     99.6685%
+KATAKANA      358,111     2.8128%      1.5051%
+CJK         3,240,684     0.5603%      0.6774%
+```
+
+🛑 **A single average would have licensed "NFKC barely does anything" and been
+wrong for an entire script.** ⚠ **Same failure as ranking rule work by `rows NOT
+ok` (§26.1): a true aggregate that is false of every stratum that matters.**
+
+### 40.3 🛑 D-A AND D5 INTERACT — a demonstrated interaction, not a preference
+
+`04` found that **`detect_script('Ｔ')` (U+FF34, fullwidth Latin) returns
+`OTHER`, not `LATIN`** — the same defect class as `ﬁ` → `ARMENIAN`, **and NFKC
+fixes both by folding them.**
+
+**So NFKC changes script ASSIGNMENT, not merely characters.** D-A cannot land
+without moving D5 whether or not anyone intends it. **The plan argued they
+*should* go together; this shows they *must*.**
+
+### 40.4 ⚠ THE STATED LIMIT, AND THE PASS IT JUSTIFIES
+
+The counts are exact; **the examples are from a bounded sample and every one
+begins a–b.** So ß is the only cause *visible in that range*, not the only cause.
+
+**Exhaustive pass commissioned, with a falsifiable prediction recorded before the
+result: it will NOT be all ß.** The casefold-only folds that are not ß mostly
+cannot appear in a–b — **Greek final sigma `ς`/`σ`** (casefold merges, `lower()`
+does not) is the strongest candidate, then Cherokee and the Armenian ligatures.
+**Wanted back: the cause distribution, not more examples.**
