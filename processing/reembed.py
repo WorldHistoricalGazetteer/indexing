@@ -1344,34 +1344,100 @@ def _git_commit(run_dir: Path | None = None) -> str:
 # Phase: apply  (PITT — writes prod ES)
 # ---------------------------------------------------------------------------
 
-def _verify_written(es, index: str, sample_ids, rows) -> str:
+def _verify_written(es, index: str, sample_ids, rows) -> dict:
     """Read a sample straight back out of ES and compare it with what we sent.
 
     A bulk response saying `ok` means Elasticsearch accepted the request, not
     that the vector in the index is the one intended — and this pipeline exists
     because a stored vector was not what anyone assumed. So the claim is checked
     at the reader.
+
+    🛑 RETURNS A DICT, NOT A SENTENCE. It used to return a string that was
+    printed and filed in `ledger.json` and examined by no code path: a run in
+    which every vector came back wrong printed "0 of 3,000 match, 3,000
+    MISMATCH" and exited 0, with that string recorded as the run's
+    `read_back_check`. Gate 1's own docstring, one screen above, says it "raises
+    rather than returning a verdict nobody has to read" — and this was precisely
+    such a verdict. Everything hardened in this pipeline is a PRODUCER; the
+    read-back is the only CONSUMER, and it was the one component whose output
+    nothing acted on. Found by indexing-04 auditing the instrument I had been
+    taking on faith all day.
+
+    ⚠ `missing` used to conflate two unrelated defects: the document has no
+    embedding in ES (a real write failure, or `_source` excluding the field) and
+    we hold no expected vector for that id (caller bookkeeping). Both printed as
+    "unreadable", which is why "0 of 20 match, 20 unreadable" on a CORRECT write
+    of 100,960 documents cost an hour — the label could not say which it was.
     """
     if not sample_ids:
-        return "no sample"
+        return {"sampled": 0, "matched": 0, "mismatched": 0,
+                "no_vector": 0, "no_expected": 0, "not_returned": 0,
+                "summary": "no sample"}
     wanted = dict(rows)
     try:
         got = es.mget(index=index, ids=list(sample_ids), _source=["embedding"])
-    except Exception as exc:                       # never fail the run on the check
-        return f"could not read back ({exc})"
-    matched = mismatched = missing = 0
+    except Exception as exc:                       # never fail the check itself
+        return {"sampled": len(sample_ids), "error": str(exc),
+                "summary": f"could not read back ({exc})"}
+    matched = mismatched = no_vector = no_expected = 0
     for doc in got.get("docs", []):
         vec = (doc.get("_source") or {}).get("embedding")
         expected = wanted.get(doc.get("_id"))
-        if vec is None or expected is None:
-            missing += 1
+        if expected is None:
+            no_expected += 1          # our bookkeeping, not the index's content
+        elif vec is None:
+            no_vector += 1            # the document really has no embedding
         elif list(vec) == list(expected):
             matched += 1
         else:
             mismatched += 1
-    return (f"{matched} of {len(sample_ids)} match"
-            + (f", {mismatched} MISMATCH" if mismatched else "")
-            + (f", {missing} unreadable" if missing else ""))
+    # A truncated mget under load is exactly what a 65M-document run creates,
+    # and it otherwise reads as a partial match rather than an incomplete read.
+    not_returned = len(sample_ids) - len(got.get("docs", []))
+    summary = (f"{matched} of {len(sample_ids)} match"
+               + (f", {mismatched} MISMATCH" if mismatched else "")
+               + (f", {no_vector} with NO EMBEDDING" if no_vector else "")
+               + (f", {no_expected} ids we held no expected vector for "
+                  f"(sample/rows disagree)" if no_expected else "")
+               + (f", {not_returned} NOT RETURNED by mget" if not_returned else ""))
+    return {"sampled": len(sample_ids), "matched": matched,
+            "mismatched": mismatched, "no_vector": no_vector,
+            "no_expected": no_expected, "not_returned": not_returned,
+            "summary": summary}
+
+
+def enforce_read_back(result: dict, label: str, wrote_this_run: bool) -> None:
+    """Gate 5. Raises, because the write is the irreversible step.
+
+    The distinction that matters is whether THIS invocation wrote anything. A
+    fully-resumed run legitimately has no sample — every shard's marker existed
+    and the loop skipped them all — and since resuming is now a routine path,
+    that is the normal ending for the last invocation of a campaign, i.e. the
+    one whose ledger is the record. ⚠ "This run verified nothing because it
+    wrote nothing" and "this run wrote and took no sample" must not both print
+    as a bland "no sample".
+    """
+    if result.get("error"):
+        raise SystemExit(
+            f"ABORT: the {label} read-back could not run ({result['error']}). "
+            f"An unverified write of this size is not a completed one.")
+    if not result.get("sampled"):
+        if wrote_this_run:
+            raise SystemExit(
+                f"ABORT: {label} wrote documents this run and took NO read-back "
+                f"sample. That is a bug in the sampler, not an empty result.")
+        print(f"[apply] {label}: this invocation wrote nothing (fully resumed), "
+              f"so it verified nothing. That is expected — but this ledger is "
+              f"NOT evidence the corpus is correct; the ledgers of the "
+              f"invocations that did the writing are.")
+        return
+    bad = (result["mismatched"] + result["no_vector"]
+           + result["no_expected"] + result["not_returned"])
+    if bad:
+        raise SystemExit(
+            f"ABORT: {label} read-back — {result['summary']}. The write is the "
+            f"one irreversible step here, so this exits non-zero rather than "
+            f"printing a verdict into a ledger nobody reads.")
 
 
 def cmd_apply(args) -> None:
@@ -1632,9 +1698,11 @@ def cmd_apply(args) -> None:
 
         if args.canary and ok >= args.canary:
             es.indices.refresh(index=args.index)
+            canary_rows = verify_sample or rows[:20]
             verified = _verify_written(es, args.index,
-                                       [t for t, _ in (verify_sample or rows[:20])],
-                                       verify_sample or rows[:20])
+                                       [t for t, _ in canary_rows], canary_rows)
+            enforce_read_back(verified, "canary", wrote_this_run=True)
+            verified = verified["summary"]
             print(f"[apply] CANARY: stopped after {ok:,} documents "
                   f"({i + 1} shard(s)). Read-back check: {verified}. "
                   f"Re-run without --canary to continue; completed shards will "
@@ -1652,15 +1720,18 @@ def cmd_apply(args) -> None:
     # it still cost an hour of doubt about a correct write.
     readback = _verify_written(es, args.index, [t for t, _ in verify_sample],
                                verify_sample)
+    enforce_read_back(readback, "main sample", wrote_this_run=bool(ok or errs))
     print(f"[apply] read-back check on {len(verify_sample)} documents "
           f"across {len({t for t, _ in verify_sample})} ids from "
-          f"{len(metas)} shards: {readback}")
+          f"{len(metas)} shards: {readback['summary']}")
     d5_readback = None
     if d5_sample:
         d5_readback = _verify_written(es, args.index, [t for t, _ in d5_sample],
                                       d5_sample)
+        enforce_read_back(d5_readback, "D5 stratified sample",
+                          wrote_this_run=True)
         print(f"[apply] D5 stratified read-back on {len(d5_sample)} "
-              f"compatibility-only documents: {d5_readback}")
+              f"compatibility-only documents: {d5_readback['summary']}")
     else:
         # Said out loud rather than left as an absent line, because "no D5 rows"
         # and "D5 never applied" produce the same silence.

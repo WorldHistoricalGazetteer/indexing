@@ -973,12 +973,15 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         rows = [("a@en", [1, 2, 3]), ("b@en", [4, 5, 6])]
         good = reembed._verify_written(FakeES({"a@en": [1, 2, 3], "b@en": [4, 5, 6]}),
                                        "toponyms", ["a@en", "b@en"], rows)
-        self.assertIn("2 of 2 match", good)
-        self.assertNotIn("MISMATCH", good)
+        self.assertIn("2 of 2 match", good["summary"])
+        self.assertNotIn("MISMATCH", good["summary"])
 
         bad = reembed._verify_written(FakeES({"a@en": [1, 2, 3], "b@en": [9, 9, 9]}),
                                       "toponyms", ["a@en", "b@en"], rows)
-        self.assertIn("MISMATCH", bad)
+        self.assertIn("MISMATCH", bad["summary"])
+        # and now it STOPS the run rather than filing the sentence
+        with self.assertRaises(SystemExit):
+            reembed.enforce_read_back(bad, "test", wrote_this_run=True)
 
     def test_read_back_compares_ids_against_their_own_vectors(self):
         """The bug this replaces: sample ids from one shard, expected vectors
@@ -998,19 +1001,79 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         # ids present in `rows`: verifiable
         rows = [("a@en", [1, 2, 3]), ("b@en", [1, 2, 3])]
         self.assertIn("2 of 2 match",
-                      reembed._verify_written(FakeES(), "t", ["a@en", "b@en"], rows))
-        # ids absent from `rows`: reported unreadable, NOT as a match
+                      reembed._verify_written(FakeES(), "t", ["a@en", "b@en"],
+                                              rows)["summary"])
+        # ids absent from `rows`: NOT a match — and now named as OUR bookkeeping
+        # bug rather than merged with "the document has no embedding". Both used
+        # to print as "unreadable", which is why the incident above cost an hour:
+        # the label could not say which of the two it was.
         out = reembed._verify_written(FakeES(), "t", ["zz@en"], rows)
-        self.assertIn("unreadable", out)
-        self.assertNotIn("1 of 1 match", out)
+        self.assertEqual(out["no_expected"], 1)
+        self.assertEqual(out["no_vector"], 0)
+        self.assertIn("sample/rows disagree", out["summary"])
+        self.assertNotIn("1 of 1 match", out["summary"])
 
-    def test_read_back_never_fails_the_run_on_its_own_error(self):
+    def test_a_document_with_no_embedding_is_not_the_same_as_an_unknown_id(self):
+        class FakeES:
+            def mget(self, index, ids, _source):
+                return {"docs": [{"_id": i, "_source": {}} for i in ids]}
+
+        out = reembed._verify_written(FakeES(), "t", ["a@en"], [("a@en", [1, 2])])
+        self.assertEqual(out["no_vector"], 1)
+        self.assertEqual(out["no_expected"], 0)
+        self.assertIn("NO EMBEDDING", out["summary"])
+
+    def test_a_short_mget_is_named_rather_than_read_as_a_partial_match(self):
+        """A truncated mget under load is exactly what a 65M-document run
+        creates, and it otherwise reads as a partial match."""
+
+        class FakeES:
+            def mget(self, index, ids, _source):
+                return {"docs": [{"_id": ids[0], "_source": {"embedding": [1]}}]}
+
+        out = reembed._verify_written(FakeES(), "t", ["a@en", "b@en"],
+                                      [("a@en", [1]), ("b@en", [1])])
+        self.assertEqual(out["not_returned"], 1)
+        self.assertIn("NOT RETURNED", out["summary"])
+
+    def test_the_CHECKER_failing_now_stops_the_run_TOO(self):
+        """⚠ THIS REVERSES A DELIBERATE EARLIER DECISION, on purpose.
+
+        The old contract was "never fail the run on the check's own error", on
+        the reasoning that a transient ES hiccup should not fail a 20-hour job
+        that wrote correctly. That reasoning is still sound about the WRITE —
+        and it is the wrong conclusion about the EXIT CODE, because the write is
+        irreversible and already done: aborting cannot undo it, it can only
+        signal that nobody verified it. Exiting 0 tells downstream automation
+        the corpus is good on the strength of a check that did not run.
+
+        So the error is kept out of `_verify_written` (it still returns rather
+        than raising, so the caller decides) and the decision is made once, in
+        `enforce_read_back`, where every other verdict is enforced. The message
+        says the write may well be fine and the CHECK did not run — a re-read is
+        idempotent, so it can simply be repeated.
+        """
         class BrokenES:
             def mget(self, **kw):
                 raise RuntimeError("cluster busy")
 
         out = reembed._verify_written(BrokenES(), "toponyms", ["a@en"], [("a@en", [1])])
-        self.assertIn("could not read back", out)
+        self.assertIn("could not read back", out["summary"])
+        self.assertEqual(out["error"], "cluster busy")
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.enforce_read_back(out, "main sample", wrote_this_run=True)
+        self.assertIn("could not run", str(ctx.exception))
+
+    def test_a_fully_resumed_run_says_it_verified_NOTHING(self):
+        """"No sample because we resumed" and "no sample because the sampler is
+        broken" must not both print as a bland "no sample". Resuming is now a
+        routine path, so the first is the normal ending for the LAST invocation
+        of a campaign — the one whose ledger is the record."""
+        empty = {"sampled": 0, "summary": "no sample"}
+        reembed.enforce_read_back(empty, "main sample", wrote_this_run=False)
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.enforce_read_back(empty, "main sample", wrote_this_run=True)
+        self.assertIn("bug in the sampler", str(ctx.exception))
 
     def test_a_missing_export_manifest_aborts(self):
         (self.dir / "export_manifest.json").unlink()
