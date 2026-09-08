@@ -9287,3 +9287,124 @@ recorded and then not used.
 ✅ **The scripts, not these plan sections, are the artefact of record.** A plan
 section asserts what we learned; **a preflight assertion fails the job if we stop
 being right.**
+
+## 54. 🛑 THREE GUARDS THAT COULD NOT FAIL — found in the guards written today
+
+Every item here is a defect in something added within the last few hours, which
+is the point: **the rate of "a check that cannot fail" did not drop when we
+started looking for them.** Each was found by a peer testing the check itself
+rather than the thing it checks.
+
+### 54.1 🛑 A PINNING TEST WHOSE CORPUS COULD NOT DISAGREE (`d72c332`)
+
+§52.2 pinned `stratum_of(...) in CONTROL_STRATA == is_control(...)` and I argued
+from it. **9 of 22,000 real toponyms disagree** — all Burmese, Gujarati, Bengali,
+where combining marks, viramas and asat characters push the non-alphabetic share
+past the 0.5 guard `is_control` owned **privately** and `stratum_of` never had.
+
+```
+'အရှေ့တောင်ရပ်ကွက်'  OTHER      0.53      stratum=control   is_control=False
+'બિક્કાવોલું'         GUJARATI   0.55      stratum=control   is_control=False
+'কারেয়াকু'           BENGALI    0.56      stratum=control   is_control=False
+```
+
+⚠ **The test passed throughout, because its fixtures contained no name of that
+shape.** ✅ Fixed by making `is_control` DERIVE from `stratum_of` — one
+computation, not two agreeing by inspection — which makes the equivalence test
+**tautological**, so it now says so in its own docstring and a behavioural test
+over the disagreeing rows does the real work.
+
+🛑 **AND THE NEW TEST'S FIXTURE GUARD FIRED IMMEDIATELY, ON ME.** I transcribed
+the names as escape sequences, truncated them, and the abbreviated forms sit at
+**exactly 0.50** — not above it. `assertGreater(..., 0.5, "fixture no longer has
+the property under test")` failed rather than passing while testing nothing.
+**The same defect, one level down, inside the fix for it.**
+
+### 54.2 🛑 `control_stratum` WAS THE FORK, NOT THE THREE-WAY SPLIT
+
+I worried the split was two definitions in one coat. It was not — **the fork was
+keeping `control_stratum` alongside it.** The strata already encode the answer:
+`control` is stable under either regime, `control-case` changes iff casefold is
+active, `control-nfkc` iff NFKC is. ✅ Routing now derives from stratum + probes
+and `control_stratum` is **gone** — removing the second definition rather than
+making it regime-aware, which is what I had proposed.
+
+### 54.3 🛑 OR-ING THE PROBES: RIGHT VERDICT, WRONG DIAGNOSIS, EVERY SHARD
+
+```
+regime                        unchanged in must-change    Gate 1b
+D-A + D5 (intended)                  0/3,401   0.00%      PASS
+D5 alone  (NFKC, no case)        3,010/3,401  88.50%      ABORTS — "fold not working"
+D-A alone (case, no NFKC)          391/3,401  11.50%      ABORTS — "fold not working"
+```
+
+Aborting on a single regime is **correct**; the message was not. "88.5% of
+must-change rows reproduced" sends the operator to the checkpoint and the
+weights when NFKC landed and casefold did not. ✅ `folds_case == folds_compat` is
+now asserted **directly**, before the routing, naming the four tokeniser files.
+
+🛑 **AND THE PROPOSED PROBE DID NOT WORK.** `str.casefold()` performs **FULL**
+case folding, so `"ﬁ".casefold()` is already `"fi"` — a ligature probe answers
+True under casefold **alone** and separates nothing. Now fullwidth U+FF34, which
+casefolds to U+FF54 and only NFKC maps to ASCII `T`. **Caught by the test, not by
+reading.**
+
+⚠ **RESTATE §40.3 IN THIS FORM, IT IS STRICTLY STRONGER:** §40.3 argues from
+intent — "NFKC moves the ligature whether or not anyone intends D5" — which
+sounds like a coincidence to be careful of. **The fact is that D-A RELOCATES D5's
+MOTIVATING EXAMPLE WITHOUT D5 BEING APPLIED AT ALL.** They are inseparable in
+principle, not merely in practice.
+
+### 54.4 🛑 THE D5 SAMPLE DREW ROWS, NOT MECHANISMS (`3764c4e`)
+
+I asked whether the 8-per-shard quota would FILL. It will — the export passes no
+`field` to the slice body, so ES splits by **`_id` hash**, uniform with respect
+to content. ⚠ **The DRAW was the problem.** Document order is script-clumped:
+
+```
+slice 1's first compatibility-only rows   THAI:7          (all one script)
+a corpus-wide RANDOM draw, same population  CYRILLIC 4, LATIN 4, THAI 4,
+                                            KATAKANA 2, CJK 1, GREEK 1
+```
+
+🛑 **Only 4 of Unicode's 17 compatibility classes fire in this corpus and they
+are DIFFERENT MECHANISMS** — Thai U+0E33 grows the string, `<wide>` folds
+fullwidth punctuation, `<compat>` turns № into "No", `<super>` lifts a digit.
+**An all-Thai read-back validates one mechanism and reports coverage of D5** —
+the case-invariant-control defect from §52.2, one layer down.
+
+✅ Quota keyed on **compatibility class**, 2 each, with `d5_classes_seen` per
+shard. **"No `<wide>` rows in any shard" is now a finding; "8 rows, all Thai"
+read as success.**
+
+### 54.5 ⚠ A PARAPHRASE THAT DRIFTED FROM ITS SOURCE AND TRAVELLED ALONE
+
+I reported a standing note as wrong. **The note's BODY was correct** (recorded
+`exit 128`, the `gazetteer` route, and an HTTPS workaround). **Its one-line INDEX
+entry said "fails silently"** — and the index line is the copy that gets read.
+
+🛑 **My confirming measurement was faulty in the SAME direction:** `git fetch … |
+head -5` then `$?`, which is **`head`'s** exit, 0. Two sources agreed and it felt
+settled. **They were not independent — the recollection is why I never questioned
+the exit code.** ✅ **Operational form: when a measurement confirms what you
+already believed, that is when to check how it was taken.** A surprise gets
+scrutinised automatically.
+
+⚠ **And re-reading beats re-deriving:** the note already held the HTTPS refspec I
+later rediscovered by investigation.
+
+### 54.6 ✅ THE TREE UPDATE NEEDS NO CREDENTIALS AND NO RESTART
+
+```
+git fetch https://github.com/WorldHistoricalGazetteer/indexing.git \
+    "+refs/heads/main:refs/remotes/origin/main" && git merge --ff-only origin/main
+```
+
+Verified read-only from pitt: `ls-remote` over HTTPS returns `d72c332`, exit 0.
+⚠ **"The clone is broken" was the wrong summary** — the deployment channel works
+as `gazetteer` (reflog shows repeated `pull --ff-only` fast-forwards); only a
+manual fetch as `stg135` fails.
+
+🛑 **The real trap is the readout:** `git status -sb` reports `[ahead 127]`
+because the tracking ref froze on 6 Sep. **Anyone glancing at that checkout is
+told it is ahead of a remote it is well behind — no error required.**
