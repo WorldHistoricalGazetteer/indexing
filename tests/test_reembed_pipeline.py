@@ -1075,6 +1075,81 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
             reembed.enforce_read_back(empty, "main sample", wrote_this_run=True)
         self.assertIn("bug in the sampler", str(ctx.exception))
 
+    def test_a_FULL_resume_reaches_the_verified_nothing_branch(self):
+        """🛑 It could not, before.
+
+        `wrote_this_run` was `bool(ok or errs)`, and `ok` ACCUMULATES every
+        prior marker's count — so on any resume where a shard had previously
+        succeeded it was True, the sample was empty, and the run aborted with
+        "a bug in the sampler" pointing at a sampler that was working correctly.
+        A branch written for a case the caller could not produce. Found by
+        indexing-04 checking the call site rather than the parameter name.
+        """
+        import unittest.mock as mock
+        import elasticsearch.helpers as esh
+        applied = self.dir / "applied"
+        applied.mkdir()
+        for i in range(3):
+            self._complete_shard(i, changed=2)
+            (applied / f"applied_{i:04d}.json").write_text(json.dumps(
+                {"shard": i, "ok": 2, "errors": 0, "partial": False,
+                 "toponym_ids": [f"n{i}_0@en", f"n{i}_1@en"], "failed_ids": []}))
+
+        def fake_bulk(es, actions, **kw):
+            raise AssertionError("a fully-resumed run must write NOTHING")
+
+        with mock.patch.object(esh, "bulk", fake_bulk), \
+             mock.patch.object(reembed, "_es_client", lambda *a, **k: _FakeES()):
+            reembed.cmd_apply(self._args(execute=True, max_error_rate=1.0,
+                                         read_back=0, canary=0))
+        led = json.loads((self.dir / "ledger.json").read_text())
+        self.assertEqual(led["documents_updated"], 6)   # cumulative, for reporting
+
+    def test_verify_only_re_reads_without_writing(self):
+        """The non-zero exit needs something that can clear it.
+
+        Repeating `apply` skips completed shards and re-reads nothing, so until
+        this existed a transient hiccup left a red the obvious action could not
+        clear — and a gate whose only escape is a 20-hour rewrite is one people
+        learn to bypass.
+        """
+        import unittest.mock as mock
+        applied = self.dir / "applied"
+        applied.mkdir()
+        self._complete_shard(0, changed=2)
+        (applied / "applied_0000.json").write_text(json.dumps(
+            {"shard": 0, "ok": 2, "errors": 0, "partial": False,
+             "toponym_ids": ["n0_0@en", "n0_1@en"], "failed_ids": []}))
+
+        class MatchingES(_FakeES):
+            def mget(self, index=None, ids=None, _source=None, **kw):
+                return {"docs": [{"_id": i, "_source": {
+                    "embedding": [0] * reembed.EMBEDDING_DIM}} for i in ids]}
+
+        args = SimpleNamespace(es_host="http://unused", es_password_file=None,
+                               index="toponyms", in_dir=str(self.dir), shard=None)
+        with mock.patch.object(reembed, "_es_client", lambda *a, **k: MatchingES()):
+            reembed.cmd_verify(args)          # consistent: returns
+
+        class WrongES(_FakeES):
+            def mget(self, index=None, ids=None, _source=None, **kw):
+                return {"docs": [{"_id": i, "_source": {
+                    "embedding": [7] * reembed.EMBEDDING_DIM}} for i in ids]}
+
+        with mock.patch.object(reembed, "_es_client", lambda *a, **k: WrongES()):
+            with self.assertRaises(SystemExit) as ctx:
+                reembed.cmd_verify(args)
+        self.assertIn("MISMATCH", str(ctx.exception))
+
+    def test_verify_refuses_to_pass_on_an_empty_verification(self):
+        import unittest.mock as mock
+        args = SimpleNamespace(es_host="http://unused", es_password_file=None,
+                               index="toponyms", in_dir=str(self.dir), shard=None)
+        with mock.patch.object(reembed, "_es_client", lambda *a, **k: _FakeES()):
+            with self.assertRaises(SystemExit) as ctx:
+                reembed.cmd_verify(args)
+        self.assertIn("not a clean bill of health", str(ctx.exception))
+
     def test_a_missing_export_manifest_aborts(self):
         (self.dir / "export_manifest.json").unlink()
         with self.assertRaises(SystemExit) as ctx:

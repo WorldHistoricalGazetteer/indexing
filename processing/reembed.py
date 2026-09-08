@@ -1440,6 +1440,89 @@ def enforce_read_back(result: dict, label: str, wrote_this_run: bool) -> None:
             f"printing a verdict into a ledger nobody reads.")
 
 
+def cmd_verify(args) -> None:
+    """Re-check what a previous `apply` wrote, WITHOUT writing anything.
+
+    🛑 THE NON-ZERO EXIT NEEDS SOMETHING THAT CAN CLEAR IT. `enforce_read_back`
+    now aborts when the read-back cannot run — a transient ES hiccup during a
+    20-hour write leaves a red — and until this existed the obvious action could
+    not clear it: repeating `apply` skips every completed shard and re-reads
+    nothing, so there was no verify-only path at all. A gate whose only escape is
+    editing marker files or repeating the whole write is a gate people learn to
+    bypass, which is my first `pre-push` hook's failure arriving somewhere new.
+    Raised by indexing-04.
+
+    Everything needed is already on disk: the markers name the ids that landed,
+    and the diff shards still hold the vectors that were sent.
+    """
+    import pyarrow.parquet as pq
+
+    in_dir = Path(args.in_dir)
+    applied_dir = in_dir / "applied"
+    if not applied_dir.exists():
+        raise SystemExit(f"ABORT: {applied_dir} does not exist — nothing has been "
+                         f"applied from this run directory, so there is nothing "
+                         f"to verify. This is not a clean bill of health.")
+    es = _es_client(args.es_host, args.es_password_file)
+
+    sample: list = []
+    d5_sample: list = []
+    seen = 0
+    checked_shards = 0
+    for marker_path in sorted(applied_dir.glob("applied_*.json")):
+        marker = json.loads(marker_path.read_text())
+        i = marker["shard"]
+        if args.shard is not None and i != args.shard:
+            continue
+        ids = set(marker.get("toponym_ids") or [])
+        if not ids:
+            continue
+        final, _, done = shard_paths(in_dir, "diff", i)
+        if not final.exists():
+            raise SystemExit(
+                f"ABORT: {marker_path} records {len(ids):,} applied ids but "
+                f"{final} is gone, so what was SENT cannot be recovered and the "
+                f"comparison has no expected side. Verification is impossible, "
+                f"which is not the same as passing.")
+        table = pq.read_table(final)
+        rows = [(t, v) for t, v in zip(table.column("toponym_id").to_pylist(),
+                                       table.column("embedding").to_pylist())
+                if t in ids]
+        checked_shards += 1
+        for r in rows:
+            seen += 1
+            if len(sample) < READBACK_SAMPLE:
+                sample.append(r)
+            else:
+                j = _rng.randrange(seen)
+                if j < READBACK_SAMPLE:
+                    sample[j] = r
+        want = set((json.loads(done.read_text()).get("d5_sample_ids") or [])
+                   if done.exists() else [])
+        if want:
+            d5_sample.extend(r for r in rows if r[0] in want)
+
+    if not checked_shards:
+        raise SystemExit(
+            f"ABORT: no applied shard in {applied_dir} carried any toponym_ids"
+            + (f" for shard {args.shard}" if args.shard is not None else "")
+            + ". An empty verification is not a passing one.")
+
+    print(f"[verify] {seen:,} applied documents across {checked_shards} shard(s); "
+          f"sampling {len(sample):,} + {len(d5_sample):,} D5-stratified")
+    result = _verify_written(es, args.index, [t for t, _ in sample], sample)
+    print(f"[verify] main sample: {result['summary']}")
+    enforce_read_back(result, "main sample", wrote_this_run=True)
+    if d5_sample:
+        d5 = _verify_written(es, args.index, [t for t, _ in d5_sample], d5_sample)
+        print(f"[verify] D5 stratified: {d5['summary']}")
+        enforce_read_back(d5, "D5 stratified sample", wrote_this_run=True)
+    else:
+        print("[verify] no D5-stratified ids recorded by any shard checked.")
+    print(f"[verify] OK — {checked_shards} shard(s) re-read and consistent with "
+          f"what was sent.")
+
+
 def cmd_apply(args) -> None:
     import pyarrow.parquet as pq
     from elasticsearch import helpers as es_helpers
@@ -1566,6 +1649,14 @@ def cmd_apply(args) -> None:
     now = datetime.now(timezone.utc).isoformat()
     es_opt = es.options(request_timeout=300)
     ok = errs = 0
+    # 🛑 SEPARATE FROM `ok`, WHICH IS CUMULATIVE. `ok` carries over every prior
+    # marker's count, so `bool(ok or errs)` is True on ANY resume where a shard
+    # previously succeeded — which made the resumed-run branch of
+    # `enforce_read_back` unreachable, and a legitimate full resume abort with
+    # "a bug in the sampler" pointing at a sampler that was working correctly.
+    # A docstring describing behaviour the call site cannot deliver. Found by
+    # indexing-04 checking the call site rather than trusting the parameter name.
+    shards_written_here = 0
     ledger_ids = []
     failed_ids: list = []
     d5_sample: list = []
@@ -1669,7 +1760,9 @@ def cmd_apply(args) -> None:
 
         marker.write_text(json.dumps({"shard": i, "ok": s_ok, "errors": s_err,
                                       "partial": False, "toponym_ids": s_ids,
-                                      "failed_ids": s_failed, "at": now}))
+                                      "failed_ids": s_failed, "verified": False,
+                                      "at": now}))
+        shards_written_here += 1
         ok += s_ok
         errs += s_err
         ledger_ids.extend(s_ids)
@@ -1720,7 +1813,8 @@ def cmd_apply(args) -> None:
     # it still cost an hour of doubt about a correct write.
     readback = _verify_written(es, args.index, [t for t, _ in verify_sample],
                                verify_sample)
-    enforce_read_back(readback, "main sample", wrote_this_run=bool(ok or errs))
+    enforce_read_back(readback, "main sample",
+                      wrote_this_run=bool(shards_written_here))
     print(f"[apply] read-back check on {len(verify_sample)} documents "
           f"across {len({t for t, _ in verify_sample})} ids from "
           f"{len(metas)} shards: {readback['summary']}")
@@ -1868,6 +1962,15 @@ def main() -> None:
                           "(default 1%%). Do not raise it to get past a failure.")
     pa_.add_argument("--execute", action="store_true", help="actually write (default: dry-run)")
     pa_.set_defaults(func=cmd_apply)
+
+    pv = sub.add_parser("verify", help="re-read a previous apply WITHOUT writing")
+    pv.add_argument("--es-host", required=True)
+    pv.add_argument("--es-password-file", default=DEFAULT_ES_PASSWORD_FILE)
+    pv.add_argument("--index", default="toponyms")
+    pv.add_argument("--in-dir", required=True)
+    pv.add_argument("--shard", type=int, default=None,
+                    help="verify one shard rather than all of them")
+    pv.set_defaults(func=cmd_verify)
 
     args = p.parse_args()
     args.func(args)
