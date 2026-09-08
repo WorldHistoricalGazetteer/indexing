@@ -8589,3 +8589,72 @@ said the drop had failed. A re-read 25 s later gave 209 GB. **Never trust a sing
 
 **Cluster `yellow` — the pre-existing unassigned replica on a single-node cluster,
 unchanged by this work.**
+
+## 48. 🛑 DO NOT RE-EXTRACT UNTIL `rebuild_toponyms_index` CARRIES THE 256-TOKEN FIX
+
+**Two defects, found together, and the second inverts the repair order for the
+first.**
+
+### 48.1 ~1.58 M `zh` TOPONYMS CARRY JAPANESE IPA — and it is NOT stale
+
+```
+zh+CJK rows with ipa   1,583,722
+sampled                   40,000   (filtered BEFORE sampling)
+Japanese-only markers     55.797%  ← a FLOOR: ɯ and ɴ are not Mandarin phonemes
+大龙峒保安宫@zh  ->  daiɾjɯɯtoɯhoaɴkjɯɯ   "dairyūtō hoankyū"
+                     Mandarin would be:   dà lóng dòng bǎo ān gōng
+```
+
+**This session traced the plumbing and eliminated all of it:** `routes.py:154`
+sends `("zh","CJK")` to charsiu `cmn`; `CHARSIU_LANG_MAP` maps `zh→cmn`; the
+prefix is built as `<cmn>: …`; and **the precomputed cache is keyed by
+`toponym_id`, not by surface string**, so the shared-Han-character collision
+hypothesis is dead.
+
+✅ **`8b` then ran the decisive test: 20 of 20 come back Japanese from the SHIPPED
+converter TODAY, identical to stored. NOT staleness — a recompute reproduces it.**
+
+### 48.2 🛑 AND THE SHIPPED CONVERTER TRUNCATES AT ~15 CHARACTERS
+
+```
+'首爾龍馬初等學校'    stored 'ɕɯniɾjɯɯbaɕotoɯgakːoɯ'      live 'ɕɯniɾjɯɯbaɕoto'
+'元朗學生健康服務中心'  stored 'jy:n˨˩lɔ:ŋ˩˧hɔ:k˨sa:ŋ˥…'   live 'jy:n˨˩lɔ:ŋ˩˧h'
+                                          identical stored-vs-live: 13/20
+```
+
+**`CHARSIU_MAX_NEW_TOKENS` was raised to 256 in `phonetics/ipa/backends.py`
+during this campaign. `rebuild_toponyms_index` NEVER GOT THAT FIX.**
+
+🛑 **THE STORED IPA IS BETTER THAN WHAT THE SHIPPED PATH WOULD PRODUCE TODAY.**
+
+⚠ **CONSEQUENCE FOR THE CRITICAL PATH: the re-extract runs
+`rebuild_toponyms_index`, which computes IPA fresh — so it would NOT fix the
+Japanese problem AND WOULD NEWLY TRUNCATE every long name**, including the `yue`
+and Mandarin rows that are currently correct. **A repair that makes the corpus
+worse.**
+
+**BLOCKER: port the 256-token fix into `rebuild_toponyms_index` before any
+re-extract.** A defect fixed in one of two copies is the shape this campaign
+keeps finding.
+
+### 48.3 ⚠ A CONTROL THAT COULD NOT SUCCEED — the mirror of one that cannot fail
+
+`8b` pre-registered *"`ja` control not Japanese → harness broken, discard
+everything"*, and **the control failed**: 5 of 5 `ja`+`CJK` returned `None`.
+
+**Because the shipped `to_ipa` has NO `("ja","CJK")` route** — `ja` routes only
+for HIRAGANA and KATAKANA, so Kanji falls through to Epitran and returns nothing.
+**That is the 465,177-row gap `8b` itself documented on 6 Sep.** ⚠ **It chose a
+control the shipped code structurally CANNOT pass, on the day it wrote that fault
+up.**
+
+✅ **The conclusion survives on a better control, stated rather than quietly
+substituted:** in the same run the same converter returned **Mandarin with tones**
+for looks-Mandarin `zh` (`龙华市场` → `lʊŋ˧˥xwa˧˥ʂɚ˥˩ʈʂʰɑŋ˨˩˦`) and **Cantonese
+for `yue`** (`崇基路` → `sʊŋ˨˩kei˥lou˨`). **The harness discriminates, so a
+Japanese answer for `zh` is a finding rather than an artefact.**
+
+⚠ **NOT quantified, and labelled as such: some subjects look like Japanese places
+tagged `lang=zh`** (`若狹姬神社`, `岸町五丁目`). **But `南佛罗里达都会区` — "South
+Florida metropolitan area" in simplified characters — also got Japanese IPA.**
+**Mislabelled data is part of this and cannot be all of it.**
