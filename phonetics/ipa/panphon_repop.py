@@ -198,6 +198,258 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     return 0
 
 
+
+BUCKET_EXPR = "abs(hash(toponym_id)) % {n}"
+
+
+def run_shard(inventory_db: str, out_dir: str, buckets: int, bucket: int,
+              temp_dir: str, max_temp: str) -> int:
+    """One hash bucket of the inventory -> one Parquet shard. Reads READ-ONLY.
+
+    The bucket expression is shared with `merge` verbatim (BUCKET_EXPR): the
+    merge joins bucket k's rows against bucket k's shard, so a divergence
+    between the two would not error -- it would join the wrong rows and leave
+    the rest NULL. One constant, used twice.
+    """
+    import duckdb
+    from phonetics.extraction.rebuild_toponyms_index import IPAConverter
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / f"features.b{bucket:04d}.parquet"
+
+    con = duckdb.connect()
+    try:
+        con.execute(f"ATTACH '{inventory_db}' AS inv (READ_ONLY)")
+    except Exception as exc:
+        raise SystemExit(f"cannot attach {inventory_db!r} read-only: {exc}") from exc
+    try:
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        con.execute(f"PRAGMA temp_directory='{temp_dir}'")
+        con.execute(f"PRAGMA max_temp_directory_size='{max_temp}'")
+    except Exception as exc:
+        logger_warn(f"could not set DuckDB spill limits: {exc}")
+
+    expr = BUCKET_EXPR.format(n=buckets)
+    rows = con.execute(f"""
+        SELECT toponym_id, ipa FROM inv.toponyms
+        WHERE ipa IS NOT NULL AND ipa <> '' AND {expr} = {bucket}
+    """).fetchall()
+    con.close()
+    n_in = len(rows)
+    if n_in == 0:
+        # 🛑 An empty bucket is possible only if the hash is degenerate or the
+        # bucket index is out of range. Both are bugs, and both would otherwise
+        # produce a valid empty shard that the merge accepts.
+        raise SystemExit(f"bucket {bucket}/{buckets} selected 0 rows — refusing "
+                         f"to write an empty shard that would look complete")
+
+    conv = IPAConverter()
+    probe = features_for_ipa(conv, "pa")
+    if probe is None or len(probe) % (FEATURES_PER_SEGMENT * 4) != 0:
+        raise SystemExit(f"to_features control FAILED: /pa/ gave {probe!r}")
+
+    ids, blobs = [], []
+    for tid, ipa in rows:
+        b = features_for_ipa(conv, ipa)
+        if b is not None:
+            ids.append(tid)
+            blobs.append(b)
+
+    import pyarrow as pa_
+    import pyarrow.parquet as pq_
+    tbl = pa_.table({"toponym_id": pa_.array(ids, pa_.string()),
+                     "panphon_features": pa_.array(blobs, pa_.binary())})
+    tmp = target.with_suffix(".parquet.tmp")
+    pq_.write_table(tbl, tmp, compression="zstd")
+    tmp.replace(target)                      # atomic: no half-written shard
+    print(f"bucket {bucket}/{buckets}: {n_in:,} in -> {len(ids):,} features "
+          f"({n_in - len(ids):,} unsegmentable) -> {target}", flush=True)
+    return 0
+
+
+def logger_warn(msg: str) -> None:
+    print(f"WARNING: {msg}", flush=True)
+
+
+
+def merge(inventory_db: str, shard_glob: str, buckets: int, work_db: str,
+          temp_dir: str, max_temp: str, verify_copy: bool, execute: bool) -> int:
+    """COPY the inventory, rebuild `toponyms` on the COPY, verify, leave it.
+
+    🛑 THE ORIGINAL IS NEVER OPENED FOR WRITING. That is the whole design. The
+    untouched tables — `observed_chars` PK(char,script), `script_stats`
+    PK(script), the two 122.5M-row link tables with their NOT NULLs — keep every
+    guarantee BY NEVER BEING TOUCHED, which is stronger than reproducing their
+    DDL correctly. `cp` cannot silently drop a constraint; a hand-written
+    CREATE TABLE can, and a silent schema downgrade is invisible to every count
+    check we have.
+
+    ⚠ The only table whose DDL this writes is `toponyms`, and it is the one with
+    NO constraints at all — asserted below, not assumed. If that ever stops
+    being true this refuses rather than quietly dropping something.
+
+    THIS DOES NOT SWAP. It produces a verified candidate beside the original and
+    stops; the rename is a separate, announced step. A merge that also swaps has
+    no point at which a human can look at the result.
+    """
+    import shutil
+    import duckdb
+
+    src = Path(inventory_db)
+    dst = Path(work_db)
+    if not src.is_file():
+        raise SystemExit(f"source inventory {src} is not a file")
+    if dst.exists():
+        raise SystemExit(f"{dst} already exists — refusing to overwrite a "
+                         f"candidate that may be someone's in-progress work")
+    if not execute:
+        print(f"DRY RUN. Would copy {src} -> {dst} "
+              f"({src.stat().st_size / 1e9:,.1f} GB) and rebuild toponyms.")
+        print("Re-run with --execute.")
+        return 0
+
+    # --- 1. copy, then prove the copy ---------------------------------------
+    t0 = time.perf_counter()
+    print(f"copying {src.stat().st_size / 1e9:,.1f} GB -> {dst} …", flush=True)
+    shutil.copy2(src, dst)
+    print(f"copied in {time.perf_counter() - t0:,.0f}s", flush=True)
+    if src.stat().st_size != dst.stat().st_size:
+        raise SystemExit("copy size mismatch — refusing to continue")
+    if verify_copy:
+        import hashlib
+
+        def sha(p: Path) -> str:
+            h = hashlib.sha256()
+            with open(p, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 24), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+
+        t0 = time.perf_counter()
+        a_, b_ = sha(src), sha(dst)
+        print(f"sha256 {a_[:16]}… both sides, {time.perf_counter() - t0:,.0f}s",
+              flush=True)
+        if a_ != b_:
+            raise SystemExit(f"COPY IS NOT IDENTICAL: {a_} vs {b_}")
+
+    # --- 2. rebuild toponyms on the COPY ------------------------------------
+    con = duckdb.connect(str(dst))
+    try:
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        con.execute(f"PRAGMA temp_directory='{temp_dir}'")
+        con.execute(f"PRAGMA max_temp_directory_size='{max_temp}'")
+    except Exception as exc:
+        logger_warn(f"could not set DuckDB spill limits: {exc}")
+
+    before = con.execute("""
+        SELECT count(*), count(panphon_features) FROM toponyms
+    """).fetchone()
+    n_constraints = con.execute("""
+        SELECT count(*) FROM duckdb_constraints() WHERE table_name = 'toponyms'
+    """).fetchone()[0]
+    if n_constraints:
+        raise SystemExit(
+            f"`toponyms` declares {n_constraints} constraint(s). This module's "
+            f"premise is that it declares none, and rebuilding the table would "
+            f"drop them. Refusing — extend the DDL below first."
+        )
+    idx_sql = [r[0] for r in con.execute("""
+        SELECT sql FROM duckdb_indexes() WHERE table_name = 'toponyms'
+    """).fetchall()]
+    # 🛑 CAPTURE THE EXPECTATION FROM THE SOURCE, DO NOT HARDCODE IT. Today the
+    # file holds 7 indexes and 9 constraints; a hardcoded pair silently stops
+    # describing the schema the moment anyone legitimately adds one, and then
+    # either blocks a correct merge or — worse, if it were a >= test — passes a
+    # lossy one. The only trustworthy expectation is the file's own state one
+    # statement ago.
+    idx_before, con_before = con.execute("""
+        SELECT (SELECT count(*) FROM duckdb_indexes()),
+               (SELECT count(*) FROM duckdb_constraints())
+    """).fetchone()
+    print(f"toponyms before: {before[0]:,} rows, "
+          f"{before[1]:,} with features · {len(idx_sql)} indexes", flush=True)
+
+    cols = con.execute("""
+        SELECT column_name, data_type FROM information_schema.columns
+        WHERE table_name = 'toponyms' ORDER BY ordinal_position
+    """).fetchall()
+    ddl_cols = ", ".join(f'"{c}" {t}' for c, t in cols)
+    names = [c for c, _ in cols]
+    if "panphon_features" not in names:
+        raise SystemExit("no panphon_features column — wrong table?")
+
+    con.execute(f"CREATE TABLE toponyms_new ({ddl_cols})")
+    select_cols = ", ".join(
+        "f.panphon_features" if c == "panphon_features" else f't."{c}"'
+        for c in names)
+
+    # ⚠ BUCKETED INSERT, NOT ONE JOIN. The shard side is ~67 GB of blobs; a
+    # single hash join builds that in memory and spills onto a shared volume.
+    # Bucket k of the table joins ONLY shard k, so each build side is ~1/N.
+    expr = BUCKET_EXPR.format(n=buckets)
+    total_from_shards = 0
+    for k in range(buckets):
+        shard = shard_glob.replace("*", f"b{k:04d}")
+        if not Path(shard).is_file():
+            raise SystemExit(f"shard {shard} missing — refusing a partial merge")
+        n = con.execute(f"""
+            INSERT INTO toponyms_new
+            SELECT {select_cols}
+            FROM toponyms t
+            LEFT JOIN read_parquet('{shard}') f USING (toponym_id)
+            WHERE {expr} = {k}
+        """).fetchall()
+        got = con.execute(f"SELECT count(*) FROM read_parquet('{shard}')").fetchone()[0]
+        total_from_shards += got
+        print(f"  bucket {k + 1}/{buckets}: shard has {got:,} features", flush=True)
+
+    after = con.execute("""
+        SELECT count(*), count(panphon_features) FROM toponyms_new
+    """).fetchone()
+    print(f"toponyms_new: {after[0]:,} rows, {after[1]:,} with features")
+
+    # --- 3. verification that can actually FAIL on what changed --------------
+    problems = []
+    if after[0] != before[0]:
+        problems.append(f"row count {before[0]:,} -> {after[0]:,}")
+    if after[1] != total_from_shards:
+        problems.append(f"features {after[1]:,} != shard total {total_from_shards:,}")
+    if problems:
+        raise SystemExit("VERIFICATION FAILED: " + "; ".join(problems) +
+                         " — toponyms_new left in place, original untouched")
+
+    con.execute("DROP TABLE toponyms")
+    con.execute("ALTER TABLE toponyms_new RENAME TO toponyms")
+    for sql in idx_sql:
+        print(f"  recreating: {sql}", flush=True)
+        con.execute(sql)
+
+    # 🛑 A CTAS drops indexes silently, so count them back rather than trust the
+    # loop above. And count constraints across the WHOLE file: the untouched
+    # tables should still have all 9, and if they do not, the copy is wrong.
+    n_idx, n_con = con.execute("""
+        SELECT (SELECT count(*) FROM duckdb_indexes()),
+               (SELECT count(*) FROM duckdb_constraints())
+    """).fetchone()
+    con.execute("CHECKPOINT")
+    con.close()
+    print(f"\nindexes {n_idx} (source had {idx_before}) · "
+          f"constraints {n_con} (source had {con_before})")
+    if (n_idx, n_con) != (idx_before, con_before):
+        raise SystemExit(
+            f"SCHEMA CHANGED: indexes {idx_before} -> {n_idx}, constraints "
+            f"{con_before} -> {n_con}. DO NOT SWAP THIS FILE. The rows may be "
+            f"perfect and the guarantees are not — which no count check sees."
+        )
+    print(f"\n✅ candidate ready: {dst}")
+    print(f"   original UNTOUCHED: {src}")
+    print("🛑 NOT SWAPPED. The rename is a separate announced step.")
+    print("⚠ REPLACED AND EXTENDED, not restored: different values on the "
+          "34.1M overlap, plus rows that never had the field.")
+    return 0
+
+
 def inspect(inventory_db: str, out: Optional[str]) -> int:
     """Report everything a CTAS + swap must reproduce — and what it cannot.
 
@@ -290,11 +542,35 @@ def main() -> int:
     i = sub.add_parser("inspect", help="what a CTAS + swap must reproduce")
     i.add_argument("--inventory-db", required=True)
     i.add_argument("--out")
+    r = sub.add_parser("run", help="one hash bucket -> one Parquet shard")
+    r.add_argument("--inventory-db", required=True)
+    r.add_argument("--out-dir", required=True)
+    r.add_argument("--buckets", type=int, required=True)
+    r.add_argument("--bucket", type=int, required=True)
+    r.add_argument("--temp-dir", default="/ix1/ishi/tmp/ipa-duckdb")
+    r.add_argument("--max-temp", default="32GB")
+    m = sub.add_parser("merge", help="copy the inventory, rebuild toponyms on the copy")
+    m.add_argument("--inventory-db", required=True)
+    m.add_argument("--shard-glob", required=True,
+                   help="path with a literal * where the bucket token goes")
+    m.add_argument("--buckets", type=int, required=True)
+    m.add_argument("--work-db", required=True, help="the CANDIDATE path (must not exist)")
+    m.add_argument("--temp-dir", default="/ix1/ishi/tmp/ipa-duckdb")
+    m.add_argument("--max-temp", default="32GB")
+    m.add_argument("--no-verify-copy", action="store_true",
+                   help="skip the sha256 of both 121GB files (not recommended)")
+    m.add_argument("--execute", action="store_true")
     a = ap.parse_args()
     if a.cmd == "benchmark":
         return benchmark(a.inventory_db, a.sample, a.seed, a.out)
     if a.cmd == "inspect":
         return inspect(a.inventory_db, a.out)
+    if a.cmd == "run":
+        return run_shard(a.inventory_db, a.out_dir, a.buckets, a.bucket,
+                         a.temp_dir, a.max_temp)
+    if a.cmd == "merge":
+        return merge(a.inventory_db, a.shard_glob, a.buckets, a.work_db,
+                     a.temp_dir, a.max_temp, not a.no_verify_copy, a.execute)
     return 1
 
 
