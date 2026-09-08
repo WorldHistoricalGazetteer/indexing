@@ -33,7 +33,23 @@ answered.
 | `new-Deva.csv` | same | 46 → 63, **17 added, 0 removed** |
 | `guj-Gujr.csv` | 0 of 14 Gujarati independent vowels | 46 → 60, **14 added, 0 removed** |
 | `bpy-Beng.csv` | 0 of 12 Bengali independent vowels | 49 → 61, **12 added, 0 removed** |
-| `bod-Tibt.csv` | 0 of 45 subjoined consonants — ordinary Tibetan orthography, and **9,866 `bo` toponyms got no IPA at all** | 34 → 64, **30 added, 0 removed** |
+| `bod-Tibt.csv` | 0 of 45 subjoined consonants — ordinary Tibetan orthography | 34 → 84, **50 added, 0 removed** |
+
+**Verified against the affected rows, not against the rule count:**
+
+| file | rows affected | before | after |
+|---|---|---|---|
+| `nep-Deva` | 3,799 | 0% letter-clean | **100%** |
+| `new-Deva` | 7,292 | 0% | **100%** |
+| `guj-Gujr` | 6,103 | 0% | **100%** |
+| `bpy-Beng` | 11,004 | 0% | **94%** |
+| `bod-Tibt` | 9,590 | 16,730 subjoined characters surviving | **0** |
+
+⚠ **A correction to an earlier claim about `bod-Tibt`**: its 9,866 rows with no IPA
+at all were a ROUTING failure already counted in Project A's 172,210 — they are
+stored as `script='OTHER'` from before the enum split and route the moment the
+store is rebuilt. The rule work here addresses QUALITY only, and describing it as
+the worst routing case double-counted it across two ledgers.
 
 **Provenance of the added values, because it differs by file and changes how much
 weight each carries:**
