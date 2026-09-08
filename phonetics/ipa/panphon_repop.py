@@ -100,6 +100,24 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     # A UNIFORM sample of the real population: word_fts cost scales with IPA
     # length, and length varies by script, so a head/tail slice of an ordered
     # table would measure one script's rate and call it the corpus rate.
+    #
+    # ⚠ `USING SAMPLE n ROWS` RETURNS FEWER THAN n HERE, AND THE REASON MATTERS.
+    # Asking for 200,000 returned 136,241. DuckDB binds the sample to the table
+    # SCAN, not to the filtered result, so it draws n rows from all 73,479,069
+    # and the WHERE clause then removes those without ipa:
+    #
+    #     200,000 x (50,221,897 / 73,479,069) = 136,697 predicted
+    #                                           136,241 observed  (-0.33%,
+    #                                           ~2 sigma on a binomial of 208)
+    #
+    # ✅ The consequence is benign and must be stated rather than assumed: a
+    # uniform sample of the whole table, filtered to a subset, is still a
+    # UNIFORM sample OF THAT SUBSET. The rate and yield figures stand. What does
+    # NOT stand is the sample SIZE — report the count actually measured on, not
+    # the one the SQL asks for.
+    #
+    # 🛑 It is a hypothesis fitting to 0.33%, not a proof. If an exact n is ever
+    # needed, sample from a filtered subquery instead of trusting this.
     rows = con.execute(f"""
         SELECT ipa FROM inv.toponyms
         WHERE ipa IS NOT NULL AND ipa <> ''
