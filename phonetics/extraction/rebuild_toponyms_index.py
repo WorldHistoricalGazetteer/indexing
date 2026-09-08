@@ -238,12 +238,19 @@ class IPAConverter:
                 import torch
                 import transformers
 
+                # Single source of truth for the Charsiu settings. This file
+                # used to carry its own copies of the model names AND call
+                # generate() with no length limit; `phonetics/ipa/backends.py`
+                # was fixed during this campaign and this copy was not.
+                from phonetics.ipa.backends import (
+                    CHARSIU_MAX_NEW_TOKENS, CHARSIU_MODEL, CHARSIU_TOKENIZER)
+
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=FutureWarning)
                     model = transformers.T5ForConditionalGeneration.from_pretrained(
-                        "charsiu/g2p_multilingual_byT5_small_100"
+                        CHARSIU_MODEL
                     )
-                    tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+                    tokenizer = transformers.ByT5Tokenizer.from_pretrained(CHARSIU_TOKENIZER)
 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 model.to(device)
@@ -257,7 +264,17 @@ class IPAConverter:
                         input_text = f"<{char_iso}>: {text}"
                         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
                         with torch.no_grad():
-                            outputs = self.model.generate(**inputs)
+                            # ⚠ max_new_tokens is REQUIRED. ByT5's generation
+                            # config defaults to max_length=20, and these are
+                            # BYTE tokens, so output was silently cut at ~15
+                            # characters:
+                            #   首爾龍馬初等學校 -> 'ɕɯniɾjɯɯbaɕoto'
+                            #                (should be 'ɕɯniɾjɯɯbaɕotoɯgakːoɯ')
+                            # 13 of 20 sampled long CJK names were truncated.
+                            # The truncation is silent — no warning, no error,
+                            # just a shorter string that looks like an IPA.
+                            outputs = self.model.generate(
+                                **inputs, max_new_tokens=CHARSIU_MAX_NEW_TOKENS)
                         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
                 self._charsiu_g2p = _CharsiuWrapper(model, tokenizer, device)
