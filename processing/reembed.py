@@ -84,6 +84,7 @@ import platform
 import subprocess
 import sys
 import time
+import random
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -670,6 +671,10 @@ def cmd_export(args) -> None:
 # Phase: compute  (CRC GPU — no ES)
 # ---------------------------------------------------------------------------
 
+#: Seeded so a read-back sample is reproducible from the ledger — an
+#: unreproducible spot check cannot be re-run against the same documents.
+_rng = random.Random(20260908)
+
 #: sha256 of the empty string. A hash pipeline that produced NOTHING still
 #: produces this, and two broken producers agree with each other perfectly — so
 #: it is rejected by name, as its own failure, rather than being allowed to
@@ -826,15 +831,61 @@ def quantize(embeddings):
 #: is evidence the fold did not land. At most this fraction may reproduce.
 CONTROL_MAX_UNCHANGED_RATE = 0.01
 
+#: ⚠ `--max-error-rate` is RELATIVE, so at 65M documents 1% licenses 652,935
+#: absolute failures. It trips fast on an early burst (small denominator) and
+#: never on a steady drip — the shape that produces a half-updated corpus. Any
+#: real failure mode produces far more than this, so it costs nothing and closes
+#: the drip.
+MAX_ABSOLUTE_ERRORS = 5000
+
+#: n=40 detects a 1% failure rate with 33.1% probability. 3,000 detects 0.1% at
+#: 95% — still trivial against 65M writes, which is the only scale that matters
+#: when choosing it.
+READBACK_SAMPLE = 3000
+
+
+def _failed_ids(c_errs) -> set:
+    """The ids ES did NOT write, from whatever shape `bulk` returned.
+
+    `raise_on_error=False` yields a list of per-item error dicts; some client
+    versions return a bare count instead, and a count cannot name its ids — so
+    that case is reported rather than silently treated as "none failed".
+    """
+    if not c_errs:
+        return set()
+    if not isinstance(c_errs, list):
+        raise SystemExit(
+            f"ABORT: the ES client reported {c_errs} bulk failures as a COUNT "
+            f"rather than a list, so the failing ids cannot be named. Recording "
+            f"them as applied is what produces a half-updated corpus; stopping "
+            f"instead. Pin a client version whose `bulk` returns error details.")
+    out = set()
+    for e in c_errs:
+        if isinstance(e, dict):
+            for _op, body in e.items():
+                if isinstance(body, dict) and body.get("_id"):
+                    out.add(body["_id"])
+    return out
+
 
 def tokeniser_folds_case() -> bool:
     """Does the tokeniser this process would import apply D-A's fold?
 
     Probed, not configured. A flag would be one more thing that can disagree
     with the code, and this run already has four files' worth of that.
+
+    🛑 BOTH REGIMES, because they are separable in code even though the plan
+    argues they must land together. The first version probed casefolding alone,
+    so a tokeniser adding NFKC WITHOUT casefold — which is D5 by itself —
+    answered False, every control fell into `stable`, and Gate 1b went inert
+    exactly when a fold-only change shipped. A gate that disarms itself on one
+    of the two changes it exists to witness is worse than no gate, because the
+    run reports a healthy control either way. Found by indexing-04.
     """
     from phonetics.tokenise import preprocess_text
-    return preprocess_text("A") == preprocess_text("a")
+    folds_case = preprocess_text("A") == preprocess_text("a")
+    folds_compat = preprocess_text("\ufb01") == preprocess_text("fi")
+    return folds_case or folds_compat
 
 
 def control_stratum(name: str) -> str:
@@ -1302,6 +1353,8 @@ def cmd_apply(args) -> None:
     es_opt = es.options(request_timeout=300)
     ok = errs = 0
     ledger_ids = []
+    failed_ids: list = []
+    seen_rows = 0
     verify_sample: list = []          # (toponym_id, vector) spanning the run
     applied_dir = in_dir / "applied"
     applied_dir.mkdir(exist_ok=True)
@@ -1350,6 +1403,7 @@ def cmd_apply(args) -> None:
                         table.column("embedding").to_pylist()))
         s_ok = s_err = 0
         s_ids = []
+        s_failed: list = []
         for start in range(0, len(rows), args.batch_size):
             chunk = rows[start:start + args.batch_size]
             actions = [{"_op_type": "update", "_index": args.index, "_id": tid,
@@ -1360,15 +1414,36 @@ def cmd_apply(args) -> None:
             n_err = len(c_errs) if isinstance(c_errs, list) else c_errs
             s_ok += c_ok
             s_err += n_err
-            s_ids.extend(tid for tid, _ in chunk)
+            # 🛑 THIS TOOK THE WHOLE CHUNK REGARDLESS OF `c_errs`, so the marker
+            # and ledger recorded every id as applied whether or not ES wrote
+            # it. A sub-threshold error drip — 0.9% against a 1% rate — never
+            # trips the gate and leaves ~588k documents on their OLD vectors,
+            # RECORDED AS APPLIED. That is the mixed-corpus state we agreed
+            # cannot be repaired after the fact, arriving through the one
+            # artefact you would use to repair it. Worse than the partial
+            # marker, because that at least stops. Found by indexing-04.
+            failed = _failed_ids(c_errs)
+            s_failed.extend(failed)
+            s_ids.extend(tid for tid, _ in chunk if tid not in failed)
             if args.throttle:
                 time.sleep(args.throttle)
 
             attempted = ok + errs + s_ok + s_err
+            if errs + s_err > MAX_ABSOLUTE_ERRORS:
+                marker.write_text(json.dumps(
+                    {"shard": i, "ok": s_ok, "errors": s_err, "partial": True,
+                     "toponym_ids": s_ids, "failed_ids": s_failed, "at": now}))
+                raise SystemExit(
+                    f"ABORT: {errs + s_err:,} absolute failures exceeds "
+                    f"{MAX_ABSOLUTE_ERRORS:,}. The RATE is still "
+                    f"{(errs + s_err) / attempted:.2%} and would not have "
+                    f"tripped — which is the point: a steady sub-threshold drip "
+                    f"leaves documents on their old vectors and never fires. "
+                    f"Failing ids are named in {applied_dir}.")
             if attempted and (errs + s_err) / attempted > args.max_error_rate:
                 marker.write_text(json.dumps(
                     {"shard": i, "ok": s_ok, "errors": s_err, "partial": True,
-                     "toponym_ids": s_ids, "at": now}))
+                     "toponym_ids": s_ids, "failed_ids": s_failed, "at": now}))
                 raise SystemExit(
                     f"ABORT: error rate {(errs + s_err) / attempted:.2%} exceeds "
                     f"--max-error-rate {args.max_error_rate:.2%} after "
@@ -1379,12 +1454,25 @@ def cmd_apply(args) -> None:
 
         marker.write_text(json.dumps({"shard": i, "ok": s_ok, "errors": s_err,
                                       "partial": False, "toponym_ids": s_ids,
-                                      "at": now}))
+                                      "failed_ids": s_failed, "at": now}))
         ok += s_ok
         errs += s_err
         ledger_ids.extend(s_ids)
-        if rows and len(verify_sample) < 40:
-            verify_sample.append(rows[0])
+        failed_ids.extend(s_failed)
+        # 🛑 This was `rows[0]` of the first 40 shards: a FIXED POSITION, never
+        # random, and never the tail of the run — which is exactly where
+        # cumulative merge pressure would show. Even unbiased, n=40 detects a 1%
+        # failure rate with 33.1% probability and 0.1% with 3.9%. Reservoir
+        # sampling over every written row costs nothing next to 65M writes and
+        # detects 0.1% at 95% confidence. Sizing from indexing-04.
+        for r in rows:
+            seen_rows += 1
+            if len(verify_sample) < READBACK_SAMPLE:
+                verify_sample.append(r)
+            else:
+                j = _rng.randrange(seen_rows)
+                if j < READBACK_SAMPLE:
+                    verify_sample[j] = r
         print(f"[apply]   shard {i:04d}: {ok:,} ok / {errs:,} err", flush=True)
 
         if args.canary and ok >= args.canary:
@@ -1429,6 +1517,7 @@ def cmd_apply(args) -> None:
         "pin": pin,
         "git_commit": _git_commit(in_dir),
         "toponym_ids": ledger_ids,
+        "failed_ids": failed_ids,
     }
     ledger_path = in_dir / "ledger.json"
     tmp = ledger_path.with_suffix(".json.tmp")
@@ -1438,6 +1527,18 @@ def cmd_apply(args) -> None:
     print(f"[apply] ledger → {ledger_path} ({len(ledger_ids):,} toponym_ids, "
           f"checkpoint + git commit + per-shard control results). "
           f"'What did this run touch?' is now answerable by reading a file.")
+    if failed_ids:
+        # Non-zero, because a run that left documents on their old vectors has
+        # produced a MIXED corpus and the caller must not read exit 0 as done.
+        # The ids are on disk, so the repair is a re-run over `failed_ids`
+        # rather than a re-run over everything.
+        raise SystemExit(
+            f"EXIT NON-ZERO: {len(failed_ids):,} of {len(ledger_ids) + len(failed_ids):,} "
+            f"documents were NOT written and are still on their old vectors. "
+            f"The rate was {errs / max(ok + errs, 1):.3%}, below every threshold, "
+            f"which is exactly why this has to be an exit code rather than a "
+            f"log line. Their ids are in {ledger_path} under `failed_ids`; "
+            f"re-run over those rather than over the whole corpus.")
 
 
 # ---------------------------------------------------------------------------

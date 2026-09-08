@@ -313,6 +313,23 @@ class TestTheControlSurvivesACaseFoldingTokeniser(unittest.TestCase):
     def test_the_current_tree_does_not_fold_so_nothing_changes(self):
         self.assertFalse(reembed.tokeniser_folds_case())
 
+    def test_the_probe_catches_NFKC_WITHOUT_casefold(self):
+        """D5 alone adds NFKC and no casefold.
+
+        The first probe tested casefolding only, so a fold-only change answered
+        False, every control fell into `stable`, and Gate 1b went inert exactly
+        when the change it witnesses shipped. A gate that disarms itself on one
+        of its two subjects is worse than none.
+        """
+        import unittest.mock as mock
+        import phonetics.tokenise as tok
+        with mock.patch.object(tok, "preprocess_text",
+                               lambda x, s=None: unicodedata.normalize("NFKC", x)):
+            self.assertTrue(reembed.tokeniser_folds_case())
+        with mock.patch.object(tok, "preprocess_text",
+                               lambda x, s=None: x.casefold()):
+            self.assertTrue(reembed.tokeniser_folds_case())
+
     def test_the_stratum_split_follows_D_A_not_a_guess(self):
         self.assertEqual(reembed.control_stratum("Paris"), "must-change")
         self.assertEqual(reembed.control_stratum("paris"), "stable")
@@ -801,6 +818,45 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         self.assertIn("n1_0@en", seen, "the PARTIAL shard was skipped — the bug")
         self.assertIn("n1_1@en", seen, "the partial shard's remainder was lost")
         self.assertNotIn("n2_0@en", seen, "a COMPLETE shard was redone")
+
+    def test_a_failed_document_is_NOT_recorded_as_applied(self):
+        """The ledger recorded ATTEMPTED, not WRITTEN.
+
+        `s_ids` took the whole chunk regardless of `c_errs`, so a sub-threshold
+        error drip left documents on their old vectors while the ledger — the
+        one artefact you would use to repair that — listed them as applied.
+        """
+        import unittest.mock as mock
+        import elasticsearch.helpers as esh
+        for i in range(3):
+            self._complete_shard(i, changed=4)
+
+        def fake_bulk(es, actions, **kw):
+            acts = list(actions)
+            bad = [a["_id"] for a in acts if a["_id"] == "n0_1@en"]
+            return len(acts) - len(bad), [{"update": {"_id": b, "status": 429}}
+                                          for b in bad]
+
+        with mock.patch.object(esh, "bulk", fake_bulk), \
+             mock.patch.object(reembed, "_es_client", lambda *a, **k: _FakeES()):
+            with self.assertRaises(SystemExit) as ctx:
+                reembed.cmd_apply(self._args(execute=True, max_error_rate=1.0,
+                                             read_back=0, canary=0))
+        # a partial write must not exit 0 — the corpus is now mixed
+        self.assertIn("NOT written", str(ctx.exception))
+        led = json.loads((self.dir / "ledger.json").read_text())
+        self.assertEqual(led["failed_ids"], ["n0_1@en"])
+        self.assertNotIn("n0_1@en", led["toponym_ids"],
+                         "a document ES refused was recorded as applied")
+
+    def test_a_bare_error_COUNT_stops_the_run_rather_than_being_read_as_none(self):
+        """A count cannot name its ids, and treating it as 'none failed' is how
+        the half-updated corpus arrives."""
+        with self.assertRaises(SystemExit) as ctx:
+            reembed._failed_ids(7)
+        self.assertIn("cannot be named", str(ctx.exception))
+        self.assertEqual(reembed._failed_ids([]), set())
+        self.assertEqual(reembed._failed_ids(None), set())
 
     def test_read_back_reports_a_mismatch_rather_than_trusting_the_bulk_ok(self):
         """A bulk `ok` means ES accepted the request, not that the stored vector
