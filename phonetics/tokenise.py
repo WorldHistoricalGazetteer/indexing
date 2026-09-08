@@ -56,7 +56,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 # --- BEGIN CANONICAL TOKENISER ---
-# CANONICAL-BLOCK v1 sha256=439e5f2fabbdd5e1c6b95d0901d36d20b45f94eecc6f9185e3141b082f857698
+# CANONICAL-BLOCK v1 sha256=74fb6176adfae9b44e2a591fee4daab973ba7fc68b7a33fd4411dedba28e6685
 # CANONICAL-BLOCK Convention, stated because the same block has been hashed two different
 # CANONICAL-BLOCK ways elsewhere and nothing ever compared them: sha256 over this block
 # CANONICAL-BLOCK INCLUDING both marker lines and EXCLUDING every line beginning
@@ -206,13 +206,6 @@ def detect_script(text: str) -> str:
     Ties go to the script seen first, which is what `collections.Counter`'s
     `most_common(1)` does in the vocabulary implementation.
     """
-    # D-A/D5: fold compatibility forms BEFORE counting. Without this the
-    # ligature `fi` (U+FB01) resolves to ARMENIAN and fullwidth `T` (U+FF34) to
-    # OTHER, because neither codepoint sits in a named script range. NFKC maps
-    # them to their base letters, so both count as LATIN. This changes script
-    # ASSIGNMENT, not merely characters, which is why D-A and D5 cannot be
-    # separated.
-    text = unicodedata.normalize('NFKC', text)
     counts: Dict[str, int] = {}
     for char in text:
         if not char.isalpha():
@@ -232,16 +225,12 @@ def preprocess_text(text: str, script: Optional[str] = None) -> str:
     if script in _ROMANISE_SCRIPTS:
         if _anyascii is None:
             raise RuntimeError("anyascii required for CJK romanization")
-        return _anyascii(text).casefold()
+        return _anyascii(text).lower()
 
     if script in _DECOMPOSE_SCRIPTS:
         return decompose_hangul(text)
 
-    # D-A: NFKC + casefold. `London` vs `LONDON` scored 0.2825 under NFC
-    # and scores 1.0000 casefolded. Measured over 73,479,069 real names:
-    # 88.86% change, 768,491 distinct forms merge, of which only 10,208
-    # (0.025%) are NOT case variants — 99.95% of those being German sz.
-    return unicodedata.normalize('NFKC', text).casefold()
+    return unicodedata.normalize('NFC', text)
 
 
 def encode_chars(

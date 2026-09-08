@@ -235,16 +235,15 @@ class CharacterVocabulary:
         if should_romanize(script):
             if anyascii is None:
                 raise RuntimeError("anyascii required for CJK romanization")
-            return anyascii(text).casefold()  # D-A
+            return anyascii(text).lower()
 
         # Decompose Korean
         if should_decompose(script):
             return decompose_text(text)
 
-        # D-A: NFKC + casefold, not NFC. Measured over 73,479,069 real names:
-        # 88.86% change; 768,491 distinct forms merge, of which only 10,208
-        # (0.025%) are not case variants — 99.95% of those German sz.
-        return unicodedata.normalize('NFKC', text).casefold()
+        # Normalize everything else to NFC (Canonical Composition)
+        # This turns "a" + "´" into "á", and standardizes Arabic
+        return unicodedata.normalize('NFC', text)
 
     def encode(
             self,
