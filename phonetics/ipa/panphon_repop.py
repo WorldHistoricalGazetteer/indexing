@@ -27,6 +27,23 @@ second thing to keep in step with the consumer, and the consumer
 lookalike loop is a rate for the lookalike. `features_for_ipa` is called by both,
 so the benchmark's throughput is the throughput that will actually happen.
 
+🛑 DEPLOYMENT TRAP, PAID FOR ONCE. On CRC the job runs with
+`PYTHONPATH=/vast/ishi/ipa-v8/code:/vast/ishi/elastic`, and the first entry holds
+a PARTIAL `phonetics` package -- `ipa/`, `utils/`, `training/` and no
+`extraction/`. Python resolves `phonetics` in the first entry that has it and
+never looks further, so `from phonetics.extraction...` raises ModuleNotFoundError
+even though the module is plainly present in the second entry. Three jobs died in
+one second each. Fixed by symlinking `code/phonetics/extraction` ->
+`elastic/phonetics/extraction`, verified byte-identical to this repo's copy
+(sha256 756877ab...), so the derivation benchmarked here IS the shipped one.
+
+⚠ That symlink makes the import path a HYBRID of two trees, and they are not
+identical: `phonetics/utils/script_detection.py` differs across repo, code dir
+and deployed tree -- three versions. It does not affect this module, because
+`to_features` goes straight to PanPhon and never touches script detection. State
+that rather than rely on it: anything here that starts calling `to_ipa` inherits
+the ambiguity.
+
 ⚠ AND ROWS WITH `ipa` WILL NOT ALL YIELD FEATURES. `word_fts` returns nothing
 for an IPA string PanPhon cannot segment, so the post-run count is <= the `ipa`
 count, not equal to it. The benchmark measures that fraction rather than
