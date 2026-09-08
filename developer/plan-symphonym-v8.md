@@ -1894,6 +1894,27 @@ mixed-Unicode array produces artefact "differences" and writes them back.
 Freezing the table changes token→script mapping and implies a further re-embed,
 so it is a **Package 1 follow-up**, not a mid-flight change.
 
+⚠ **SUPERSEDED — the line above is stale and is kept only because it explains the
+reasoning.** D-0 (lines ~2310 and ~3163) bundles D6 into v8's re-embed. **Read
+D-0, not this.** ⚠ A stale statement sitting 400 lines ABOVE the current one wins
+on reading order, which is why this marker is here rather than a silent edit.
+
+🛑 **AND D6 IS NOW BLOCKED FOR A REASON THAT CHANGES ITS SEQUENCING AGAIN
+(8 Sep).** The fix is to freeze the alpha table at the **index writer's** Unicode
+version. Measured by `04`: local `unicodedata 13.0.0`, gateway (pitt) `13.0.0`,
+**index writer unreachable** (crc2 timing out); the plan says the writer is
+14.0.0. **A 14.0.0 table cannot be generated from a 13.0.0 interpreter**, and
+embedding a knowingly-wrong table is worse than leaving `isalpha()` in place —
+it would make the defect *look* fixed while being wrong in a new way nobody
+re-examines. Needs a table generated in the CRC conda env and shipped as a
+versioned artefact.
+
+✅ **RULING: D6 does NOT have to land with D-A and D5.** The "all together"
+constraint exists because D-A and D5 **change what the index contains**. D6
+changes nothing today — **0 of 200,000 names** — so it is hygiene that can land
+in any later pass **without its own re-embed**. **D-A + D5 now; D6 when a login
+node gives access to the CRC environment.**
+
 ### 5.7 D7 — the trap of a table that looks incomplete
 
 **`GURMUKHI` is not in the canonical script table, and must not be.** Verified
@@ -8237,3 +8258,62 @@ test with everyone present and `/vast` healthy.
 exactly like a stall** — it counts *completed* shards while all four stream. It
 took a `_status` query showing bytes and file counts to distinguish *"no shard has
 finished yet"* from *"nothing is happening"*.
+
+## 43. 🛑 THE TOKENISER IS FOUR IMPLEMENTATIONS — and one of them ships externally
+
+`04`, implementing D-A and D5. **This session told it *"the file is
+`phonetics/tokenise.py`"*. That was wrong and it is the worst shape the error
+could take:**
+
+```
+phonetics/tokenise.py                 the canonical SPEC
+hf/inference.py                       vendored copy — SHIPS TO HUGGINGFACE
+phonetics/vocab/char_vocab.py         preprocess_text — THIS IS THE INDEX WRITER
+phonetics/utils/script_detection.py   detect_script, used by char_vocab
+```
+
+⚠ **Changing only the named file would have fixed the SPEC and left the WRITER
+alone** — 73 contract failures, and a tokeniser disagreeing with the thing that
+wrote the index. **`04` found it by running the contract rather than trusting the
+scope it was given.** All four now carry NFKC + casefold identically: failures
+**73 → 10**, errors **6,125 → 0**.
+
+✅ **D-A and D5 verified:** `detect_script('ﬁ')` ARMENIAN → LATIN;
+`detect_script('Ｔ')` OTHER → LATIN; `London`/`LONDON` → `london`/`london`.
+
+### 43.1 🛑 A SECOND DEPLOYMENT CHANNEL: `hf/inference.py` SHIPS TO HUGGINGFACE
+
+**Independently of `origin/main`, so the no-push rule (§42) does not cover it.**
+A tokeniser change there reaches **external users** by a route nobody was
+watching. ⚠ **Whether that publish is automated or a deliberate human step is
+UNESTABLISHED and is being determined** — if automated, a second armed channel
+exists and it reaches outside the project.
+
+### 43.2 ⚠ NFKC FOLDS EXOTIC WHITESPACE TO ASCII SPACE — unmeasured
+
+Four of the ten remaining failures are `'\xa0'` (NBSP) and `' '` (EM SPACE):
+input that previously **reduced to nothing** now reduces to **a space**, changing
+the ids.
+
+🛑 **`04`'s own 73 M measurement cannot answer this** — those names are inside the
+88.86% that change, but nobody asked what fraction change by *whitespace folding
+alone*, nor whether NBSP-vs-space forms now **merge**. **The ß collision question,
+unasked in a new place.** Commissioned before the change lands, including the
+count that is **not a collision but a change of kind**: names that produce **no
+tokens today and one under NFKC** — an embedding appearing from nowhere.
+
+### 43.3 THE SIX EXPECTED FAILURES ARE A DECISION, NOT A FIX
+
+**5 × `test_single_word_names_are_untouched_so_the_index_stands`** — ⚠ **the test
+name encodes its own reason, and that reason is the invariant D-A abolishes.**
+Single-word names being untouched is *why most of the index needed no re-embed*.
+**Updating it is the same act as accepting the re-embed.** Ruling: **rename** so
+the name states the new invariant rather than editing assertions under a name
+that now lies, and put the reasoning in the docstring — **that docstring is the
+durable record that the re-embed is mandatory.**
+
+**1 × `test_the_stamp_matches_the_block_it_stamps`** — regenerate; it is doing
+its job.
+
+✅ **`04` refused to green a suite whose failures are the change working as
+designed.** That is the correct instinct and the tests are correct to fail.
