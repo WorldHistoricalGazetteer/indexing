@@ -73,24 +73,46 @@ class TestCandidateAndControl(unittest.TestCase):
                 self.assertFalse(reembed.is_candidate(name, "LATIN")
                                  and reembed.is_control(name, "LATIN"))
 
-    def test_the_control_stratum_contains_only_things_that_cannot_change(self):
-        """A stratum called "control" must be exactly the non-candidates.
+    def test_the_control_FAMILY_is_exactly_the_non_candidates(self):
+        """The control family must be exactly the non-candidates.
 
         It was not: D4 names fell into it, and the first partial census showed
         184 changes in a bucket whose whole meaning is that it cannot change.
+
+        ⚠ The family is now three labels, because under D-A/D5 a name that MUST
+        change was still landing in one called `control` — 391 of 6,720 sampled
+        rows, all Thai U+0E33. The split is a REFINEMENT of `is_control`, never a
+        second definition of it: a second derivation forks the grouping and both
+        computations are then correct about different populations.
         """
         for name in ("London", "Москва", "Gherke", "SO-10731", "New York",
-                     "東京", "O'Brien"):
+                     "東京", "O'Brien", "ปทุมธานี"):
             with self.subTest(name=name):
-                in_control = reembed.stratum_of(name, "LATIN") == "control"
-                self.assertEqual(in_control, not reembed.is_candidate(name, "LATIN"))
+                in_family = reembed.stratum_of(name, "LATIN") in reembed.CONTROL_STRATA
+                self.assertEqual(in_family, not reembed.is_candidate(name, "LATIN"))
+
+    def test_bare_control_really_cannot_change_under_either_fold(self):
+        """The label has to be true of the set, not merely conventional."""
+        for name in ("london", "москва", "القاهرة", "ปทุมธานี"):
+            with self.subTest(name=name):
+                if reembed.stratum_of(name, "LATIN") != "control":
+                    continue
+                self.assertEqual(unicodedata.normalize("NFKC", name), name)
+                self.assertEqual(name.casefold(), name)
+
+    def test_the_split_names_WHICH_fold_would_move_it(self):
+        self.assertEqual(reembed.stratum_of("London", "LATIN"), "control-case")
+        self.assertEqual(reembed.stratum_of("\ufb01ord", "LATIN"), "control-nfkc")
+        # Thai U+0E33: the 5.82% that were being reported as `control`
+        self.assertEqual(reembed.stratum_of("\u0e01\u0e33", "THAI"), "control-nfkc")
 
     def test_every_name_lands_in_exactly_one_stratum(self):
         cases = [("東京", "CJK", "CJK"), ("서울", "HANGUL", "HANGUL"),
                  ("New York", "LATIN", "multi-word"),
                  (unicodedata.normalize("NFD", "Åre"), "LATIN", "not-NFC"),
                  ("SO-10731", "LATIN", "punctuated"),
-                 ("London", "LATIN", "control")]
+                 ("London", "LATIN", "control-case"),
+                 ("london", "LATIN", "control")]
         for name, script, expected in cases:
             with self.subTest(name=name):
                 self.assertEqual(reembed.stratum_of(name, script), expected)

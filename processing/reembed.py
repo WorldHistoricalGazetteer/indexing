@@ -345,6 +345,12 @@ def is_control(name: str, script: str | None) -> bool:
     return sum(not c.isalpha() for c in name) / len(name) <= 0.5
 
 
+#: The control FAMILY. `stratum_of(...) in CONTROL_STRATA` is exactly
+#: `is_control(...)` — the split is a refinement of one definition, not a second
+#: one, so the census and the gate can never disagree about who the controls are.
+CONTROL_STRATA = ("control", "control-case", "control-nfkc")
+
+
 def stratum_of(name: str, script: str | None) -> str:
     """The reporting bucket. Every examined row lands in exactly one."""
     if (script or "") in ROMANISED_SCRIPTS:
@@ -361,6 +367,25 @@ def stratum_of(name: str, script: str | None) -> str:
         # partial census reported 184 changes in "control", which read as a
         # contradiction and was in fact this mislabelling.
         return "punctuated"
+    # 🛑 AND THE SAME MISLABELLING AGAIN, one change later. `is_candidate` tests
+    # NFC and nothing tests NFKC, so under D-A/D5 a name that MUST change still
+    # landed in a bucket called `control` — 391 of 6,720 sampled control rows
+    # (5.82%), all Thai, all U+0E33 SARA AM, which NFKC decomposes. The census
+    # would have reported changes in `control` exactly as it did once before.
+    #
+    # ⚠ Split HERE and not in `is_candidate`, which is what the finding proposed.
+    # Adding an NFKC clause there would make these names candidates, so they
+    # would leave `is_control` and Gate 1b would lose the only witness it has
+    # that D5 landed — under D5-alone it would have zero must-change rows and
+    # abort for want of subjects. The label was wrong; the POPULATION was right.
+    #
+    # Independent of the tokeniser regime by construction, so `control` means
+    # "cannot change under either D-A or D5" whichever of them is in force, and
+    # the census does not need to know which.
+    if unicodedata.normalize("NFKC", name) != name:
+        return "control-nfkc"
+    if name.casefold() != name:
+        return "control-case"
     return "control"
 
 
@@ -843,6 +868,24 @@ MAX_ABSOLUTE_ERRORS = 5000
 #: when choosing it.
 READBACK_SAMPLE = 3000
 
+#: 🛑 D-A AND D5 DIFFER IN BLAST RADIUS BY 556x, so a uniform sample cannot
+#: witness D5. Measured over 10,000 live toponyms: casefold changes 88.99% of
+#: them, NFKC-compatibility-only changes 0.16% (~117,567 corpus-wide). A uniform
+#: 3,000-row read-back therefore contains ~4.8 D5 documents, and 187,500 uniform
+#: rows would be needed for 300. And if D5 silently failed to apply, the COMBINED
+#: change rate moves 88.99% -> 88.83% — inside the noise of any aggregate gate.
+#:
+#: So D5 gets its own denominator and its own draw, selected by construction
+#: rather than by luck. Compute names them (it is the only phase holding the
+#: names); apply reads them back. Sizing and measurements from indexing-04.
+D5_SAMPLE_PER_SHARD = 8
+
+
+def is_compatibility_only(name: str) -> bool:
+    """D5's population: NFC leaves it alone, NFKC does not."""
+    return (unicodedata.normalize("NFC", name) == name
+            and unicodedata.normalize("NFKC", name) != name)
+
 
 def _failed_ids(c_errs) -> set:
     """The ids ES did NOT write, from whatever shape `bulk` returned.
@@ -1021,6 +1064,7 @@ def cmd_compute(args) -> None:
             or is_control(names[i], scripts[i])]
     print(f"[compute]   embedding {len(keep):,} of {len(ids):,} (scope={args.scope})")
 
+    d5_ids: list = []
     folds_case = tokeniser_folds_case()
     # When the tokeniser does NOT fold, every control belongs to the stable
     # stratum and this is byte-identical to the pre-D-A behaviour — no D1/D2/D4/
@@ -1061,6 +1105,9 @@ def cmd_compute(args) -> None:
                 else:
                     changed_non_candidate += 1
                 diffs.append((ids[i], quant[row].tolist()))
+                if (len(d5_ids) < D5_SAMPLE_PER_SHARD
+                        and is_compatibility_only(names[i])):
+                    d5_ids.append(ids[i])
         if start and start % (args.batch_size * 50) == 0:
             print(f"[compute]   {start:,}/{len(keep):,} "
                   f"({start / (time.time() - t0):.0f}/s)", flush=True)
@@ -1138,6 +1185,7 @@ def cmd_compute(args) -> None:
         "git_commit": _git_commit(in_dir),
         "pinned_git_commit": pin["git_commit"],
         "seconds": round(time.time() - t0, 1),
+        "d5_sample_ids": d5_ids,
         "written_at": datetime.now(timezone.utc).isoformat(),
     }
     _finish_shard(final, temp, done, meta)
@@ -1354,6 +1402,7 @@ def cmd_apply(args) -> None:
     ok = errs = 0
     ledger_ids = []
     failed_ids: list = []
+    d5_sample: list = []
     seen_rows = 0
     verify_sample: list = []          # (toponym_id, vector) spanning the run
     applied_dir = in_dir / "applied"
@@ -1473,6 +1522,12 @@ def cmd_apply(args) -> None:
                 j = _rng.randrange(seen_rows)
                 if j < READBACK_SAMPLE:
                     verify_sample[j] = r
+        # The stratified half. Named by compute, so this is selection by
+        # construction rather than by luck: the uniform reservoir above would
+        # hold ~4.8 of these across the whole run.
+        want = set(metas[i].get("d5_sample_ids") or [])
+        if want:
+            d5_sample.extend(r for r in rows if r[0] in want)
         print(f"[apply]   shard {i:04d}: {ok:,} ok / {errs:,} err", flush=True)
 
         if args.canary and ok >= args.canary:
@@ -1500,6 +1555,19 @@ def cmd_apply(args) -> None:
     print(f"[apply] read-back check on {len(verify_sample)} documents "
           f"across {len({t for t, _ in verify_sample})} ids from "
           f"{len(metas)} shards: {readback}")
+    d5_readback = None
+    if d5_sample:
+        d5_readback = _verify_written(es, args.index, [t for t, _ in d5_sample],
+                                      d5_sample)
+        print(f"[apply] D5 stratified read-back on {len(d5_sample)} "
+              f"compatibility-only documents: {d5_readback}")
+    else:
+        # Said out loud rather than left as an absent line, because "no D5 rows"
+        # and "D5 never applied" produce the same silence.
+        print(f"[apply] NO D5-stratified sample: no shard named any "
+              f"compatibility-only document. Under a tokeniser that applies "
+              f"NFKC this is a RED FLAG, not an empty set — ~0.16% of the "
+              f"corpus should qualify. Under one that does not, it is expected.")
     ledger = {
         "run_dir": str(in_dir),
         "index": args.index,
@@ -1507,6 +1575,8 @@ def cmd_apply(args) -> None:
         "documents_updated": ok,
         "errors": errs,
         "read_back_check": readback,
+        "d5_read_back_check": d5_readback,
+        "d5_sample_size": len(d5_sample),
         "examined_total": examined_total,
         "export_rows": expected,
         "changed_candidate": sum(m.get("changed_candidate", 0) for m in metas),
