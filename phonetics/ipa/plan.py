@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 MAX_ROWS_PER_SHARD = 400_000
 
+# Spill to /ix1, never to /vast: /vast is shared with production ES.
+DEFAULT_TEMP_DIR = "/ix1/ishi/tmp/ipa-duckdb"
+DEFAULT_MAX_TEMP = "32GB"
+
 
 STAGED_ROOT = "/vast/ishi/staged"
 
@@ -187,14 +191,29 @@ def build_plan(inventory_db: str, store_db: str, out_dir: Path, run_id: str,
                retry_statuses: Optional[List[str]] = None,
                allow_quarantined: bool = False,
                max_rows_per_shard: int = MAX_ROWS_PER_SHARD,
-               work_dir_override: Optional[Path] = None) -> Dict:
+               work_dir_override: Optional[Path] = None,
+               temp_dir: str = DEFAULT_TEMP_DIR,
+               max_temp: str = DEFAULT_MAX_TEMP) -> Dict:
     import duckdb
 
     out_dir.mkdir(parents=True, exist_ok=True)
     table = R.RouteTable(allow_quarantined=allow_quarantined)
 
     con = duckdb.connect()
+    # ⚠ SPILL CONTROLS. This joins the full inventory (73M rows) against the
+    # store and then exports the work set, and /vast/ishi is a 1 TB allocation
+    # shared with production ES. Two queries in this campaign have spilled
+    # unbounded onto it -- one reached 198.5 GiB. Cap the spill and put it on
+    # /ix1 (1.8 TB) rather than depending on the default, which is "whatever the
+    # disk has" and on a shared volume means "whatever production needs".
     con.execute("PRAGMA memory_limit='60GB'")
+    try:
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        con.execute(f"PRAGMA temp_directory='{temp_dir}'")
+        con.execute(f"PRAGMA max_temp_directory_size='{max_temp}'")
+    except Exception as exc:      # a cap we cannot set is worth saying aloud
+        logger.warning("could not set DuckDB spill limits: %s", exc)
+    con.execute("SET preserve_insertion_order=false")
     con.execute(f"ATTACH '{inventory_db}' AS inv (READ_ONLY)")
     con.execute(f"ATTACH '{store_db}' AS st")
     con.execute(S.DDL.replace("CREATE TABLE IF NOT EXISTS ",
@@ -308,6 +327,8 @@ def main():
     ap.add_argument("--allow-quarantined", action="store_true")
     ap.add_argument("--max-rows-per-shard", type=int, default=MAX_ROWS_PER_SHARD)
     ap.add_argument("--reuse-work", help="path to an existing work-<run> dir; skips re-exporting the row set")
+    ap.add_argument("--temp-dir", default=DEFAULT_TEMP_DIR)
+    ap.add_argument("--max-temp", default=DEFAULT_MAX_TEMP)
     ap.add_argument("--allow-no-work", action="store_true",
                     help="accept a plan with zero rows to do; without it a "
                          "zero is REFUSED, because it cannot be told apart "
@@ -320,7 +341,8 @@ def main():
                         format="%(asctime)s %(levelname)s %(message)s")
     p = build_plan(a.inventory_db, a.store_db, Path(a.out_dir), a.run_id,
                    a.retry_status, a.allow_quarantined, a.max_rows_per_shard,
-                   Path(a.reuse_work) if a.reuse_work else None)
+                   Path(a.reuse_work) if a.reuse_work else None,
+                   a.temp_dir, a.max_temp)
     terminal_total = sum(p["terminal_rows"].values())
     print(f"rows needing work : {p['rows_needing_work']:,}")
     print(f"  computable      : {p['computable_rows']:,}")
@@ -369,8 +391,11 @@ def main():
     if w.get("total"):
         print(f"\n  tgn lang witness: total={w['total']:,} "
               f"und={w['und']:,} ({w['und_pct']}%) "
-              f"empty={w['empty_lang']:,} ({w['empty_pct']}%) "
-              f"fix_applied={w['fix_appears_applied']}")
+              f"empty={w['empty_lang']:,} ({w['empty_pct']}%)")
+        # Counts only. This witness cannot see the tgn fix in a vocabulary that
+        # normalises und away at :935, and must not imply that it can.
+        if w.get("verdict"):
+            print(f"  {w['verdict']}")
 
     # A zero here is ambiguous and must not pass silently.
     stale = p.get("stale_inventory_namespaces") or []
