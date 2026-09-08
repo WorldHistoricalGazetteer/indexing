@@ -172,7 +172,7 @@ def main() -> int:
     sys.path.insert(0, str(Path(a.model_dir).resolve()))
     from processing.device import resolve_device
     from inference import SymphonymModel
-    from evaluation.retrieval import embed_names
+    from evaluation.retrieval import embed_names, ranks_from_scores
     device = resolve_device("auto", purpose="recall_ceiling")
     model = SymphonymModel(model_dir=Path(a.model_dir), device=device)
 
@@ -186,9 +186,23 @@ def main() -> int:
     v7_rank = np.zeros(len(test), dtype=np.int64)
     for i in range(0, len(test), a.chunk):
         sims = Q[i:i + a.chunk] @ H.T
-        tgt = sims[np.arange(sims.shape[0]), targets[i:i + a.chunk]][:, None]
-        # rank = 1 + how many score strictly higher. No sort of 1.05M needed.
-        v7_rank[i:i + a.chunk] = 1 + (sims > tgt).sum(axis=1)
+        # 🛑 USE THE SHARED RANK FUNCTION, NOT A REIMPLEMENTATION. My original
+        # `1 + (sims > tgt).sum()` is OPTIMISTIC — it places the target ahead of
+        # everything scoring the same. `ranks_from_scores` is PESSIMISTIC:
+        # `(row > t).sum() + (row == t).sum()`, the target after every tie.
+        #
+        # ⚠ FOR A COSINE THE TWO AGREE, because float ties are rare. FOR
+        # LEVENSHTEIN THEY DIVERGE ENORMOUSLY, because normalised edit
+        # similarity over a 1.05M haystack produces vast numbers of identical
+        # values. That single difference is why v7 reproduced §8's anchors to
+        # ~0.003 while `levenshtein_romanised` came out up to 0.08 too high —
+        # the population was identical and the CONVENTION was not.
+        #
+        # As the shared docstring says: optimistic tie handling reports a
+        # saturated scorer as a good one.
+        v7_rank[i:i + a.chunk] = np.asarray(
+            ranks_from_scores(sims, targets[i:i + a.chunk], pool=None),
+            dtype=np.int64)
         if i % (a.chunk * 8) == 0:
             print(f"   v7 {i:,}/{len(test):,}", flush=True)
     del H, Q
@@ -207,8 +221,11 @@ def main() -> int:
         M = process.cdist(q_rom[i:i + a.chunk], hay_rom,
                           scorer=Levenshtein.normalized_similarity,
                           dtype=np.float32, workers=-1)
-        tgt = M[np.arange(M.shape[0]), targets[i:i + a.chunk]][:, None]
-        lev_rank[i:i + a.chunk] = 1 + (M > tgt).sum(axis=1)
+        # Same shared function — and this is the scorer the convention actually
+        # bites, so a second implementation here would be the whole bug again.
+        lev_rank[i:i + a.chunk] = np.asarray(
+            ranks_from_scores(M, targets[i:i + a.chunk], pool=None),
+            dtype=np.int64)
         if i % (a.chunk * 8) == 0:
             print(f"   lev {i:,}/{len(test):,}", flush=True)
 
