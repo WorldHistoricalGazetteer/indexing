@@ -133,14 +133,27 @@ def benchmark(inventory_db: str, sample: int, seed: int, out: Optional[str]) -> 
     # only if blob length does not correlate with ipa-presence, which is likely
     # and is not verified.
     #
-    # 🛑 AND ONE RESIDUAL THE MECHANISM DOES NOT EXPLAIN. Measured selectivity
-    # is 0.683486 (50,221,897 of 73,479,069), so 200,000 rows should filter to
-    # 136,697. Observed 136,241 -- short by 456, which is -2.19 sigma on a
-    # binomial sd of 208. The mechanism is right and the number is slightly off,
-    # and a plausible reason is that this table is ORDERED while reservoir
-    # sampling runs per-morsel: if ipa-presence varies along the file, the draw
-    # is not uniform over it. Not chased, because nothing here depends on it --
-    # but do not reuse this sample for a per-script or per-region breakdown.
+    # ⚠ A RESIDUAL OF 456 ROWS IS UNEXPLAINED, AND IT IS ALSO n=1. Measured
+    # selectivity 0.683486 predicts 136,697 from 200,000; observed 136,241,
+    # short by 456 = -2.19 sigma on a binomial sd of 208. I proposed that the
+    # table's ORDERING plus per-morsel reservoir sampling caused it.
+    #
+    # 🛑 THAT HYPOTHESIS WAS TESTED AND FAILED. Session 04 ran seven
+    # arrangements at matched selectivity, ten trials each: front-loaded came
+    # out at +2.22 sigma -- the OPPOSITE SIGN -- and no condition reproduced a
+    # deficit of this size. If per-morsel sampling were position-biased in the
+    # way the story needs, front-loading is exactly where it should show.
+    #
+    # 🛑 AND THE MORE BASIC ERROR WAS MINE: ONE DRAW IS NOT A RESIDUAL. 04's
+    # uniform condition varies by +/-183 between draws, so a single observation
+    # 456 low is about two and a half draws from nothing. I computed a sigma
+    # against a THEORETICAL binomial and then reasoned as if I had measured a
+    # systematic effect. The width of the distribution was never measured.
+    #
+    # Anyone picking this up: take ten draws on the real table and look at their
+    # sd BEFORE anything more elaborate. It likely dissolves the question.
+    # Nothing here depends on it -- but still do not reuse a sample drawn this
+    # way for a per-script or per-region breakdown.
     rows = con.execute(f"""
         SELECT ipa FROM inv.toponyms
         WHERE ipa IS NOT NULL AND ipa <> ''
