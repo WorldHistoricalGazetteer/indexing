@@ -9462,3 +9462,37 @@ Measured Thai retrieval getting **worse** after the re-embed. That is the test
 this decision has not had, and 17's census under Unicode 14.0.0 is the input for
 it — **all figures here are from 13.0.0, and NFKC is a different function
 between versions.**
+
+### 55.4 🛑 THE CENSUS CANNOT SEE THE THAI CASE — read TWO numbers, not one
+
+⚠ **Raised by `17` BEFORE the numbers land, which is the only useful time.**
+`U+0E33` decomposes to `NIKHAHIT + SARA AA` and **both halves are Thai**, so the
+row's script assignment does not change and **it will not appear anywhere in the
+transition matrix.** Thai is the case where the script-level answer is *no* and
+the change is entirely real: the model sees two phonological units instead of one
+opaque glyph (§55.1).
+
+**So the census carries two answers and they are not interchangeable:**
+
+| number | question it answers | size |
+|---|---|---|
+| **rows affected** | how many names the model TOKENISES differently under D5 | the real scope, **much larger** |
+| **transition matrix** | how many change the SCRIPT they are filed under | the narrower question D5 was originally about |
+
+🛑 **Quoting only the matrix understates D5 by whatever Thai and its kin
+contribute — and the matrix is the number that looks like the headline.**
+
+⚠ **ONE CORRECTION, and it is load-bearing rather than pedantic.** `17` called
+the decomposition **canonical**. Measured: the tag is `<compat>`, and **both NFC
+and NFD leave `U+0E33` untouched.**
+
+```
+decomposition tag  '<compat> 0E4D 0E32'
+NFC  leaves it alone   True        NFD  leaves it alone   True
+NFKC changes it        True
+```
+
+**Had it been canonical, D1 — shipped months ago — would already have applied it
+and there would be no decision to take.** The whole of §55 exists *because* it is
+compatibility-only. ✅ The substantive point survives the correction intact: both
+halves are Thai either way, so the matrix is blind to it regardless.
