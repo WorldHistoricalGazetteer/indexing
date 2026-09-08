@@ -8356,14 +8356,38 @@ half reranking cannot touch by construction. **200 from each retriever is 400
 candidates: a latency question, not a research one.** Shape to cost: union, then
 the existing re-order over the merged pool.
 
-### 44.2 ✅ `both_nonlatin` IS THE MECHANISM — v7 BEATS lexical there
+### 44.2 🛑 RETRACTED — `both_nonlatin` DID NOT SURVIVE POWER
 
-n=410: **v7 0.449 vs lexical 0.439 at R@200**, holding to k=5,000 (0.615 vs
-0.585). **v7's value is concentrated exactly where romanising both sides destroys
-the signal** — the first evidence in this campaign that v7 is *complementary*
-rather than merely *worse*, and a better argument for the model than any headline
-recall figure. ⚠ `both_latin` is **n=1** and reported as noise, so its absence is
-not read as a gap.
+**This section previously read: *"v7 BEATS lexical there … the first evidence in
+this campaign that v7 is complementary rather than merely worse, and a better
+argument for the model than any headline recall figure."* IT IS WITHDRAWN.**
+
+```
+both_nonlatin, R@200        v7      lev
+natural   n=  410        0.449    0.439    v7 ahead by +0.010
+balanced  n=5,358        0.441    0.465    lev ahead by +0.024
+```
+
+⚠ **At 13× the sample THE SIGN REVERSES.** It was a +0.010 gap at n=410 — noise.
+
+🛑 **BOTH PARTIES FLAGGED THE `n` AND THEN REASONED FROM THE NUMBER ANYWAY.**
+`8b` reported it with the sample size attached; **this session read the flag,
+repeated the figure, and added rhetorical weight it had not been given.** ⚠
+**Second time in one day that this session amplified an underpowered claim that
+arrived with its own caveat** — the other being the −2.19σ from n=1. **A caveat
+the reader repeats but does not act on is decoration.**
+
+✅ **The complementarity conclusion SURVIVES — on the 2×2, which never depended on
+this row and is much stronger:**
+
+```
+k=200        v7-only    union    best single    gain
+natural       9.43%    0.6843      0.5900      +0.0943
+balanced     10.67%    0.6260      0.5193      +0.1067
+```
+
+**~10% v7-only on BOTH populations, and the oracle gain is LARGER on §8's.**
+⚠ `both_latin` is n=1 natural / n=59 balanced — reported as thin either way.
 
 ### 44.3 ⚠ THE ABSOLUTE NUMBERS ARE POPULATION-DEPENDENT — DO NOT COMPARE THEM TO §8
 
@@ -8467,3 +8491,39 @@ PanPhon, not data loss.**
 returned **136,241 of a requested 200,000**. At a yield of 0.999993 no plausible
 artefact moves the conclusion, **but a sampler silently delivering 68% of what was
 asked is worth understanding before it is used where the COUNT matters.**
+
+## 46. 🛑 THE BALANCED RE-RUN DOES NOT REPRODUCE §8 — and that is now the open question
+
+```
+R@200                        v7       lev        gap
+§8       (n=8,713)       0.4766    0.4768    +0.0002
+natural  (n=3,000)       0.4680    0.5900    +0.1220
+balanced (n=9,609)       0.4348    0.5193    +0.0845
+```
+
+⚠ **Balancing moved `lev` TOWARD §8 (0.590 → 0.519) and moved `v7` AWAY from it
+(0.468 → 0.435).** So the earlier account — *"the population difference explains
+the gap"* (§44.3) — is **half right at best**, and `8b` said so rather than
+letting the tidy version stand.
+
+**Candidate explanation, labelled as such and NOT tested:** the balanced sample is
+**9,609 queries against §8's 8,713** — 10% more from the same *100-per-pair* rule,
+so the **script-pair groupings differ**, almost certainly because `8b`'s
+`script_of` (first alphabetic character's Unicode name) is not the script
+detection `rank_curve` uses. **Different pair sets → different balanced samples.**
+One run with `rank_curve`'s own `stratum_of` settles it.
+
+**CONFIDENCE, as `8b` states it:**
+
+* ✅ **ROBUST** — the two retrievers fail on **substantially disjoint sets**,
+  ~10% v7-only at k=200 on both populations. **Hybrid retrieval is real.**
+* ✅ **ROBUST** — romanised Levenshtein **beats v7 at every k** on both of `8b`'s
+  populations. ⚠ **§8 does not show this. One of the two harnesses is measuring
+  something different and nobody can yet say which.**
+* 🛑 **RETRACTED** — v7's advantage in `both_nonlatin` (§44.2).
+* ⚠ **UNEXPLAINED** — §8's 0.0002 agreement. **Neither population reproduces it.**
+
+➡ **Commissioned, after the merge: one run with `rank_curve`'s own `stratum_of`.**
+Until then §8's retrieval anchors and `8b`'s cannot be quoted in the same
+sentence, and **the disagreement is about how good v7 is relative to a baseline** —
+which is the question the whole v8 case rests on.
