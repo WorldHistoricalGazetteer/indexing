@@ -822,6 +822,35 @@ def quantize(embeddings):
     return np.round(np.asarray(embeddings, dtype=np.float32) * 127.0).astype(np.int8)
 
 
+#: Under a case-folding tokeniser, a control that REPRODUCES its stored vector
+#: is evidence the fold did not land. At most this fraction may reproduce.
+CONTROL_MAX_UNCHANGED_RATE = 0.01
+
+
+def tokeniser_folds_case() -> bool:
+    """Does the tokeniser this process would import apply D-A's fold?
+
+    Probed, not configured. A flag would be one more thing that can disagree
+    with the code, and this run already has four files' worth of that.
+    """
+    from phonetics.tokenise import preprocess_text
+    return preprocess_text("A") == preprocess_text("a")
+
+
+def control_stratum(name: str) -> str:
+    """`stable` (must reproduce) or `must-change` (must NOT), under D-A.
+
+    ⚠ This encodes D-A's SPECIFIC transformation — NFKC then casefold. It is
+    not a general "will the tokeniser change this name?" predicate and must be
+    revisited if preprocessing ever changes in some other way. Stated because a
+    classifier that silently stops matching the thing it classifies is exactly
+    how `is_control` came to be wrong here.
+    """
+    if unicodedata.normalize("NFKC", name) != name or name.casefold() != name:
+        return "must-change"
+    return "stable"
+
+
 def check_positive_control(cosines, shard_id: int = -1) -> dict:
     """Gate 1. Raises rather than returning a verdict nobody has to read.
 
@@ -855,6 +884,51 @@ def check_positive_control(cosines, shard_id: int = -1) -> dict:
             f"'difference' this shard found would be an artefact. Nothing written.")
     return {"rows": n, "pass_rate": pass_rate,
             "mean_cos": float(arr.mean()), "min_cos": float(arr.min())}
+
+
+def check_negative_control(cosines, shard_id: int = -1) -> dict:
+    """Gate 1b — the DISAGREEING witness, and it only exists under D-A.
+
+    🛑 Gate 1 alone cannot see whether the tokeniser change landed. It asks
+    "did these names reproduce their stored vector?", and a run with the fold
+    silently absent answers yes to everything — a check that passes hardest
+    precisely when the thing it is gating did not happen.
+
+    Measured on 3,000 live toponyms, 8 Sep 2026: **94.55% of control rows change
+    under casefold**, so under D-A the OLD gate projects a 5.45% pass rate
+    against a 99% floor and every shard aborts having written nothing. Gate 1
+    was built for D1/D2/D4/D7 — narrow fixes where the control genuinely cannot
+    change — and D-A inverts its premise rather than stressing it.
+
+    ⚠ The cheap repair (redefine the control as case-invariant names) was
+    MEASURED AND REJECTED: only 51 of 936 sampled controls are case-invariant,
+    and they are dominated by scripts with no case at all — ARABIC 21, THAI 6,
+    GEORGIAN 4, TELUGU 4, TAMIL 3. That set clears `CONTROL_MIN_ROWS` per shard
+    and is still blind to the change being shipped, which is worse than failing
+    the row check: a gate that cannot fail is unfalsifiable from inside.
+    """
+    import numpy as np
+
+    n = len(cosines)
+    if n < CONTROL_MIN_ROWS:
+        raise SystemExit(
+            f"ABORT: only {n} must-change control rows in shard {shard_id:04d} "
+            f"(need {CONTROL_MIN_ROWS}). Under a case-folding tokeniser these are "
+            f"the ONLY witness that the fold landed; without enough of them the "
+            f"shard cannot tell a correct run from one tokenising the old way.")
+    arr = np.asarray(cosines, dtype=np.float64)
+    unchanged = float((arr >= CONTROL_MIN_COSINE).mean())
+    if unchanged > CONTROL_MAX_UNCHANGED_RATE:
+        raise SystemExit(
+            f"ABORT: negative control failed — {unchanged:.2%} of {n:,} names "
+            f"that MUST change still reproduce their stored vector, above "
+            f"{CONTROL_MAX_UNCHANGED_RATE:.0%}. The tokeniser reports that it "
+            f"folds case, yet these names embed exactly as the index already "
+            f"holds them. The likely cause is a PARTIAL application across the "
+            f"four tokeniser files: `phonetics/tokenise.py` folding while the "
+            f"encoder actually used does not. Nothing written.")
+    return {"rows": n, "unchanged_rate": unchanged,
+            "mean_cos": float(arr.mean()), "max_cos": float(arr.max())}
 
 
 def cmd_compute(args) -> None:
@@ -896,7 +970,11 @@ def cmd_compute(args) -> None:
             or is_control(names[i], scripts[i])]
     print(f"[compute]   embedding {len(keep):,} of {len(ids):,} (scope={args.scope})")
 
-    diffs, examined, changed, control_cos = [], {}, {}, []
+    folds_case = tokeniser_folds_case()
+    # When the tokeniser does NOT fold, every control belongs to the stable
+    # stratum and this is byte-identical to the pre-D-A behaviour — no D1/D2/D4/
+    # D7 run changes meaning because of this split.
+    diffs, examined, changed, control_cos, control_change_cos = [], {}, {}, [], []
     # Broken out because the non-candidates are a TEST, not padding: a document
     # that tokenises identically under both encoders cannot change, so any
     # non-zero count here refutes the candidate predicate itself rather than
@@ -916,7 +994,11 @@ def cmd_compute(args) -> None:
                 a = quant[row].astype(np.float32)
                 b = stored[i].astype(np.float32)
                 denom = float(np.linalg.norm(a) * np.linalg.norm(b)) or 1.0
-                control_cos.append(float(np.dot(a, b) / denom))
+                cos = float(np.dot(a, b) / denom)
+                if folds_case and control_stratum(names[i]) == "must-change":
+                    control_change_cos.append(cos)
+                else:
+                    control_cos.append(cos)
             delta = int(np.abs(quant[row].astype(np.int16)
                                 - stored[i].astype(np.int16)).max())
             if delta and delta < MATERIAL_DELTA:
@@ -937,6 +1019,16 @@ def cmd_compute(args) -> None:
     print(f"[compute]   positive control: {control['pass_rate']:.4%} of "
           f"{control['rows']:,} rows at cos >= {CONTROL_MIN_COSINE} "
           f"(mean {control['mean_cos']:.5f}, min {control['min_cos']:.5f})")
+    neg = None
+    if folds_case:
+        # --- Gate 1b: and the names that MUST have changed ------------------
+        neg = check_negative_control(control_change_cos, args.shard_id)
+        print(f"[compute]   negative control: {neg['unchanged_rate']:.4%} of "
+              f"{neg['rows']:,} must-change rows still reproduce their stored "
+              f"vector (max cos {neg['max_cos']:.5f}) — the fold landed")
+    else:
+        print(f"[compute]   tokeniser does not fold case; every control is in "
+              f"the stable stratum and Gate 1b does not apply")
 
     check_free_space(in_dir, args.min_free_gb, f"before writing shard {args.shard_id:04d}")
     final, temp, done = shard_paths(in_dir, "diff", args.shard_id)
@@ -1237,9 +1329,22 @@ def cmd_apply(args) -> None:
         marker = applied_dir / f"applied_{i:04d}.json"
         if marker.exists():
             prior = json.loads(marker.read_text())
-            ok += prior["ok"]
-            errs += prior["errors"]
-            continue
+            # 🛑 `partial` was WRITTEN on abort and READ nowhere: the predicate
+            # was a bare `marker.exists()`, so resuming SKIPPED the shard it had
+            # stopped inside and left the remainder permanently unapplied — while
+            # the totals stayed coherent, because `ok` is carried over from the
+            # marker. The abort message says "Re-run to resume" and the resume
+            # path did the opposite of what the message promised. Found by
+            # indexing-04 reading the two halves against each other rather than
+            # each on its own. Redoing the shard is safe: the updates are
+            # idempotent, which is the whole reason a partial can be re-run.
+            if not prior.get("partial"):
+                ok += prior["ok"]
+                errs += prior["errors"]
+                continue
+            print(f"[apply]   shard {i:04d} was left PARTIAL "
+                  f"({prior['ok']:,} applied of {len(prior.get('toponym_ids', [])):,} "
+                  f"attempted); redoing it in full — updates are idempotent.")
         table = pq.read_table(shard_paths(in_dir, "diff", i)[0])
         rows = list(zip(table.column("toponym_id").to_pylist(),
                         table.column("embedding").to_pylist()))

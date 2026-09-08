@@ -304,6 +304,38 @@ class TestPositiveControlGate(unittest.TestCase):
         self.assertGreater(reembed.check_positive_control(cosines)["pass_rate"], 0.99)
 
 
+class TestTheControlSurvivesACaseFoldingTokeniser(unittest.TestCase):
+    """Gate 1 asks "did these reproduce their stored vector?" — and a run with
+    the fold silently absent answers yes to everything. Measured on 3,000 live
+    toponyms: 94.55% of control rows change under casefold, so the old gate
+    projects a 5.45% pass rate against a 99% floor and every shard aborts."""
+
+    def test_the_current_tree_does_not_fold_so_nothing_changes(self):
+        self.assertFalse(reembed.tokeniser_folds_case())
+
+    def test_the_stratum_split_follows_D_A_not_a_guess(self):
+        self.assertEqual(reembed.control_stratum("Paris"), "must-change")
+        self.assertEqual(reembed.control_stratum("paris"), "stable")
+        self.assertEqual(reembed.control_stratum("\ufb01ord"), "must-change")  # NFKC
+        self.assertEqual(reembed.control_stratum("\u062f\u0645\u0634\u0642"), "stable")
+
+    def test_names_that_must_change_and_did_not_abort_the_run(self):
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.check_negative_control([0.9999] * 300, 0)
+        self.assertIn("PARTIAL", str(ctx.exception))
+
+    def test_the_witness_must_be_thick_enough_to_witness(self):
+        """A gate with too few subjects passes. Under D-A this stratum is the
+        ONLY evidence the fold landed, so a thin one is a silent pass."""
+        with self.assertRaises(SystemExit) as ctx:
+            reembed.check_negative_control([0.2] * 10, 0)
+        self.assertIn("only 10", str(ctx.exception))
+
+    def test_a_genuine_fold_passes(self):
+        got = reembed.check_negative_control([0.2] * 300, 0)
+        self.assertEqual(got["unchanged_rate"], 0.0)
+
+
 class TestFreeSpaceGuard(unittest.TestCase):
     """/vast is shared with production ES, which goes READ-ONLY at ~51 GB free.
 
@@ -550,6 +582,29 @@ class TestTheHashGuardNamesTheRightFailure(unittest.TestCase):
         self.assertEqual(len(digest), 64)
 
 
+class _FakeES:
+    """Enough of an ES client for cmd_apply's non-bulk calls."""
+
+    def __init__(self):
+        self.options_called = 0
+
+    def options(self, **kw):
+        self.options_called += 1
+        return self
+
+    def mget(self, index=None, ids=None, _source=None, **kw):
+        return {"docs": [{"_id": i, "found": True,
+                          "_source": {"embedding": [0] * reembed.EMBEDDING_DIM}}
+                         for i in (ids or [])]}
+
+    @property
+    def indices(self):
+        return self
+
+    def refresh(self, index=None, **kw):
+        return {"_shards": {"failed": 0}}
+
+
 class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -707,6 +762,45 @@ class TestApplyRefusesAPartialOrMixedRun(unittest.TestCase):
         meta = json.loads((applied / "applied_0001.json").read_text())
         self.assertEqual(meta["toponym_ids"], ["x@en"])
         self.assertFalse(meta["partial"])
+
+    def test_a_partial_shard_is_REDONE_not_skipped(self):
+        """`partial` was written on abort and read nowhere.
+
+        The resume predicate was a bare `marker.exists()`, so a re-run skipped
+        the shard it had stopped inside and left the remainder permanently
+        unapplied — while the totals stayed coherent, because `ok` is carried
+        over from the marker. The abort message promises "Re-run to resume" and
+        the resume path did the opposite. Redoing is safe because the updates
+        are idempotent.
+        """
+        import unittest.mock as mock
+        for i in range(3):
+            self._complete_shard(i, changed=2)
+        applied = self.dir / "applied"
+        applied.mkdir()
+        (applied / "applied_0001.json").write_text(json.dumps(
+            {"shard": 1, "ok": 1, "errors": 0, "partial": True,
+             "toponym_ids": ["n1_0@en"]}))
+        # 0002 finished cleanly and must NOT be redone.
+        (applied / "applied_0002.json").write_text(json.dumps(
+            {"shard": 2, "ok": 2, "errors": 0, "partial": False,
+             "toponym_ids": ["n2_0@en", "n2_1@en"]}))
+        seen = []
+
+        def fake_bulk(es, actions, **kw):
+            acts = list(actions)
+            seen.extend(a["_id"] for a in acts)
+            return len(acts), []
+
+        import elasticsearch.helpers as esh
+        with mock.patch.object(esh, "bulk", fake_bulk), \
+             mock.patch.object(reembed, "_es_client", lambda *a, **k: _FakeES()):
+            reembed.cmd_apply(self._args(execute=True, max_error_rate=1.0,
+                                         read_back=0, canary=0))
+
+        self.assertIn("n1_0@en", seen, "the PARTIAL shard was skipped — the bug")
+        self.assertIn("n1_1@en", seen, "the partial shard's remainder was lost")
+        self.assertNotIn("n2_0@en", seen, "a COMPLETE shard was redone")
 
     def test_read_back_reports_a_mismatch_rather_than_trusting_the_bulk_ok(self):
         """A bulk `ok` means ES accepted the request, not that the stored vector
