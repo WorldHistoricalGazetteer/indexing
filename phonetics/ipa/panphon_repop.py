@@ -326,6 +326,27 @@ def merge(inventory_db: str, shard_glob: str, buckets: int, work_db: str,
     NO constraints at all — asserted below, not assumed. If that ever stops
     being true this refuses rather than quietly dropping something.
 
+    ⚠ DESIGN NOTE FOR THE NEXT PASS — THIS SHAPE COSTS ~66 GB OF DEAD PAGES.
+    `DROP TABLE toponyms` inside the copy leaves its pages allocated, and
+    `CHECKPOINT` frees them INSIDE the file without returning them to the
+    filesystem. So the candidate carries both the old and the new table: 255 GB
+    against the 188 GB a clean build would produce, and a "rewrite that changes
+    no rows" is NOT size-neutral, which is not something anyone derives from a
+    row count.
+
+    Accepted here because this candidate is a BRIDGE — it exists so the next
+    `update_es index` writes `panphon_embedding` at 50.2 M rather than 1.2%, and
+    the post-re-extract inventory supersedes it entirely. 66 GB of dead pages on
+    a volume with 1.6 TB free is not worth another full read+write to reclaim.
+
+    ➡ FOR THE POST-RE-EXTRACT PASS: build into a FRESH database instead of
+    dropping-and-renaming inside a copy. No dropped table, no dead pages, and
+    the output is the size it should be. ⚠ That trade only works when you are
+    building every table anyway — here the whole point was that the untouched
+    tables keep their constraints by never being touched, and a fresh build has
+    to reproduce them. Fresh-build wins when you must rewrite everything;
+    copy-then-swap wins when you must rewrite one thing.
+
     THIS DOES NOT SWAP. It produces a verified candidate beside the original and
     stops; the rename is a separate, announced step. A merge that also swaps has
     no point at which a human can look at the result.
