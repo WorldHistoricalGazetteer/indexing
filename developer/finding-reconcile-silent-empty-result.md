@@ -94,11 +94,40 @@ if qs and (failed or not any(answered(q) for q in qs)):
 
 ## ⚠ A CONTRACT CHANGE THAT BREAKS CALLERS
 
-🛑 **RETRACTED AS FACT — the claim is a docstring, and no one has seen the
-response it describes.** The assertion is that on a failed call Django OMITS
-`namespaces_searched` rather than falsely populating it from the request. Its
-entire provenance is `reconcile_cced_whg.py:133`, dated 8 Sep 18:53 UTC, author
-session ended. **Zero observed instances in a 21,630-query cache.**
+🛑 **RESOLVED: BOTH CLAIMS LIVE IN ONE FILE, TWENTY-TWO LINES APART, AND
+NEITHER WAS WITHDRAWN WHEN THE OTHER LANDED.**
+
+```
+reconcile_cced_whg.py:133   gateway_failed()  — on failure `namespaces_searched` is OMITTED
+                                                (live, from 8 Sep 18:53 UTC)
+reconcile_cced_whg.py:155   answered()        — the degraded 200 SYNTHESISES it from the request
+                                                (superseded 8 Sep)
+```
+
+⚠ **So this was never prose against observation.** It was one half of a
+self-contradiction quoted without the other half. Zero observed instances of
+either shape in a 21,630-query cache.
+
+✅ **And the layering reading is supported from inside the file.** Line 155
+reaches its claim by appealing to *"the gateway's own documented
+echo-on-every-path invariant"* — which is exactly what a source read of
+`gateway/reconcile.py` finds. It then asserts that Django's degraded 200
+synthesises the field regardless. **The gateway, Django's degraded 200, and the
+8 September failure contract are three different objects**, and the file reads
+as contradictory only because no sentence says which one it is about.
+**Plausible, NOT established.**
+
+✅ **Nothing operational turns on it.** One check keys on
+`variants_used`/`derived_forms`, the other on the `gateway` object, **neither on
+`namespaces_searched`.** Whoever owns the Django view settles it in one grep.
+
+🛑 **THIS IS THE SUPERSEDED-INSTRUCTION SHAPE, and it is a recurrence rather than
+a novelty.** A superseded statement keeps executing unless it is explicitly
+withdrawn; publishing the new position is not the same as retracting the old
+one. That is how one file came to hold two mutually exclusive statements **with
+nobody wrong at any step** — each was true when written, and the earlier one was
+never marked dead. ⚠ **The tell is that a reader cannot date a sentence from its
+text.** Both are now annotated in place with source, date and status.
 
 ⚠ **IF TRUE it inverts a lesson this session recorded and relayed** — I had
 written that the degraded path *synthesises* that field ("the guaranteed field is
