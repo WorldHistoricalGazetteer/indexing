@@ -55,12 +55,32 @@ place#157) attaches to `namespaces_searched`, **not** to those two fields — a
 correct conclusion resting on a wrong citation, which is worse than being wrong
 outright because the plausible reference stops the next person checking.
 
-**2. Explicit contract (current).** Prod has emitted a `gateway` object carrying
-**`answered: false`** since **8 Sep 18:53 UTC**, keyed only on failure. That is a
-contract rather than an inference from which keys happen to serialise. `cced-39`
-demoted the key-set test to a labelled fallback, and made its exception name the
-`exclude_defaults` failure mode so a future build that breaks the fallback raises
-loudly after bounded retries instead of retrying into a corner.
+**2. Explicit contract — 🛑 ASSERTED, NOT OBSERVED. DO NOT RELAY AS FACT.**
+A docstring in the CCEd repo (`reconcile_cced_whg.py:133`, written 8 Sep by a
+session that has since ended) states that prod emits a `gateway` object carrying
+`answered: false` from 8 Sep 18:53 UTC, keyed only on failure. **Provenance stops
+there.** `cced-39` read it, relayed it to me in the confident register of
+something checked, and then retracted:
+
+```
+scanned 21,630 cached queries for a `gateway` key of ANY kind:  ZERO
+```
+
+🛑 **So `gateway_failed()` — which the CCEd repo has promoted to its PRIMARY
+check, demoting the key-set test beneath it — has never fired on a single cached
+response. Its true branch is unexercised.** By the rule this repo already holds,
+an exclusion is evidence only if the same test could have produced an inclusion,
+and that cannot be shown here.
+
+⚠ **Neither session has ever seen a degraded response.** Both of us spent several
+messages reasoning about the shape of one. **If it is real it is a better
+contract than the key-set heuristic — but it needs one grep by whoever owns the
+Django view, and that is the right place to settle it.**
+
+`cced-39`'s handling of the fallback does stand and is worth copying: its
+exception names the `exclude_defaults` failure mode explicitly, so a future build
+that breaks the key-set test raises loudly after bounded retries rather than
+retrying into a corner.
 
 🛑 **3. AND THE BACKPRESSURE PREDICATE — this session relayed the WRONG one.**
 "Treat a batch where **no** query is answered as backpressure" is insufficient:
@@ -74,13 +94,26 @@ if qs and (failed or not any(answered(q) for q in qs)):
 
 ## ⚠ A CONTRACT CHANGE THAT BREAKS CALLERS
 
-**On a failed call, Django now OMITS `namespaces_searched` rather than falsely
-populating it from the request** (reported by `cced-39`, not measured here).
+🛑 **RETRACTED AS FACT — the claim is a docstring, and no one has seen the
+response it describes.** The assertion is that on a failed call Django OMITS
+`namespaces_searched` rather than falsely populating it from the request. Its
+entire provenance is `reconcile_cced_whg.py:133`, dated 8 Sep 18:53 UTC, author
+session ended. **Zero observed instances in a 21,630-query cache.**
 
-🛑 **This inverts a lesson recorded and relayed by this session.** I had written
-that the degraded path *synthesises* that field — "the guaranteed field is the
-field that lies" — and told others so. If it is now omitted, **code assuming it
-is always present breaks on exactly the responses that matter.**
+⚠ **IF TRUE it inverts a lesson this session recorded and relayed** — I had
+written that the degraded path *synthesises* that field ("the guaranteed field is
+the field that lies") and told others so, and code assuming it is always present
+would break on exactly the responses that matter. ⚠ **But my version was
+observation-based and this one is not, so the older claim is currently the
+better-evidenced of the two.** Settle it by grep, not by recency.
+
+🛑 **The transmission failure is the lesson, and it happened twice in four
+messages.** I asserted a cause for being called wedged that I had invented;
+`cced-39` corrected me, then relayed a docstring in the same confident register
+one message later; I committed it to this repository as fact **ninety seconds**
+before the retraction arrived. **A claim gains no evidence by being passed on,
+but it gains the authority of each hop it survives** — and a git commit is a hop
+that outlives every session in the chain.
 
 ⚠ **Both statements can be true of different layers, and confusing them is easy:
 the GATEWAY still echoes it unconditionally** (`CLAUDE.md:568` remains correct
@@ -100,3 +133,8 @@ cached the results is still serving them, and no endpoint fix will touch it.**
 
 **General form worth keeping: when a validation moves to the write path, ask what
 is already stored that will never be revalidated.**
+
+⚠ **And note what that scan does and does not rest on.** The clean result stands
+on the **observed presence** of `variants_used`/`derived_forms` across 20,923
+answered queries — a positive control. It does **not** rest on `gateway_failed()`,
+which never fired, and a check that has never fired has not been shown to work.
