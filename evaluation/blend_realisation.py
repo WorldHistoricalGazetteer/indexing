@@ -203,8 +203,16 @@ def main() -> int:
                         PHONETIC_CEILING, float(sims[j][c]) / top_cos)
             for c in exact:
                 score[pos_in_pool[int(c)]] += LEXICAL_EXACT_BOOST
+            # 🛑 THE NEAR-MISS BOOST APPLIES TO THE NEAR-MISS PASS'S OWN HITS,
+            # NOT TO THE WHOLE POOL. `apply_lexical_fuzzy_boost(hits, …)` is
+            # called with the near-miss ES result set. My first version scored
+            # every pool member, which handed a lexical boost to KNN candidates
+            # that ES never surfaced — inflating wrong candidates and pushing the
+            # blend BELOW v7 alone. That deviation biased the measurement toward
+            # the hypothesis it was built to test, which is the worst direction
+            # for an error to run in.
             qf = q.strip().casefold()
-            for c in pool:
+            for c in lex:
                 rr = resemblance(qf, hay_names[int(c)])
                 if rr >= LEXICAL_FUZZY_FLOOR:
                     score[pos_in_pool[int(c)]] += LEXICAL_FUZZY_BOOST * rr
@@ -215,10 +223,13 @@ def main() -> int:
                 # which tier carried the partner, for (b)
                 in_knn = tgt in set(int(x) for x in knn)
                 in_exact = tgt in set(int(x) for x in exact)
-                rr = resemblance(qf, hay_names[int(tgt)])
-                tier_of_partner[i + j] = ("exact" if in_exact else
-                                          "near-miss" if rr >= LEXICAL_FUZZY_FLOOR
-                                          else "phonetic-only" if in_knn else "?")
+                in_lex = tgt in set(int(x) for x in lex)
+                rr = resemblance(qf, hay_names[int(tgt)]) if in_lex else 0.0
+                tier_of_partner[i + j] = (
+                    "exact" if in_exact else
+                    "near-miss" if in_lex and rr >= LEXICAL_FUZZY_FLOOR else
+                    "phonetic-only" if in_knn else
+                    "retrieved-but-scores-ZERO")
             else:
                 blend_rank[i + j] = 10 ** 9      # not retrieved at all
                 tier_of_partner[i + j] = "not-retrieved"
