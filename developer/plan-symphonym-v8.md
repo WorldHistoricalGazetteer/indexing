@@ -9496,3 +9496,79 @@ NFKC changes it        True
 and there would be no decision to take.** The whole of §55 exists *because* it is
 compatibility-only. ✅ The substantive point survives the correction intact: both
 halves are Thai either way, so the matrix is blind to it regardless.
+
+## 56. 🛑 v7 WAS TRAINED ON JAPANESE-CONTAMINATED CHINESE — established, not inferred
+
+**Raised as an inference by `whg3-ec`, confirmed here from v7's own training
+artefact.** This is the strongest single argument the v8 retrain has, and it is
+a *different* argument from the ones in §1–§13: not "the input data is better
+now", but **"the shipped model learned Chinese phonetics that are substantially
+Japanese."**
+
+### 56.1 The chain, now evidenced at every link
+
+```
+2026-02-10  ce43bd1  the `cmn` tag enters, WITH neural G2P itself
+2026-02-22           zenodo/training_stats/coverage_stats.json — v7's training corpus:
+                       ipa_backends      ["epitran","phonikud","charsiu_g2p"]   ← LIVE
+                       CJK:zh            1,306,961 toponyms WITH IPA
+                       from_db_cache     31,113,562   (matches "v7 trained on 31,113,585")
+2026-02-23           hf/model.safetensors
+2026-05-03           checkpoints/v7/final_model.pt
+2026-09-08  c37d927  the fix — `cmn` is not a CharsiuG2P tag
+```
+
+🛑 **`charsiu_g2p` is named as a training backend twelve days after the defective
+tag entered, and 1,306,961 Chinese Han toponyms carried IPA in that corpus.** The
+mechanism was live, the population was 1.3 M, and the model trained on it.
+
+⚠ **What this does NOT establish:** that every one of the 1,306,961 was Japanese.
+Today's live index shows **89.1% of zh+CJK rows with IPA carry Japanese-only
+phonemes** (ɯ or ɴ) — 1,152,215 of 1,293,547, measured three times
+independently. ⚠ **Note how close 1,293,547 is to the training corpus's
+1,306,961** — consistent with the same defective process, not proof of it.
+
+✅ **The 55.7% figure is a FLOOR and must not be quoted as a rival.** §51.3
+records this. ⚠ **It came back as a competing figure one session later anyway**,
+because *the label lived in this plan and the number travelled in a message*.
+🛑 **A label only protects a number if it is attached at the point of quotation.**
+
+### 56.2 ✅ CODE RIGHT, INDEX WRONG — different remedies
+
+`routes.py` already carries `("zh","CJK"): (BACKEND_CHARSIU, "zho-s")`. **The tree
+is correct and the shipped index is not**, so this needs the re-extract, not a
+code fix. `whg3-ec`'s phrasing, and worth keeping because the two get conflated.
+
+### 56.3 🛑 IT REACHES USERS, WHERE IPA DOES NOT
+
+Verified: `grep -rn "\bipa\b" gateway/*.py` returns **nothing** — the gateway
+never reads IPA on any path. So the contamination cannot hurt anyone *as IPA*.
+**But IPA is the teacher signal**, so it is baked into the embedding, and the
+embedding is queried on every search. **Invisibly, with no error and no seam.**
+
+### 56.4 🛑 NO SHIPPED MODEL RECORDS WHAT IT WAS TRAINED ON
+
+`hf/config.json` is `{"version": "v7"}`. `phase3_metrics.json` has losses and
+epochs. **Neither carries a corpus id, an extraction commit, a row count or a
+date.** The only reason §56.1 could be established at all is that a *separate*
+file survived in `zenodo/` — and mtimes are copy dates, not training dates.
+
+⚠ **This makes the standing rule unenforceable.** "No training data may be
+generated from an index predating `c37d927`" binds to nothing: a year from now
+someone holding v8 is in tonight's position, reading mtimes as if they were
+training dates.
+
+✅ **v8 MUST STAMP ITS TRAINING CORPUS INTO THE MODEL ARTEFACT** — corpus
+generation id, extraction commit, row count, date, and the `ipa_backends` list
+that made this answerable. **`coverage_stats.json` is the precedent to carry
+forward.** Cheap while the retrain is being set up; impossible afterwards.
+`whg3-ec`'s point, and the right one to act on.
+
+### 56.5 ⚠ RANK BY EVIDENCE, NOT BY CONSEQUENCE — two defects, one remedy
+
+* **Contamination** — now established, and **the retrain fixes it.**
+* **Order-insensitivity** — measured on the *deployed* model today: `Seymer`/
+  `Myres` 0.9676 against `Seymer`/`Seymour` 0.8551; **`London`/`Nodlon` 0.8895**.
+  🛑 **A retrain gives no reason to expect this to improve** — it looks
+  architectural, not data-driven. Found while building phonetic neighbour lists
+  for CCEd surnames, i.e. outside the toponym task the model was trained for.
