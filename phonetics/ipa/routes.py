@@ -118,16 +118,48 @@ LANG_ALIAS: Dict[Tuple[str, str], str] = {
     ("dz",  "TIBETAN"): "bod",    # Dzongkha, written in Tibetan script
     ("syc", "SYRIAC"):  "aii",    # Classical Syriac -> Assyrian Neo-Aramaic
 
-    # ⚠ #250-CONTINGENT, AND DELIBERATELY LANDED FIRST. `cmn-Latn` ships with
-    # Epitran, but `to_iso3('zh')` returns the MACROLANGUAGE `zho`, so the router
-    # builds `zho-Latn`, finds nothing, and reports no_route beside an installed
-    # map. It moves ZERO rows today because `is_script_mismatch` discards
-    # source-declared romanisations upstream (#250) — there are no zh+LATIN rows
-    # in the store at all. It is here so that when #250 admits them, ~632k
-    # pinyin rows do not all file as `no_route` against a mode that was installed
-    # the whole time. Safe: yue/wuu/gan/nan/hak carry their own tags (~493k rows),
-    # so `zh` is the residue, and NEURAL_ROUTES already sends ("zh","CJK") to
-    # Mandarin — this is consistency with that, not a new assumption.
+    # `cmn-Latn` ships with Epitran, but `to_iso3('zh')` returns the MACROLANGUAGE
+    # `zho`, so the router builds `zho-Latn`, finds nothing, and reports no_route
+    # beside an installed map. This alias fixes that.
+    #
+    # 🛑 THE ORIGINAL COMMENT HERE SAID IT MOVES ZERO ROWS — "there are no
+    # zh+LATIN rows in the store at all". THAT WAS FALSE WHEN WRITTEN, and it is
+    # the sentence that let this land without the review below. Measured 10 Sep,
+    # four stores agreeing:
+    #
+    #     live ES `toponyms` alias        467,161 zh+LATIN  (of 73,479,069)
+    #     IPA store ipa.duckdb            467,161, ALL status=no_route
+    #     the top-up plan's own inventory 467,161 in `terminal-no_route-zh-LATIN`
+    #     July inventory (temporal-2026-07-31)   0   ← the ONLY store where it held
+    #
+    # The July inventory is the world the author had in mind, and it had already
+    # been superseded — by their own 7 Sep top-up, whose plan file names the
+    # 467,161-row cell about two hours BEFORE this comment was committed. ⚠ The
+    # #250 fixes (`2f093c4`, `8dbf09e`) are what admitted these rows; the comment
+    # was written as though they had not landed yet.
+    #
+    # ⚠ AND THE STATED MECHANISM IS WRONG TOO, which matters for the entry below:
+    # `RouteTable.resolve` keys the alias on `normalise_lang(lang)` — the BASE
+    # subtag — so the key is always `zh`. `("zho","LATIN")` is INERT (no row has
+    # `lang='zho'`); `("zh","LATIN")` is the load-bearing one. The `to_iso3`
+    # story describes the MODE lookup, not the alias key.
+    #
+    # ✅ It will not move them by accident: those 467,161 rows sit in the store as
+    # `no_route`, which is in TERMINAL_STATUSES, so a plain top-up skips them.
+    # They move only on a re-plan with `--retry-status no_route`.
+    #
+    # 🛑 THE REVIEW THIS DEFERRED IS NOW LIVE. 419,684 of the 467,161 already
+    # carry IPA — from the LEGACY rebuild path, where `CHARSIU_LANGUAGES` routes
+    # by language regardless of script, so CharsiuG2P `<cmn>` ran over ALREADY
+    # ROMANISED pinyin (sampled: `Laochangzigou -> laot͡ʃanɡziɡou̯n`). Enabling
+    # this alias replaces that with Epitran `cmn-Latn` over toneless pinyin.
+    # Whether that is an improvement is UNMEASURED and is a real decision —
+    # 266,866 of the 467,161 are `Latn-pinyin-x-notone`. "It moves zero rows" is
+    # what allowed it to be taken without one.
+    #
+    # Safe in one respect at least: yue/wuu/gan/nan/hak carry their own tags
+    # (~493k rows), so `zh` is the residue, and NEURAL_ROUTES already sends
+    # ("zh","CJK") to Mandarin — this is consistency with that.
     ("zho", "LATIN"): "cmn",
     ("zh",  "LATIN"): "cmn",
 }
