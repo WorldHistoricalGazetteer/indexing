@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import os
 import shutil
 import sys
@@ -94,8 +95,86 @@ def derive_index_stats(es_host: str, password_file: str, index: str = "toponyms"
     }
 
 
-def write_config(dest: Path, index_stats: dict | None) -> None:
-    """Copy hf/config.json, filling its `index` block from live measurements.
+#: Where a training run leaves its own account of the corpus it consumed.
+#: `es -train-model` writes this beside the checkpoint; the repo copy under
+#: `zenodo/` is the v7 run's.
+TRAINING_STATS = ("coverage_stats.json",)
+
+
+def read_training_provenance(stats_dir: Path | None) -> dict | None:
+    """The corpus a model was trained on, lifted from the training run's own stats.
+
+    🛑 WHY THIS EXISTS. Before it, a shipped Symphonym model recorded NOTHING
+    about its training corpus — `config.json` was `{"version": "v7"}` and
+    `phase3_metrics.json` held losses and epochs. So "what corpus produced this
+    model?" was unanswerable from the model, and the standing rule that no
+    training data may be generated from an index predating a given fix bound to
+    nothing at all.
+
+    ⚠ It took a forensic dig to answer it once, and only luck made that possible:
+    v7's training pairs are gone from `/vast`, and the question was settled only
+    because a COPY of the run's `coverage_stats.json` happened to survive in
+    `zenodo/` — a different directory, kept for a different reason, that nobody
+    was preserving on purpose. `ipa_backends` in that file is the single field
+    that established v7 trained on CharsiuG2P output while `cmn` was a defective
+    tag, i.e. on Chinese Han toponyms carrying Japanese readings.
+
+    ⚠ A stamp is worth nothing until something can catch it being false — but
+    here there was not even a stamp to falsify. This is the cheap half; the
+    check that reads it belongs with whatever consumes the model.
+    """
+    if stats_dir is None:
+        return None
+    src = None
+    for name in TRAINING_STATS:
+        cand = stats_dir / name
+        if cand.exists():
+            src = cand
+            break
+    if src is None:
+        print(f"  training provenance: NO {TRAINING_STATS[0]} under {stats_dir} — "
+              f"OMITTED. An absent block is visible; a wrong one is not.")
+        return None
+    d = json.loads(src.read_text())
+    prov = {
+        "stats_file": str(src),
+        "total_toponyms": d.get("total_toponyms"),
+        "with_ipa": d.get("with_ipa"),
+        "with_panphon_embedding": d.get("with_panphon_embedding"),
+        "panphon_coverage_pct": d.get("panphon_coverage_pct"),
+        "training_namespaces": d.get("training_namespaces"),
+        # 🛑 THE LOAD-BEARING FIELD. Which G2P backends produced the IPA the
+        # model learned from — the one thing that made v7's contamination
+        # answerable at all.
+        "ipa_backends": d.get("ipa_backends"),
+        "ipa_from_db_cache": d.get("from_db_cache"),
+        "ipa_from_epitran": d.get("from_epitran"),
+        "ipa_from_precomputed": d.get("from_precomputed"),
+        "stats_mtime_utc": datetime.utcfromtimestamp(src.stat().st_mtime)
+                                   .isoformat() + "Z",
+        "extraction_commit": _git_commit_of(src.parent),
+    }
+    missing = [k for k in ("total_toponyms", "ipa_backends") if not prov.get(k)]
+    if missing:
+        print(f"  ⚠ training provenance INCOMPLETE — missing {missing}. "
+              f"Shipping it anyway so the gap is visible in the artefact.")
+    return prov
+
+
+def _git_commit_of(path: Path) -> str:
+    """The commit of the tree the stats came from, or an explicit 'unknown'."""
+    try:
+        out = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def write_config(dest: Path, index_stats: dict | None,
+                 training_stats_dir: Path | None = None) -> None:
+    """Copy hf/config.json, filling `index` from live measurements and
+    `training_corpus` from the training run's own stats.
 
     The repo copy deliberately carries NO total_toponyms / embedding_coverage —
     so there is no stale value in the tree that could be shipped by accident.
@@ -115,11 +194,20 @@ def write_config(dest: Path, index_stats: dict | None) -> None:
         print(f"               measured_from   {index_stats['measured_from']}")
         print(f"               as_of           {index_stats['as_of']}")
 
+    prov = read_training_provenance(training_stats_dir)
+    if prov is not None:
+        cfg["training_corpus"] = prov
+        print(f"  config.json: training corpus  {prov.get('total_toponyms')} toponyms, "
+              f"ipa_backends={prov.get('ipa_backends')}")
+    else:
+        cfg.pop("training_corpus", None)
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 
 
-def build_upload_folder(staging: Path, index_stats: dict | None = None) -> None:
+def build_upload_folder(staging: Path, index_stats: dict | None = None,
+                        training_stats_dir: Path | None = None) -> None:
     """Assemble all files for upload into a single staging directory."""
     staging.mkdir(parents=True, exist_ok=True)
 
@@ -137,7 +225,7 @@ def build_upload_folder(staging: Path, index_stats: dict | None = None) -> None:
 
     # Core files from hf/
     cp(HF_DIR / "README.md")
-    write_config(staging / "config.json", index_stats)
+    write_config(staging / "config.json", index_stats, training_stats_dir)
     cp(HF_DIR / "requirements.txt")
     cp(HF_DIR / "inference.py")
 
@@ -190,6 +278,11 @@ def main():
                         help="File holding the `elastic` password")
     parser.add_argument("--toponyms-index", default="toponyms",
                         help="Alias or index to measure (default: toponyms)")
+    parser.add_argument("--training-stats-dir", default=str(HF_DIR.parent / "zenodo" / "training_stats"),
+                        help="directory holding the TRAINING run's coverage_stats.json; its "
+                             "ipa_backends/row counts are stamped into config.json as "
+                             "`training_corpus`. Pass '' to omit — an absent block is "
+                             "visible, a wrong one is not.")
     parser.add_argument("--index-stats", choices=["derive", "omit"], default="derive",
                         help="derive (default): measure total_toponyms and embedding_coverage "
                              "from the live index, and ABORT if it cannot be reached. "
@@ -219,7 +312,8 @@ def main():
             sys.exit(1)
 
     print("=== Assembling upload folder ===")
-    build_upload_folder(staging, index_stats)
+    tsd = Path(args.training_stats_dir) if args.training_stats_dir else None
+    build_upload_folder(staging, index_stats, tsd)
 
     if args.dry_run:
         print("\nDry run — files assembled but not uploaded.")
