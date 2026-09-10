@@ -204,7 +204,7 @@ def process_cliopatria_feature(feature, seen_ids=None):
             geom_entry['h3_cover'] = h3cover
 
     # Wikidata link if present
-    wd_id = props.get('Wikipedia', props.get('wikidata'))
+    wd_id = props.get('Wikidata', props.get('wikidata'))
     if wd_id and wd_id.startswith('Q'):
         doc['relations'] = [{
             'relation_type': 'sameAs',
