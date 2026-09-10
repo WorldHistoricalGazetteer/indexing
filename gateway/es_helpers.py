@@ -840,6 +840,16 @@ def absolute_confidence(raw_score: float) -> float:
     constant, the near-miss tier is ``name_resemblance``, and the phonetic tier
     is scaled by ``knn_pass_quality`` — so dividing by the ceiling gives a number
     that is monotonic in real match quality and comparable BETWEEN queries.
+
+    🛑 "Match quality" here means NAME-MATCH quality and nothing else, and that
+    sentence has been misread (place#264). Every term above is a name term, so
+    this number carries **no geographic component** and **cannot distinguish two
+    places that share a name**: `Newcastle` in New South Wales scores exactly as
+    well as `Newcastle` in Tyne and Wear. It answers "does this string match?",
+    never "is this the right place?". A caller auto-confirming on it needs a
+    second, non-name signal — scope, ``ccodes`` or type. An external consumer
+    read it as place-identity confidence and spent an audit discovering that it
+    is not.
     Meaningful only for ``fuzzy``/``phonetic`` discovery; text modes leave it
     null rather than publish a number on a different scale.
     """

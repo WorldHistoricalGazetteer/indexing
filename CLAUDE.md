@@ -373,7 +373,17 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     at 2.0 the floor was 0.875 and no discount was expressible.
     Every tier being absolute is what lets each hit carry **`confidence`** (0–100,
     fuzzy/phonetic only) beside the pool-relative `score`, which is ~100 for the
-    top hit even when nothing matched (place#198). ⚠ Do NOT try to derive
+    top hit even when nothing matched (place#198).
+    🛑 **`confidence` MEASURES NAME MATCH AND NOTHING ELSE** (place#264). Every
+    term of the raw score is a name term — flat constant for exact,
+    `name_resemblance` for near-miss, `knn_pass_quality` for phonetic — so it
+    carries **no geographic term** and **cannot separate two places that share a
+    name**. A perfect-confidence hit is a statement that the STRING matches, not
+    that the PLACE is right; `Newcastle` in Australia scores exactly as well as
+    the one in England. ⚠ Callers using it to auto-confirm need a second,
+    non-name signal (scope, ccode, type) — an external consumer read "match
+    quality" as meaning place identity and spent an audit discovering otherwise.
+    ⚠ Do NOT try to derive
     confidence from the KNN cosine: measured 2026-08-20, genuine cross-script
     matches (`Marsails → مارساليس` 0.9878) sit *inside* the junk band, so no
     cosine threshold separates them — see `knn_pass_quality`.
