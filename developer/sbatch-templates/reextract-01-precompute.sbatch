@@ -87,10 +87,17 @@ echo "=== POSITIVE CONTROL ON THE OUTPUT ==="
 # tag would pass every check above. The map was wrong for seven months while
 # every stage reported success, so "the tag is right" is not the property that
 # matters; "the output is Mandarin" is.
+# ⚠ THE LANGUAGE IS IN `toponym_id`, NOT A COLUMN. precompute emits exactly
+# (toponym_id, ipa, panphon_features, panphon_embedding) — ids are `name@lang`,
+# e.g. `山尾山@zh`. Both templates originally filtered `where lang='zh'`, which
+# is a BinderException, so job 1's verification FAILED THE JOB after five hours
+# of successful GPU work, and job 2 would have aborted at preflight the same way.
+# The expectation was written from an assumed schema instead of the artefact.
 python - "$OUT" <<'PY'
 import sys, duckdb
 con = duckdb.connect()
-q = f"select ipa from read_parquet('{sys.argv[1]}') where lang = 'zh' and ipa is not null"
+q = (f"select ipa from read_parquet('{sys.argv[1]}') "
+     f"where toponym_id like '%@zh' and ipa is not null")
 rows = [r[0] for r in con.execute(q).fetchall()]
 assert rows, "ABORT: parquet contains no zh rows at all"
 JA = ("ɯ", "ɴ")                       # Japanese-only phonemes
