@@ -9572,3 +9572,72 @@ forward.** Cheap while the retrain is being set up; impossible afterwards.
   🛑 **A retrain gives no reason to expect this to improve** — it looks
   architectural, not data-driven. Found while building phonetic neighbour lists
   for CCEd surnames, i.e. outside the toponym task the model was trained for.
+
+
+## 57. ✅ THE NFKC CENSUS — measured over the whole corpus at the writer's own Unicode
+
+**Job 11216097, COMPLETED, 73,479,069 toponyms scanned.** `17` built the codepoint
+set **inside the job** under the conda `whg` interpreter rather than passing one
+in, and that decision earned its keep immediately:
+
+```
+python 3.11.13   unicodedata 14.0.0
+NFKC-changing codepoints:  4,866        ← at 13.0.0 I measured 4,807
+  inside U+FB00-FB4F: 57    outside: 4,809
+```
+
+⚠ **59 codepoints differ between the two Unicode versions.** A list computed on a
+laptop would have been a careful measurement of the wrong universe — which is
+exactly the confound `17` generalised from my `str.isalpha()` warning, one level
+up from where I pointed it.
+
+### 57.1 🛑 TWO NUMBERS, 200× APART — quote the wrong one and D5 vanishes
+
+```
+rows containing an NFKC-affected codepoint   136,406  of 73,479,069   (0.1856%)
+rows whose SCRIPT ASSIGNMENT changes             674  (0.5% of affected, 0.0009% of corpus)
+```
+
+**The only transition is `OTHER → LATIN`, 636 rows.** Every other script maps to
+itself: THAI→THAI 38,171, LATIN→LATIN 27,869, CYRILLIC→CYRILLIC 23,755,
+CJK→CJK 18,151, KATAKANA→KATAKANA 10,072, ARMENIAN→ARMENIAN 8,704.
+
+🛑 **`17` predicted this before the numbers existed and was right: the transition
+matrix is blind to the Thai case, because both halves of `U+0E33` are Thai.**
+Quoting the matrix alone understates D5 **by more than two orders of magnitude**
+— and the matrix is the number that looks like the headline.
+
+### 57.2 🛑 MY ORIGINAL SCOPING WAS 0.01% OF THE CHANGE, NOT 1.2%
+
+I measured D5 over the 58 codepoints in the block that motivated it and called
+the range conflict unreachable (§52.5, corrected in §53.2 to "1.2% of the
+codepoints"). **The census gives the row-level figure: the seven ligatures
+`U+FB00–FB06` appear in 14 rows.** Against 136,406 affected rows that is
+**0.01%**. ⚠ **The scoping error was two orders of magnitude worse measured in
+rows than measured in codepoints**, and rows are what the re-embed touches.
+
+### 57.3 ✅ WHAT D5 ACTUALLY DOES — the acceptance criteria can now be written
+
+```
+'ำ'  U+0E33  40,737  -> 'ํา'   THAI SARA AM          ← §55's decision, and the largest single cause
+'№'  U+2116  25,773  -> 'No'   NUMERO SIGN
+'）' U+FF09  13,651  -> ')'    FULLWIDTH RIGHT PAREN
+'（' U+FF08  13,607  -> '('    FULLWIDTH LEFT PAREN
+'º'  U+00BA  11,886  -> 'o'    MASCULINE ORDINAL
+'＝' U+FF1D  11,470  -> '='    FULLWIDTH EQUALS
+'և'  U+0587   8,795  -> 'եւ'   ARMENIAN LIGATURE ECH YIWN
+NBSP U+00A0   6,556  -> ' '
+'ⁿ'  U+207F   2,940  -> 'n'    SUPERSCRIPT N
+```
+
+✅ **Thai `U+0E33` is confirmed as the single largest cause at 40,737 rows** —
+30% of everything D5 touches — which makes §55's decision the load-bearing one
+and Thai the right validation stratum, as `04` argued.
+
+⚠ **`ARMENIAN և` at 8,795 was in nobody's prediction.** It is a genuine ligature
+whose decomposition is unambiguous, so it needs no decision — but it is the
+fourth-largest cause and no one named it.
+
+✅ **The `<font>` class fires on nothing.** Mathematical alphanumerics do not
+appear, so the data-alarm `04` proposed has no subjects — worth stating as a
+measured absence rather than leaving the check unwritten and unexplained.
