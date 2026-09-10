@@ -9598,9 +9598,17 @@ rows containing an NFKC-affected codepoint   136,406  of 73,479,069   (0.1856%)
 rows whose SCRIPT ASSIGNMENT changes             674  (0.5% of affected, 0.0009% of corpus)
 ```
 
-**The only transition is `OTHER → LATIN`, 636 rows.** Every other script maps to
-itself: THAI→THAI 38,171, LATIN→LATIN 27,869, CYRILLIC→CYRILLIC 23,755,
-CJK→CJK 18,151, KATAKANA→KATAKANA 10,072, ARMENIAN→ARMENIAN 8,704.
+🛑 **CORRECTION (10 Sep): "the only transition is `OTHER → LATIN`" IS WRONG.**
+The census prints `trans.most_common(20)` — **truncated**. The header says **674**
+rows change script; only **636** (OTHER→LATIN) are shown. **38 transitions are
+unenumerated and nobody has seen them.** The scripts that map to themselves —
+THAI→THAI 38,171, LATIN→LATIN 27,869, CYRILLIC→CYRILLIC 23,755, CJK→CJK 18,151,
+KATAKANA→KATAKANA 10,072, ARMENIAN→ARMENIAN 8,704 — are correct as far as they
+go, but the 20 printed rows sum to **136,272 of 136,406**: another **134 affected
+rows sit in scripts never printed.**
+
+⚠ **A per-script criterion cannot be written for a transition nobody has seen.**
+Re-run with `most_common()` unbounded — it is a print statement, not a re-scan.
 
 🛑 **`17` predicted this before the numbers existed and was right: the transition
 matrix is blind to the Thai case, because both halves of `U+0E33` are Thai.**
@@ -9618,6 +9626,9 @@ rows than measured in codepoints**, and rows are what the re-embed touches.
 
 ### 57.3 ✅ WHAT D5 ACTUALLY DOES — the acceptance criteria can now be written
 
+🛑 **THESE ARE OCCURRENCE COUNTS, NOT ROW COUNTS** — `nfkc_census.sbatch:64` is
+`for ch in marks: bychar[ch] += 1`, so a name carrying two SARA AM counts twice.
+
 ```
 'ำ'  U+0E33  40,737  -> 'ํา'   THAI SARA AM          ← §55's decision, and the largest single cause
 '№'  U+2116  25,773  -> 'No'   NUMERO SIGN
@@ -9630,9 +9641,24 @@ NBSP U+00A0   6,556  -> ' '
 'ⁿ'  U+207F   2,940  -> 'n'    SUPERSCRIPT N
 ```
 
-✅ **Thai `U+0E33` is confirmed as the single largest cause at 40,737 rows** —
-30% of everything D5 touches — which makes §55's decision the load-bearing one
-and Thai the right validation stratum, as `04` argued.
+🛑 **CORRECTION (10 Sep): I WROTE "40,737 ROWS — 30% OF EVERYTHING", AND THAT
+DIVIDES AN OCCURRENCE COUNT BY A ROW COUNT.** The proof is internal to the census:
+THAI affected **rows** are **38,171**, and 40,737 > 38,171. ✅ **The row-level Thai
+share is at most 38,171 / 136,406 = 27.99%.** ⚠ **Any per-script floor set at
+40,737 is unreachable by construction.**
+
+✅ **Thai remains the largest single cause and the right validation stratum** —
+§55's decision is still the load-bearing one, and `04`'s argument stands. Only the
+number was wrong.
+
+⚠ **AND 136,406 IS NOT D5's POPULATION EITHER — it is an upper bound.** The census
+predicate is "contains a codepoint NFKC changes"; `is_compatibility_only` (the
+code's actual D5 predicate) *also* requires `NFC(name) == name`. `U+095C
+DEVANAGARI DDDHA` (1,284 occurrences) is a **canonical** decomposition — those
+rows are `not-NFC`, i.e. **D1's population, shipped months ago.** Do not replace
+`READBACK_SAMPLE`'s "~117,567 corpus-wide" with 136,406: different predicates,
+different sets, and the ~14% gap between them is consistent rather than
+contradictory.
 
 ⚠ **`ARMENIAN և` at 8,795 was in nobody's prediction.** It is a genuine ligature
 whose decomposition is unambiguous, so it needs no decision — but it is the
