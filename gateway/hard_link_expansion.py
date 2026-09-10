@@ -142,8 +142,21 @@ def _connect_ro(path: Path) -> sqlite3.Connection | None:
     if not path.exists():
         return None
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
-        conn.execute("PRAGMA busy_timeout=5000;")
+        # 🛑 THE INNER WAITS MUST BE SHORTER THAN THE OUTER DEADLINE, and they
+        # were not: `timeout=5.0` / `busy_timeout=5000` against an IoGuard budget
+        # of `_IO_TIMEOUT_S` = 3.0. Under lock contention SQLite's wait could
+        # therefore never complete inside the guard's budget — the guard fired at
+        # 3 s and opened a 60 s breaker while SQLite still had 2 s of patience
+        # left. So the inner wait was not merely useless, it was the MECHANISM:
+        # a contended read that would have succeeded at 3.5 s became a minute of
+        # suppressed linked-polygon fallback. Observed tripping at low volume
+        # against a store benchmarking at 4–57 ms (place#261).
+        #
+        # Derived rather than restated, so the relationship is expressed in code
+        # instead of being two constants someone has to remember agree.
+        _inner = _IO_TIMEOUT_S * 0.8
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=_inner)
+        conn.execute(f"PRAGMA busy_timeout={int(_inner * 1000)};")
         return conn
     except sqlite3.Error as exc:
         logger.warning("hard-link overlay open failed (%s): %s", path, exc)
