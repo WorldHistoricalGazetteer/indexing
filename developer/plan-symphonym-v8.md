@@ -9997,3 +9997,106 @@ its denominator.
 ⚠ **It printed at the end of a 13-hour run, where nobody is positioned to
 question it.** Every other line in this block states its denominator; this one
 did not, and that is why it was the only line that needed chasing.
+
+---
+
+## 62. 🛑 THE ORDERING DEFECT IS REAL, OPERATIONAL, AND **NOT ARCHITECTURAL** — I was wrong
+
+**Measured 11 Sep 2026 on the deployed v7 model, through `/api/embed`, at the
+served int8 precision.** Harness `developer/baselines/order_sensitivity_band.py`,
+result `developer/baselines/order-band-v7-20260911.json`.
+
+### 🛑 The correction first
+
+I recorded the `London`/`Nodlon` 0.8895 finding as *"architectural, not fixed by
+a retrain."* **That was wrong, and it is the kind of wrong that would have cost
+us the whole v8 retrain** — it argued for spending the GPU days without
+addressing ordering, on the grounds that spending them could not help.
+
+Both halves of the system can represent order:
+
+* the **student** is `BiLSTM → self-attention → attention pooling`
+  (`phonetics/models/models.py:283`). A recurrent encoder is order-sensitive by
+  construction; it cannot be *incapable* of separating two anagrams.
+* the **teacher** is not a bag of phonemes either. `_embedding_from_packed_features`
+  (`rebuild_toponyms_index.py:1462`) does **8-bin positional pooling** — 8 bins ×
+  24 PanPhon features = 192-d, each segment binned by relative position
+  `seg_idx/num_segments`. For a 6-segment name every segment lands in its own
+  bin, so the distillation target preserves order at that length.
+
+What is actually missing is that **nothing in training ever made order matter**:
+no permutation negatives, no transposition noise, and no evaluation that would
+have noticed. Grepping the training pipeline for order-based negatives returns
+only tensor `transpose` calls inside attention.
+
+⚠ **"Architectural" is a claim that forecloses work.** It says *do not bother
+trying*, and it was accepted for days on the strength of one cosine. A
+structural-impossibility claim needs the structure read, and I had not read it.
+
+### The measurement — a band, because one number could not be interpreted
+
+0.8895 alone is uninterpretable: anagrams share every phoneme, so a high cosine
+is *expected*. Four bands over the same 267 queries, positives derived from the
+corpus (a second name attested on the same place — never typed by hand), and
+permutations holding **length and character multiset exactly constant** so that
+only order varies:
+
+```
+band                       n    mean  median      p5     p95    >= 0.7 gate
+V true variant           267  0.8343  0.9353  0.2643  0.9835   226  (84.6%)
+P permutation            267  0.7600  0.7844  0.5187  0.9348   190  (71.2%)
+R reversal               267  0.6418  0.6720  0.3210  0.8884   121  (45.3%)
+U unrelated              267  0.1336  0.1379 -0.3580  0.6252     7  ( 2.6%)
+```
+
+**Controls, so the harness can fail:** `cos(Q,Q)` was exactly 1.0 on 267/267,
+and `embed(Q) == embed(P)` on **0/267** — the vectors genuinely differ, so
+order is not discarded outright.
+
+### What it means
+
+**Order IS encoded — and badly under-weighted.** The gradient is real and
+monotone (variant 0.94 > permutation 0.78 > reversal 0.67 > unrelated 0.14), and
+the 0.7 gate does real work against unrelated names (2.6%). But:
+
+🛑 **71.2% of random character permutations clear the production KNN gate of
+0.7** — against 84.6% of genuine variants. Thirteen points separate a real
+spelling variant from a meaningless anagram of the query.
+
+**A true variant outranks its own permutation in only 209/267 (78.3%)** of
+cases — 88.0% of the 225 where the variant plausibly *is* a spelling variant
+(≥0.6 character overlap). So roughly one time in five, a nonsense string built
+from the query's own letters beats a genuine attested co-referent:
+
+```
+Abu Gharab    perm "GAa burhab"  0.9769  >  variant "Abū Gharb"  0.9698
+Abu Dhufr     perm "DrAubf hu"   0.8322  >  variant "Abū Dhukh"  0.7592
+```
+
+⚠ **The mechanism is visible in those two.** The permutation shares the query's
+character multiset *exactly*; the true variant differs by a macron and a vowel.
+A model weighting character content over character order prefers the anagram —
+which is precisely the defect, seen doing its work.
+
+### ⚠ Limits of this measurement, stated so it is not over-read
+
+* **n = 267, from 6,000 places sampled** — the yield is low because the design
+  needs ≥2 distinct Latin-script names of 4–18 characters on one place.
+* **The positive set is noisy.** Same-place names include truncations and
+  translations, not only spelling variants (`Dadi` vs `Dadicun`, `Caowopucun`
+  vs `Caojiawopu`). This *depresses* V and *inflates* the permutation wins, so
+  the 78.3% is a floor, not a point estimate.
+* **Latin script only.** Cross-script ordering behaviour is unmeasured.
+* Chinese romanisations are over-represented in the sample.
+
+### The decision this forces
+
+**The fix belongs in v8's training-data generation, which is the stage that runs
+NEXT** — after the re-extract promotes and before any GPU time is spent. Adding
+permutation / transposition hard negatives is a change to pair selection, not to
+the architecture, and it costs nothing extra if made before the retrain rather
+than after it.
+
+**This table is also v8's acceptance test.** A v8 that has learned order pushes
+the P band down while holding V; a v8 that has not will reproduce these numbers.
+Re-run `order_sensitivity_band.py` against the new model and compare.
