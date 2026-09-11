@@ -845,16 +845,45 @@ staging_stop() {
         return 0
     fi
 
-    echo "Stopping job $SLURM_JOB_ID..."
-    scancel "$SLURM_JOB_ID" 2>/dev/null || true
+    # 🛑 THE ID IS STAGING_SLURM_JOB_ID, NOT SLURM_JOB_ID. The info file
+    # deliberately does not export the latter — a batch job that sources it
+    # must keep its OWN job id — so reading $SLURM_JOB_ID here got an empty
+    # string. `scancel ""` does nothing, `|| true` swallowed it, and the
+    # function then deleted the info file and printed "Staging instance
+    # stopped" while the instance kept running: now orphaned, because the
+    # only record of how to reach it had just been removed. Observed
+    # 11 Sep 2026 (job 23995748, cancelled by hand afterwards).
+    local job_id="${STAGING_SLURM_JOB_ID:-${SLURM_JOB_ID:-}}"
+    if [ -z "$job_id" ]; then
+        echo "ERROR: no staging job id in $STAGING_INFO_FILE."
+        echo "       Refusing to delete it — that would orphan a running instance."
+        return 1
+    fi
 
-    # Wait for cleanup
-    sleep 5
-    rm -f "$STAGING_INFO_FILE"
+    echo "Stopping job $job_id..."
+    scancel -M all "$job_id" 2>/dev/null || true
 
-    unset ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
+    # Verify rather than assume. The info file is the only record of how to
+    # reach this instance, so it is deleted only once the job is really gone.
+    local waited=0
+    local state=""
+    while [ "$waited" -lt 60 ]; do
+        state=$(sacct -M all -j "$job_id" --format=State -Pn 2>/dev/null \
+                | grep -E 'RUNNING|PENDING|COMPLETING|CONFIGURING' | head -1)
+        if [ -z "$state" ]; then
+            rm -f "$STAGING_INFO_FILE"
+            unset ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
+            echo "Staging instance stopped (job $job_id)."
+            return 0
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
 
-    echo "Staging instance stopped."
+    echo "ERROR: job $job_id is STILL $state after ${waited}s."
+    echo "       NOT deleting $STAGING_INFO_FILE — that would orphan it."
+    echo "       Cancel by hand:  scancel -M all $job_id"
+    return 1
 }
 
 staging_status() {

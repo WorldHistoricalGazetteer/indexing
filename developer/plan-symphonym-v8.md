@@ -10559,8 +10559,27 @@ shards, 31.6 minutes**, verified by size rather than by state. Old staging
 (`23995748`, `smp-n246`) then cancelled, fresh staging started
 (`24052245`, `smp-n222`, 3-day wall), restore in progress.
 
-⚠ **`-staging-stop` reported "Staging instance stopped" having cancelled
-nothing** — it printed `Stopping job ...` with an empty job id, because the
-job id resolves from a sourced env the non-interactive shell did not carry.
-`squeue` still showed RUNNING. Cancelled explicitly by id instead. Another
-success message over a no-op; not yet fixed.
+### 🛑 `-staging-stop` reported success having cancelled nothing — FIXED
+
+It printed `Stopping job ...` with an **empty job id** and then "Staging
+instance stopped", while `squeue` still showed the job RUNNING.
+
+`staging_stop` read `$SLURM_JOB_ID`. The info file **deliberately does not
+export that** — a batch job sourcing the file must keep its own id — so the
+staging id is written as `STAGING_SLURM_JOB_ID`. The variable was therefore
+empty, `scancel ""` did nothing, and `|| true` swallowed the failure.
+
+⚠ **The damaging part is what came next: it deleted `$STAGING_INFO_FILE`.**
+That file is the only record of how to reach the instance, so a still-running
+staging ES was left orphaned — un-stoppable by the script that had just
+claimed to stop it, and holding a node until its wall clock expired.
+
+Now reads `STAGING_SLURM_JOB_ID`, cancels with `scancel -M all`, and **polls
+`sacct -M all` until the job is really gone before deleting the info file**;
+if it is still RUNNING after 60 s it refuses to delete the file and prints the
+manual command. Verified: `sacct -M all -j <id> --format=State -Pn`
+distinguishes RUNNING from CANCELLED across the federation, where
+`squeue -M all -j` errors on every cluster that does not hold the job.
+
+⚠ **Third "success over a no-op" of the day**, after the empty snapshot and
+the warning that counted documents while saying languages.
