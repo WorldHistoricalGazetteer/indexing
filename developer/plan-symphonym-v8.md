@@ -10504,3 +10504,63 @@ same condition is how the four copies started.
 ⚠ **Not executed, only reasoned and unit-tested.** The chain change is
 exercised by the next rebuild, not by this session. 20 tests pass across the
 three modules.
+
+---
+
+## 69. 🛑 NO REBUILD HAS EVER BEEN BACKED UP BY ITS OWN SNAPSHOT STEP
+
+Found while rescuing the re-extract on 11 Sep. `create_checkpoint_snapshot`
+hardcoded:
+
+```python
+indices = [PLACES_INDEX, TOPONYMS_INDEX]      # the ALIASES
+```
+
+A rebuild builds a **dated concrete index** and deliberately leaves it outside
+the alias until promotion — that separation is the design. So the snapshot
+captured whatever the aliases pointed at, never the index just built. On 11 Sep
+the staging alias was an empty placeholder, and the run logged:
+
+```
+Snapshot created: toponyms_v6            <- 908 bytes, 2 empty indices, 8/8 shards, SUCCESS
+```
+
+**The 15½-hour re-extract was not in it**, and existed only on the staging
+node's ephemeral `/scratch`, which had **17 hours** left. A second compounding
+fault: `"ignore_unavailable": True` means naming a missing index yields a
+perfectly successful snapshot of nothing.
+
+⚠ **State was the only thing checked, and state cannot distinguish a backup
+from an empty one.** SUCCESS over nothing is the same green as SUCCESS over
+79 GB. This is [[hash_of_nothing_is_a_valid_hash]] wearing a different hat.
+
+### Fixed
+
+* `create_checkpoint_snapshot(..., indices=...)` — callers name what they want
+  preserved; the rebuild passes `[args.toponyms_index]` and names the snapshot
+  `rebuild-<index>`.
+* Success is no longer judged by state alone. **Every requested index must
+  appear in the finished snapshot**, and the snapshot must hold at least
+  `min_bytes` (default 1 MB). Either check failing returns None.
+* A failed snapshot is **not fatal** — the index is built and usable — but the
+  rebuild now logs a banner saying the index exists only on ephemeral scratch
+  and will be lost when the staging job ends. The old code logged
+  "Snapshot created" unconditionally.
+
+`tests/test_checkpoint_snapshot.py` pins all of it against a fake client,
+including the exact 11 Sep shape (SUCCESS, right name, 908 bytes) and a test
+that the caller's `indices` actually reach the request — without which every
+other test would pass while the helper snapshotted the aliases as before.
+
+### The rescue itself
+
+`reextract-ipafix-20260910t175025z` — **SUCCESS, 79.2 GB, 793 files, 4/4
+shards, 31.6 minutes**, verified by size rather than by state. Old staging
+(`23995748`, `smp-n246`) then cancelled, fresh staging started
+(`24052245`, `smp-n222`, 3-day wall), restore in progress.
+
+⚠ **`-staging-stop` reported "Staging instance stopped" having cancelled
+nothing** — it printed `Stopping job ...` with an empty job id, because the
+job id resolves from a sourced env the non-interactive shell did not carry.
+`squeue` still showed RUNNING. Cancelled explicitly by id instead. Another
+success message over a no-op; not yet fixed.

@@ -101,14 +101,38 @@ def stream_file(file_path, member=None):
                 yield line.rstrip("\n")
 
 
-def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING_REPO_NAME):
+def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING_REPO_NAME,
+                               indices=None, min_bytes=1_000_000):
     """
     Create a checkpoint snapshot after completing a logical unit of work.
+
+    🛑 PASS `indices` EXPLICITLY. This used to snapshot `[PLACES_INDEX,
+    TOPONYMS_INDEX]` unconditionally — the ALIASES. A rebuild builds a DATED
+    CONCRETE index and deliberately leaves it outside the alias until
+    promotion, so the snapshot captured whatever the aliases happened to point
+    at: on 11 Sep 2026 that was an empty placeholder, and the run logged
+    "Snapshot created" over 908 bytes of nothing. **No rebuild had ever
+    actually been backed up by its own snapshot step**, and the loss was
+    invisible because the state was SUCCESS.
+
+    ⚠ `ignore_unavailable` is True, so naming an index that does not exist
+    yields a perfectly successful snapshot of nothing. That is why success is
+    no longer judged by state alone:
+
+    * every index named in `indices` must appear in the finished snapshot, and
+    * the snapshot must hold at least `min_bytes`.
+
+    Either check failing returns None, because a backup that cannot be
+    distinguished from an empty one is not a backup.
 
     Args:
         es: Elasticsearch client
         snapshot_name: Name for the snapshot (will be prefixed with timestamp)
         repo_name: Snapshot repository name
+        indices: Index names to capture. Defaults to the aliases, which is
+            almost never what a rebuild wants — name the concrete index.
+        min_bytes: Floor below which a "successful" snapshot is treated as
+            empty and rejected.
 
     Returns:
         dict with snapshot info or None on failure
@@ -119,7 +143,9 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     full_name = f"{snapshot_name}_{timestamp}"
 
-    indices = [PLACES_INDEX, TOPONYMS_INDEX]
+    if indices is None:
+        indices = [PLACES_INDEX, TOPONYMS_INDEX]
+    indices = list(indices)
 
     print(f"\nCreating checkpoint snapshot: {full_name}")
     print(f"  Indices: {', '.join(indices)}")
@@ -172,9 +198,32 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
                 print(f"!", end="", flush=True)
                 time.sleep(5)
 
-        # 3. Report result
+        # 3. Report result — state is necessary and NOT sufficient
         if final_status and final_status.get("state") == "SUCCESS":
-            print(f"  ✓ Snapshot created successfully: {full_name}")
+            captured = set(final_status.get("indices") or [])
+            missing = [i for i in indices if i not in captured]
+            if missing:
+                print(f"  ✗ Snapshot {full_name} reported SUCCESS but did NOT "
+                      f"capture: {', '.join(missing)}")
+                print(f"    (captured: {', '.join(sorted(captured)) or 'nothing'})")
+                return None
+
+            size = None
+            try:
+                st = es.snapshot.status(repository=repo_name, snapshot=full_name)
+                size = st["snapshots"][0]["stats"]["total"]["size_in_bytes"]
+            except Exception as exc:
+                print(f"  ! could not read snapshot size ({exc}) — not treating "
+                      f"an unverifiable snapshot as good")
+                return None
+
+            if size < min_bytes:
+                print(f"  ✗ Snapshot {full_name} reported SUCCESS but holds only "
+                      f"{size:,} bytes — that is an empty index, not a backup")
+                return None
+
+            print(f"  ✓ Snapshot created successfully: {full_name} "
+                  f"({size / 1e9:.1f} GB, indices: {', '.join(sorted(captured))})")
             return final_status
         else:
             print(f"  ✗ Snapshot failed.")

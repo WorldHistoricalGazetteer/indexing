@@ -2459,14 +2459,32 @@ def main():
                 final_count = es.count(index=args.toponyms_index)['count']
                 logger.info(f"Final document count: {final_count:,}")
 
+                # Snapshot THE INDEX THIS RUN BUILT, not the aliases. The
+                # dated index is deliberately not behind `toponyms` yet —
+                # promotion is a separate step — so snapshotting the alias
+                # backs up the PREVIOUS generation, or (11 Sep 2026) an empty
+                # placeholder, while logging success either way.
                 logger.info("Creating snapshot...")
-                snapshot_name = "toponyms_v6"
-                create_checkpoint_snapshot(
+                snapshot_name = f"rebuild-{args.toponyms_index}"
+                snap = create_checkpoint_snapshot(
                     es,
                     snapshot_name=snapshot_name,
-                    repo_name=STAGING_REPO_NAME
+                    repo_name=STAGING_REPO_NAME,
+                    indices=[args.toponyms_index],
                 )
-                logger.info(f"Snapshot created: {snapshot_name}")
+                if snap:
+                    logger.info(f"Snapshot created: {snapshot_name}")
+                else:
+                    # Not fatal — the index is built and usable — but it must
+                    # be impossible to miss, because the index lives on the
+                    # staging node's EPHEMERAL scratch and dies with that job.
+                    logger.error("=" * 60)
+                    logger.error("SNAPSHOT FAILED OR CAPTURED NOTHING: %s", snapshot_name)
+                    logger.error("%s exists ONLY on this staging node's scratch "
+                                 "and will be LOST when the staging job ends.",
+                                 args.toponyms_index)
+                    logger.error("Snapshot it by hand before that happens.")
+                    logger.error("=" * 60)
 
             # Final summary
             logger.info("=" * 60)
