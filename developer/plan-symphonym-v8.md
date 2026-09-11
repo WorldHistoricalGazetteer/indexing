@@ -10260,3 +10260,80 @@ build, not here.
 **Acceptance is §62's table**, re-run against v8: the P band must fall while V
 holds. A v8 that moves both has not learned order, it has learned to spread
 everything apart.
+
+---
+
+## 65. ✅ JOB 2 VERIFIED — and two of my own numbers corrected
+
+Job `11218499` **COMPLETED**, exit `0:0`, 15h32m. Verified independently against
+the index rather than against the job's own report, because job 3866963 was
+marked FAILED having succeeded and job 11113760 reported COMPLETED having lost
+31,757,518 documents.
+
+```
+1. row count      73,479,066   vs live 73,479,069      delta -3
+2. zh+CJK with ipa  1,345,295   carrying ɯ or ɴ  165,837  = 12.33%   (live: 89.1%)
+3. with ipa        34,210,111   vs live 34,141,080      +69,031
+   with panphon    34,210,111   vs live 34,141,080      +69,031
+   with embedding           0   vs live 73,479,069      -73,479,069
+```
+
+✅ **The delta of -3 was PREDICTED before the count was read.** Three documents
+were rejected at 08:39 with `Cannot update parameter [dims] from [192] to
+[null]` — an empty `panphon_embedding` against a dynamically-mapped
+`dense_vector` — so the expected count was 73,479,066, derived from the error
+log rather than typed. It matched exactly. The same class of rejection once
+cost 31.7M documents; here it cost three.
+
+✅ **The contamination is repaired: 89.1% → 12.33%.**
+
+### 🛑 CORRECTION 1 — "+9.95% coverage" compares two different corpora
+
+I reported, and **published in the artifact**, that the re-extract lifts
+transcription coverage from 31,113,585 to 34,210,114, **"+9.95%"**. That
+compares the new run against **v7's training-time corpus of 66,924,548 names**,
+not against the corpus we have now.
+
+**Against the live index the gain is +69,031 — 0.20%, not 9.95%.**
+
+⚠ The big number is a **corpus difference wearing a coverage improvement's
+clothes**: the denominator grew from 66.9M to 73.5M between v7's training and
+today, and most of the apparent gain is that growth. This is the same confound
+the campaign has already recorded twice, and I reproduced it while holding the
+note.
+
+**Both framings have a true sentence**, and they answer different questions:
+*"9.95% more than v7 was trained on"* is true and is about **v8's training
+input**; *"0.20% more than the index serves today"* is true and is about **what
+users gain**. The artifact used the first number to make the second claim.
+
+### 🛑 CORRECTION 2 — the repaired rate is 12.33%, not 9.47%
+
+9.47% was measured on **job 1's parquet** — the neural G2P output alone. 12.33%
+is measured on **the delivered index**, over all 1,345,295 zh+CJK names carrying
+IPA whatever backend produced them. **Different populations, so not a
+regression between the two** — but the artifact quoted the parquet figure as
+though it described the shipped result, and the index is what ships.
+
+### 🛑 THIS INDEX MUST NOT BE PROMOTED — `embedding` is 0 of 73,479,066
+
+Check 3's "REGRESSED" flag is **expected by construction and is still a hard
+promotion blocker**. The rebuild is stage 1 (IPA + PanPhon); the Symphonym
+128-d `embedding` is stage 2 and has not run. **Promoting this index to the
+`toponyms` alias would take phonetic search from 73.5M embedded documents to
+zero** — a total outage of the feature, from an index that passes every other
+check.
+
+⚠ **A check whose failure is expected is the most dangerous kind**, because the
+reading "that one's fine, it's meant to be zero" is correct today and becomes
+catastrophic the moment someone promotes on it. The right sequence is
+unchanged: generate training data → retrain v8 → compute embeddings → index
+them → **then** promote.
+
+⚠ **Two harness limitations, recorded so the next run does not rediscover
+them.** The verifier defaulted to prod's `localhost:9201` while the rebuild
+builds into **staging ES on a compute node**, so it aborted with
+`index_not_found` — which is indistinguishable from a lost index. And its
+check 3 compared against staging's own empty `toponyms`, which would have made
+every regression test a silent no-op; the live baselines are now passed in as
+constants.
