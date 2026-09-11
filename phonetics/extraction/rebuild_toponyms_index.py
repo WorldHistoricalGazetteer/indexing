@@ -1815,7 +1815,12 @@ def dump_to_jsonl(
     logger.info(f"  From precomputed (neural): {stats['precomputed_hits']:,}")
     logger.info(f"  From Epitran (CPU pool): {stats['epitran_computed']:,}")
     if stats['neural_skipped']:
-        logger.warning(f"  Neural languages skipped (no precomputed data): {stats['neural_skipped']:,}")
+        # Counts DOCUMENTS, not languages: one increment per toponym in a
+        # neural language that had neither a cache hit nor a precomputed row.
+        logger.warning(
+            f"  Neural-language toponyms skipped, no precomputed row: "
+            f"{stats['neural_skipped']:,} of {stats['total']:,} documents"
+        )
 
     logger.info("Top script+lang pairs with IPA transcription:")
     for key, count in stats['by_script_lang_ipa'].most_common(20):
