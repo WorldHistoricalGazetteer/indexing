@@ -10337,3 +10337,50 @@ builds into **staging ES on a compute node**, so it aborted with
 check 3 compared against staging's own empty `toponyms`, which would have made
 every regression test a silent no-op; the live baselines are now passed in as
 constants.
+
+---
+
+## 66. ▶ TRAINING DATA GENERATION SUBMITTED — job `24047649` (smp)
+
+Reading the corrected corpus: `ES toponyms: 73479066 documents`, all four
+checkpoints pending, output to
+`/ix1/ishi/models/phonetic/data/vipafix-20260910T175025Z`. Namespaces `gn wd
+tgn`. Terminal-state monitor armed.
+
+### ⚠ STAGING STATE CHANGED — `toponyms` is now an ALIAS, not an index
+
+The generator hardcodes the index name `"toponyms"` in **seven places**
+(`generator.py` 287, 296, 527, 855, 889, 959 + `es_knn_helper`), so there is no
+way to point it at a dated index. Staging held an **empty concrete index**
+called `toponyms` (0 docs, 996 b, created 6 Sep, carrying no aliases), which
+would have failed the preflight with `No documents in ES toponyms index`.
+
+Deleted it and aliased `toponyms` → `toponyms_ipafix-20260910t175025z`.
+Verified through the alias: **73,479,066 docs, 34,210,111 with
+`panphon_embedding`**. Staging had **no aliases at all** before this, so
+`_cat/aliases` now showing exactly one row is the whole picture.
+
+🛑 **This is STAGING only. Production's `toponyms` alias is untouched** and
+still points at `toponyms_undscript-20260906t160000z`.
+
+### ✅ Two traps checked before submitting rather than after
+
+* **The stale-corpus DuckDB.** `DB_PATH` defaults to
+  `/vast/ishi/data/toponyms.db` — a fixed path the script's own comment warns
+  "silently reads the PREVIOUS corpus". It is **absent**, so the generator reads
+  from ES and there is one source of truth. Had it existed, this run would have
+  built v8's training data from v7's contaminated corpus while reporting
+  success.
+* **Adopting a previous build.** The output directory held only inputs
+  (`neural_phonetics.parquet`, `coverage_stats.json`, `vocab`) and **no
+  `pairs/` or `triplets/`**, so RESUME mode has nothing stale to adopt.
+
+⚠ **The generator selects positives with PanPhon KNN over `panphon_embedding`**
+— the pooled 192-d vector §10 retires and §63 measured at effective rank 2.97.
+It is what exists today, so v8's first training set is built with it. **D-D's
+co-attestation positives would replace this**, and that substitution is still
+open.
+
+⚠ **The permutation negatives are NOT in this artefact.** They live in
+`collate_phase3` and are applied at training time from the anchor, so they need
+the retrain, not this job — and they are not yet on the CRC clone.
