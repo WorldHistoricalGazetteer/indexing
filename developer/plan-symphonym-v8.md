@@ -9667,3 +9667,101 @@ fourth-largest cause and no one named it.
 ✅ **The `<font>` class fires on nothing.** Mathematical alphanumerics do not
 appear, so the data-alarm `04` proposed has no subjects — worth stating as a
 measured absence rather than leaving the check unwritten and unexplained.
+
+## 58. ✅ CENSUS v2 — the truncations removed, and three more of my claims corrected
+
+**Job 11218542, COMPLETED.** v1 was right about the headline and wrong in every
+detail a threshold would have inherited. Full output at
+`/vast/ishi/symphonym-eval/rankcurve-20260906T1500Z/nfkccensus2-11218542.out`.
+
+### 58.1 🛑 D5's POPULATION IS 132,705, NOT 136,406
+
+```
+rows containing an NFKC-changing codepoint   136,406 of 73,479,069   (0.1856%)
+D5's ACTUAL population (compatibility-only)  132,705 of 73,479,069   (0.1806%)
+the difference — CANONICAL, i.e. D1's, shipped months ago   3,701
+rows containing U+FB00-FB06                       14
+```
+
+### 58.2 🛑 "THE ONLY TRANSITION IS OTHER→LATIN" WAS WRONG — there are FIVE
+
+```
+OTHER    -> LATIN   636        CJK      -> LATIN     7
+CYRILLIC -> LATIN    25        LATIN    -> GREEK     3   ← AWAY from Latin
+                               KATAKANA -> LATIN     1
+```
+
+⚠ **`LATIN → GREEK` was in nobody's prediction** and is the one that cannot be
+explained as "compatibility forms resolve to ASCII". Three rows, but it is a
+direction the whole mental model said would not occur.
+
+### 58.3 🛑 `<font>` FIRES ON 8 ROWS — I SAID IT FIRED ON NOTHING
+
+§57.3 recorded *"the `<font>` class fires on nothing… a measured absence."*
+**That was read off a top-15 listing that never showed it.** The complete class
+histogram:
+
+```
+<compat>    77,917 rows      <wide>      28,634      <super>    18,472
+<noBreak>    6,346           <canonical>  3,693      <isolated>    714
+<final>        664           <fraction>     209      <medial>      213
+<initial>      195           <narrow>       185      <circle>       56
+<sub>           28           <font>          8  ← NOT zero      <small>   7
+<square>         3           <vertical>      0  ← the ONLY absent class
+```
+
+🛑 **`04`'s proposal was that a `<font>` hit is a DATA alarm, not a tokenisation
+one — a place name in mathematical alphanumerics means something upstream is
+wrong. There are 8 such rows and they have never been looked at.**
+
+⚠ **And 12 of 17 classes fire, not 4.** §54.4's "only 4 of 17" was a *sample*
+claim and is superseded.
+
+### 58.4 ✅ PER-SCRIPT DENOMINATORS AT LAST — and casefold saturation confirmed
+
+```
+script      corpus        affected            D5-only           casefold
+THAI         261,989   38,171 (14.570%)   38,170 (14.569%)     0.17%
+LATIN     60,920,805   27,873 ( 0.046%)   27,844 ( 0.046%)    99.52%
+CYRILLIC   4,234,862   23,780 ( 0.562%)   23,780 ( 0.562%)    99.51%
+CJK        3,240,684   18,158 ( 0.560%)   18,104 ( 0.559%)     0.68%
+KATAKANA     358,111   10,073 ( 2.813%)   10,073 ( 2.813%)     1.51%
+ARMENIAN     165,304    8,704 ( 5.265%)    8,704 ( 5.265%)    99.67%
+BENGALI      125,118    1,925 ( 1.539%)        3 ( 0.002%)     0.07%
+DEVANAGARI   184,963    1,406 ( 0.760%)        5 ( 0.003%)     0.24%
+GREEK        245,549      532 ( 0.217%)      293 ( 0.119%)    99.87%
+```
+
+✅ **THAI is confirmed as D5's validation stratum on the arithmetic `04`
+predicted**: 14.57% NFKC against 0.17% casefold — **D5's blast radius inside Thai
+is 86× D-A's**, the corpus-wide ratio inverted. Nothing else comes close.
+
+🛑 **BENGALI AND DEVANAGARI ARE NOT D5 AT ALL.** 1,925 and 1,406 affected rows, of
+which **3 and 5** are compatibility-only — the rest are *canonical*, i.e. D1's,
+shipped months ago. Anyone writing a per-script D5 criterion from the "affected"
+column would have set thresholds 600× too high for both.
+
+✅ **Casefold saturation confirmed where it was argued**: LATIN 99.52%, ARMENIAN
+99.67%, CYRILLIC 99.51%, GREEK 99.87%. **No per-script change-rate criterion is
+expressible for any of them** — a correct run and a D5-less run differ by less
+than the noise.
+
+### 58.5 🛑 THE 256 CAP IS ALREADY EXCEEDED, BEFORE NFKC TOUCHES ANYTHING
+
+```
+rows growing under NFKC:  81,276 in CHARS   54,179 in BYTES
+longest name before:      200 chars /  426 bytes
+longest after NFKC:       202 chars /  351 bytes   (affected rows only)
+headroom to 256:          chars +56        bytes  -170
+```
+
+⚠ **The longest name is already 426 bytes — 170 OVER the ByT5 byte cap — with no
+NFKC involved.** So the length criterion cannot be "does D5 push a name over the
+cap": names are over it today, and something is already truncating them. **The
+criterion must be a DELTA against the pre-change state, and the pre-existing
+overflow is its own defect to raise separately.**
+
+⚠ **And NFKC mostly SHRINKS in bytes while growing in chars** — 81,276 rows grow
+as characters, only 54,179 as bytes, and the longest affected row drops from 426
+to 351 bytes. A criterion reasoned in one unit and enforced in the other measures
+the wrong direction.
