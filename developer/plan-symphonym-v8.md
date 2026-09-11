@@ -9938,3 +9938,62 @@ name.
 
 ⚠ **n=3. Interesting, not load-bearing.** Recorded because it is the only
 explanation anyone has for a transition direction the model said could not occur.
+---
+
+## 61. ✅ THE RE-EXTRACT'S OWN CENSUS — read at the phase boundary, 11 Sep 2026
+
+Job `11218499` (`ipafix-20260910T175025Z`) finished its PanPhon phase at
+08:28:13 on 11 Sep after 13h11m and moved to promoting the DuckDB. This is the
+census it printed, and it is the first direct measurement of what the
+re-extract produced.
+
+```
+JSONL export complete            73,479,069 documents
+Documents in training namespaces 62,081,769
+  With IPA                       34,210,114  (55.1%)
+  With PanPhon embedding         34,210,114  (55.1%)
+  From DuckDB cache                       0
+  From precomputed (neural)       2,267,714
+  From Epitran (CPU pool)        31,942,400
+```
+
+**🛑 `From DuckDB cache: 0` is the number this whole run exists to produce.**
+The cache is keyed `(toponym_id, model_version, checkpoint_hash)` and it holds
+v7's Japanese-contaminated Chinese IPA. A non-zero number here would mean the
+re-extract had re-imported the very transcriptions it was launched to replace,
+and it would have done so while reporting success at every stage — the
+campaign's signature fault. It is zero, so every one of the 34.2M
+transcriptions was computed fresh in this run.
+
+⚠ **The 55.1% denominator is the training-namespace count (62,081,769), not
+the corpus (73,479,069).** Against the corpus the same numerator is 46.6%.
+Both are true; they answer different questions, and the log states which one
+it used — which is the only reason this is checkable.
+
+**The Chinese split, stated as an inference and not a measurement.** The
+preflight recorded the neural parquet as 2,267,714 rows of which 1,765,313 zh
+carry IPA. The census reports `CJK:zh 1,345,295` and `LATIN:zh 419,774`, which
+sum to 1,765,069 — 244 short of the parquet's zh total, and `precomputed_hits`
+(2,267,714) equals the parquet row count exactly. The natural reading is that
+the parquet's zh rows landed across both the Han and the romanised forms, with
+244 rows not reaching a document. **That is arithmetic agreement, not a join,
+and numeric agreement is not corroboration** — the verification pass reads the
+output itself rather than inferring from these totals.
+
+### The warning that named the wrong unit — fixed, `ce95004`
+
+```
+WARNING   Neural languages skipped (no precomputed data): 24
+```
+
+`stats['neural_skipped']` is incremented once per **toponym**, inside the
+per-document loop (`rebuild_toponyms_index.py:1698`). So the true statement is
+*24 documents of 73,479,069*, which is negligible; the message says *24
+languages*, which would be a serious silent loss. A bare count whose label
+names the wrong unit cannot be read in the only direction that matters —
+telling a negligible number from a catastrophic one. Now carries its unit and
+its denominator.
+
+⚠ **It printed at the end of a 13-hour run, where nobody is positioned to
+question it.** Every other line in this block states its denominator; this one
+did not, and that is why it was the only line that needed chasing.
