@@ -9884,3 +9884,57 @@ A's level against B's — §58 confirms they are not equivalent at baseline (A i
 corpus-wide effect and not a Thai one.
 🛑 **This is the only criterion that can FALSIFY §55's decision.** Everything else
 above checks that D5 *landed*; this checks whether it should have.
+
+## 60. ✅ THE 8 `<font>` ROWS — `04` was right that they are a DATA alarm
+
+**Job 11218725.** §59.7 said these needed looking at before the re-embed rather
+than after. They are two unrelated things, and only one is an error.
+
+### 60.1 ⚠ FIVE ROWS ARE DECORATIVE UNICODE — and NFKC repairs them
+
+```
+'Pondok Pesantren Putra Putri 𝗦𝗔𝗕𝗜𝗟𝗨𝗥𝗥𝗢𝗦𝗬𝗔𝗗 𝗞𝗨𝗗𝗨𝗦'  ->  '… SABILURROSYAD KUDUS'
+'𝔖𝔢𝔱𝔰𝔠𝔥'          @de   ->  'Setsch'
+'𝖍𝖆𝖗𝖊𝖙 𝖍𝖗𝖊𝖎𝖐'     @ku   ->  'haret hreik'
+'𝙅𝙚 𝙧𝙚𝙫𝙞𝙚𝙣𝙙𝙧𝙖𝙞 𝙖̀ 𝙈𝙤𝙣𝙩𝙧𝙚́𝙖𝙡' @fr ->  'Je reviendrai à Montréal'
+'𝐁𝐢𝐝𝐰𝐞𝐥𝐥 𝐕𝐢𝐥𝐥𝐚𝐠𝐞'  @     ->  'Bidwell Village'
+```
+
+✅ **For these, D5 is a straightforward data repair** — social-media styling
+copied into a gazetteer, currently unsearchable because no user types
+`𝐁𝐢𝐝𝐰𝐞𝐥𝐥`. **This is the one place in the corpus where NFKC is unambiguously
+fixing something rather than merely normalising it.**
+
+🛑 **AND IT SURFACED TWO DEFECTS THAT HAVE NOTHING TO DO WITH TOKENISATION:**
+* `'Je reviendrai à Montréal'` is **a Gilles Vigneault song title indexed as a
+  place**. The styling is why it was findable at all.
+* `'𝐁𝐢𝐝𝐰𝐞𝐥𝐥 𝐕𝐢𝐥𝐥𝐚𝐠𝐞@'` has an **empty language tag** — the id ends at `@`.
+
+**That is exactly `04`'s argument for keying the alarm on CLASS rather than on
+rows: a class with almost no members is worth looking at precisely because its
+members are anomalous.**
+
+### 60.2 🛑 THREE ROWS ARE NOT AN ERROR — and they explain §58.2's `LATIN → GREEK`
+
+```
+'ℎο νεὸς ℎο ἐμ πόλει ἐν ℎο͂ι τὸ ἀρχαῖον ἄγαλμα'  @grc
+'Ἀφροδίτες ἐν ℎιππολυτείοι'                      @grc
+```
+
+**`ℎ` is U+210E PLANCK CONSTANT, used as *heta*** — the scholarly convention for
+the rough breathing in archaic Greek epigraphy. NFKC maps it to Latin `h`, giving
+`hο νεὸς hο …`: **a Latin letter inside a Greek string.**
+
+✅ **This is almost certainly the source of the three `LATIN → GREEK`
+transitions** §58.2 found and nobody predicted.
+
+⚠ **Whether NFKC is right here is a genuine question, and it cuts both ways.**
+Semantically it destroys a deliberate epigraphic convention and mixes scripts.
+**Phonetically — which is what the embedding is for — `h` is the correct sound**,
+and PLANCK CONSTANT is not. **So the same transformation is wrong for display and
+right for the model**, which is the §55 Thai argument in a second place and a
+reason to keep normalisation inside the tokeniser rather than touching the stored
+name.
+
+⚠ **n=3. Interesting, not load-bearing.** Recorded because it is the only
+explanation anyone has for a transition direction the model said could not occur.
