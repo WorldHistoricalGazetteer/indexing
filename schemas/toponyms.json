@@ -100,6 +100,13 @@
         "similarity": "cosine",
         "element_type": "byte"
       },
+      "panphon_embedding": {
+        "type": "dense_vector",
+        "dims": 192,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
+      },
       "embedding_version": { "type": "integer" },
       "indexed_at": { "type": "date" }
     }

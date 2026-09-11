@@ -10384,3 +10384,68 @@ open.
 ⚠ **The permutation negatives are NOT in this artefact.** They live in
 `collate_phase3` and are applied at training time from the anchor, so they need
 the retrain, not this job — and they are not yet on the CRC clone.
+
+---
+
+## 67. ✅ THE THREE LOST TOPONYMS — backfilled, and the cause was NOT what the error suggested
+
+`toponyms_ipafix-20260910t175025z` now holds **73,479,069**, matching the live
+corpus exactly.
+
+### 🛑 The cause was a mapping RACE, not bad data — and I guessed wrong twice
+
+The rejection read `Cannot update parameter [dims] from [192] to [null]`, which
+reads like a document carrying an empty vector. It was not.
+
+```
+08:39:17.103  Creating index: toponyms_ipafix-20260910t175025z
+08:39:19.991  ERROR  Auf den Kempen@de
+08:39:20.324  ERROR  Oberzieplhofkapelle@de, ダルビー (クイーンズランド州)@ja
+              ... then 73,479,066 documents with ZERO further errors
+```
+
+**Under three seconds after index creation, then never again.** All three
+carry valid IPA and valid `panphon_features` in DuckDB (11, 17 and 17
+segments), and the shipped pooling derives a full 192-d vector from each with
+125–149 non-zero components. **The data was never at fault.**
+
+`panphon_embedding` was **not declared in `schemas/toponyms.json`**, so it was
+created by **dynamic mapping**: concurrent bulk requests raced to define the
+field, one won with `dims: 192`, and the losers were rejected with a mapper
+whose dims were still unresolved. Once the mapping settled nothing could fail —
+which is exactly why the failure count is three and not three million.
+
+⚠ **Two hypotheses I held before measuring, both wrong.** First that the
+precomputed/neural path assigns the embedding unguarded (it does — line 1662 —
+but none of the three is in the neural parquet). Then that the Epitran worker
+emits empties (it cannot; it guards with `if embedding:`). **The unguarded
+assignment is a real latent defect and was not this defect.** The timestamps
+settled it in one look, and I should have read them first.
+
+### The fix — declare the field, and bind its width to the constant
+
+`schemas/toponyms.json` now declares `panphon_embedding` exactly as dynamic
+mapping produced it (`dense_vector`, `dims: 192`, `int8_hnsw`, m 16,
+ef_construction 100), so the mapping exists **before the first document** and
+there is no race to win. `rebuild_toponyms_index.py:120` already creates the
+index from this schema, so nothing else had to change.
+
+`tests/test_panphon_pooling.py` now asserts **schema dims ==
+`NUM_POSITION_BINS` × `FEATURES_PER_SEGMENT`**. Change the bin count and this
+fails in tests rather than as a 400 on a fraction of a 73M-document load.
+Verified discriminating: at 12 bins the schema says 192 against 288 and the
+test fails.
+
+### The backfill
+
+Re-derived each embedding from the **stored `panphon_features`** through the
+shipped `pool_packed` — not recomputed from IPA, since a second derivation is a
+second definition. `namespaces` / `attestations` read from their own DuckDB
+tables and `primary_namespace` from the shipped `get_primary_namespace`, so no
+field was invented. Written, refreshed, and **read back from the index** rather
+than trusted to the write's own report: 3 × `status 201`, 192-d each.
+
+⚠ **The remaining latent defect is untouched**: `rebuild_toponyms_index.py:1662`
+assigns `doc['panphon_embedding'] = embedding` from the precomputed path
+without a truthiness guard, and increments `with_ipa` / `with_panphon` /
+`epitran_computed` whether or not anything was set. It did not fire here.

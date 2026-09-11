@@ -75,5 +75,48 @@ class PoolingContract(unittest.TestCase):
                             pool_segments(segs, 8)[:FEATURES_PER_SEGMENT])
 
 
+class SchemaAgreesWithTheConstant(unittest.TestCase):
+    """The index mapping and the pooling must state the same width.
+
+    `panphon_embedding` used to be absent from the schema and created by
+    DYNAMIC mapping — which is how three documents were lost on 11 Sep 2026:
+    the index was created at 08:39:17 and three bulk requests raced to define
+    the field at 08:39:19-20, one winning with dims 192 and the others
+    rejected with "Cannot update parameter [dims] from [192] to [null]".
+    73.5M documents then indexed with no further error, because the mapping
+    had settled. The same root cause, at a different moment, cost job
+    11173713 31,757,518 documents.
+
+    Declaring the field removes the race. This test removes the next one:
+    change NUM_POSITION_BINS and the schema no longer matches, and that must
+    fail HERE rather than as a 400 on a fraction of a 73M-document bulk load.
+    """
+
+    def test_schema_dims_match_the_pooling_width(self):
+        import json
+        import pathlib as _pl
+        schema = json.loads(
+            (_pl.Path(__file__).resolve().parent.parent
+             / "schemas" / "toponyms.json").read_text())
+        dims = schema["mappings"]["properties"]["panphon_embedding"]["dims"]
+        self.assertEqual(
+            dims, NUM_POSITION_BINS * FEATURES_PER_SEGMENT,
+            "schemas/toponyms.json declares panphon_embedding dims=%d but the "
+            "pooling produces %d (%d bins x %d features). An index built from "
+            "this schema would reject every document."
+            % (dims, NUM_POSITION_BINS * FEATURES_PER_SEGMENT,
+               NUM_POSITION_BINS, FEATURES_PER_SEGMENT))
+
+    def test_the_field_is_declared_at_all(self):
+        # Absence is the original defect: an undeclared dense_vector is created
+        # by whichever document arrives first.
+        import json
+        import pathlib as _pl
+        schema = json.loads(
+            (_pl.Path(__file__).resolve().parent.parent
+             / "schemas" / "toponyms.json").read_text())
+        self.assertIn("panphon_embedding", schema["mappings"]["properties"])
+
+
 if __name__ == "__main__":
     unittest.main()
