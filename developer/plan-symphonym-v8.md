@@ -9765,3 +9765,122 @@ overflow is its own defect to raise separately.**
 as characters, only 54,179 as bytes, and the longest affected row drops from 426
 to 351 bytes. A criterion reasoned in one unit and enforced in the other measures
 the wrong direction.
+
+## 59. ✅ RE-EMBED ACCEPTANCE CRITERIA — every threshold from a measured denominator
+
+**Writable at last, because §58 supplies per-script denominators.** Each criterion
+states what a BROKEN run produces and whether the criterion separates it; any that
+does not discriminate is discarded here rather than shipped.
+
+### 59.1 🛑 THE THREE THAT ARE ALREADY IMPLEMENTED — do not re-propose
+
+| criterion | where |
+|---|---|
+| the two folds must land together | `cmd_compute`'s `folds_case != folds_compat` abort |
+| names that MUST change and did not | `check_negative_control`, `control_must_change` |
+| D5 sampled by MECHANISM, not by row | `D5_SAMPLE_PER_CLASS`, `compatibility_classes` |
+| the read-back has teeth | `enforce_read_back`, `cmd_verify` |
+
+### 59.2 ⚠ ONE GAP THE PROBE STILL HAS — D5 lands in TWO files
+
+`tokeniser_folds()` probes `preprocess_text` only. **D5 also lands in
+`script_detection.detect_script`**, and that is the half that produces §58.2's 674
+transitions. A run with D5 in `tokenise.py` and not in `script_detection.py`
+passes both existing probes and writes 73M vectors under a script-assignment
+regime no index was written with.
+
+**ADD, asserted beside the existing probe:**
+
+```
+detect_script('Ｔ')  today OTHER     must become LATIN     (U+FF34)
+detect_script('ﬁ')   today ARMENIAN  must become LATIN     (U+FB01)
+detect_script('Ⅱ')   today OTHER     must become LATIN     (U+2161)
+```
+
+**Broken run:** partial application across the four files → aborts before the GPU.
+**Discriminates:** yes — all three return the "before" value on today's tree, so
+the assertion fails now and passes only once the edit lands. **It cannot be
+satisfied by a no-op.**
+
+### 59.3 ✅ D5-RATE — Thai, and Thai only
+
+🛑 **No other script can carry a change-rate criterion.** Cased scripts are
+casefold-saturated (§58.4: LATIN 99.52%, ARMENIAN 99.67%, CYRILLIC 99.51%, GREEK
+99.87%) so a correct run and a D5-less run differ by less than noise. The
+romanised four never reach NFKC at all. **Thai inverts the ratio: 14.569% NFKC
+against 0.17% casefold — D5's reach inside Thai is 86× D-A's.**
+
+```
+partition examined THAI rows by is_compatibility_only()
+expect materially changed:  >= (1 - q) of 38,170
+   q = the shard's OWN measured noise rate (noise_count / examined_count)
+```
+
+**Broken run:** D5 absent → the compatibility-only partition changes at Thai's
+*casefold* rate, **0.0017**. **Discriminates:** ≥0.99 against 0.0017 — a factor of
+~580, where the corpus-wide aggregate moves 88.99% → 88.83%.
+⚠ **`q` is tied to a number the run measures, not chosen.** Its one weakness: a
+single-character change inside a long name could quantise below `MATERIAL_DELTA`
+and book as noise. **What would replace it:** a 1,000-row Thai dry run emitting
+the per-row `max|delta|` distribution, with the bar set from its observed floor.
+
+### 59.4 🛑 SCRIPTS THAT MUST *NOT* CARRY A D5 CRITERION
+
+* **BENGALI (3 D5 rows of 1,925 affected) and DEVANAGARI (5 of 1,406).** Their
+  affected rows are **canonical** — D1's population, shipped months ago. A
+  criterion written from the "affected" column is **600× too high** and would
+  abort every correct run.
+* **CJK / HIRAGANA / KATAKANA / HANGUL.** `preprocess_text` returns
+  `anyascii(text).lower()` for these and **never calls NFC or NFKC**. Their 28,654
+  affected rows are an upper bound on tokenisation change, not a prediction of it.
+  ⚠ **Pin the ordering with an assertion, not a count:** `preprocess_text('㍑')`
+  must equal `'liter'` (NFKC after romanise) or `'rittoru'` (NFKC before). **One
+  assertion records which tokeniser shipped**; nobody has taken that decision
+  explicitly.
+
+### 59.5 ✅ S-RES — residue, the criterion that works on every non-romanised script
+
+For a per-script sample drawn after the re-embed, `preprocess_text(name)` must
+contain **zero** of the 4,866 NFKC-changing codepoints, built under the writer's
+own interpreter. **Reported "0 of N", never a bare 0.**
+**Broken run:** D-A without D5 leaves every one of them → fails at ~100%.
+⚠ **Necessary, not sufficient** — residue says the input was normalised, not that
+the vector moved. Pair with 59.3. ⚠ **Discarded for the romanised four**, where
+the output is ASCII and the check cannot fail.
+
+### 59.6 🛑 LEN — REWRITTEN, because the cap is already exceeded
+
+§58.5: the longest name is **426 bytes against a 256-byte ByT5 cap, before NFKC**.
+So "does D5 push a name over the cap" is unanswerable — names are over it today.
+
+```
+LEN-A  delta only:  names crossing a cap AFTER NFKC that did not before — "0 of N"
+LEN-B  positive control, mandatory: a constructed 250×U+0E33 name
+       (250 chars/750 bytes -> 500/1,500) MUST be reported as a crossing
+LEN-C  raise the pre-existing overflow as its own defect, not as part of this
+```
+⚠ **Measure each cap in ITS OWN unit** — ByT5 is bytes, `ignore_above` is
+characters — and note NFKC **shrinks in bytes while growing in chars** (81,276
+rows grow as chars, 54,179 as bytes). **Without LEN-B, "0 of N" is
+indistinguishable from a checker measuring nothing.**
+
+### 59.7 ✅ CLASS COVERAGE — and `<font>` as a DATA alarm
+
+The campaign ledger carries `d5_classes_expected` from §58.3 and the **union** of
+`d5_classes_seen` across shards; assert `seen ⊇ expected`. ⚠ Per-shard emptiness
+for a rare class is expected, so **no shard can fail on it** — only the campaign
+can. Expected: 12 classes fire; **`<vertical>` alone is absent (0 rows)**.
+🛑 **`<font>` (8 rows) is a DATA alarm, not a tokenisation one** — a place name in
+mathematical alphanumerics means something upstream is wrong. **Those 8 rows need
+looking at before the re-embed, not after.**
+
+### 59.8 ✅ THAI RETRIEVAL — the only SIGNED criterion, and the one §55.3 requires
+
+Re-run `developer/baselines/thai_retrieval_baseline.py` unchanged against the
+recorded ids. **Difference-in-differences: A's delta against B's delta**, never
+A's level against B's — §58 confirms they are not equivalent at baseline (A is
+~3.5× harder, median 438 vs 168).
+**A regression is A falling further than B.** A and B falling together is a
+corpus-wide effect and not a Thai one.
+🛑 **This is the only criterion that can FALSIFY §55's decision.** Everything else
+above checks that D5 *landed*; this checks whether it should have.
