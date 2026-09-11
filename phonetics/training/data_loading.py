@@ -568,6 +568,54 @@ def pad_char_ids(char_ids_list: List[List[int]]) -> Tuple[torch.Tensor, torch.Te
     return padded, torch.tensor(lengths, dtype=torch.long)
 
 
+def permutation_negative(
+        text: str,
+        min_displaced_ratio: float = 0.5,
+        max_tries: int = 20,
+) -> Optional[str]:
+    """A reordering of `text` that keeps every character and moves most of them.
+
+    This is the negative that teaches the encoder that ORDER carries meaning.
+    Measured on the deployed v7 model (plan-symphonym-v8.md section 62), 71.2%
+    of random character permutations of a query cleared the production KNN gate
+    of 0.7, against 84.6% of genuine variants — a nonsense string built from the
+    query's own letters was retrievable almost as often as a real name.
+
+    🛑 THE MINIMUM DISPLACEMENT IS NOT A TUNING KNOB, IT KEEPS THIS FROM
+    CONTRADICTING `apply_character_noise`. That function's `transpose` edit
+    swaps ADJACENT characters and is applied to anchors as *noise*, i.e. as
+    something the embedding must survive — `Lodnon` is a typo for London and
+    ought still to match. A permutation negative that came out as a single
+    adjacent swap would be the same string taught as a positive in one place
+    and a negative in another, which is label noise rather than a lesson. So a
+    candidate is accepted only when at least `min_displaced_ratio` of its
+    characters sit at a different index.
+
+    Returns None rather than a weak negative when the string cannot yield one:
+    too short to reorder, or too few distinct characters (`aaaa` has no
+    informative permutation). A caller must treat None as "use the corpus
+    negative", never as an empty string.
+    """
+    if not text or len(text) < 4:
+        return None
+    if len(set(text)) < 3:
+        return None
+
+    original = list(text)
+    need = max(2, int(len(original) * min_displaced_ratio))
+
+    for _ in range(max_tries):
+        candidate = original[:]
+        random.shuffle(candidate)
+        if candidate == original:
+            continue
+        displaced = sum(1 for i, c in enumerate(candidate) if c != original[i])
+        if displaced >= need:
+            return "".join(candidate)
+
+    return None
+
+
 def collate_phase1(batch: List[Dict]) -> Dict[str, torch.Tensor]:
     """
     Collate function for Phase 1 (Teacher training).
@@ -659,11 +707,19 @@ def collate_phase3(
         lang_vocab: object,
         noise_prob: float = 0.3,
         training: bool = True,
+        perm_negative_prob: float = 0.15,
 ) -> Dict[str, torch.Tensor]:
     """
     Collate function for Phase 3 (Contrastive fine-tuning).
 
     Applies noise to anchors only (not positives/negatives).
+
+    `perm_negative_prob` of the corpus negatives are REPLACED by a permutation
+    of their own anchor (see `permutation_negative`). Replacing rather than
+    appending keeps the triplet shape the loss already expects, so this needs
+    no change to the objective; the cost is that those anchors lose their
+    mined corpus negative for that epoch, which is why the share is a minority.
+    Set it to 0.0 to train exactly as v7 did.
     """
     from phonetics.utils.script_detection import Script
 
@@ -722,6 +778,24 @@ def collate_phase3(
 
     # Encode negatives (no noise)
     negatives = [item['negative'] for item in batch]
+
+    # Order negatives: an anagram of the anchor, carrying the anchor's own
+    # script and lang so that ONLY order distinguishes it from the anchor. If
+    # it carried a different script the model could separate the pair on the
+    # script embedding alone and learn nothing about order.
+    if training and perm_negative_prob > 0:
+        for i, item in enumerate(batch):
+            if random.random() >= perm_negative_prob:
+                continue
+            src = item.get('anchor') or {}
+            permuted = permutation_negative(src.get('name', ''))
+            if not permuted:
+                continue            # too short/degenerate: keep the corpus negative
+            negatives[i] = {
+                'name': permuted,
+                'script': src.get('script', 'OTHER'),
+                'lang': src.get('lang', ''),
+            }
     neg_chars, neg_lens, neg_scripts, neg_langs = encode_toponyms(negatives, apply_noise=False)
 
     return {

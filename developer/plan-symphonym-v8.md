@@ -10191,3 +10191,72 @@ the one in production.
 name length, both derivations agreeing, order changing the vector, a ragged blob
 refused rather than truncated — not the current body, which would go green on
 the very drift the module exists to stop.
+
+---
+
+## 64. ✅ DECISION (SG, 11 Sep 2026) — bins stay at 8; the order fix is the negatives
+
+**"Do not raise the bin count."** §63's measurement stands as the reason: more
+bins reduces collisions but never brings the pooled vector past
+`evaluation/geometry.py`'s own `effective_rank_min` of 40, and §10 retires it
+regardless. `NUM_POSITION_BINS` remains **8**, now in one place
+(`phonetics/panphon_pooling.py`) instead of four.
+
+### 🛑 The ordering defect has a CAUSE, not merely an absence — and I had it wrong twice
+
+§62 concluded that *"nothing in training ever made order matter"*. That was
+closer than "architectural", and still not right. **Something in training
+actively taught the opposite.**
+
+`apply_character_noise` (`phonetics/training/data_loading.py:180`) picks its
+edit from `['delete', 'insert', 'substitute', 'transpose']` — and **`transpose`
+swaps adjacent characters**. That noise is applied to **anchors**: in phase 2
+the noised anchor is aligned to the teacher's embedding of the *clean* name, and
+in phase 3 it must stay near its positive. So for every epoch of v7's training,
+transposed forms were presented as things the embedding **must survive**.
+
+**Order-insensitivity was trained in, deliberately, as typo tolerance.**
+
+### ⚠ Which is why the fix cannot simply be "punish reordering"
+
+`Lodnon` → London is a **real typo and ought to match**. `Nodlon` → London is
+an anagram and ought not. Both differ from the anchor only in character order,
+so a naive order penalty would destroy a property the search genuinely needs —
+and the two cases are separated by *how far* the characters moved, not by
+whether they moved.
+
+### What was built
+
+`permutation_negative(text, min_displaced_ratio=0.5)` returns a reordering that
+keeps every character and moves at least half of them, or **None** when the
+string cannot yield an informative one (fewer than 4 characters, or fewer than
+3 distinct ones — `aaaa` has no meaningful anagram). None means *use the corpus
+negative*; a caller must never read it as an empty string.
+
+🛑 **`min_displaced_ratio` is the anti-contradiction guard, not a tuning knob.**
+Without it a "permutation negative" can come out as a single adjacent swap —
+the exact string `apply_character_noise` teaches as a positive. Measured: with
+the floor at 0.0, **24 single-adjacent-swap negatives appear in 1,600 draws**;
+at the default, **0**. That is also what makes
+`tests/test_permutation_negative.py` a test rather than a ritual — the guard
+was shown failing before it was trusted passing.
+
+Wired into `collate_phase3` behind `perm_negative_prob` (default **0.15**),
+**replacing** a minority of mined corpus negatives rather than appending, so the
+triplet shape the loss already expects is unchanged and no objective needed
+rewriting. `perm_negative_prob=0.0` trains exactly as v7 did, which is the
+control for the retrain.
+
+⚠ **Phase 1 is untouched.** Its triplets come from the teacher and are collated
+separately; whether the teacher's own space needs this is a different question
+from whether the student's fine-tune does, and it is not answered here.
+
+⚠ **Still unmeasured: whether a permutation negative is accidentally a real
+toponym.** Over 73M names an anagram of a short name may well be one, and it
+would then be a true name taught as a negative. The corpus check is cheap
+offline and impossible at collate time; it belongs in the v8 training-data
+build, not here.
+
+**Acceptance is §62's table**, re-run against v8: the P band must fall while V
+holds. A v8 that moves both has not learned order, it has learned to spread
+everything apart.
