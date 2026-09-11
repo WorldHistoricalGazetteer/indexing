@@ -50,6 +50,8 @@ import multiprocessing as mp
 import os
 import shutil
 import struct
+
+from phonetics.panphon_pooling import pool_packed, pool_segments
 import sys
 import tempfile
 import time
@@ -430,39 +432,9 @@ class IPAConverter:
             segments = self._panphon_ft.word_fts(ipa)
             if not segments:
                 return None
-
-            num_segments = len(segments)
-            num_bins = 8
-            features_per_bin = 24
-
-            # Initialize bins: 8 bins × 24 features each
-            bins = [[0.0] * features_per_bin for _ in range(num_bins)]
-            bin_counts = [0] * num_bins
-
-            # Assign each segment to a bin based on position
-            for seg_idx, seg in enumerate(segments):
-                position = seg_idx / num_segments
-                bin_idx = min(int(position * num_bins), num_bins - 1)
-
-                features = seg.numeric()
-                for i, val in enumerate(features):
-                    bins[bin_idx][i] += val
-                bin_counts[bin_idx] += 1
-
-            # Compute mean for each bin (zero-padded bins stay zero)
-            embedding = []
-            for bin_idx in range(num_bins):
-                if bin_counts[bin_idx] > 0:
-                    bin_avg = [v / bin_counts[bin_idx] for v in bins[bin_idx]]
-                else:
-                    bin_avg = [0.0] * features_per_bin
-                embedding.extend(bin_avg)
-
-            # ES cosine similarity rejects zero-magnitude vectors
-            if not any(embedding):
-                return None
-
-            return embedding
+            # ONE implementation, shared with the packed-blob derivation and
+            # the neural path — see phonetics/panphon_pooling.
+            return pool_segments([seg.numeric() for seg in segments])
         except Exception:
             return None
 
@@ -1460,53 +1432,13 @@ NEURAL_LANGS = {'zh', 'ko', 'gan', 'wuu', 'yue', 'he'}
 
 
 def _embedding_from_packed_features(packed: bytes) -> Optional[List[float]]:
+    """Derive the pooled PanPhon embedding from the stored features blob.
+
+    Kept as a named function because call sites across the pipeline import it;
+    the derivation itself lives in `phonetics.panphon_pooling` so that the bin
+    count cannot drift between the copies. See that module before changing it.
     """
-    Derive the 192-dim positional embedding from packed PanPhon features.
-
-    This reconstructs the same embedding that to_embedding() produces,
-    but from the stored features blob rather than re-running PanPhon.
-
-    The packed blob contains N×24 floats (24 features per IPA segment).
-    The embedding is 8-bin positional pooling: each segment is assigned
-    to a bin based on its position, and features are averaged within bins.
-    """
-    if not packed:
-        return None
-
-    num_floats = len(packed) // 4
-    features_per_segment = 24
-
-    if num_floats < features_per_segment or num_floats % features_per_segment != 0:
-        return None
-
-    all_features = struct.unpack(f'{num_floats}f', packed)
-    num_segments = num_floats // features_per_segment
-
-    num_bins = 8
-    bins = [[0.0] * features_per_segment for _ in range(num_bins)]
-    bin_counts = [0] * num_bins
-
-    for seg_idx in range(num_segments):
-        position = seg_idx / num_segments
-        bin_idx = min(int(position * num_bins), num_bins - 1)
-        offset = seg_idx * features_per_segment
-
-        for i in range(features_per_segment):
-            bins[bin_idx][i] += all_features[offset + i]
-        bin_counts[bin_idx] += 1
-
-    embedding = []
-    for bin_idx in range(num_bins):
-        if bin_counts[bin_idx] > 0:
-            embedding.extend(v / bin_counts[bin_idx] for v in bins[bin_idx])
-        else:
-            embedding.extend([0.0] * features_per_segment)
-
-    # ES cosine similarity rejects zero-magnitude vectors
-    if not any(embedding):
-        return None
-
-    return embedding
+    return pool_packed(packed)
 
 
 def dump_to_jsonl(

@@ -36,6 +36,8 @@ import argparse
 import json
 import logging
 import struct
+
+from phonetics.panphon_pooling import pool_segments
 import sys
 import time
 from pathlib import Path
@@ -243,27 +245,12 @@ class PanPhonConverter:
                 features.extend(seg.numeric())
             packed = struct.pack(f'{len(features)}f', *features)
 
-            # 192-dim positional embedding (for ES)
-            num_segments = len(segments)
-            num_bins = 8
-            features_per_bin = 24
-            bins = [[0.0] * features_per_bin for _ in range(num_bins)]
-            bin_counts = [0] * num_bins
-
-            for seg_idx, seg in enumerate(segments):
-                position = seg_idx / num_segments
-                bin_idx = min(int(position * num_bins), num_bins - 1)
-                feats = seg.numeric()
-                for i, val in enumerate(feats):
-                    bins[bin_idx][i] += val
-                bin_counts[bin_idx] += 1
-
-            embedding = []
-            for bin_idx in range(num_bins):
-                if bin_counts[bin_idx] > 0:
-                    embedding.extend(v / bin_counts[bin_idx] for v in bins[bin_idx])
-                else:
-                    embedding.extend([0.0] * features_per_bin)
+            # Pooled positional embedding — ONE implementation, shared with
+            # the extraction path (phonetics/panphon_pooling). A local copy
+            # here is how the two silently diverged in width before.
+            embedding = pool_segments([seg.numeric() for seg in segments])
+            if embedding is None:
+                return None, None
 
             return packed, embedding
 

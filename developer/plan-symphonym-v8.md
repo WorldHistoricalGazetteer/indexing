@@ -10100,3 +10100,94 @@ than after it.
 **This table is also v8's acceptance test.** A v8 that has learned order pushes
 the P band down while holding V; a v8 that has not will reproduce these numbers.
 Re-run `order_sensitivity_band.py` against the new model and compare.
+
+---
+
+## 63. ✅ THE BIN COUNT, MEASURED — and it does not rescue the pooled vector
+
+SG approved two changes on 11 Sep: permutation hard-negatives (§62) and
+increasing the PanPhon bin count. The second turns out to interact with a
+decision **already recorded in §10**, so it was measured before being built.
+
+### What more bins buys
+
+Over 8,000 real toponyms (live index, random_score sample), whose IPA runs to a
+**median of 13 segments** (mean 15.0, p90 26, max 132):
+
+```
+bins  dims   names with a COLLISION   mean empty bins   eff.rank (PR)
+   8   192      6250/8000  (78.1%)          0.32             2.97
+  12   288      4038/8000  (50.5%)          1.62             4.46
+  16   384      2503/8000  (31.3%)          3.93             6.23
+  20   480      1507/8000  (18.8%)          6.88             8.26
+  24   576       994/8000  (12.4%)         10.23            10.39
+  32   768       437/8000  ( 5.5%)         17.54            15.08
+  48  1152       ---                        ---             23.36
+```
+
+A *collision* is two or more IPA segments landing in one bin, where they are
+**averaged**. **At the shipped 8 bins that happens to 78.1% of names** — which
+is the mechanism behind §62's ordering defect, stated in one number. Sixteen
+bins more than halves it.
+
+### 🛑 But it does not make the pooled vector a viable teacher
+
+`evaluation/geometry.py` gates `effective_rank_min` at **40.0**. Even **48 bins
+at 1,152 dims reaches 23.36**. The rank climbs with bins — so the degeneracy is
+*partly* a binning artefact, not wholly intrinsic — but `rank/dims` stays pinned
+at 1.5–2.0% throughout. **No bin count within reason clears the project's own
+gate.** §10's retirement stands, and D-D removes the vector's only remaining job
+(positives come from co-attestation across gazetteers plus the hard-link
+overlay, not from PanPhon KNN).
+
+⚠ **Cost if it were raised anyway:** `panphon_embedding` is live as an *indexed*
+`dense_vector` of dims 192 — **dynamically mapped, since `schemas/toponyms.json`
+does not declare it**. ES cannot alter `dims`, so raising bins forces a new index
+generation, and doubles an HNSW field across 73M documents on a cluster with a
+recorded history of OOM during `dense_vector` merges.
+
+### 🛑 My first measurement was wrong, and the control is why I know
+
+I first measured effective rank with an **entropy-based** estimator and got
+**131.92** against the plan's 4.37 — and briefly took a 30× disagreement for a
+refutation of §3. It was not. §3 uses the **participation ratio** via the
+*shipped* `evaluation.geometry.measure_geometry`, and the two are different
+statistics of the same spectrum. Both numbers are correct about different
+questions.
+
+⚠ §3 says in terms that reimplementing the estimator "would have made the
+control meaningless", and I reimplemented it anyway. Re-run through the shipped
+estimator, the same 8,000 names give **2.97**, against 3.12 at scale and 3.13 at
+n=3,000 — comparable, corpus-conditional, no contradiction.
+
+### The refactor this forced — ONE implementation, `phonetics/panphon_pooling.py`
+
+The binning was **four independent copies** of the same loop, each with its own
+literal `num_bins = 8`: `to_embedding`, `_embedding_from_packed_features`,
+`precompute_neural_phonetics`, and `testing/evaluate_panphon192_mehdie`. This is
+the tokeniser's shape exactly — and `inference/update_es.py:722` records the
+price already paid: mixed widths set the dynamic mapping from the first document
+to arrive, and **job 11173713 lost 31,757,518 of 73,479,069 documents that way
+while exiting 0**.
+
+Consolidated with the value **unchanged at 8**, so nothing moves silently. The
+constant is now documented as a wire format rather than a tuning knob.
+
+**Equivalence, against a witness that could disagree:** the pre-edit algorithm
+was lifted verbatim out of `git show HEAD:` and run beside the rewired code —
+**0 disagreements over 8,000 names on both the segment path and the packed
+path**. ⚠ The obvious test (shared vs production, after rewiring) is **vacuous**,
+because both sides then call the same function; it passed, and it proved
+nothing. A negative control confirms the harness can fail: 12-bin pooling
+differs from the shipped 8-bin on 400/400 names.
+
+⚠ One real difference *was* caught this way before rewiring: my first
+generalised pooling used `word_to_vector_list`, the shipped one uses
+`word_fts` + `seg.numeric()`, and they disagreed on **10 of 8,000** names.
+Without that check the sweep above would have measured a function that is not
+the one in production.
+
+`tests/test_panphon_pooling.py` pins the **contract** — fixed width whatever the
+name length, both derivations agreeing, order changing the vector, a ragged blob
+refused rather than truncated — not the current body, which would go green on
+the very drift the module exists to stop.
