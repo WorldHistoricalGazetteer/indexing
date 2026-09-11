@@ -10449,3 +10449,58 @@ than trusted to the write's own report: 3 × `status 201`, 192-d each.
 assigns `doc['panphon_embedding'] = embedding` from the precomputed path
 without a truthiness guard, and increments `with_ipa` / `with_panphon` /
 `epitran_computed` whether or not anything was set. It did not fire here.
+
+---
+
+## 68. ✅ THE UNGUARDED ASSIGNMENT CLOSED — and the obvious guard would have been worse
+
+§67 left a latent defect: `panphon_embedding` was assigned from the precomputed
+path with no truthiness check, and `with_ipa` / `with_panphon` /
+`precomputed_hits` incremented whether or not anything was written. Three
+copies of that assignment existed.
+
+### 🛑 The obvious fix is a silent data-loss bug
+
+Priorities 2, 3 and 4 are an **`if`/`elif` chain**, so a branch taken is a
+branch that ends the chain. Adding `if embedding:` *inside* priority 2 would
+have let a precomputed row with an empty embedding **claim the document, write
+nothing, and exclude it from both the neural skip and the Epitran fallback** —
+the name would lose its transcription entirely, and `neural_skipped` would not
+even record it. That is strictly worse than writing a blank, because a blank is
+rejected loudly at index time while this is silent.
+
+**The test belongs in the CONDITION**, so a useless precomputed row fails to
+claim the document and falls through to a route that can still transcribe it:
+
+```python
+precomputed = (precomputed_phonetics.get(toponym_id)
+               if 'panphon_embedding' not in doc else None)
+if precomputed and precomputed[0] and precomputed[2]:
+```
+
+⚠ This is the campaign's signature fault seen from the inside: *a required
+input is absent, something plausible is substituted, and the stage reports
+success*. The "plausible substitute" here would have been **the branch itself**.
+
+### One writer: `attach_phonetics`
+
+All three sites now go through it. It sets `ipa` and `panphon_embedding`
+together or leaves the document **wholly untouched**, and returns whether it
+wrote — so every counter keys off what was written rather than what was looked
+up. It refuses a missing `ipa` as well as a missing embedding: the two are one
+fact about a name, and a vector whose transcription is absent is one nothing
+can explain or re-derive.
+
+The Epitran site **cannot currently fail** — the worker already guards with
+`if embedding:`. The check is there so that if that guard is ever relaxed the
+counters report the truth instead of inheriting the change.
+
+`tests/test_attach_phonetics.py` pins the contract, including that a refusal
+leaves the document reusable — the fall-through routes depend on it — and that
+an all-zero vector is **not** this function's business to reject, because
+`pool_segments` already returns `None` for one. Two divergent checks on the
+same condition is how the four copies started.
+
+⚠ **Not executed, only reasoned and unit-tested.** The chain change is
+exercised by the next rebuild, not by this session. 20 tests pass across the
+three modules.

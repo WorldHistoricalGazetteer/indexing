@@ -1431,6 +1431,30 @@ def load_precomputed_phonetics(parquet_path: Path) -> Dict[str, Tuple[str, bytes
 NEURAL_LANGS = {'zh', 'ko', 'gan', 'wuu', 'yue', 'he'}
 
 
+def attach_phonetics(doc: dict, ipa: Optional[str], embedding) -> bool:
+    """Attach IPA + pooled embedding to `doc`, or leave it wholly untouched.
+
+    Returns True only when the document now carries BOTH, so a caller can key
+    its counters off what was actually written.
+
+    🛑 WHY THIS REFUSES RATHER THAN WRITES A BLANK. `panphon_embedding` is an
+    indexed `dense_vector`; a document carrying `[]` or `null` is rejected by
+    ES at bulk time with "Cannot update parameter [dims]", and the run counts
+    it as a success on the way out. Three documents were lost that way on
+    11 Sep 2026 (to a mapping race rather than to this path) and job 11173713
+    lost 31,757,518 to the same error class.
+
+    ⚠ It refuses on a missing `ipa` too. The two fields are one fact about a
+    name; a document carrying an embedding whose transcription is absent is a
+    vector nothing can explain or re-derive.
+    """
+    if not embedding or not ipa:
+        return False
+    doc['ipa'] = ipa
+    doc['panphon_embedding'] = embedding
+    return True
+
+
 def _embedding_from_packed_features(packed: bytes) -> Optional[List[float]]:
     """Derive the pooled PanPhon embedding from the stored features blob.
 
@@ -1603,27 +1627,35 @@ def dump_to_jsonl(
                     # Priority 1: Use existing IPA + features from DuckDB
                     if existing_ipa and existing_features:
                         embedding = _embedding_from_packed_features(existing_features)
-                        if embedding:
-                            doc['ipa'] = existing_ipa
-                            doc['panphon_embedding'] = embedding
+                        if attach_phonetics(doc, existing_ipa, embedding):
                             stats['with_ipa'] += 1
                             stats['with_panphon'] += 1
                             stats['db_cached'] += 1
                             stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
-                        else:
-                            # Features exist but embedding derivation failed — fall through
-                            pass
+                        # else: features exist but the derivation yielded nothing —
+                        # leave the doc untouched and fall through to a route
+                        # that may still transcribe it.
 
                     # Priority 2: Check precomputed lookup (neural languages)
-                    if 'panphon_embedding' not in doc and toponym_id in precomputed_phonetics:
-                        ipa, packed_features, embedding = precomputed_phonetics[toponym_id]
-                        doc['ipa'] = ipa
-                        doc['panphon_embedding'] = embedding
-                        stats['with_ipa'] += 1
-                        stats['with_panphon'] += 1
-                        stats['precomputed_hits'] += 1
-                        stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
-                        all_db_updates.append((ipa, packed_features, toponym_id))
+                    #
+                    # ⚠ THE EMPTINESS TEST BELONGS IN THE CONDITION, NOT INSIDE
+                    # THE BRANCH. These are if/elif: a branch taken is a branch
+                    # that ends the chain. Guarding inside would let a
+                    # precomputed row with an empty embedding claim the doc,
+                    # write nothing, and exclude it from BOTH the neural skip
+                    # and the Epitran fallback — losing its transcription in
+                    # silence. Failing the condition instead lets it fall
+                    # through to a route that can still transcribe it.
+                    precomputed = (precomputed_phonetics.get(toponym_id)
+                                   if 'panphon_embedding' not in doc else None)
+                    if precomputed and precomputed[0] and precomputed[2]:
+                        ipa, packed_features, embedding = precomputed
+                        if attach_phonetics(doc, ipa, embedding):
+                            stats['with_ipa'] += 1
+                            stats['with_panphon'] += 1
+                            stats['precomputed_hits'] += 1
+                            stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
+                            all_db_updates.append((ipa, packed_features, toponym_id))
 
                     # Priority 3: Neural language without precomputed or cached — skip
                     elif 'panphon_embedding' not in doc and lang in NEURAL_LANGS:
@@ -1655,15 +1687,20 @@ def dump_to_jsonl(
             for doc in batch_docs:
                 toponym_id = doc['toponym_id']
 
-                if toponym_id in phonetics_results:
-                    ipa, packed_features, embedding = phonetics_results[toponym_id]
-                    doc['ipa'] = ipa
-                    doc['panphon_embedding'] = embedding
-                    stats['with_ipa'] += 1
-                    stats['with_panphon'] += 1
-                    stats['epitran_computed'] += 1
-                    stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
-                    current_db_updates.append((ipa, packed_features, toponym_id))
+                result = phonetics_results.get(toponym_id)
+                if result:
+                    ipa, packed_features, embedding = result
+                    # The worker already refuses to emit a falsy embedding, so
+                    # this cannot currently fail. It is here so that the
+                    # counters key off what was WRITTEN rather than off what
+                    # was looked up — if the worker's guard is ever relaxed,
+                    # this reports the truth instead of inheriting the change.
+                    if attach_phonetics(doc, ipa, embedding):
+                        stats['with_ipa'] += 1
+                        stats['with_panphon'] += 1
+                        stats['epitran_computed'] += 1
+                        stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
+                        current_db_updates.append((ipa, packed_features, toponym_id))
 
                 pending_writes.append(doc)
 
