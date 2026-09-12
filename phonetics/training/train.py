@@ -189,9 +189,24 @@ DEFAULT_CONFIG = {
 
 # Phase-specific overrides for optimal GPU utilization
 PHASE_CONFIGS = {
-    1: {  # Phase 1: Largest dataset (27.6M triplets) - needs high worker count
-        'learning_rate': 1e-4,  # 0.0001 - conservative for phonetic feature learning
-        'num_workers': 8,
+    1: {  # Phase 1: Largest dataset (21.9M triplets) - the pipeline's long pole
+        # 🛑 AT batch_size 128 THIS PHASE COULD NOT FINISH. Measured 12 Sep 2026
+        # (job 3903618): 170,978 steps/epoch at ~37 it/s = ~77 min/epoch, so 50
+        # epochs = ~64 h against what was then a 48 h wall.
+        #
+        # ⚠ The constraint was NOT data loading and NOT the GPU. Steady state at
+        # batch 128 was: workers ~9% CPU each (idle, not starved), main process
+        # 111%, GPU 33% holding 670 MiB of 40,960. Nothing saturated — the
+        # signature of per-step overhead, not throughput. More workers feed a
+        # pipeline that is not hungry, and a faster card shrinks only the 33%
+        # that is already not the bottleneck (~11% at best).
+        #
+        # Fewer, larger steps is the lever that bites: 512 cuts the step count
+        # 4x and the per-step overhead with it. Phase 3 reached the same
+        # conclusion independently at 1024.
+        'learning_rate': 2e-4,  # sqrt(4) scaling for the 4x batch; warmup_epochs=2 still applies
+        'batch_size': 512,      # 4x; 670 MiB was used of 40,960 at 128
+        'num_workers': 12,      # of cpus-per-task=16; each now does 4x the work per batch
         'prefetch_factor': 4,
     },
     2: {  # Phase 2: Smaller dataset (~1.7M samples) - standard config is fine

@@ -10758,6 +10758,34 @@ able to say what changed.
   `gpu-${GPU_PARTITION}-l`, keeping partition and QOS in step if `--partition`
   is overridden.
 
-⚠ **Still open, deliberately:** phase 1's batch size remains 128 and its GPU
-sits at 33%. That is a real inefficiency, and the right time to fix it is a run
-where optimisation changes are the subject rather than a confound.
+### 🛑 REVERSED THE SAME DAY — the batch size WAS raised, and my two reasons were both weak
+
+SG pushed back: *"Why not add more workers anyway? And go for the faster
+processor? The comparison is not sacrosanct, is it?"* Three points, and I had
+to concede the third and correct myself on the first.
+
+* ⚠ **`num_workers` is NOT an optimisation change** — same batches, same order,
+  same gradients — and I wrongly lumped it with batch size when refusing to
+  touch anything. It is free to change. **It would not have helped**, though:
+  workers sat at **~9% CPU each**, idle rather than starved. A starved pipeline
+  shows pegged workers and an idle GPU; this showed neither.
+* ⚠ **A faster GPU does not fix a GPU that is idle two-thirds of the time.** At
+  33% utilisation an L40S at 1.5x shrinks only the busy third — **~11% of wall
+  time at best** — against an l40s queue **124 deep to a100's 15**. More would
+  have been lost waiting than gained running.
+* ✅ **"The comparison is not sacrosanct" is right, and I over-weighted it.**
+  Comparability is one consideration; two days of A100 is another. Guarding the
+  attribution of a result nobody has yet measured, at the cost of doubling the
+  campaign's longest stage, was the wrong trade.
+
+**Nothing saturated — workers 9%, main 111%, GPU 33% holding 670 MiB of
+40,960 — is the signature of per-step overhead, not throughput.** The lever is
+fewer, larger steps. Phase 1 is now `batch_size: 512` (4x), `learning_rate:
+2e-4` (sqrt scaling, `warmup_epochs: 2` still applies) and `num_workers: 12`
+of the 16 CPUs allocated. Phase 3 had reached the same conclusion
+independently at 1024.
+
+✅ **There is a sanity check available and it should be used:** the abandoned
+batch-128 run reached **loss 0.0193 at 39% of epoch 1**. If the 512 run's
+epoch-1 loss lands far from that, the learning-rate scaling is wrong and the
+run should be stopped rather than allowed to finish and be evaluated.
