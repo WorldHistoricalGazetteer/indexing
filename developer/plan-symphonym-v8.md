@@ -10860,3 +10860,55 @@ trend. The number to watch is whether it is still ~4% at epoch 25 or climbing.
 ⚠ **If the arms finish close, the tie-break is the cheaper-to-repeat option
 (B), not a third decimal place** — the measure that decides v8 is §62's anagram
 band and retrieval, and neither exists until embeddings do.
+
+---
+
+## 74. 🛑 THE RULE FOR CHOOSING BETWEEN THE TWO v8 CANDIDATES — fixed BEFORE the numbers exist
+
+Both arms now run **full chains**, not just phase 1, so the choice can be made
+on the measure that actually decides v8 rather than on a proxy:
+
+```
+arm A  3904153 (p1) -> 3905010 (p2) -> 3905011 (p3)   batch 512   ~27 h
+arm B  3904253 (p1) -> 3905023 (p2) -> 3905024 (p3)   batch 1024  ~18.5 h
+```
+
+Phases 2 and 3 are identical between the arms — only the **teacher** differs —
+so the comparison isolates the thing under test. `TRAIN_AFTER_JOB` was added to
+chain phases 2-3 behind an already-running phase 1; without it the guard
+demands `phase1_best.pt`, which does not exist until phase 1 ends, leaving the
+GPU idle between phases.
+
+### The rule, written down first
+
+⚠ **§59 already records this campaign choosing a gate after the fact and having
+it measure the old rationale.** So:
+
+1. **PRIMARY — §62's anagram band.** v7: **71.2%** of character permutations
+   clear the 0.7 retrieval gate against **84.6%** of true variants. The winner
+   is the arm that pushes the **anagram band DOWN while the true-variant band
+   HOLDS**.
+   🛑 **An arm that moves BOTH down has not learned order — it has spread
+   everything apart — and loses even if the headline number looks dramatic.**
+2. **SECONDARY — retrieval** on the 1,053,229-name benchmark: R@10 against
+   v7's 0.294, and the dead-script stratum against 0.001.
+3. **TIE-BREAK — arm B**, the cheaper to reproduce. **Not** a third decimal
+   place of `val_loss`.
+
+🛑 **DISQUALIFIER, applying to both:** if *neither* arm improves the anagram
+band, that is a finding about the permutation negatives — not a licence to ship
+the better of two unchanged models.
+
+⚠ **`val_loss` decides nothing here.** The arms differ in learning rate and in
+update count, so a lower loss at epoch *n* does not establish better downstream
+retrieval. It is being tracked to catch divergence, not to pick a winner.
+
+Both evaluations are cheap — the band needs ~1,600 short strings embedded, not
+the corpus — so both candidates can be measured without another GPU day.
+
+### Early phase-1 readings (not the decision)
+
+```
+matched epoch 1   A 0.0132   B 0.0135   (+2.3%)
+matched epoch 2   A 0.0104   B 0.0108   (+3.8%)
+```
