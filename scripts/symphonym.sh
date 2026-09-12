@@ -891,10 +891,16 @@ rsync -av "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 rsync -av "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
 
 echo "Starting Phase 1 (Teacher)..."
+# TRAIN_EXTRA_ARGS forwards --batch-size / --learning-rate so two arms of a
+# tuning experiment can run side by side from one code path, differing only by
+# argument. Give each arm its OWN DATA_VERSION label: OUTPUT_DIR and
+# TRAIN_LOG_DIR are both derived from it, so a shared label makes two runs
+# overwrite each other's checkpoints silently.
 python -u -m phonetics.training.train \
     --phase 1 \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
+    ${TRAIN_EXTRA_ARGS:-} \
     --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
