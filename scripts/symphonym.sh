@@ -912,6 +912,18 @@ EOF
         echo "✓ Phase 1 skipped"
     fi
 
+    # TRAIN_AFTER_JOB lets phases 2-3 be queued BEHIND a phase-1 job submitted
+    # by an earlier invocation — needed to run two teachers as parallel chains,
+    # where each arm's phase 1 is already running under its own label. Without
+    # it the guard below refuses, because phase1_best.pt does not exist until
+    # that job finishes, and waiting for it would leave the GPU idle between
+    # phases.
+    if [ -n "${TRAIN_AFTER_JOB:-}" ] && [ -z "${PHASE1_JOB:-}" ]; then
+        PHASE1_JOB="${TRAIN_AFTER_JOB}"
+        PHASE1_DEP="--dependency=afterok:${TRAIN_AFTER_JOB}"
+        echo "  Chaining phases 2-3 behind existing job ${TRAIN_AFTER_JOB} (afterok)"
+    fi
+
     # Phase 2: Align Student to Teacher
     PHASE2_DEP=""
     if [ "$START_PHASE" -le 2 ] && [ "$END_PHASE" -ge 2 ]; then
