@@ -10615,3 +10615,67 @@ where the work happens** — after the snapshot that named aliases instead of th
 index, the stop that read the wrong job-id variable, and the verifier that
 defaulted to prod while the rebuild built into staging. In each, the code was
 correct about the question it asked; the question was about the wrong object.
+
+---
+
+## 71. ✅ PHASE 3 COMPLETE AND VERIFIED — 10,000,000 triplets, nothing lost
+
+Job `24052269` **COMPLETED**, exit `0:0`, 22h04m. Verified against the parquet
+rather than the log.
+
+```
+triplets/phase3/train.parquet   8,993,002 rows   3.25 GB
+triplets/phase3/val.parquet     1,006,998 rows   357 MB
+TOTAL                          10,000,000        = 20,000 batches x 500, EXACT
+distinct anchors (train)        3,105,933
+ES failure rate (pipeline)      0.00%
+```
+
+✅ **The three ES timeouts cost nothing.** Mid-run the transport layer raised
+`ConnectionError`/`TimeoutError` three times and retried
+(`Node ... marked alive after a successful request`). The open question was
+whether a timeout could have returned an empty response *without* raising, in
+which case `if not hits: continue` would have dropped 500 anchors in silence
+and no count in the log would show it. **The exact 10,000,000 settles it** —
+that number cannot be reached with a batch missing.
+
+⚠ Full training-data totals: **phase 1 24,341,626 triplets · phase 2 1,306,379
+samples · phase 3 10,000,000 triplets**.
+
+### ⚠ A known limit to carry into any claim about v8: 784 bins got NO phase-3 signal
+
+```
+bins_total 1,985 | dropped 784 (39.5%) | capped 486 | oversampled 715 | unchanged 0
+```
+
+`MIN_BIN_SIZE = 500`, and the 784 dropped bins hold **30,185 pairs between
+them** (largest 497, smallest 1).
+
+**Two true readings, and they point opposite ways:**
+
+* **By volume it is negligible** — ~30k pairs against a 10M output, 0.3%. And
+  the threshold is right in principle: a one-pair bin cannot train anything,
+  and oversampling it to target would replicate a single example thousands of
+  times.
+* **By coverage it is the campaign's own complaint** — 784 script-language
+  combinations receive **no phase-3 training at all**, concentrated exactly
+  where the model is weakest: **422 cross-script pairs with one Latin side,
+  267 with neither side Latin** (`HIRAGANA:ja|LATIN:es`, `ARABIC:ur|CJK:wuu`,
+  `DEVANAGARI:ne|HEBREW:he`, `CJK:yue|MALAYALAM:ml`).
+
+🛑 **This is §2's finding in a new place.** The dead scripts were not
+mislabelled, they were absent; these bins are absent too, and for a defensible
+reason rather than a bug. **It does not block the retrain.** It does constrain
+what may be claimed afterwards: v8 cannot be said to have improved a
+script-pair it was never shown, and a post-hoc evaluation that finds those
+pairs unimproved will have found the training data, not the architecture.
+
+⚠ **`bins_unchanged: 0` — not one bin survived as measured.** Every surviving
+bin was capped (486) or oversampled (715). 715 oversampled bins means scarce
+examples replicated to reach target, which is a memorisation risk the
+evaluation should be able to see; it is not currently measured.
+
+**Open question for D-D, not answered here:** whether `MIN_BIN_SIZE = 500` is
+the right threshold for a model whose stated purpose is cross-script coverage.
+Lowering it trades replication risk for coverage; the present setting spends
+coverage to avoid replication, and does so silently.
