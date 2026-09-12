@@ -10789,3 +10789,74 @@ independently at 1024.
 batch-128 run reached **loss 0.0193 at 39% of epoch 1**. If the 512 run's
 epoch-1 loss lands far from that, the learning-rate scaling is wrong and the
 run should be stopped rather than allowed to finish and be evaluated.
+
+---
+
+## 73. ▶ PHASE 1 IS RUNNING AS AN A/B — batch 512 vs 1024, both to completion
+
+SG's framing, and better than the two positions I had been arguing between:
+*"Why not start both and cancel one after testing?"* It costs **no extra
+wall-clock**, and replaces a guess about under-training with a measurement.
+
+```
+arm A  3904153  batch 512   lr 2e-4     ~20.6 min/epoch   ~17.2 h
+arm B  3904253  batch 1024  lr 2.83e-4  ~10.2 min/epoch    ~8.5 h
+```
+
+### Why it is nearly free to run both
+
+**The iteration rate is unchanged by batch size**: 37.0 it/s at 128, 34.55 at
+512, 34.78 at 1024. The GPU does 8× the work per step at the same rate, which
+is the definitive evidence that **per-step overhead — not computation — was the
+constraint**. A 1,008,513-parameter model on a 40 GB A100 holding 802 MiB
+explains it: the card is vastly oversized for the work.
+
+### How it was made to work without new machinery
+
+* `train.py` already accepted `--batch-size` / `--learning-rate` and they
+  override `PHASE_CONFIGS`; the phase-1 sbatch simply never forwarded them.
+  One `TRAIN_EXTRA_ARGS` hook was enough, so **both arms run identical code
+  differing only by argument**.
+* 🛑 **Each arm needs its own `DATA_VERSION` label.** `OUTPUT_DIR` and
+  `TRAIN_LOG_DIR` both derive from it, so two runs under one label would
+  overwrite each other's checkpoints **with no error**. Arm B runs as
+  `…-b1024` with `SYMPHONYM_DATA_DIR` pointing at the shared data.
+* ✅ **The check that keeps the experiment from being vacuous**: arm B's own log
+  was read back for `Using command-line batch size: 1024` before any comparison
+  was believed. Had the forwarding failed, the two arms would have been
+  identical and would have agreed with each other perfectly.
+
+### 🛑 The deadline was removed rather than automated around
+
+Phases 2 and 3 were queued as *dependencies of arm A*, so they would have
+auto-started on A's teacher the moment A finished — whether or not A won.
+**Cancelled (3904154/3904155).** Nothing now auto-starts, so the choice is made
+on merit rather than against a clock, and a slow decision costs nothing.
+
+⚠ **The decision is NOT automated, deliberately.** It commits a multi-day
+pipeline, and `val_loss` is a proxy: arm B has a different learning rate and 2×
+fewer updates than A, so a lower loss at epoch *n* does not establish better
+downstream retrieval. An unattended `scancel` on a threshold I invented would
+be an irreversible act driven by a metric that is not the one that matters.
+
+**Decision point: B's completion (~8.5 h), not a fixed epoch** — at that moment
+B is a finished teacher and A has ~25 matched epochs behind it. If B has held,
+phases 2+3 (~10 h) start on B *while A keeps running as insurance*; if A's
+epoch-50 then beats B, only those 10 hours are repeated. The expensive stage is
+not repeated either way.
+
+### Early readings (epoch 2 of 50 — a trend, not a result)
+
+```
+matched epoch 1   A 0.0132   B 0.0135   (+2.3%)
+matched epoch 2   A 0.0104   B 0.0108   (+3.8%)
+```
+
+Both curves descend cleanly and B's higher LR shows no instability. ⚠ **B's
+deficit is widening, which is the direction the fewer-updates concern
+predicts** — and at this magnitude, at epoch 2 of 50, two points are not a
+trend. The number to watch is whether it is still ~4% at epoch 25 or climbing.
+
+⚠ **If the arms finish close, the tie-break is the cheaper-to-repeat option
+(B), not a third decimal place** — the measure that decides v8 is §62's anagram
+band and retrieval, and neither exists until embeddings do.
