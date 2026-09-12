@@ -10663,12 +10663,33 @@ them** (largest 497, smallest 1).
   267 with neither side Latin** (`HIRAGANA:ja|LATIN:es`, `ARABIC:ur|CJK:wuu`,
   `DEVANAGARI:ne|HEBREW:he`, `CJK:yue|MALAYALAM:ml`).
 
-🛑 **This is §2's finding in a new place.** The dead scripts were not
-mislabelled, they were absent; these bins are absent too, and for a defensible
-reason rather than a bug. **It does not block the retrain.** It does constrain
-what may be claimed afterwards: v8 cannot be said to have improved a
-script-pair it was never shown, and a post-hoc evaluation that finds those
-pairs unimproved will have found the training data, not the architecture.
+🛑 **CORRECTED 12 Sep — the paragraph that stood here was wrong.** It read
+*"this is §2's finding in a new place… the population v8 exists to improve"*.
+Measured instead of asserted, it is not:
+
+* **None of the ten blackout languages is dropped.** Burmese, Punjabi,
+  Tibetan, Sinhala, Khmer, Santali, Lao, Amharic, Odia, Tigrinya — **all
+  absent from the 784**, so their bins cleared 500 and survive. The
+  script-detection fix and the re-extract did their job.
+* **The dropped bins are rare PAIRINGS of well-represented languages**, not
+  underserved scripts. The languages appearing most often in them are `yue`
+  (233 bins), `zh` (207), `ko` (150), `gan` (95), `wuu` (89), `ja` (60),
+  `he` (49) — i.e. `NEURAL_LANGS` plus Japanese, which appear in the most
+  *combinations* precisely because they are richly attested. `zh` carries
+  1,345,295 transcribed names; it is not under-trained because `CJK:zh|HIRAGANA:ja`
+  holds 470.
+* **The unit of coverage is the language, not the pair.** The model learns one
+  shared space; `ja`↔`es` matching emerges from `ja` and `es` each being well
+  trained, and does not require `ja`↔`es` examples. Treating a bin as a
+  coverage unit was the error.
+
+⚠ **And recovering them would not give them a voice anyway.** The pool is
+capped at 10M from 24.3M, so a recovered bin arrives at roughly **270
+triplets against ~10,250 for a normal bin** — 2.6%. That is token presence,
+not training signal. It would let us *say* the pairs were included without
+making it true, which is worse than the honest limit.
+
+**Decision: leave `MIN_BIN_SIZE` at 500 and do not re-run phase 3.**
 
 ⚠ **`bins_unchanged: 0` — not one bin survived as measured.** Every surviving
 bin was capped (486) or oversampled (715). 715 oversampled bins means scarce
