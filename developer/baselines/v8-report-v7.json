@@ -1,0 +1,134 @@
+{
+ "label": "v7",
+ "weights": "/vast/ishi/elastic/hf/final_model.pt",
+ "vocab": {
+  "vocab_size": 113280,
+  "char_embed_dim": 64,
+  "num_scripts": 20,
+  "script_embed_dim": 16,
+  "num_langs": 1944,
+  "lang_embed_dim": 16,
+  "num_length_buckets": 16,
+  "length_embed_dim": 8,
+  "embed_dim": 128,
+  "hidden_dim": 128,
+  "vocab_counts": {
+   "char": 113280,
+   "lang": 1944,
+   "script": 20
+  }
+ },
+ "testset": "v8-testset.json",
+ "gate": 0.7,
+ "controls": {
+  "identity_cos_min": 1.0,
+  "max_offdiagonal_cos": 0.2737,
+  "London_vs_Лондон": 0.9949,
+  "PASSED": true
+ },
+ "bands": {
+  "order": {
+   "true_variant": {
+    "n": 319,
+    "mean": 0.8169,
+    "median": 0.9311,
+    "pct_clearing_gate": 83.7
+   },
+   "permutation": {
+    "n": 319,
+    "mean": 0.7504,
+    "median": 0.7816,
+    "pct_clearing_gate": 70.5
+   },
+   "reversal": {
+    "n": 319,
+    "mean": 0.6496,
+    "median": 0.6914,
+    "pct_clearing_gate": 47.6
+   },
+   "typo_1_swap": {
+    "n": 319,
+    "mean": 0.9855,
+    "median": 0.9906,
+    "pct_clearing_gate": 100.0
+   },
+   "unrelated": {
+    "n": 319,
+    "mean": 0.1411,
+    "median": 0.1268,
+    "pct_clearing_gate": 4.1
+   },
+   "variant_beats_permutation_pct": 74.6
+  },
+  "cross_script": {
+   "n": 4000,
+   "mean": 0.8365,
+   "median": 0.8746,
+   "pct_clearing_gate": 87.5
+  },
+  "chinese_latin": {
+   "n": 3629,
+   "mean": 0.8477,
+   "median": 0.8773,
+   "pct_clearing_gate": 90.2,
+   "note": "v7 learned these from JAPANESE readings of Han characters"
+  },
+  "blackout_scripts": {
+   "my": {
+    "n": 200,
+    "mean_pairwise_cos": 0.4687,
+    "participation_ratio": 9.21
+   },
+   "pa": {
+    "n": 200,
+    "mean_pairwise_cos": 0.505,
+    "participation_ratio": 7.42
+   },
+   "bo": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2988,
+    "participation_ratio": 8.84
+   },
+   "si": {
+    "n": 200,
+    "mean_pairwise_cos": 0.5368,
+    "participation_ratio": 8.7
+   },
+   "km": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2836,
+    "participation_ratio": 7.82
+   },
+   "sat": {
+    "n": 200,
+    "mean_pairwise_cos": 0.697,
+    "participation_ratio": 6.53
+   },
+   "lo": {
+    "n": 200,
+    "mean_pairwise_cos": 0.1538,
+    "participation_ratio": 6.58
+   },
+   "am": {
+    "n": 200,
+    "mean_pairwise_cos": 0.5029,
+    "participation_ratio": 9.52
+   },
+   "or": {
+    "n": 200,
+    "mean_pairwise_cos": 0.4727,
+    "participation_ratio": 8.17
+   },
+   "ti": {
+    "n": 200,
+    "mean_pairwise_cos": 0.4519,
+    "participation_ratio": 9.58
+   }
+  },
+  "geometry": {
+   "n": 4000,
+   "effective_rank": 10.98,
+   "of_dims": 128
+  }
+ }
+}
