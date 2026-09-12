@@ -10583,3 +10583,35 @@ distinguishes RUNNING from CANCELLED across the federation, where
 
 ⚠ **Third "success over a no-op" of the day**, after the empty snapshot and
 the warning that counted documents while saying languages.
+
+---
+
+## 70. ✅ THE CHECKPOINT DISPLAY POINTED AT A PATH NOTHING WRITES
+
+`-generate-training-data` printed:
+
+```
+  ○ training/phase2/{train,val}.parquet (pending)
+```
+
+while phase 2's output sat complete in `training/split={train,val}/data.parquet`
+— 1,045,181 and 130,387 rows. **It reported missing work that was done.**
+
+⚠ **Cosmetic in effect, not in consequence.** `_check_phase_complete` — which
+actually decides whether a phase re-runs — uses the correct `split=` paths, and
+the `-train-model` gate accepts either layout, so nothing misbehaved. But this
+display is what an operator reads to choose between `--resume`, `--force` and
+`--skip-to-phase3`, and a path that disagrees with the writer points them at
+the wrong flag. `--force` on that reading would have discarded seven hours of
+phases 1–2 to regenerate what already existed.
+
+Fixed to check the `split=` layout first, keeping the legacy `phase2/` form as
+a labelled fallback since the training gate still accepts it, with a comment
+naming `_check_phase_complete` as authoritative so the two cannot drift apart
+silently again.
+
+⚠ This is the day's fourth instance of **a check looking somewhere other than
+where the work happens** — after the snapshot that named aliases instead of the
+index, the stop that read the wrong job-id variable, and the verifier that
+defaulted to prod while the rebuild built into staging. In each, the code was
+correct about the question it asked; the question was about the wrong object.

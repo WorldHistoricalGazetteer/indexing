@@ -525,7 +525,16 @@ do_generate_training_data() {
     fi
     echo "  ES toponyms: ${TOPONYM_COUNT} documents"
 
-    # Show checkpoint status
+    # Show checkpoint status.
+    #
+    # ⚠ THESE PATHS MUST MATCH `TrainingDataGenerator._check_phase_complete`,
+    # which is what actually decides whether a phase re-runs. This display is
+    # only a display — but it is the display an operator reads to choose
+    # between --resume, --force and --skip-to-phase3, so a path that disagrees
+    # with the writer sends them to the wrong flag. It said
+    # `training/phase2/{train,val}.parquet (pending)` while phase 2's real
+    # output sat in `training/split=*/data.parquet`, i.e. reported missing
+    # work that was complete.
     echo
     echo "Checkpoint status:"
     if [ -f "${OUTPUT_DIR}/pairs/positive_pairs.parquet" ]; then
@@ -538,10 +547,13 @@ do_generate_training_data() {
     else
         echo "  ○ triplets/phase1/{train,val}.parquet (pending)"
     fi
-    if [ -f "${OUTPUT_DIR}/training/phase2/train.parquet" ] && [ -f "${OUTPUT_DIR}/training/phase2/val.parquet" ]; then
-        echo "  ✓ training/phase2/{train,val}.parquet exist"
+    if [ -f "${OUTPUT_DIR}/training/split=train/data.parquet" ] && [ -f "${OUTPUT_DIR}/training/split=val/data.parquet" ]; then
+        echo "  ✓ training/split={train,val}/data.parquet exist"
+    elif [ -f "${OUTPUT_DIR}/training/phase2/train.parquet" ] && [ -f "${OUTPUT_DIR}/training/phase2/val.parquet" ]; then
+        # Legacy layout, still accepted by the -train-model gate below.
+        echo "  ✓ training/phase2/{train,val}.parquet exist (legacy layout)"
     else
-        echo "  ○ training/phase2/{train,val}.parquet (pending)"
+        echo "  ○ training/split={train,val}/data.parquet (pending)"
     fi
     if [ -f "${OUTPUT_DIR}/triplets/phase3/train.parquet" ] && [ -f "${OUTPUT_DIR}/triplets/phase3/val.parquet" ]; then
         echo "  ✓ triplets/phase3/{train,val}.parquet exist"
