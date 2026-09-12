@@ -682,6 +682,11 @@ do_train_model() {
 
     # Now parse flags
     GPU_PARTITION="${GPU_PARTITION:-a100}"
+    # The 6-day wall the training phases request is only permitted by the
+    # "-l" QOS tier; the default association QOS caps below it and Slurm
+    # rejects the job at submit. Derived from the partition so a
+    # --partition override keeps a matching QOS.
+    GPU_TRAIN_QOS="${GPU_TRAIN_QOS:-gpu-${GPU_PARTITION}-l}"
     RESUME_FROM=""
     AUTO_RESUME=false
 
@@ -821,7 +826,16 @@ do_train_model() {
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase1_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
-#SBATCH --time=48:00:00
+# 🛑 48h WAS NOT ENOUGH AND THE JOB DIED WITH NOTHING USABLE. Phase 1 runs
+# 50 epochs over 21,885,082 triplets at the default batch_size of 128 —
+# 170,978 steps/epoch at ~37 it/s, i.e. ~77 min/epoch, ~64 h total. Measured
+# 12 Sep 2026 (job 3903618): killed at 48 h around epoch 37.
+# gpu-a100-l permits 6 days; the wall is raised rather than the batch size,
+# because changing batch size changes optimisation and v8 is being judged
+# against v7 — a third simultaneous change would make the result
+# unattributable. See plan-symphonym-v8.md sec.72.
+#SBATCH --time=6-00:00:00
+#SBATCH --qos=${GPU_TRAIN_QOS}
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -935,7 +949,16 @@ EOF
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase2_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
-#SBATCH --time=48:00:00
+# 🛑 48h WAS NOT ENOUGH AND THE JOB DIED WITH NOTHING USABLE. Phase 1 runs
+# 50 epochs over 21,885,082 triplets at the default batch_size of 128 —
+# 170,978 steps/epoch at ~37 it/s, i.e. ~77 min/epoch, ~64 h total. Measured
+# 12 Sep 2026 (job 3903618): killed at 48 h around epoch 37.
+# gpu-a100-l permits 6 days; the wall is raised rather than the batch size,
+# because changing batch size changes optimisation and v8 is being judged
+# against v7 — a third simultaneous change would make the result
+# unattributable. See plan-symphonym-v8.md sec.72.
+#SBATCH --time=6-00:00:00
+#SBATCH --qos=${GPU_TRAIN_QOS}
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -1018,7 +1041,16 @@ EOF
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase3_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
-#SBATCH --time=48:00:00
+# 🛑 48h WAS NOT ENOUGH AND THE JOB DIED WITH NOTHING USABLE. Phase 1 runs
+# 50 epochs over 21,885,082 triplets at the default batch_size of 128 —
+# 170,978 steps/epoch at ~37 it/s, i.e. ~77 min/epoch, ~64 h total. Measured
+# 12 Sep 2026 (job 3903618): killed at 48 h around epoch 37.
+# gpu-a100-l permits 6 days; the wall is raised rather than the batch size,
+# because changing batch size changes optimisation and v8 is being judged
+# against v7 — a third simultaneous change would make the result
+# unattributable. See plan-symphonym-v8.md sec.72.
+#SBATCH --time=6-00:00:00
+#SBATCH --qos=${GPU_TRAIN_QOS}
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1

@@ -10700,3 +10700,64 @@ evaluation should be able to see; it is not currently measured.
 the right threshold for a model whose stated purpose is cross-script coverage.
 Lowering it trades replication risk for coverage; the present setting spends
 coverage to avoid replication, and does so silently.
+
+---
+
+## 72. 🛑 THE RETRAIN COULD NOT HAVE FINISHED — 48 h wall against a 64 h phase 1
+
+Caught 35 minutes in, because SG asked whether a low GPU utilisation was worth
+restarting for. It was, but not for the reason either of us was looking at.
+
+### The arithmetic
+
+```
+phase 1  21,885,082 triplets / batch_size 128 = 170,978 steps per epoch
+         ~37 it/s  ->  ~77 min per epoch  ->  50 epochs = ~64 hours
+sbatch   #SBATCH --time=48:00:00
+```
+
+**It would have been killed around epoch 37 with no usable teacher**, ~46 hours
+of A100 time spent, and phases 2 and 3 cancelled on the dependency.
+
+### ⚠ My first reading of the GPU was wrong, and the error was an inference
+
+I read `nvidia-smi` as four GPUs at 31/0/46/46% and concluded *"GPU ~46%, worth
+knowing but not worth acting on mid-run"*. **I never checked which GPU was
+ours.** Querying `--query-compute-apps` by PID:
+
+```
+our PID 145290 -> GPU 0 -> 670 MiB of 40,960 MiB, 33% util
+the 40-41% GPUs at ~8 GB belong to another user on the shared node
+```
+
+We were using **1.6% of an A100's memory**. ⚠ *"Which of these is mine"* is the
+question a shared node always poses, and I answered it by assumption.
+
+### Why the wall was raised and NOT the batch size
+
+`PHASE_CONFIGS` shows phase 3 was already tuned — `batch_size: 1024`,
+`num_workers: 12`, with the comment *"8x larger batch — GPU has 35GB free
+memory"* and *"currently only 64% util"*. **Phase 1 got `num_workers: 8` and no
+batch_size override**, so it runs the default 128 on the largest dataset.
+
+Raising phase 1 to 512+ would be ~4x faster and fit inside 48 h. It was
+rejected anyway: **batch size changes optimisation dynamics, and v8 is being
+judged against v7.** §6 already warns that v8 changes the training method *and*
+the coverage together with no test to separate them; a third simultaneous
+change would make a regression unattributable. Speed is worth less than being
+able to say what changed.
+
+### The fix
+
+* The three **training** phases now request `#SBATCH --time=6-00:00:00`
+  (`gpu-a100-l` permits 6 days). The rebuild, traindata and embedding sbatches
+  are untouched.
+* ⚠ **A 6-day wall needs the matching QOS or Slurm refuses the job at submit.**
+  The training sbatch had **no `--qos` line at all** — `GPU_QOS` exists only in
+  the embeddings path — so `GPU_TRAIN_QOS` is now derived as
+  `gpu-${GPU_PARTITION}-l`, keeping partition and QOS in step if `--partition`
+  is overridden.
+
+⚠ **Still open, deliberately:** phase 1's batch size remains 128 and its GPU
+sits at 33%. That is a real inefficiency, and the right time to fix it is a run
+where optimisation changes are the subject rather than a confound.
