@@ -105,7 +105,39 @@ def build(args):
         except Exception as exc:
             print(f"  ! {lang}: {exc}", file=sys.stderr)
 
-    out = {"seed": SEED, "gate": GATE,
+    # HISTORIC ORTHOGRAPHY — the stratum the general co-attested sample cannot
+    # reach. Modern variants are orthographically close (median similarity
+    # 0.727), so they measure the easy case; partitioning them by edit distance
+    # does not help, because the distant tail is truncations ("Coxe River" /
+    # "Coxe") and outright different names ("Güneykaya" / "Abuzet", similarity
+    # 0.00), not historic spellings.
+    #
+    # Getty TGN is a historical gazetteer and carries the real thing on one
+    # place: tgn:7011929 holds Dorchester, Dorcic, Dorkecestr, Dorchestre,
+    # Dorchecestre, Dorocine, Dorkecestre, Dorciccaestrae. Few letters survive;
+    # the sound does. That is where a phonetic model should beat edit distance
+    # WITHIN the Latin script, and where v7 was never tested.
+    #
+    # ⚠ SELECTED STRUCTURALLY, NOT PHONETICALLY. The rule is "a tgn: place with
+    # >= 3 distinct Latin name forms" — nothing about how similar they sound.
+    # Selecting on phonetic closeness would build a test set out of the answer.
+    hq = {"size": args.sample, "query": {"function_score": {
+              "query": {"bool": {"filter": [{"prefix": {"place_id": "tgn:"}},
+                  {"nested": {"path": "toponyms", "query": {"exists": {"field": "toponyms.label"}}}}]}},
+              "random_score": {"seed": SEED, "field": "_seq_no"}}},
+          "_source": ["place_id", "toponyms.label"]}
+    historic = []
+    try:
+        for h in _es("/places/_search", hq, pw)["hits"]["hits"]:
+            labs = [t.get("label") for t in (h["_source"].get("toponyms") or []) if t.get("label")]
+            names = sorted({l for l in labs if l and latin(l) and 3 <= len(l) <= 28})
+            if len(names) >= 3:
+                historic.append({"place_id": h["_source"]["place_id"], "names": names[:6]})
+    except Exception as exc:
+        print(f"  ! historic stratum: {exc}", file=sys.stderr)
+    print(f"  historic (tgn, >=3 Latin forms): {len(historic):,}")
+
+    out = {"seed": SEED, "gate": GATE, "historic": historic,
            "variant_groups": groups, "cross_script": cross,
            "zh": zh, "dead_scripts": dead}
     Path(args.out).write_text(json.dumps(out))
@@ -480,6 +512,41 @@ def run(args):
         if Q:
             # LATIN-LATIN: the stratum where plan §1 says v7 LOSES to edit distance.
             vs["latin_latin"] = _rank_methods(Q, V_, pool, "latin")
+        hist = ts.get("historic", [])
+        if hist:
+            HQ, HV = [], []
+            hpool = [n for g in hist for n in g["names"]]
+            for g in hist:
+                names = g["names"]
+                q = max(names, key=len)
+                v = next((n for n in names if n != q), None)
+                if v:
+                    HQ.append(q); HV.append(v)
+            if HQ:
+                # The stratum SG identified: many letters differ, the sound does not.
+                vs["historic_latin"] = _rank_methods(HQ, HV, hpool, "historic")
+
+                # ⚠ AND SPLIT IT, because "historic" is not one population.
+                # TGN variant sets are dominated by MODERATE respellings
+                # (Dorchester / Dorchestre / Dorchecestre) where a long common
+                # substring survives — which is precisely what difflib's
+                # SequenceMatcher is built to find. The cases the phonetic
+                # argument is actually about (Dorchester / Dorocine / Dorcic)
+                # are the minority, and averaging them together lets the easy
+                # majority decide the result.
+                hard_q, hard_v, easy_q, easy_v = [], [], [], []
+                for q_, v_ in zip(HQ, HV):
+                    if _lev.normalized_similarity(q_, v_) < args.hard_threshold:
+                        hard_q.append(q_); hard_v.append(v_)
+                    else:
+                        easy_q.append(q_); easy_v.append(v_)
+                if len(hard_q) >= 30:
+                    vs["historic_hard"] = _rank_methods(hard_q, hard_v, hpool, "hard")
+                    vs["historic_hard"]["_orthographic_similarity"] = f"< {args.hard_threshold}"
+                if len(easy_q) >= 30:
+                    vs["historic_easy"] = _rank_methods(easy_q, easy_v, hpool, "easy")
+                    vs["historic_easy"]["_orthographic_similarity"] = f">= {args.hard_threshold}"
+
         csr = ts["cross_script"][:args.max_pairs]
         if csr:
             # CROSS-SCRIPT: the stratum where the traditional methods are
@@ -556,6 +623,8 @@ if __name__ == "__main__":
     r.add_argument("--max-pairs", type=int, default=4000)
     r.add_argument("--max-dead", type=int, default=200)
     r.add_argument("--max-geom", type=int, default=4000)
+    r.add_argument("--hard-threshold", type=float, default=0.5,
+                   help="orthographic similarity below which a historic pair is 'hard'")
     r.add_argument("--n-distract", type=int, default=20,
                    help="impostors per query in the vs-traditional ranking task")
     r.set_defaults(func=run)

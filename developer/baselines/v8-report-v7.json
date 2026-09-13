@@ -115,26 +115,100 @@
     "_n_queries": 319,
     "_n_candidates_each": 21
    },
-   "cross_script": {
+   "historic_latin": {
     "symphonym": {
-     "R@1": 0.906,
-     "MRR": 0.9412
+     "R@1": 0.6439,
+     "MRR": 0.7241
     },
     "levenshtein": {
-     "R@1": 0.0638,
-     "MRR": 0.1899
+     "R@1": 0.6066,
+     "MRR": 0.6829
     },
     "jaro_winkler": {
-     "R@1": 0.0628,
+     "R@1": 0.6052,
+     "MRR": 0.6693
+    },
+    "difflib_ratio": {
+     "R@1": 0.6847,
+     "MRR": 0.751
+    },
+    "double_metaphone": {
+     "R@1": 0.1281,
+     "MRR": 0.2424
+    },
+    "_n_queries": 1421,
+    "_n_candidates_each": 21
+   },
+   "historic_hard": {
+    "symphonym": {
+     "R@1": 0.5179,
+     "MRR": 0.6219
+    },
+    "levenshtein": {
+     "R@1": 0.402,
+     "MRR": 0.5199
+    },
+    "jaro_winkler": {
+     "R@1": 0.4204,
+     "MRR": 0.5148
+    },
+    "difflib_ratio": {
+     "R@1": 0.5244,
+     "MRR": 0.6216
+    },
+    "double_metaphone": {
+     "R@1": 0.052,
+     "MRR": 0.18
+    },
+    "_n_queries": 923,
+    "_n_candidates_each": 21,
+    "_orthographic_similarity": "< 0.5"
+   },
+   "historic_easy": {
+    "symphonym": {
+     "R@1": 0.8936,
+     "MRR": 0.9294
+    },
+    "levenshtein": {
+     "R@1": 0.99,
+     "MRR": 0.9946
+    },
+    "jaro_winkler": {
+     "R@1": 0.9538,
+     "MRR": 0.9676
+    },
+    "difflib_ratio": {
+     "R@1": 0.99,
+     "MRR": 0.9946
+    },
+    "double_metaphone": {
+     "R@1": 0.2892,
+     "MRR": 0.3823
+    },
+    "_n_queries": 498,
+    "_n_candidates_each": 21,
+    "_orthographic_similarity": ">= 0.5"
+   },
+   "cross_script": {
+    "symphonym": {
+     "R@1": 0.9045,
+     "MRR": 0.9405
+    },
+    "levenshtein": {
+     "R@1": 0.0643,
+     "MRR": 0.1902
+    },
+    "jaro_winkler": {
+     "R@1": 0.063,
      "MRR": 0.189
     },
     "difflib_ratio": {
-     "R@1": 0.0615,
-     "MRR": 0.1881
+     "R@1": 0.061,
+     "MRR": 0.1878
     },
     "double_metaphone": {
-     "R@1": 0.049,
-     "MRR": 0.176
+     "R@1": 0.0457,
+     "MRR": 0.1744
     },
     "_n_queries": 4000,
     "_n_candidates_each": 21
