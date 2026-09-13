@@ -900,8 +900,8 @@ python -u -m phonetics.training.train \
     --phase 1 \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
-    ${TRAIN_EXTRA_ARGS:-} \
-    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "") \
+    ${TRAIN_EXTRA_ARGS:-}
 EOF
 )
             PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
@@ -1006,8 +1006,8 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
-    ${TRAIN_EXTRA_ARGS_P2:-} \
-    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "") \
+    ${TRAIN_EXTRA_ARGS_P2:-}
 EOF
 )
             PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
@@ -1099,8 +1099,8 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
-    ${TRAIN_EXTRA_ARGS_P3:-} \
-    --epochs 30\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+    --epochs 30\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "") \
+    ${TRAIN_EXTRA_ARGS_P3:-}
 EOF
 )
             PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
