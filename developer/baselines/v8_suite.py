@@ -329,16 +329,43 @@ def run(args):
         if pos_cos.size and neg_cos.size:
             p5 = float(np.percentile(pos_cos, 5))
             p99 = float(np.percentile(neg_cos, 99))
+
+            # 🛑 THE BLENDED GAP CANNOT BE SELECTED ON. It mixes two failures
+            # with different remedies, and the likeliest v8 failure mode —
+            # junk pushed down, dragging the weakest positives below the floor
+            # with it — IMPROVES the blended number while losing recall.
+            #
+            # MEASURED 13 Sep 2026, not assumed: ES `knn.similarity` filters on
+            # the COSINE, not on the (1+cos)/2 score. A document at cosine 0.5
+            # (score 0.75) was excluded by similarity=0.7; cosine 0.9 was kept.
+            # So a positive below 0.7 is UNRETRIEVABLE, not mis-ranked, and no
+            # ranking change can recover it.
+            retr = pos_cos[pos_cos >= gate]
+            recall = float((pos_cos >= gate).mean())
+            sep = (float(np.percentile(retr, 5)) - p99) if retr.size else None
             rep["bands"]["overlap_gap"] = {
                 "positives_n": int(pos_cos.size), "negatives_n": int(neg_cos.size),
-                "p5_genuine_cross_script": round(p5, 4),
-                "p99_anagram_and_unrelated": round(p99, 4),
-                "gap": round(p5 - p99, 4),
-                "gap_in_confidence_points": round((p5 - p99) / 0.3 * (1.0 / 4.25) * 100, 2),
-                "note": ("signed; negative means junk outranks genuine cross-script "
-                         "matches at the margin. Confidence conversion uses the "
-                         "VERIFIED gateway constants: quality=(cos-0.7)/0.3, "
-                         "MAX_DISCOVERY_SCORE=4.25, phonetic tier weight 1.0.")}
+
+                # (a) RECALL — must not fall. A positive below the floor is lost
+                #     outright and is invisible to every ranking measure.
+                "recall_at_gate_pct": round(100.0 * recall, 1),
+                "positives_below_gate_n": int((pos_cos < gate).sum()),
+
+                # (b) SEPARABILITY — on the RETRIEVABLE subset only, because
+                #     that is where the gateway actually operates.
+                "p5_retrievable_positives": round(float(np.percentile(retr, 5)), 4) if retr.size else None,
+                "p99_negatives": round(p99, 4),
+                "separability": round(sep, 4) if sep is not None else None,
+                "separability_confidence_points": round(sep / 0.3 * (1.0 / 4.25) * 100, 2) if sep is not None else None,
+
+                # headline, kept because it is true and startling, NOT for selection
+                "blended_gap_all_positives": round(p5 - p99, 4),
+                "p5_all_positives": round(p5, 4),
+                "selection_rule": ("a candidate is better only if recall_at_gate_pct does NOT "
+                                   "fall AND separability improves. If it trades them, the "
+                                   "trade rate is the decision and belongs in front of a person "
+                                   "— do not select on blended_gap_all_positives."),
+            }
     except Exception as exc:
         rep["bands"]["overlap_gap"] = {"error": str(exc)[:200]}
 

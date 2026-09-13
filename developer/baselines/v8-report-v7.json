@@ -76,11 +76,15 @@
   "overlap_gap": {
    "positives_n": 4000,
    "negatives_n": 638,
-   "p5_genuine_cross_script": 0.5654,
-   "p99_anagram_and_unrelated": 0.9531,
-   "gap": -0.3877,
-   "gap_in_confidence_points": -30.41,
-   "note": "signed; negative means junk outranks genuine cross-script matches at the margin. Confidence conversion uses the VERIFIED gateway constants: quality=(cos-0.7)/0.3, MAX_DISCOVERY_SCORE=4.25, phonetic tier weight 1.0."
+   "recall_at_gate_pct": 87.5,
+   "positives_below_gate_n": 500,
+   "p5_retrievable_positives": 0.7404,
+   "p99_negatives": 0.9531,
+   "separability": -0.2127,
+   "separability_confidence_points": -16.68,
+   "blended_gap_all_positives": -0.3877,
+   "p5_all_positives": 0.5654,
+   "selection_rule": "a candidate is better only if recall_at_gate_pct does NOT fall AND separability improves. If it trades them, the trade rate is the decision and belongs in front of a person — do not select on blended_gap_all_positives."
   },
   "blackout_scripts": {
    "my": {
