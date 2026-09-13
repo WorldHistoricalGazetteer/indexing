@@ -11175,3 +11175,65 @@ plan-level metric that turned out not to be the mechanism delivering the
 improvement. The only measure that settles a candidate is the suite on a full
 chain. **Treat the phase-2 sweep as finding candidates worth a full chain, not
 as deciding anything.**
+
+---
+
+## 78. 🛑 THE ROMANISATION RUNG IS 4× SMALLER THAN §17.2 SAYS — the Chinese majority is already banked
+
+SG asked what "seven romanisation modes, unscoped" meant. Investigating it
+found the ladder's own arithmetic has moved.
+
+### The #250 fix worked, and that is what changed the number
+
+`is_script_mismatch` used to base-split `zh-Latn-pinyin-x-notone` → `zh`,
+destroying the source's own declaration and then rejecting the row for being
+romanised. `2f093c4` (6 Sep) added `_has_script_subtag` and the re-extract ran
+on 10 Sep, four days later. **Measured on the v8 corpus:**
+
+```
+lang=zh + script=LATIN     467,161 rows   (was EXACTLY 0 — a filter, not attrition)
+```
+
+### But transcription splits, and only one language was actually the problem
+
+```
+lang   present in v8     with IPA
+zh        467,161        419,774     ← done, via the CharsiuG2P neural path
+fa         97,045              0
+ja         63,373              0
+el         45,146              0
+ru         25,093              0
+ar         10,704              0
+bo          8,431              0
+                       249,792 present, untranscribed
+```
+
+✅ **The `LATIN:zh 419,774` line in §61's census IS this population.** It was
+recorded at the time and not connected to the romanisation rung.
+
+🛑 **§17.2 prices the rung at +1,128,026 rows / +1.53 points over seven
+languages. 863,964 of those rows are the two `zh` tags, and they now carry IPA.**
+The rung is therefore **six modes and ~249,792 rows — about +0.34 points**, not
+seven and +1.53. **The Artifact's ceiling ladder carries the old figure and is
+wrong by ~4×.**
+
+### Scoping the remedy — and the honest conclusion is LOW priority
+
+What the six need is an Epitran-style Latin mode per language (`fas-Latn`,
+`jpn-Latn`, `ell-Latn`, `rus-Latn`, `ara-Latn`, `bod-Latn`) — a letter-to-sound
+mapping for each language's *conventional romanisation*. ⚠ Not `eng-Latn`
+imposed on them, which `9b84d27` measured and rejected.
+
+⚠ **But IPA is not what makes these names findable.** Symphonym embeds
+GRAPHEMES at inference, so all 249,792 are already searchable in v8. IPA feeds
+(i) the PanPhon teacher and (ii) training-pair selection — so the rung buys
+*training signal*, not retrieval.
+
+🛑 **And both consumers are in doubt.** §10 retires the pooled PanPhon vector,
+and D-D replaces KNN pair-selection with co-attestation. **A rung whose only
+consumers are both slated for removal should not be scoped until D-D lands** —
+otherwise it is six sets of linguistic rules written for a pipeline stage that
+no longer exists.
+
+**Recommendation: leave it. Re-price after D-D.** Correct the ladder in both
+documents so the +1.53 figure stops being quoted.
