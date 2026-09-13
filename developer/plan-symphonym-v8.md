@@ -11121,3 +11121,57 @@ They overlapped ~20 seconds, well inside phase 3's 5-epoch checkpoint interval,
 so nothing was corrupted. **The convention protects against different arms
 colliding; it does nothing against the same label submitted twice.** A check
 that was correct at the instant it ran was wrong about what it implied.
+
+---
+
+## 77. ✅ ALL PHASES CONVERGED — so the learning rate selects the OPTIMUM, not the speed
+
+SG asked whether phases 1 and 2 fully converged in the candidates. Measured on
+the last six **consecutive** epochs of each:
+
+```
+PHASE 1   A  0.0053 ×6      flat      B  0.0056 ×6      flat
+PHASE 2   A  0.0527/0.0528  flat      B  0.0514/0.0515  flat   F  0.0471 ×5  flat
+PHASE 3   B  0.0217 → 0.0216          flat
+```
+
+🛑 **CORRECTION.** §76 and my report to SG said phase 2 was "still descending at
+epoch 50". It is not. I had sampled every tenth epoch (0.0474 at 40 → 0.0471 at
+50) and read **the tail of a descent as an ongoing one**. The consecutive
+epochs are flat to four decimals. ⚠ *A sampled series cannot distinguish "still
+falling" from "arrived a few epochs ago"* — and the arm I had seeded to test
+more epochs was therefore pointless and was dropped before it ran.
+
+### What convergence means for the tuning
+
+Every configuration reaches **its own** optimum, and those optima differ
+sharply on identical data, teacher and epoch budget:
+
+```
+phase 2, lr 1e-4  -> 0.0514      phase 2, lr 8e-4 -> 0.0471      8.4% apart, both settled
+```
+
+**So the learning rate is not buying speed — it selects which optimum the model
+settles into.** That is a quality lever nobody had touched, and it is why §76's
+result is a quality finding rather than a throughput one.
+
+Two arms now test whether 8e-4 is itself the best point, both from the same
+md5-identical teacher, each in its own directory:
+
+```
+I  3921650  b1024 lr1.6e-3   does doubling again find a better optimum, or the ceiling?
+J  3921651  b4096 lr3.2e-3   does a larger batch, linearly scaled, find a better one?
+```
+
+⚠ **A worse result from I LOCATES THE CEILING and is not a failure.** Linear
+scaling has held from 128 to 4096 in phase 1, but it does break down eventually.
+
+### ⚠ And all of this optimises a PROXY
+
+Phase 2's `val_loss` is distillation fit to the PanPhon teacher. A closer fit
+is not automatically a better final model — the same confound flagged for phase
+1, and **§3's rank result is a live instance of exactly this failure**: a
+plan-level metric that turned out not to be the mechanism delivering the
+improvement. The only measure that settles a candidate is the suite on a full
+chain. **Treat the phase-2 sweep as finding candidates worth a full chain, not
+as deciding anything.**
