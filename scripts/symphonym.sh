@@ -1006,6 +1006,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
+    ${TRAIN_EXTRA_ARGS_P2:-} \
     --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
@@ -1098,6 +1099,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
+    ${TRAIN_EXTRA_ARGS_P3:-} \
     --epochs 30\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
