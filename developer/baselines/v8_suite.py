@@ -391,6 +391,113 @@ def run(args):
     except Exception as exc:
         rep["bands"]["overlap_gap"] = {"error": str(exc)[:200]}
 
+    # ---- BAND 2c: IS SYMPHONYM WORTH IT? vs the traditional methods --------
+    #
+    # plan §1 records v7 LOSING to edit distance on the 38% of pairs where Latin
+    # is involved, and winning only where phonetics is the sole signal. A suite
+    # that never tests that cannot say whether v8 closes the gap, nor whether
+    # Symphonym should be used for Latin-Latin at all.
+    #
+    # Framed as RANKING, not as scores: the methods have incompatible scales, so
+    # comparing their numbers is meaningless. Each method ranks the SAME
+    # candidate set — one true variant among `n_distract` length-matched
+    # impostors — and is scored on R@1 and MRR. That is directly comparable.
+    try:
+        from rapidfuzz.distance import Levenshtein as _lev, JaroWinkler as _jw
+        import difflib
+        try:
+            from metaphone import doublemetaphone as _dm
+        except Exception:
+            _dm = None
+
+        def _rank_methods(queries, positives, distractor_pool, tag):
+            methods = {
+                "symphonym": None,                      # handled in bulk below
+                "levenshtein": lambda a, b: _lev.normalized_similarity(a, b),
+                "jaro_winkler": lambda a, b: _jw.normalized_similarity(a, b),
+                # the gateway's own name_resemblance uses difflib
+                "difflib_ratio": lambda a, b: difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio(),
+            }
+            if _dm:
+                def _dmsim(a, b):
+                    pa, pb = _dm(a), _dm(b)
+                    if not any(pa) or not any(pb):
+                        return 0.0
+                    return 1.0 if (pa[0] and pa[0] == pb[0]) else (
+                        0.5 if (pa[1] and pa[1] in pb) else 0.0)
+                methods["double_metaphone"] = _dmsim
+
+            # 🛑 THE POSITIVE'S POSITION MUST NOT ENCODE THE ANSWER. Built as
+            # [positive] + distractors and ranked with a STABLE sort, every tie
+            # resolves to input order — so a method that scores everything
+            # equally (double_metaphone returns empty codes for Arabic, CJK and
+            # Cyrillic, so every cross-script candidate ties at 0.0) ranks the
+            # positive first every time and scores a PERFECT 1.0000. Observed
+            # exactly that before shuffling. The candidate order is therefore
+            # randomised and the positive's index tracked.
+            out = {}
+            cand_sets, pos_idx = [], []
+            for i, q in enumerate(queries):
+                pool = [d for d in distractor_pool if d != positives[i] and d != q]
+                rng.shuffle(pool)
+                cs_ = [positives[i]] + pool[:args.n_distract]
+                order0 = list(range(len(cs_)))
+                rng.shuffle(order0)
+                cand_sets.append([cs_[j] for j in order0])
+                pos_idx.append(order0.index(0))
+
+            # symphonym in bulk (one embed call for everything)
+            flat = [c for cs in cand_sets for c in cs]
+            EQ_ = _embed(model, queries)
+            EF = _embed(model, flat)
+            hits1, rr = 0, 0.0
+            k = 0
+            for i, cs in enumerate(cand_sets):
+                sims = EF[k:k + len(cs)] @ EQ_[i]
+                k += len(cs)
+                order = np.argsort(-sims)
+                rank = int(np.where(order == pos_idx[i])[0][0]) + 1
+                hits1 += (rank == 1); rr += 1.0 / rank
+            out["symphonym"] = {"R@1": round(hits1 / len(cand_sets), 4),
+                                "MRR": round(rr / len(cand_sets), 4)}
+
+            for name, fn in methods.items():
+                if fn is None:
+                    continue
+                hits1, rr = 0, 0.0
+                for i, cs in enumerate(cand_sets):
+                    scores = [fn(queries[i], c) for c in cs]
+                    order = sorted(range(len(cs)), key=lambda j: -scores[j])
+                    rank = order.index(pos_idx[i]) + 1
+                    hits1 += (rank == 1); rr += 1.0 / rank
+                out[name] = {"R@1": round(hits1 / len(cand_sets), 4),
+                             "MRR": round(rr / len(cand_sets), 4)}
+            out["_n_queries"] = len(cand_sets)
+            out["_n_candidates_each"] = args.n_distract + 1
+            return out
+
+        vs = {}
+        if Q:
+            # LATIN-LATIN: the stratum where plan §1 says v7 LOSES to edit distance.
+            vs["latin_latin"] = _rank_methods(Q, V_, pool, "latin")
+        csr = ts["cross_script"][:args.max_pairs]
+        if csr:
+            # CROSS-SCRIPT: the stratum where the traditional methods are
+            # STRUCTURALLY blind — a Latin query and a non-Latin candidate share
+            # no characters, so edit distance is near-chance by construction.
+            # This is where Symphonym is not merely better but the only route.
+            vs["cross_script"] = _rank_methods(
+                [c["latin"] for c in csr], [c["other"] for c in csr],
+                [c["other"] for c in csr], "cross")
+        vs["note"] = ("ranking, not scores — the methods have incompatible scales. "
+                      "Each ranks the SAME candidate set (1 true variant among "
+                      "length-matched impostors). If symphonym does not beat "
+                      "levenshtein on latin_latin, that is a finding about where "
+                      "Symphonym should be used, not a defect to hide.")
+        rep["bands"]["vs_traditional"] = vs
+    except Exception as exc:
+        rep["bands"]["vs_traditional"] = {"error": str(exc)[:300]}
+
     # ---- BAND 3: the blackout scripts ---------------------------------------
     # No positives exist for these, so the measurable question is whether the
     # model separates them at all. A model that never learned a script maps its
@@ -449,6 +556,8 @@ if __name__ == "__main__":
     r.add_argument("--max-pairs", type=int, default=4000)
     r.add_argument("--max-dead", type=int, default=200)
     r.add_argument("--max-geom", type=int, default=4000)
+    r.add_argument("--n-distract", type=int, default=20,
+                   help="impostors per query in the vs-traditional ranking task")
     r.set_defaults(func=run)
 
     a = ap.parse_args()
