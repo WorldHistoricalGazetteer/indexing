@@ -11026,7 +11026,37 @@ explanation for it. It blocks nothing, but it should be understood before §3
 is cited again as v8's motivation — either the rank argument is weaker than
 stated, or something else is carrying the improvement.
 
-⚠ Also noted, not yet chased: the controls' `max_offdiagonal_cos` rose 0.2737
-→ 0.5908, i.e. distinct probe names sit closer together in v8. Controls passed
-(the threshold is 0.999) but the direction is worth understanding alongside the
-rank result — they may be the same phenomenon.
+⚠ Also noted: the controls' `max_offdiagonal_cos` rose 0.2737 → 0.5908, i.e.
+distinct probe names sit closer together in v8.
+
+### ✅ CHASED, and it is one phenomenon — §3's causal chain is NOT what delivered v8
+
+Full shipped `measure_geometry` on identical names, both models:
+
+```
+                      v7        v8B
+effective_rank    10.9731   10.3015    -0.67
+mean_norm          0.2394    0.2583    +0.019   cloud MORE off-centre
+sigma20_over_1     0.0009    0.0013    +0.0004  cliff slightly SHALLOWER
+```
+
+These are consistent once each is read for what it measures. The participation
+ratio is dominated by the **top** of the spectrum, so v8 concentrating variance
+into its leading components lowers it — while component 20 carrying relatively
+*more* than v7 makes the cliff shallower at the same time. `mean_norm` rising
+matches the `max_offdiagonal_cos` move: the same off-centring, seen twice.
+
+**v8 traded isotropy for task alignment**: fewer effective directions, less
+evenly spread, but the directions it uses separate the cases that matter.
+
+🛑 **§3 SAYS RANK COLLAPSE CAUSES THE RETRIEVAL FAILURE, AND v8 IS EVIDENCE
+AGAINST THAT.** v8 fixed the retrieval failure decisively — anagrams 70.5% →
+6.6%, recall 87.5% → 95.5% — while CONTRACTING the rank §3 says had to expand.
+Rank and retrieval quality are not the same axis, and here a lower-rank,
+better-aligned space beat a higher-rank one.
+
+⚠ **Stated at its proper strength:** one model, one comparison. This shows the
+two *can* move oppositely, not that rank is irrelevant. But §3 is cited as v8's
+motivation throughout this document, and it is now measurably not the mechanism
+that produced the improvement. **Do not cite §3 as v8's justification without
+citing this.**
