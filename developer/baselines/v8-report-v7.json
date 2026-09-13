@@ -73,6 +73,15 @@
    "pct_clearing_gate": 90.2,
    "note": "v7 learned these from JAPANESE readings of Han characters"
   },
+  "overlap_gap": {
+   "positives_n": 4000,
+   "negatives_n": 638,
+   "p5_genuine_cross_script": 0.5654,
+   "p99_anagram_and_unrelated": 0.9531,
+   "gap": -0.3877,
+   "gap_in_confidence_points": -30.41,
+   "note": "signed; negative means junk outranks genuine cross-script matches at the margin. Confidence conversion uses the VERIFIED gateway constants: quality=(cos-0.7)/0.3, MAX_DISCOVERY_SCORE=4.25, phonetic tier weight 1.0."
+  },
   "blackout_scripts": {
    "my": {
     "n": 200,

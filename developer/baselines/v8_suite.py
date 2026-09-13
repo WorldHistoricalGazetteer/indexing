@@ -300,6 +300,48 @@ def run(args):
                 "pct_clearing_gate": round(100.0 * float((hcos >= gate).mean()), 1),
                 "note": "v7 learned these from JAPANESE readings of Han characters"}
 
+    # ---- BAND 2b: THE OVERLAP GAP (whg3's measure, and the deciding one) ----
+    #
+    # The order band and the cross-script band measure the two things the
+    # gateway needs SEPARATELY, and they live in the same cosine range. Measured
+    # against prod 2026-08-20, a genuine cross-script positive
+    # (Marsails -> مارساليس, 0.9878) sits BELOW the junk ceiling
+    # (Minster-in-Sheppy -> Shams I, 0.9881). Both bands can improve on their own
+    # axis while the overlap that actually matters gets worse — and the
+    # permutation negatives are designed to push junk down through exactly the
+    # band the cross-script positives occupy.
+    #
+    #     gap = P5(genuine cross-script positives) - P99(anagram + unrelated)
+    #
+    # Negative today by construction. A v8 that OPENS it has separated signal
+    # from junk and would eventually let the 0.7 floor be raised. A v8 that
+    # closes or inverts it fixed anagrams by demoting the one use case
+    # Symphonym exists for. Reported SIGNED: two percentages cannot show it.
+    try:
+        pos_cos = np.sum(_embed(model, [c["latin"] for c in cs]) *
+                         _embed(model, [c["other"] for c in cs]), axis=1) if cs else np.array([])
+        neg = []
+        if Q:
+            EQ2 = _embed(model, Q)
+            neg.append(np.sum(EQ2 * _embed(model, P_), axis=1))
+            neg.append(np.sum(EQ2 * _embed(model, U_), axis=1))
+        neg_cos = np.concatenate(neg) if neg else np.array([])
+        if pos_cos.size and neg_cos.size:
+            p5 = float(np.percentile(pos_cos, 5))
+            p99 = float(np.percentile(neg_cos, 99))
+            rep["bands"]["overlap_gap"] = {
+                "positives_n": int(pos_cos.size), "negatives_n": int(neg_cos.size),
+                "p5_genuine_cross_script": round(p5, 4),
+                "p99_anagram_and_unrelated": round(p99, 4),
+                "gap": round(p5 - p99, 4),
+                "gap_in_confidence_points": round((p5 - p99) / 0.3 * (1.0 / 4.25) * 100, 2),
+                "note": ("signed; negative means junk outranks genuine cross-script "
+                         "matches at the margin. Confidence conversion uses the "
+                         "VERIFIED gateway constants: quality=(cos-0.7)/0.3, "
+                         "MAX_DISCOVERY_SCORE=4.25, phonetic tier weight 1.0.")}
+    except Exception as exc:
+        rep["bands"]["overlap_gap"] = {"error": str(exc)[:200]}
+
     # ---- BAND 3: the blackout scripts ---------------------------------------
     # No positives exist for these, so the measurable question is whether the
     # model separates them at all. A model that never learned a script maps its
