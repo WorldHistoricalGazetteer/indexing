@@ -10955,3 +10955,78 @@ the corpus — so both candidates can be measured without another GPU day.
 matched epoch 1   A 0.0132   B 0.0135   (+2.3%)
 matched epoch 2   A 0.0104   B 0.0108   (+3.8%)
 ```
+
+---
+
+## 75. ✅ v8B MEASURED — the permutation negatives worked, and the predicted cost appeared
+
+Arm B's chain completed 13 Sep (phase 1 9h32m, phase 2 3h10m, phase 3 8h56m).
+Scored on the frozen test set, same code and same data as v7's baseline.
+
+```
+THE PRIMARY (§74)                  v7          v8B
+  recall_at_gate                87.5%   →    95.5%     must NOT fall — rose 8 points
+  separability                −0.2127   →   −0.051     must improve — by 0.16
+    p5 genuine positives       0.7404   →    0.8106
+    p99 junk                   0.9531   →    0.8616
+
+ORDER BAND (% clearing the 0.7 gate)
+  true_variant                   83.7   →     85.3
+  typo_1_swap                   100.0   →     99.4     the overshoot guard
+  permutation                    70.5   →      6.6     −63.9
+  reversal                       47.6   →      0.0
+  unrelated                       4.1   →      2.5
+  variant beats its anagram      74.6   →     94.0
+
+RETRIEVAL
+  cross_script                  87.5%   →    95.5%
+  chinese_latin                 90.2%   →    98.8%
+```
+
+✅ **The anagram band collapsed 70.5 → 6.6 while typo tolerance held at 99.4.**
+Both moved independently, which is the outcome §62 said would distinguish real
+order-learning from a model that merely spreads everything apart. `Lodnon`
+still finds London; `Nodlon` no longer does.
+
+✅ **Separability improved from both ends** — genuine positives up 0.74 → 0.81
+*and* junk down 0.95 → 0.86 — rather than by dragging everything one way.
+
+✅ **Recall ROSE 8 points.** §74 required only that it not fall. The
+unrecoverable failure mode got better, not merely protected.
+
+### ⚠ The predicted cost arrived exactly where §73/§74 said it would
+
+```
+vs traditional (R@1)        symphonym v7 → v8B       leader (unchanged)
+  historic_hard              0.5179 → 0.4995        difflib 0.5244
+  latin_latin                0.8527 → 0.8370        difflib 0.9091
+  historic_easy              0.8936 → 0.8976        levenshtein 0.9900
+  cross_script               0.9045 → 0.9585        symphonym itself
+```
+
+**Latin-script ranking regressed**, worst on `historic_hard` (−1.8 points) —
+the stratum flagged in advance as most exposed, because penalising rearranged
+characters bites hardest where few characters are shared. By §74's asymmetry
+this is the acceptable direction: the loss is mis-ordering inside a list a
+person reads, on strata where the traditional methods already led and the
+gateway's lexical tiers dominate, while the gain is in recall, which is
+silent and unrecoverable when lost.
+
+### 🛑 UNEXPLAINED, and not to be glossed: effective rank FELL
+
+```
+  effective rank (participation ratio)   10.98 → 10.31 of 128
+```
+
+§3's causal chain says v7's retrieval failure follows from a rank-collapsed
+representation, and v8 was supposed to expand it. It contracted slightly while
+every discrimination measure improved sharply. **"More discriminating, lower
+rank" is not the story the campaign has been telling**, and I have no
+explanation for it. It blocks nothing, but it should be understood before §3
+is cited again as v8's motivation — either the rank argument is weaker than
+stated, or something else is carrying the improvement.
+
+⚠ Also noted, not yet chased: the controls' `max_offdiagonal_cos` rose 0.2737
+→ 0.5908, i.e. distinct probe names sit closer together in v8. Controls passed
+(the threshold is 0.999) but the direction is worth understanding alongside the
+rank result — they may be the same phenomenon.

@@ -1,0 +1,276 @@
+{
+ "label": "v8B",
+ "weights": "/ix1/ishi/models/phonetic/checkpoints/vipafix-20260910T175025Z-b1024/phase3_best.pt",
+ "vocab": {
+  "vocab_size": 114845,
+  "char_embed_dim": 64,
+  "num_scripts": 37,
+  "script_embed_dim": 16,
+  "num_langs": 2438,
+  "lang_embed_dim": 16,
+  "num_length_buckets": 16,
+  "length_embed_dim": 8,
+  "embed_dim": 128,
+  "hidden_dim": 128,
+  "vocab_counts": {
+   "char": 114845,
+   "lang": 2438,
+   "script": 37
+  }
+ },
+ "testset": "v8-testset.json",
+ "gate": 0.7,
+ "controls": {
+  "identity_cos_min": 1.0,
+  "max_offdiagonal_cos": 0.5908,
+  "London_vs_Лондон": 0.9967,
+  "PASSED": true
+ },
+ "bands": {
+  "order": {
+   "true_variant": {
+    "n": 319,
+    "mean": 0.8178,
+    "median": 0.931,
+    "pct_clearing_gate": 85.3
+   },
+   "permutation": {
+    "n": 319,
+    "mean": 0.0309,
+    "median": 0.0031,
+    "pct_clearing_gate": 6.6
+   },
+   "reversal": {
+    "n": 319,
+    "mean": -0.1678,
+    "median": -0.1684,
+    "pct_clearing_gate": 0.0
+   },
+   "typo_1_swap": {
+    "n": 319,
+    "mean": 0.9652,
+    "median": 0.9839,
+    "pct_clearing_gate": 99.4
+   },
+   "unrelated": {
+    "n": 319,
+    "mean": 0.0745,
+    "median": 0.066,
+    "pct_clearing_gate": 2.5
+   },
+   "variant_beats_permutation_pct": 94.0
+  },
+  "cross_script": {
+   "n": 4000,
+   "mean": 0.9078,
+   "median": 0.9427,
+   "pct_clearing_gate": 95.5
+  },
+  "chinese_latin": {
+   "n": 3629,
+   "mean": 0.9288,
+   "median": 0.9472,
+   "pct_clearing_gate": 98.8,
+   "note": "v7 learned these from JAPANESE readings of Han characters"
+  },
+  "overlap_gap": {
+   "positives_n": 4000,
+   "negatives_n": 638,
+   "recall_at_gate_pct": 95.5,
+   "positives_below_gate_n": 182,
+   "p5_retrievable_positives": 0.8106,
+   "p99_negatives": 0.8616,
+   "separability": -0.051,
+   "separability_confidence_points": -4.0,
+   "blended_gap_all_positives": -0.147,
+   "p5_all_positives": 0.7147,
+   "p5_positive_confidence_points": 8.7,
+   "p99_negative_confidence_points": 12.7,
+   "min_auto_confidence": 30,
+   "selection_rule": "Better only if recall_at_gate_pct does NOT fall AND separability improves. Do not select on blended_gap_all_positives.",
+   "asymmetry": "RECALL loss is SILENT DATA LOSS: the pair is never retrieved, appears nowhere, and leaves no row for any audit to catch. Nobody recovers from a candidate that was never in the pool. SEPARABILITY loss is VISIBLE MIS-ORDERING: the match is present, just badly placed, and a person reading the list can recover from it. Both ends of this band sit far below MIN_AUTO_CONFIDENCE=30 (a junk match with no lexical tier reaches ~20), so an inversion here CANNOT auto-confirm a wrong placement — it argues for the wrong answer in a review list. SO IF THE CANDIDATES FORCE A TRADE, PROTECT RECALL: +0.05 separability for -2% recall is worse than the arithmetic looks."
+  },
+  "vs_traditional": {
+   "latin_latin": {
+    "symphonym": {
+     "R@1": 0.837,
+     "MRR": 0.8787
+    },
+    "levenshtein": {
+     "R@1": 0.8871,
+     "MRR": 0.9177
+    },
+    "jaro_winkler": {
+     "R@1": 0.9028,
+     "MRR": 0.9261
+    },
+    "difflib_ratio": {
+     "R@1": 0.9091,
+     "MRR": 0.9324
+    },
+    "double_metaphone": {
+     "R@1": 0.2006,
+     "MRR": 0.2909
+    },
+    "_n_queries": 319,
+    "_n_candidates_each": 21
+   },
+   "historic_latin": {
+    "symphonym": {
+     "R@1": 0.6284,
+     "MRR": 0.7108
+    },
+    "levenshtein": {
+     "R@1": 0.6066,
+     "MRR": 0.6829
+    },
+    "jaro_winkler": {
+     "R@1": 0.6052,
+     "MRR": 0.6693
+    },
+    "difflib_ratio": {
+     "R@1": 0.6847,
+     "MRR": 0.751
+    },
+    "double_metaphone": {
+     "R@1": 0.1281,
+     "MRR": 0.2424
+    },
+    "_n_queries": 1421,
+    "_n_candidates_each": 21
+   },
+   "historic_hard": {
+    "symphonym": {
+     "R@1": 0.4995,
+     "MRR": 0.6042
+    },
+    "levenshtein": {
+     "R@1": 0.402,
+     "MRR": 0.5199
+    },
+    "jaro_winkler": {
+     "R@1": 0.4204,
+     "MRR": 0.5148
+    },
+    "difflib_ratio": {
+     "R@1": 0.5244,
+     "MRR": 0.6216
+    },
+    "double_metaphone": {
+     "R@1": 0.052,
+     "MRR": 0.18
+    },
+    "_n_queries": 923,
+    "_n_candidates_each": 21,
+    "_orthographic_similarity": "< 0.5"
+   },
+   "historic_easy": {
+    "symphonym": {
+     "R@1": 0.8976,
+     "MRR": 0.9271
+    },
+    "levenshtein": {
+     "R@1": 0.99,
+     "MRR": 0.9946
+    },
+    "jaro_winkler": {
+     "R@1": 0.9538,
+     "MRR": 0.9676
+    },
+    "difflib_ratio": {
+     "R@1": 0.99,
+     "MRR": 0.9946
+    },
+    "double_metaphone": {
+     "R@1": 0.2892,
+     "MRR": 0.3823
+    },
+    "_n_queries": 498,
+    "_n_candidates_each": 21,
+    "_orthographic_similarity": ">= 0.5"
+   },
+   "cross_script": {
+    "symphonym": {
+     "R@1": 0.9585,
+     "MRR": 0.9709
+    },
+    "levenshtein": {
+     "R@1": 0.0643,
+     "MRR": 0.1902
+    },
+    "jaro_winkler": {
+     "R@1": 0.063,
+     "MRR": 0.189
+    },
+    "difflib_ratio": {
+     "R@1": 0.061,
+     "MRR": 0.1878
+    },
+    "double_metaphone": {
+     "R@1": 0.0457,
+     "MRR": 0.1744
+    },
+    "_n_queries": 4000,
+    "_n_candidates_each": 21
+   },
+   "note": "ranking, not scores — the methods have incompatible scales. Each ranks the SAME candidate set (1 true variant among length-matched impostors). If symphonym does not beat levenshtein on latin_latin, that is a finding about where Symphonym should be used, not a defect to hide."
+  },
+  "blackout_scripts": {
+   "my": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2346,
+    "participation_ratio": 5.64
+   },
+   "pa": {
+    "n": 200,
+    "mean_pairwise_cos": 0.1778,
+    "participation_ratio": 4.72
+   },
+   "bo": {
+    "n": 200,
+    "mean_pairwise_cos": 0.1797,
+    "participation_ratio": 5.58
+   },
+   "si": {
+    "n": 200,
+    "mean_pairwise_cos": 0.3525,
+    "participation_ratio": 7.94
+   },
+   "km": {
+    "n": 200,
+    "mean_pairwise_cos": 0.0588,
+    "participation_ratio": 5.23
+   },
+   "sat": {
+    "n": 200,
+    "mean_pairwise_cos": 0.4574,
+    "participation_ratio": 5.92
+   },
+   "lo": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2002,
+    "participation_ratio": 8.65
+   },
+   "am": {
+    "n": 200,
+    "mean_pairwise_cos": 0.344,
+    "participation_ratio": 8.44
+   },
+   "or": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2059,
+    "participation_ratio": 5.32
+   },
+   "ti": {
+    "n": 200,
+    "mean_pairwise_cos": 0.2548,
+    "participation_ratio": 8.72
+   }
+  },
+  "geometry": {
+   "n": 4000,
+   "effective_rank": 10.31,
+   "of_dims": 128
+  }
+ }
+}
