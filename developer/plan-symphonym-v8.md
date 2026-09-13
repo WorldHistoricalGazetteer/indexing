@@ -10899,6 +10899,49 @@ it measure the old rationale.** So:
 band, that is a finding about the permutation negatives — not a licence to ship
 the better of two unchanged models.
 
+### 🛑 AMENDED 13 Sep after conferring with `whg3-c1` — the primary is now the GAP, split
+
+The order band and the cross-script band measure the two things the gateway
+needs **separately, and they occupy the same cosine range**. whg3's prod
+measurement has a genuine cross-script positive (`Marsails → مارساليس`, 0.9878)
+sitting **below** a junk pair (0.9881). Permutation negatives push junk down
+through exactly the band the positives occupy, so both bands can improve while
+the overlap that decides retrieval gets worse.
+
+⚠ **A single signed gap could not be selected on either** — it blends a
+positive below the 0.7 floor (unretrievable; no ranking change recovers it)
+with one above the floor that junk outranks (what the negatives address). **The
+likeliest v8 failure mode — junk pushed down dragging the weakest positives
+below the floor — improves the blend while losing recall, and reads as a win.**
+
+✅ **MEASURED, not assumed:** ES `knn.similarity` filters on the **cosine**, not
+the `(1+cos)/2` score. A 4-dim probe index: at `similarity=0.7`, cosine 0.5
+(score 0.75) was **excluded**; cosine 0.9 kept. So sub-0.7 positives are lost
+outright.
+
+```
+v7   recall_at_gate            87.5%    (500 of 4,000 positives below the floor)
+     p5 retrievable positives  0.7404 -> 3.2 confidence points
+     p99 negatives             0.9531 -> 19.8 confidence points
+     separability             -0.2127  = -16.7 points
+     blended (headline only)  -0.3877
+```
+
+**Separability survives the split** — removing unretrievable pairs closes only
+45% of the blend — so junk outranking genuine matches *inside* the retrievable
+band is a real target, not a residual.
+
+🛑 **THE TWO FAILURES ARE NOT COMMENSURABLE, so do not weigh the percentages
+against each other.** Both ends of the band sit far below
+`MIN_AUTO_CONFIDENCE = 30`, so an inversion here **cannot auto-confirm a wrong
+placement** — it argues for the wrong answer in a list a person is reading.
+Whereas a positive below the floor is **silent data loss**: never retrieved,
+leaving no row for any audit to catch.
+
+**If the candidates force a trade, PROTECT RECALL.** A human recovers from bad
+ordering; nobody recovers from a candidate that was never in the pool.
+`+0.05` separability for `-2%` recall is worse than the arithmetic looks.
+
 ⚠ **`val_loss` decides nothing here.** The arms differ in learning rate and in
 update count, so a lower loss at epoch *n* does not establish better downstream
 retrieval. It is being tracked to catch divergence, not to pick a winner.

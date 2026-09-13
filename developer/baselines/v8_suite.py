@@ -361,10 +361,32 @@ def run(args):
                 # headline, kept because it is true and startling, NOT for selection
                 "blended_gap_all_positives": round(p5 - p99, 4),
                 "p5_all_positives": round(p5, 4),
-                "selection_rule": ("a candidate is better only if recall_at_gate_pct does NOT "
-                                   "fall AND separability improves. If it trades them, the "
-                                   "trade rate is the decision and belongs in front of a person "
-                                   "— do not select on blended_gap_all_positives."),
+                # Phonetic-tier confidence contribution of each end of the band,
+                # so the distance to the only consumer threshold is visible.
+                "p5_positive_confidence_points": round(
+                    max(0.0, (float(np.percentile(retr, 5)) - gate)) / 0.3 * (1.0 / 4.25) * 100, 1)
+                    if retr.size else None,
+                "p99_negative_confidence_points": round(
+                    max(0.0, (p99 - gate)) / 0.3 * (1.0 / 4.25) * 100, 1),
+                "min_auto_confidence": 30,
+
+                "selection_rule": ("Better only if recall_at_gate_pct does NOT fall AND "
+                                   "separability improves. Do not select on "
+                                   "blended_gap_all_positives."),
+
+                # 🛑 THE TWO FAILURES ARE NOT COMMENSURABLE. Do not weigh the
+                # percentages against each other as if they were.
+                "asymmetry": (
+                    "RECALL loss is SILENT DATA LOSS: the pair is never retrieved, appears "
+                    "nowhere, and leaves no row for any audit to catch. Nobody recovers from "
+                    "a candidate that was never in the pool. "
+                    "SEPARABILITY loss is VISIBLE MIS-ORDERING: the match is present, just "
+                    "badly placed, and a person reading the list can recover from it. "
+                    "Both ends of this band sit far below MIN_AUTO_CONFIDENCE=30 (a junk "
+                    "match with no lexical tier reaches ~20), so an inversion here CANNOT "
+                    "auto-confirm a wrong placement — it argues for the wrong answer in a "
+                    "review list. SO IF THE CANDIDATES FORCE A TRADE, PROTECT RECALL: "
+                    "+0.05 separability for -2% recall is worse than the arithmetic looks."),
             }
     except Exception as exc:
         rep["bands"]["overlap_gap"] = {"error": str(exc)[:200]}
