@@ -11060,3 +11060,64 @@ two *can* move oppositely, not that rank is irrelevant. But §3 is cited as v8's
 motivation throughout this document, and it is now measurably not the mechanism
 that produced the improvement. **Do not cite §3 as v8's justification without
 citing this.**
+
+---
+
+## 76. 🛑 PHASE 2 HAS BEEN MIS-SCALED IN EVERY RUN — 8.4% of quality, and 5× the time
+
+SG asked whether the batch sweep should extend to phases 2 and 3. Phase 2 was
+still at the **default batch 128** while phase 3 had been tuned to 1024 at some
+earlier point. Arm F ran phase 2 alone, from an md5-identical copy of arm B's
+teacher, in its own directory — one variable:
+
+```
+phase 2, batch 128,  lr 1e-4    val_loss 0.0514   3h10m    (the standing config)
+phase 2, batch 1024, lr 8e-4    val_loss 0.0471   0h38m    8.4% BETTER, 5x faster
+```
+
+⚠ **This is not a speed result.** Phase 2 at batch 128 was leaving 8.4% of
+quality on the table, on every run this project has ever done — including both
+current v8 candidates, which share the setting identically and so remain
+comparable to each other.
+
+Same mechanism as arm B's deficit (§73) but larger, because the mis-scaling was
+8× rather than 2×: too many too-small steps, converging short of where the
+objective could reach.
+
+### The full recipe picture
+
+```
+PHASE 1   A  b512  lr2e-4      0.0053   17h52m
+          B  b1024 lr2.83e-4   0.0056    9h32m   sqrt scaling — the outlier
+          C  b1024 lr4e-4      tracking A exactly (linear scaling)
+          D  b2048 lr8e-4      tracking A exactly
+          E  b4096 lr1.6e-3    running
+PHASE 2   b128  lr1e-4         0.0514    3h10m
+          F  b1024 lr8e-4      0.0471    0h38m
+PHASE 3   b1024               8h56m
+          G  b2048 lr1e-4      running
+```
+
+**A fully-tuned retrain projects to ~11 hours against today's ~30, and produces
+a BETTER model.** Phase 3 is now the long pole at 8h56m — it runs at 8.4 it/s
+against phase 1's 34.8 at the same batch, because each step embeds anchor,
+positive and negative, plus the permutation-negative generation added in §64.
+
+⚠ **A third, better v8 is therefore available for ~11 hours of compute** once
+the sweep confirms the recipe. That does not invalidate the §74 decision
+between A and B — they share the old phase-2 setting identically — but it does
+mean neither is the best model this pipeline can produce today.
+
+### ⚠ And I caused the exact collision I had been guarding against
+
+Submitting arm G, the launch command exceeded its timeout and was moved to the
+background. `squeue` showed nothing queued, so I concluded it had failed and
+relaunched — and the job was in the gap between submission and appearing. **Two
+jobs then ran against one output directory**, which is the silent-overwrite
+failure §73 records as prevented only by a CONVENTION (distinct `DATA_VERSION`
+labels) rather than by any enforced constraint.
+
+They overlapped ~20 seconds, well inside phase 3's 5-epoch checkpoint interval,
+so nothing was corrupted. **The convention protects against different arms
+colliding; it does nothing against the same label submitted twice.** A check
+that was correct at the instant it ran was wrong about what it implied.
