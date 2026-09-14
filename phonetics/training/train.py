@@ -37,6 +37,7 @@ Usage:
 
 import argparse
 import json
+import math
 import logging
 import sys
 import time
@@ -188,6 +189,36 @@ DEFAULT_CONFIG = {
 }
 
 # Phase-specific overrides for optimal GPU utilization
+
+def _abort_if_diverged(phase: int, epoch: int, train_loss: float, val_loss: float) -> None:
+    """Stop the run the moment the loss stops being a number.
+
+    🛑 WITHOUT THIS, A DIVERGED RUN REPORTS SUCCESS. Arm E of the 13 Sep batch
+    sweep (b4096, lr 1.6e-3) trained normally for ~5 epochs, went NaN, then ran
+    ~25 more epochs producing nothing and exited COMPLETED with code 0. `sacct`
+    could not distinguish it from a good run, ~2 hours of A100 were spent after
+    the model was already dead, and the only visible trace was an empty
+    `val_loss=` in a grep — easy to dismiss as a log-format quirk.
+
+    Raising here makes divergence a LOUD, NON-ZERO exit, so a downstream
+    dependency (`afterok`) refuses to start on a dead teacher rather than
+    inheriting it. See plan-symphonym-v8.md §79.
+    """
+    if math.isfinite(train_loss) and math.isfinite(val_loss):
+        return
+    logger.error("=" * 60)
+    logger.error("DIVERGED at phase %d epoch %d: train_loss=%s val_loss=%s",
+                 phase, epoch, train_loss, val_loss)
+    logger.error("The loss is not a finite number. Continuing would burn the rest")
+    logger.error("of the wall clock and exit COMPLETED with nothing usable.")
+    logger.error("Most likely cause: the learning rate is too high for this batch")
+    logger.error("size. Linear scaling held to batch 2048 and broke at 4096 (§79).")
+    logger.error("=" * 60)
+    raise SystemExit(
+        f"diverged at phase {phase} epoch {epoch}: "
+        f"train_loss={train_loss}, val_loss={val_loss}")
+
+
 PHASE_CONFIGS = {
     1: {  # Phase 1: Largest dataset (21.9M triplets) - the pipeline's long pole
         # 🛑 AT batch_size 128 THIS PHASE COULD NOT FINISH. Measured 12 Sep 2026
@@ -357,6 +388,7 @@ def train_phase1(
             val_loss = evaluate_phase1(teacher, val_loader, criterion, device)
 
             logger.info(f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, val_loss={val_loss:.4f}")
+            _abort_if_diverged(1, epoch + 1, avg_train_loss, val_loss)
 
             # Log metrics for training curves
             metrics.log_epoch(epoch + 1, avg_train_loss, val_loss, current_lr)
@@ -593,6 +625,7 @@ def train_phase2(
                 f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, "
                 f"val_loss={val_loss:.4f}, val_sim={val_metrics['cosine_sim']:.4f}"
             )
+            _abort_if_diverged(2, epoch + 1, avg_train_loss, val_loss)
 
             # Log metrics for training curves
             metrics_logger.log_epoch(
@@ -820,6 +853,7 @@ def train_phase3(
             val_loss = evaluate_phase3(student, val_loader, criterion, device)
 
             logger.info(f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, val_loss={val_loss:.4f}")
+            _abort_if_diverged(3, epoch + 1, avg_train_loss, val_loss)
 
             # Log metrics for training curves
             metrics_logger.log_epoch(epoch + 1, avg_train_loss, val_loss, current_lr)
