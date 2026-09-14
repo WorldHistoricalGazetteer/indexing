@@ -11300,3 +11300,60 @@ recipe costs ~15 hours.**
 J's phase-2 student taken through phase 3 — is the experiment that tests
 whether any of this survives into a model the suite can score. It is staged and
 waiting on G.
+
+---
+
+## 80. ✅ THE §74 DECISION — v8A wins, and the tie-break that favoured B no longer applies
+
+Both candidates scored on the frozen test set, identical code and data.
+
+```
+                        v7       v8A      v8B     better
+§74 PRIMARY
+  recall_at_gate       87.5     95.2     95.5     B by 0.3pp
+  separability      -0.2127  -0.0574   -0.051     B by 0.006
+ORDER BAND
+  permutation          70.5      5.0      6.6     A
+  typo_1_swap         100.0     98.4     99.4     B
+  variant > anagram    74.6     95.0     94.0     A
+RETRIEVAL
+  cross_script         87.5     95.2     95.5     B
+  chinese_latin        90.2     99.1     98.8     A
+COLLATERAL (symphonym R@1)
+  historic_hard      0.5179   0.5179   0.4995     A — NO regression at all
+  latin_latin        0.8527   0.8495   0.8370     A — -0.3pp vs B's -1.6pp
+  effective rank      10.98    11.26    10.31     A — ROSE; B fell
+```
+
+**Recommendation: A.** B leads the primary by margins that are noise — 0.3pp of
+recall is ~12 pairs in 4,000 — while A leads the collateral measures by much
+larger ones. **A produced no historic-Latin regression whatever** (0.5179,
+identical to v7) where B lost 1.8 points, and suppressed anagrams harder
+(5.0% vs 6.6%) for a 1pp typo cost.
+
+🛑 **§74's tie-break is obsolete, and should not be applied.** It said "prefer B,
+cheaper to reproduce", written when B cost 21h against A's 30h. §79's recipe
+makes either reproducible in ~15h, so the asymmetry that justified the rule is
+gone. ⚠ *A tie-break premised on a cost that has since changed is exactly the
+stale-gate failure §59 records.*
+
+### 🛑 AND §75's RANK CONCLUSION WAS DRAWN FROM ONE ARM
+
+§75 recorded that v8 contracted the embedding rank (10.98 → 10.31) while fixing
+retrieval, and concluded §3's causal chain "is NOT what delivered v8".
+
+**A's rank ROSE: 10.98 → 11.26.** The contraction was specific to arm B — the
+sqrt-scaled, under-trained one — not to v8. **So §75's conclusion rests on a
+single arm and two arms do not support it.** §3 may well be intact; what B
+showed is that a worse-optimised model can improve retrieval while losing rank,
+which is a narrower claim. ⚠ **Do not cite §75's rank paragraph without this.**
+
+### The proxies tracked, which is the first evidence either way
+
+A had the better phase 1 (0.0053 vs 0.0056) and phase 3 (0.0211 vs 0.0216), and
+A wins most band measures. **Phase-level val_loss predicted the better model.**
+One comparison, not a law — but §77 flagged the proxy risk as unresolved, and
+this is the first test of it.
+
+**Arm M** (tuned recipe: D's teacher 0.0051 + phase 2 @4096 + phase 3 @2048) is
+running and beats v8A's inputs at every stage. It is the candidate to beat.
