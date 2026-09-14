@@ -11533,24 +11533,50 @@ production, and today is the wrong day to delete it.
 
 ---
 
-## 84. ⚠ THE CHAR VOCABULARY'S ID SPACE EXCEEDS ITS TABLE BY EXACTLY 7 — IN BOTH v7 AND v8
+## 84. 🛑 A REDISCOVERY — §5.8 H1 ALREADY HAS THIS, AND HAS IT BETTER
+
+**This section first reported the out-of-table vocab ids as a finding. They are
+not new: §5.8 H1 recorded them during the tokeniser port**, with the v7 count of
+7 and the character `'̿'`→113280 named explicitly, plus a test
+(`tests/test_tokeniser_contract.py::test_out_of_table_ids_degrade_to_unk`) whose
+fixture *assumes* the shipped vocab has them. SG caught the rediscovery; I had
+not grepped for the implied event before writing it up, which is the standing
+rule for exactly this.
+
+⚠ **And the earlier record is sharper than the one I wrote.** I framed the
+problem as "seven characters degrade to UNK" — which both code paths already
+handle. §5.8 H1 frames it as the real hazard: **they degrade by two different
+rules reading two different sources.** `CharacterVocabulary.get_char_id` tests
+`cid >= len(self.char_to_id)` — a property of the **vocab file**.
+`hf/inference.py::_sanitize_vocab_ids` clamps against
+`char_embed.num_embeddings` — a property of the **checkpoint**. *They agree only
+while those two numbers are equal.*
+
+### What IS new, and it is the reassuring half
+
+Measured on the v8 artefacts, 14 Sep:
 
 ```
-v8  char_vocab  entries=114,845  max_id=114,851  out_of_range=7  𐒇 𐒂 𐒊 𐒔 𐒙 𐒁 ˉ
-v7  char_vocab  entries=113,280  max_id=113,286  out_of_range=7  ̿ ̓ ͉ གྷ ̺ ͆ ㈜
+v8  char_vocab  entries=114,845  max_id=114,851  out_of_range=7   𐒇 𐒂 𐒊 𐒔 𐒙 𐒁 ˉ
+v7  char_vocab  entries=113,280  max_id=113,286  out_of_range=7   ̿ ̓ ͉ གྷ ̺ ͆ ㈜
+    lang and script vocabularies are clean in both
 ```
 
-Seven characters carry ids at or beyond the embedding table, so they can never
-be embedded and are mapped to UNK — the model announces this
-(`sanitised 7 out-of-table vocab id(s) → UNK`), which is how it was noticed.
-`lang` and `script` are clean in both.
+**The coincidence H1 depends on still holds in v8**: the checkpoint's
+`char_embed` table is 114,845 rows and `len(char_to_id)` is 114,845 — equal, so
+the two rules still agree and nothing has silently diverged. That is the check
+H1 asked a future reader to make, and this is it being made. **D-D (trimming
+`char_embed` to the ~8,000 emittable characters) has NOT been done**, which is
+why the numbers still match; whoever takes D-D still has to make the two rules
+read one source.
 
-**Not introduced by v8, and not a reason to hold the deployment**: seven
-characters in 114,845, degrading safely and loudly. But *exactly seven in both
-independent runs* is not a data coincidence — it points at a deterministic
-off-by-N in the vocabulary builder, where ids are assigned before some
-last-stage filter drops entries, leaving the count and the id space disagreeing.
-Worth finding before v9, since the characters it hits in v8 are six Osmanya
-letters — a minority script, which is precisely the population this campaign
-exists to serve.
+### ⚠ One claim from the first version of this section is withdrawn
 
+I wrote that seven in both runs "is not a data coincidence" and pointed at a
+deterministic off-by-N in the builder. **The arithmetic is consistent with that
+— `max_id − entries = 6` in both, exactly what dropping 7 entries after ids were
+assigned would produce — but I did not read the builder, and the seven
+characters are entirely different in the two runs**, which is evidence against a
+fixed reserved set. Treat the cause as unknown and the matching count as
+unexplained rather than as established. It remains worth finding before v9, at
+the sharper framing §5.8 H1 already gives it.
