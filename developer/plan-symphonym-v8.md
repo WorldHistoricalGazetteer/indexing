@@ -11463,3 +11463,94 @@ retrain.** The fix is to move the cache write off the per-batch path — one bul
 insert at the end, or a post-merge ingest job of the kind sharded mode already
 assumes — not to keep the flag as folklore.
 
+---
+
+## 83. THE v8 DEPLOYMENT — WHAT IS BUILT, AND THE RUNBOOK FOR THE SWAP
+
+### Built and verified, 14 Sep
+
+| artefact | where | verified by |
+|---|---|---|
+| v8 = arm A checkpoint | `/ix1/…/checkpoints/v8/phase3_best.pt` | md5 `51d0f7f8…` equal to source; `PROVENANCE.md` beside it |
+| v8 vocab | `/ix1/…/data/v8/vocab` | md5 `16a4d41e` / `17ce7fe6` / `18fd9410` |
+| embeddings | `/ix1/…/data/v8/embeddings_v8_nocache.parquet`, 9.0 GB | 73,479,069 rows, **0 null doc_id**, 73,479,069 distinct, every vector 128-d, 0 all-zero |
+| serving index | staging `toponyms_v8-20260914t120000z` | mapping read back from ES: no `panphon_embedding`, `embedding` dims 128, `ipa` present |
+| **gateway model dir** | `/vast/ishi/models/phonetic/symphonym-v8-hf` | **reproduces the suite's own controls: identity 1.0000, London/Лондон 0.9947** |
+
+### 🛑 THE GATEWAY DOES NOT USE THE PATH THE RESOLVER DOCUMENTS
+
+`gateway/symphonym.py` describes a four-candidate search ending in a CRC split
+layout under `<base>/models/phonetic/checkpoints/v<version>`. **Production does
+not reach any of it.** `.env.local` on pitt sets
+
+    SYMPHONYM_MODEL_DIR="/vast/ishi/models/phonetic/symphonym-v7-hf"
+
+which is candidate 1 and wins over `SYMPHONYM_DATA_VERSION`, over the repo's
+`hf/`, and over the CRC layout. Consequences, both good:
+
+* **`hf/config.json` in the repo needs no change.** The deployed directory is
+  self-contained (`config.json` + `model.safetensors` + `vocab/`). The hazard
+  recorded earlier in this session — that pushing a v8 config would break a v7
+  gateway at its next restart, because `origin/main` is a deploy channel — **does
+  not exist on this path.** Leave the repo file alone.
+* **The model swap is one environment variable**, and rollback is flipping it
+  back with the v7 directory untouched.
+
+⚠ *The resolver's docstring is accurate about the code and misleading about
+production.* Read the deployed config, not the search order.
+
+### The swap, in order
+
+1. Force-merge in staging by titration (`es -forcemerge <index> --max-segments 2`,
+   iterative by default) — **stop at 2–4 segments/shard, not 1.** 4 shards over
+   ~90 GB puts `max_num_segments=1` at ~22 GB segments, and a later in-place
+   `_bulk` enrichment leaves deletes that can then only be reclaimed by
+   rewriting the whole segment.
+2. Snapshot **naming the concrete index explicitly**. `run_index`'s own final
+   snapshot call passes no `indices` and so defaults to the *aliases*, which in
+   this staging instance are two empty placeholders; the 1 MB floor added in §69
+   rejects it. **Expect that failure line — it is the guard working**, and it
+   does not raise, so the index is unaffected.
+3. Restore into prod from `staging_repo` (registered there read-only at
+   `/ix1/ishi/es/snapshots/staging` — verified). This copies segments; it does
+   **not** rebuild HNSW graphs or merge, which is the whole point of doing 1 in
+   staging. It is not "no load on prod" — ~90 GB of writes — but it is no
+   *indexing* load.
+4. **Alias and model together.** Re-point `toponyms`, then immediately restart
+   the gateway with `SYMPHONYM_MODEL_DIR` at the v8 directory. A v7 gateway
+   against a v8 index is not degraded, it is noise: the query vector and the
+   document vectors come from different models and nothing anywhere errors.
+5. Drop the old index only after the new one has been exercised — it is the
+   rollback, and it releases ~100 GB of /vast when dropped.
+
+### ⚠ /vast is the tightest point
+
+224 GB free of 1 TB before the restore; ~125 GB after, with both indices
+resident. Above the 51 GB flood watermark, and it recovers at step 5. The large
+reclaimable items are on /ix1 (1.3 TB free) and were deliberately NOT deleted:
+the superseded `undscript` DuckDB is the source of the index currently serving
+production, and today is the wrong day to delete it.
+
+---
+
+## 84. ⚠ THE CHAR VOCABULARY'S ID SPACE EXCEEDS ITS TABLE BY EXACTLY 7 — IN BOTH v7 AND v8
+
+```
+v8  char_vocab  entries=114,845  max_id=114,851  out_of_range=7  𐒇 𐒂 𐒊 𐒔 𐒙 𐒁 ˉ
+v7  char_vocab  entries=113,280  max_id=113,286  out_of_range=7  ̿ ̓ ͉ གྷ ̺ ͆ ㈜
+```
+
+Seven characters carry ids at or beyond the embedding table, so they can never
+be embedded and are mapped to UNK — the model announces this
+(`sanitised 7 out-of-table vocab id(s) → UNK`), which is how it was noticed.
+`lang` and `script` are clean in both.
+
+**Not introduced by v8, and not a reason to hold the deployment**: seven
+characters in 114,845, degrading safely and loudly. But *exactly seven in both
+independent runs* is not a data coincidence — it points at a deterministic
+off-by-N in the vocabulary builder, where ids are assigned before some
+last-stage filter drops entries, leaving the count and the id space disagreeing.
+Worth finding before v9, since the characters it hits in v8 are six Osmanya
+letters — a minority script, which is precisely the population this campaign
+exists to serve.
+
