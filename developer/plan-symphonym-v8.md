@@ -11237,3 +11237,66 @@ no longer exists.
 
 **Recommendation: leave it. Re-price after D-D.** Correct the ladder in both
 documents so the +1.53 figure stops being quoted.
+
+---
+
+## 79. ✅ THE PHASE-1 SWEEP IS COMPLETE — linear scaling holds to 2048 and breaks at 4096
+
+```
+arm  batch  LR        scaling   val_loss   time     note
+A     512   2.00e-4   —          0.0053   17h52m   the incumbent
+B    1024   2.83e-4   sqrt       0.0056    9h32m   the deficit §73 chased
+C    1024   4.00e-4   linear     0.0052    9h27m   SAME BATCH AS B — and beats A
+D    2048   8.00e-4   linear     0.0051    6h40m   best, and 37% of A's time
+E    4096   1.60e-3   linear      NaN      5h13m   diverged
+```
+
+🛑 **B and C differ ONLY in learning rate.** C beats A; B lost to it. **B's 5%
+deficit was the sqrt-scaling choice, not the batch size** — which is what SG
+suspected when asking "could B have won with a different gradient schedule?"
+and what I had attributed, at length, to fewer gradient updates.
+
+⚠ **Had linear scaling been used from the start, arm B would have been the
+better candidate AND taken half A's time, and the whole A/B comparison would
+have read differently.** The conservative choice made to avoid instability was
+itself the error.
+
+### 🛑 ARM E WENT NaN AND EXITED `COMPLETED` WITH CODE 0
+
+```
+epoch  1   0.0128      epoch  5   0.0079      epoch 25   nan
+epoch  2   0.0100                             epoch 50   nan
+```
+
+It trained normally for several epochs, diverged, then **ran ~25 more epochs
+producing nothing and reported success**. `sacct` says `COMPLETED|0:0`. Nothing
+downstream can distinguish a diverged run from a good one, and ~2 hours of A100
+were spent after the model was already dead.
+
+⚠ **The empty `val_loss=` in my first grep was the only visible sign**, and it
+would have been easy to dismiss as a log-format quirk. This is the campaign's
+signature fault in a new place: *a stage reporting what it attempted rather
+than what it achieved.*
+
+**Proposed and NOT yet implemented (awaiting SG):** a finite-loss check in the
+epoch loop — if the loss is not finite, log loudly and exit non-zero.
+
+### The tuned recipe, against what v8's candidates actually ran
+
+```
+            as run                      tuned
+phase 1     b512   0.0053  17h52m       b2048  0.0051   6h40m
+phase 2     b128   0.0514   3h10m       b4096  0.0463   0h35m
+phase 3     b1024          8h56m        b2048  (G running, ~19% faster)
+            ~30 hours                   ~14-15 hours, better at every phase
+```
+
+⚠ **Both v8 candidates were trained with the OLD settings.** They remain
+comparable to each other — they share them identically — but neither is the
+best model this pipeline can now produce. **A third candidate on the tuned
+recipe costs ~15 hours.**
+
+⚠ **And every number above is a PROXY** (distillation fit, §77). Arm L —
+J's phase-2 student taken through phase 3 — is the experiment that tests
+whether any of this survives into a model the suite can score. It is staged and
+waiting on G.
