@@ -548,6 +548,26 @@ def run_index(args):
 
     # Disable refresh for bulk loading
     schema.setdefault('settings', {})['refresh_interval'] = '-1'
+
+    # ⚠ `--no-panphon` OMITS A FIELD THE REBUILD PAID FOR. It is legitimate for a
+    # SERVING index and wrong for a training one, so it is a flag and not a
+    # schema edit: `schemas/toponyms.json` is shared with
+    # rebuild_toponyms_index, whose own index is what training-pair selection
+    # runs its KNN over. Deleting the field from the schema would strip it from
+    # both and silently make `find_similar_in_place` return [] for every place —
+    # the exact regression this stage's docstring records.
+    #
+    # Dropping it here is recoverable because the ES field is DERIVED, not
+    # original: `panphon_features` lives in the DuckDB and
+    # `_embedding_from_packed_features` reconstructs the vector from it.
+    if getattr(args, 'no_panphon', False):
+        props = schema.get('mappings', {}).get('properties', {})
+        if props.pop('panphon_embedding', None) is None:
+            logger.warning("--no-panphon: schema had no panphon_embedding to remove")
+        else:
+            logger.info("--no-panphon: panphon_embedding removed from the mapping; "
+                        "this index is for SERVING and cannot drive pair selection")
+
     es.indices.create(index=args.index, body=schema)
     logger.info(f"Index '{args.index}' created")
 
@@ -604,6 +624,7 @@ def run_index(args):
         "       count(*) FILTER (WHERE panphon_features IS NOT NULL) "
         "FROM toponyms").fetchone()
     src_ipa, src_panphon = source_counts
+    skip_panphon = bool(getattr(args, 'no_panphon', False))
     logger.info(f"Source supplies: ipa {src_ipa:,}, "
                 f"panphon_features {src_panphon:,} of {total_rows:,}")
 
@@ -713,7 +734,7 @@ def run_index(args):
                 # training-pair selection was inert without ever erroring.
                 if row[5]:
                     doc['ipa'] = row[5]
-                packed = row[6]
+                packed = row[6] if not skip_panphon else None
                 if packed:
                     # ⚠ USE THE SHARED DERIVATION. `panphon_features` is NOT a
                     # ready-made vector: it is N×24 floats, 24 PanPhon features
@@ -806,13 +827,18 @@ def run_index(args):
                        query={"exists": {"field": "ipa"}})["count"]
     got_pan = es.count(index=args.index,
                        query={"exists": {"field": "panphon_embedding"}})["count"]
+    # With --no-panphon the EXPECTATION changes, the check does not: the field
+    # must be absent from every document, not merely short. A gate relaxed to
+    # "don't check panphon" would also pass an index that lost it by accident.
+    want_pan = 0 if skip_panphon else src_panphon
     logger.info(f"Carried forward: ipa {got_ipa:,} (source {src_ipa:,}), "
-                f"panphon_embedding {got_pan:,} (source {src_panphon:,})")
-    carried_short = (got_ipa != src_ipa) or (got_pan != src_panphon)
+                f"panphon_embedding {got_pan:,} (expected {want_pan:,}"
+                f"{', DELIBERATELY DROPPED' if skip_panphon else f', source {src_panphon:,}'})")
+    carried_short = (got_ipa != src_ipa) or (got_pan != want_pan)
     if carried_short:
         logger.error(
             f"CARRY-FORWARD SHORTFALL: ipa {got_ipa:,} vs source {src_ipa:,}; "
-            f"panphon_embedding {got_pan:,} vs source {src_panphon:,}. "
+            f"panphon_embedding {got_pan:,} vs expected {want_pan:,}. "
             f"Either the derivation failed or the source column was emptied "
             f"upstream. Do NOT promote this index."
         )
@@ -898,6 +924,12 @@ def main():
                          help='Embeddings Parquet file (for all toponyms)')
     p_index.add_argument('--schema-file', required=True,
                          help='ES index schema JSON file')
+    p_index.add_argument('--no-panphon', action='store_true',
+                         help='Omit panphon_embedding from the mapping and the '
+                              'documents. For a SERVING index only: the field '
+                              'is what training-pair selection runs KNN over, '
+                              'and it is reconstructible from the DuckDB\'s '
+                              'panphon_features via the rebuild\'s own index.')
     p_index.set_defaults(func=run_index)
 
     args = parser.parse_args()
