@@ -531,7 +531,32 @@ def run_index(args):
     logger.info(f"Creating temporary embeddings database at {temp_db_path}...")
 
     # Create temporary DuckDB and import embeddings Parquet
+    #
+    # 🛑 BOUND THIS CONNECTION TOO. The main `conn` below is pinned to 4 threads
+    # and a 24 GB memory limit, with its spill directory capped — and this one,
+    # holding a 9 GB table plus an index over 73.5M string keys and answering
+    # ~73,500 IN-list lookups, was left on DuckDB's defaults. Those defaults are
+    # taken from the MACHINE: memory_limit is ~80% of system RAM and threads is
+    # the core count, neither of which knows anything about the Slurm cgroup the
+    # process actually lives in. So the bound that mattered was never applied to
+    # the connection that needed it most.
+    #
+    # Job 24074592 died at 29.1M of 73.5M documents after 1h43m with
+    # `duckdb.InternalException: INTERNAL Error: Invalid bitpacking mode`, raised
+    # from the per-batch lookup on THIS connection, with MaxRSS 104,854,932K
+    # against a 100G request — i.e. pinned to the ceiling. ⚠ The DuckDB
+    # assertion is the symptom; allocation failure under the cgroup cap is the
+    # cause, and an internal-error message sends you looking for a storage bug
+    # instead of a memory bound.
     emb_conn = duckdb.connect(str(temp_db_path))
+    emb_spill = Path(temp_dir) / 'emb_spill'
+    emb_spill.mkdir(parents=True, exist_ok=True)
+    emb_conn.execute("SET threads = 4")
+    emb_conn.execute("SET memory_limit = '24GB'")
+    emb_conn.execute(f"SET temp_directory = '{emb_spill}'")
+    emb_conn.execute("SET max_temp_directory_size = '64GiB'")
+    emb_conn.execute("SET preserve_insertion_order = false")
+    logger.info(f"Embeddings lookup DB pinned: 4 threads, 24GB, spill {emb_spill}")
     emb_conn.execute(f"CREATE TABLE embeddings AS SELECT * FROM read_parquet('{embeddings_path}')")
     emb_conn.execute("CREATE INDEX idx_doc_id ON embeddings(doc_id)")
     logger.info(f"✓ Temporary embeddings database ready with {total_embeddings:,} rows")
