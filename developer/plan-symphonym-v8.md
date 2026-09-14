@@ -11419,3 +11419,47 @@ written before any model trained on it had been scored. The honest statement is:
 That is still a real result — a 15h experiment loop against 30h changes what can
 be tried — but it is not a faster route to the same model, which is how §79 and
 the 14 Sep artifact both read before this section existed.
+
+---
+
+## 82. 🛑 THE EMBEDDING CACHE IS ON THE WRONG SIDE OF ITS OWN HASH — 11× SLOWER
+
+Measured head-to-head on the v8 re-embed, 14 Sep, same corpus, same checkpoint,
+two GPUs at once:
+
+```
+  job 3943444  l40s  cache ON   ->    833 doc/s   ETA 24h 21m
+  job 3943457  a100  --no-cache ->  9,004 doc/s   ETA  2h 15m
+```
+
+`run_compute` consults a persistent DuckDB cache keyed
+`(toponym_id, embedding_version, sha256(checkpoint))`, and **appends every miss
+to it, one `insert_many` per 2,000-row batch, synchronously, to a DuckDB file on
+shared `/vast`.** That write is the whole cost: cancel it and the same work runs
+eleven times faster on comparable hardware.
+
+### 🛑 AND THE CACHE CAN NEVER HELP THE RUN THAT PAYS FOR IT
+
+The key includes the checkpoint hash, so **a retrain invalidates the cache by
+construction** — `hits=0, misses=400,000` in the log above, on a cache holding
+67.9M rows. The only run that can hit is a recompute of a checkpoint already
+computed, which happens when a compute job is re-run after failing partway. So
+the design taxes every first computation 11× to make a rare repeat cheap, and
+the first computation is the one that follows every model we ever ship.
+
+⚠ **This is why the v7 re-embed looked so slow.** `embeddings_v7/compute_1725783`
+ran at 7,250 doc/s while hitting cache and **414 doc/s on misses**, and was still
+at 12.2M of 67.5M after 8 hours. That was read at the time as the cost of
+embedding a corpus; it was the cost of writing the cache.
+
+⚠ **And the telemetry misleads in the same direction.** `update-es-compute`
+wall-times in `namespace-runtime-history.json` read 2.85h / 0.35h / 0.39h — all
+cache-assisted runs. Sizing a cold re-embed from them underestimates it by an
+order of magnitude, which is exactly the error this section was written from: the
+v8 compute was launched with a 3-hour expectation and reported a 25-hour ETA.
+
+**Rule until the cache is fixed: pass `--no-cache` for any compute following a
+retrain.** The fix is to move the cache write off the per-batch path — one bulk
+insert at the end, or a post-merge ingest job of the kind sharded mode already
+assumes — not to keep the flag as folklore.
+
