@@ -11308,22 +11308,31 @@ waiting on G.
 Both candidates scored on the frozen test set, identical code and data.
 
 ```
-                        v7       v8A      v8B     better
+                        v7       v8A      v8B      v8G     better
 §74 PRIMARY
-  recall_at_gate       87.5     95.2     95.5     B by 0.3pp
-  separability      -0.2127  -0.0574   -0.051     B by 0.006
+  recall_at_gate       87.5     95.2     95.5     95.3     B by 0.3pp
+  separability      -0.2127  -0.0574   -0.051  -0.0593     B by 0.006
 ORDER BAND
-  permutation          70.5      5.0      6.6     A
-  typo_1_swap         100.0     98.4     99.4     B
-  variant > anagram    74.6     95.0     94.0     A
+  permutation          70.5      5.0      6.6      6.0     A
+  typo_1_swap         100.0     98.4     99.4     99.4     B/G
+  variant > anagram    74.6     95.0     94.0        -     A
 RETRIEVAL
-  cross_script         87.5     95.2     95.5     B
-  chinese_latin        90.2     99.1     98.8     A
+  cross_script         87.5     95.2     95.5     95.3     B
+  chinese_latin        90.2     99.1     98.8     98.6     A
 COLLATERAL (symphonym R@1)
-  historic_hard      0.5179   0.5179   0.4995     A — NO regression at all
-  latin_latin        0.8527   0.8495   0.8370     A — -0.3pp vs B's -1.6pp
-  effective rank      10.98    11.26    10.31     A — ROSE; B fell
+  historic_hard      0.5179   0.5179   0.4995   0.5081     A — NO regression at all
+  latin_latin        0.8527   0.8495   0.8370   0.8464     A — -0.3pp vs B's -1.6pp
+  effective rank      10.98    11.26    10.31    10.40     A — ROSE; B and G fell
 ```
+
+⚠ **v8G's report was missing from the repo, not missing.** `developer/baselines/`
+held `v8-report-{v7,v8A,v8B}.json` and no `v8G`, and I nearly recorded the G
+column as transcript-only with no second witness. It was on the cluster the whole
+time (`/ix1/ishi/models/phonetic/data/v8-report-v8G.json`, written 14 Sep 01:58) —
+the run wrote it where it ran and nothing pulled it back. Now committed, with
+v8M. ⚠ *Absent from the place you look is not absent* — the writer's directory
+and the reader's directory are two different questions, and only the first one
+was ever asked.
 
 **Recommendation: A.** B leads the primary by margins that are noise — 0.3pp of
 recall is ~12 pairs in 4,000 — while A leads the collateral measures by much
@@ -11357,3 +11366,56 @@ this is the first test of it.
 
 **Arm M** (tuned recipe: D's teacher 0.0051 + phase 2 @4096 + phase 3 @2048) is
 running and beats v8A's inputs at every stage. It is the candidate to beat.
+
+---
+
+## 81. 🛑 ARM M — THE TUNED RECIPE IS CHEAPER AND THE MODEL IS WORSE
+
+Arm M completed 14 Sep 09:54 (job 3930219, phase 3 7h56m, 30/30 epochs, val_loss
+flat at 0.0206 from epoch 21 — converged, not truncated). Scored on the frozen
+test set, same code, same `v8-testset.json`, controls PASSED (identity 1.0,
+max off-diagonal 0.5845, London/Лондон 0.9961).
+
+```
+                        v7       v8A      v8B      v8G      v8M
+recall_at_gate         87.5     95.2     95.5     95.3     94.2   M WORST v8
+separability        -0.2127  -0.0574   -0.051  -0.0593  -0.0758   M WORST v8
+permutation            70.5      5.0      6.6      6.0      4.4   M best
+typo_1_swap           100.0     98.4     99.4     99.4     99.4
+chinese_latin          90.2     99.1     98.8     98.6     97.7   M worst v8
+historic_hard        0.5179   0.5179   0.4995   0.5081   0.5081
+latin_latin          0.8527   0.8495   0.8370   0.8464   0.8370   = B
+effective rank        10.98    11.26    10.31    10.40    11.06
+```
+
+**§74's rule decides it without discretion:** *better only if recall_at_gate does
+NOT fall AND separability improves.* Against A, M's recall falls 1.0pp and
+separability worsens by 0.018. **M is rejected. v8A stands (§80).**
+
+### 🛑 THE PHASE-LOSS PROXY IS NOW FALSIFIED TWICE, IN THE SAME DIRECTION
+
+M had the **best training losses of any arm at every stage** — phase 1 0.0051
+(vs A 0.0053), phase 2 0.0467 (vs A 0.0514), phase 3 0.0206 (vs A 0.0211) — and
+produced the **worst v8 on five of six bands**. G did the same thing on phase 3
+alone (§80). §80 recorded "phase-level val_loss predicted the better model" from
+the A-vs-B comparison; **that generalisation is now dead.**
+
+The surviving rule is the narrow one: *within a fixed batch size*, phase loss
+orders models; *across recipes it does not*, and the direction of the error is
+consistent — the recipes that reach a lower loss faster reach a worse model.
+⚠ **Never select a checkpoint on training loss across arms.** The band suite is
+the only instrument that has been right.
+
+### ⚠ AND THE §79 RECIPE CLAIM NEEDS ITS SECOND HALF
+
+§79 is true as written — the tuned chain reaches a better loss at every stage in
+~15h against ~30h — and **incomplete in the way that matters**, because it was
+written before any model trained on it had been scored. The honest statement is:
+
+> **The tuned recipe halves the cost of training a replacement and gives up
+> about 1pp of recall.** It is the right recipe for iteration and the wrong one
+> for the model we ship.
+
+That is still a real result — a 15h experiment loop against 30h changes what can
+be tried — but it is not a faster route to the same model, which is how §79 and
+the 14 Sep artifact both read before this section existed.
