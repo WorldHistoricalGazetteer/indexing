@@ -548,6 +548,25 @@ def run_index(args):
     # assertion is the symptom; allocation failure under the cgroup cap is the
     # cause, and an internal-error message sends you looking for a storage bug
     # instead of a memory bound.
+    #
+    # 🛑 BUT PINNING IS NOT WHAT FIXED IT, AND THE FIRST VERSION OF THIS COMMENT
+    # SAID IT WAS. The re-run (24074881) carried BOTH this pinning and a raise
+    # from --mem=100G to 200G, and its MaxRSS is 155,532,928K — about 148 GB.
+    # **The pinned process still wants half as much again as the cap that killed
+    # the unpinned one**, so the necessary change was the larger allocation;
+    # pinning cannot have been sufficient at 100G. The two changes went out
+    # together and are therefore not separable from this evidence — what IS
+    # established is that the job's working set genuinely exceeds 100 GB.
+    #
+    # Why pinning stays anyway: `memory_limit` governs DuckDB's buffer manager,
+    # not the CREATE INDEX over 73.5M string keys, the result sets, or the bulk
+    # client's in-flight chunks — which is why 24 GB + 24 GB of declared limits
+    # coexists with 148 GB of RSS. It bounds the spill and the thread count,
+    # both of which have caused incidents in this file before. It is hygiene,
+    # not the fix.
+    #
+    # ⚠ SIZE THIS JOB AT >=200G. Verifying that the re-run succeeded does not
+    # verify the explanation offered for why it succeeded.
     emb_conn = duckdb.connect(str(temp_db_path))
     emb_spill = Path(temp_dir) / 'emb_spill'
     emb_spill.mkdir(parents=True, exist_ok=True)
