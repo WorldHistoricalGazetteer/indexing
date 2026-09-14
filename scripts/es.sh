@@ -953,11 +953,15 @@ do_forcemerge() {
     MAX_SEGMENTS_PER_SHARD=1
     ITERATIVE=true
     STEP_FACTOR=2
+    SEGMENTS_REQUESTED=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --max-segments)
                 MAX_SEGMENTS_PER_SHARD="$2"
+                # Records that the caller asked for a SEGMENT TARGET, which is a
+                # different request from "purge deletes" — see the guard below.
+                SEGMENTS_REQUESTED=true
                 shift 2
                 ;;
             --no-iterative)
@@ -1026,9 +1030,27 @@ do_forcemerge() {
     _print_stats
     echo
 
+    # 🛑 TWO DIFFERENT JOBS SHARE THIS COMMAND, AND THIS GUARD ONLY KNEW ABOUT ONE.
+    # Purging deleted documents is pointless with none to purge — true, and the
+    # reason this early return exists. But reducing SEGMENT COUNT is a separate
+    # job with a separate payoff: a KNN query searches one HNSW graph per
+    # segment, so a freshly built vector index with 40+ segments per shard is
+    # slow to search and slow to restore even though `docs.deleted` is 0 by
+    # construction. Refusing there declines the only case where the caller has
+    # said precisely what they want.
+    #
+    # Measured 14 Sep: the v8 build finished with 172 segments over 4 shards and
+    # 0 deletes, and `es -forcemerge <index> --max-segments 2` answered
+    # "No deleted documents - nothing to do." The titration had to be run by
+    # hand against the _forcemerge API.
+    #
+    # So: skip only when there is nothing to purge AND the caller did not ask
+    # for a segment target.
     DELETED=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=docs.deleted" | tr -d ' \n')
-    if [ "${DELETED:-0}" -eq 0 ] 2>/dev/null; then
-        echo "No deleted documents - nothing to do."
+    if [ "${DELETED:-0}" -eq 0 ] 2>/dev/null && [ "${SEGMENTS_REQUESTED:-false}" != "true" ]; then
+        echo "No deleted documents, and no --max-segments given - nothing to do."
+        echo "  (To reduce segment count on an index with no deletes - worth it"
+        echo "   for KNN, which searches one graph per segment - pass --max-segments N.)"
         return 0
     fi
 
