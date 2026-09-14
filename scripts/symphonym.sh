@@ -1336,12 +1336,25 @@ cd "${REPO_DIR}"
 source "${STAGING_INFO_FILE}"
 
 echo "Indexing embeddings to ES at http://\\\${ES_NODE}:\\\${ES_PORT}..."
+# ⚠ THESE FLAGS MUST MATCH do_update_embeddings_index BELOW, AND DID NOT.
+# This block passed --input-file/--db-path and no --schema-file; the `index`
+# subcommand takes --duckdb-file/--embeddings-file/--schema-file and has never
+# had the other two. argparse exits 2 in under a second — AFTER the GPU compute
+# it is chained behind has finished and exited 0. So the failure landed at the
+# far end of a multi-hour job, on the one path (`es -update-embeddings`) whose
+# whole purpose is not having to submit the second stage by hand. The standalone
+# `es -update-embeddings-index` was correct throughout, which is why this
+# survived: the same operation, written twice, and only the copy nobody ran by
+# hand went stale. Two copies of a command line drift exactly like two copies of
+# a rule.
 python -u -m phonetics.inference.update_es index \
-    --input-file "${EMBEDDINGS_FILE}" \
-    --db-path "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
+    --duckdb-file "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
+    --embeddings-file "${EMBEDDINGS_FILE}" \
+    --schema-file "${REPO_DIR}/schemas/toponyms.json" \
     --es-host "http://\\\${ES_NODE}:\\\${ES_PORT}" \
     --index ${TOPONYMS_TARGET_INDEX} \
-    --embedding-version ${DATA_VERSION}
+    --embedding-version ${DATA_VERSION} \
+    --batch-size 2000
 
 echo "Indexing complete: \\\$(date)"
 INNER
