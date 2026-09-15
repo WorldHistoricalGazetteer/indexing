@@ -11644,7 +11644,7 @@ commit as the work, not afterwards.**
 | 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ✅ **DONE 15 Sep 02:56 EDT** (§87) |
 | 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ✅ **DONE 15 Sep** (§88) — no recalibration needed; one real bug found |
 | 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ✅ **DONE 15 Sep** (§89) — tiers unchanged (they are model-independent); the stale v7 evidence in `knn_pass_quality` replaced |
-| 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ⏳ |
+| 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ✅ **ASSESSED 15 Sep** (§90) — half the premise is confirmed, the layer still stays; **recommend NO removal** |
 | 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | ⏳ |
 
 ### Added — necessary, and not on the original list
@@ -11829,4 +11829,54 @@ and contributed almost everything.
 ⚠ *A measured note with a date is not self-correcting.* This one was right when
 written, and a model change turned it into confident, specific, wrong guidance
 sitting exactly where someone would act on it.
+
+## 90. ⚠ ITEM 4 — v8 RETIRES THE *RECALL* CASE FOR THE LEXICAL TIER AND NOT THE *SCORING* ONE
+
+The lexical passes exist for a measured reason in CLAUDE.md: *"KNN demonstrably
+misses toponyms spelled exactly as asked — `Newton with Scales` is indexed yet
+never entered the 200-candidate KNN pool."* Tested on v8, pure KNN, k=200, no
+lexical pass:
+
+```
+  Newton with Scales   -> rank 2      (v7: absent from the pool entirely)
+  single-token names   150/150 reached, 143 at rank 1, median rank 1
+  multi-word names     150/150 reached, 142 at rank 1, median rank 1
+```
+
+**The recall failure is gone.** 300 of 300 randomly sampled indexed toponyms are
+reachable by v8's KNN alone.
+
+### 🛑 But the tier is not only a recall device, and removing it breaks confidence
+
+`absolute_confidence` divides by `MAX_DISCOVERY_SCORE = LEXICAL_EXACT_BOOST +
+LEXICAL_FUZZY_BOOST + 1.0 = 4.25`, and **every term of that is a lexical term
+except the phonetic 1.0**. The tiers are what make the number absolute — the
+displayed `score` is pool-normalised and carries no information about whether
+anything matched, which is how wrong candidates auto-confirmed at Map-your-Data's
+90 default (place#198/#199).
+
+Remove the exact tier and an exactly-spelled match falls from 4.25 → 1.75 raw
+(100 → 41 confidence), while `MAX_DISCOVERY_SCORE` would have to move in lockstep
+or every confidence in the system shifts. **A change to the confidence scale is a
+change to what Map your Data auto-confirms**, which is item 7's whole concern.
+
+### Recommendation: keep it. The measured basis for removal is satisfied and still insufficient
+
+* **100% on 300 samples is not "always".** The pass is a cheap guarantee against
+  precisely the failure v7 exhibited; trading a guaranteed catch for a measured
+  rate is a poor bargain when the failure mode is a silently missing exact match.
+* The near-miss tier is independent of all this and must stay regardless: it is
+  what lets a *variant* contribute without being spelled exactly as indexed
+  (place#188/#199), which is what variants are for.
+
+**What would justify revisiting**: the exact ES pass is a separate round trip per
+form per request, and since KNN now reaches exact matches, the boost could be
+applied from the KNN results in Python instead — identical scoring, one fewer
+query. That is a real efficiency win and a real behavioural risk, and it should
+be taken deliberately with item 7, not folded into a cleanup.
+
+⚠ **The re-rank in `search.py:803` is NOT this layer** and must not be touched:
+sorting by `(score, place_id)` is what makes offset pagination consistent (a
+larger pool is a superset whose leading slice is identical). It is structural,
+not model-compensating.
 
