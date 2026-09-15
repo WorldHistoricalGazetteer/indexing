@@ -1,5 +1,5 @@
 """One-off bootstrap: hydrate the Symphonym persistent cache from the
-production ``toponyms_*`` ES index.
+production ``toponyms`` ES index (the ALIAS — see the note below).
 
 The persistent cache (``processing.settings.SYMPHONYM_CACHE_DB``) is keyed on
 ``(toponym_id, model_version, checkpoint_hash)`` and stores the int8
@@ -40,6 +40,14 @@ Usage::
         --checkpoint /ix1/ishi/models/phonetic/checkpoints/v7/phase3_best.pt \
         --dry-run
 """
+
+# ⚠ ALIAS, NOT WILDCARD. During a cutover TWO generations of this index are
+# resident at once — deliberately, since the old one is the rollback. On
+# 15 Sep 2026 `toponyms_*` matched both and returned 146,958,138 documents
+# against the alias's 73,479,069: every toponym twice, once with v7 vectors
+# and once with v8. A pattern that silently spans generations does not fail,
+# it averages them — and a calibration fitted on that mixture would look
+# perfectly reasonable. CLAUDE.md states the rule: always query the alias.
 
 from __future__ import annotations
 
@@ -206,8 +214,8 @@ def main() -> None:
             "present, else /ix1/ishi/es/config/elastic.password."
         ),
     )
-    parser.add_argument("--index-pattern", default="toponyms_*",
-                        help="ES index pattern to scroll (default: toponyms_*)")
+    parser.add_argument("--index-pattern", default="toponyms",
+                        help="ES index pattern to scroll (default: toponyms)")
     parser.add_argument("--checkpoint", type=Path, required=True,
                         help="Path to the Symphonym model checkpoint (phase3_best.pt). "
                              "SHA-256 of this file becomes the cache key.")

@@ -39,6 +39,14 @@ Kept separate from ``calibrate_params`` so the pure math + default/stoplist path
 never import ``httpx`` or touch ES.
 """
 
+# ⚠ ALIAS, NOT WILDCARD. During a cutover TWO generations of this index are
+# resident at once — deliberately, since the old one is the rollback. On
+# 15 Sep 2026 `toponyms_*` matched both and returned 146,958,138 documents
+# against the alias's 73,479,069: every toponym twice, once with v7 vectors
+# and once with v8. A pattern that silently spans generations does not fail,
+# it averages them — and a calibration fitted on that mixture would look
+# perfectly reasonable. CLAUDE.md states the rule: always query the alias.
+
 from __future__ import annotations
 
 import logging
@@ -112,7 +120,7 @@ def _fetch_place_data(es_host: str, pids: list[str], auth) -> dict[str, dict]:
                         "geometries.h3_centroid", "geometries.h3_cover",
                         "geometries.timespans", "types"],
         }
-        for hit in _post(es_host, "places_*", body, auth)["hits"]["hits"]:
+        for hit in _post(es_host, "places", body, auth)["hits"]["hits"]:
             src = hit["_source"]
             pid = src.get("place_id", "")
             fields = assemble_clustering_fields(src)  # reuse the gateway derivation
@@ -146,7 +154,7 @@ def _fetch_embeddings(es_host: str, pids: list[str], auth) -> dict[str, list[int
             "query": {"terms": {"attestations": chunk}},
             "_source": ["attestations", "embedding"],
         }
-        for hit in _post(es_host, "toponyms_*", body, auth)["hits"]["hits"]:
+        for hit in _post(es_host, "toponyms", body, auth)["hits"]["hits"]:
             src = hit["_source"]
             emb = src.get("embedding")
             if not emb:
@@ -170,7 +178,7 @@ def _random_place_ids(es_host: str, n: int, rng: random.Random, auth) -> list[st
                                                       "field": "_seq_no"}}},
         "_source": ["place_id"],
     }
-    hits = _post(es_host, "places_*", body, auth)["hits"]["hits"]
+    hits = _post(es_host, "places", body, auth)["hits"]["hits"]
     return [h["_source"]["place_id"] for h in hits]
 
 
@@ -199,7 +207,7 @@ def _same_name_negatives(es_host: str, n: int, rng: random.Random, auth) -> list
             "aggs": {"att": {"sum": {"script": {"source": "doc['attestations'].size()"}}}},
         }},
     }
-    buckets = _post(es_host, "toponyms_*", agg, auth)["aggregations"]["names"]["buckets"]
+    buckets = _post(es_host, "toponyms", agg, auth)["aggregations"]["names"]["buckets"]
     names = [b["key"] for b in buckets]
     rng.shuffle(names)
 
@@ -211,7 +219,7 @@ def _same_name_negatives(es_host: str, n: int, rng: random.Random, auth) -> list
         body = {"size": len(chunk) * 4,
                 "query": {"terms": {"name.keyword": chunk}},
                 "_source": ["attestations"]}
-        for hit in _post(es_host, "toponyms_*", body, auth)["hits"]["hits"]:
+        for hit in _post(es_host, "toponyms", body, auth)["hits"]["hits"]:
             atts = [a for a in hit["_source"].get("attestations", []) if a]
             if len(atts) < 2:
                 continue
@@ -250,7 +258,7 @@ def _nearby_negatives(es_host: str, seeds: list[str], n: int,
                     "distance": f"{_NEARBY_KM}km",
                     "geometries.repr_point": {"lat": lat, "lon": lon}}}}},
             })
-        for (seed_pid, _pt), resp in zip(batch, _msearch(es_host, "places_*", lines, auth)):
+        for (seed_pid, _pt), resp in zip(batch, _msearch(es_host, "places", lines, auth)):
             for h in resp.get("hits", {}).get("hits", []):
                 pair = _canon(seed_pid, h["_source"]["place_id"])
                 if pair and pair not in seen:

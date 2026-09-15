@@ -32,6 +32,14 @@ Two levels of use:
 ``--defaults`` and this module's import work anywhere.
 """
 
+# ⚠ ALIAS, NOT WILDCARD. During a cutover TWO generations of this index are
+# resident at once — deliberately, since the old one is the rollback. On
+# 15 Sep 2026 `toponyms_*` matched both and returned 146,958,138 documents
+# against the alias's 73,479,069: every toponym twice, once with v7 vectors
+# and once with v8. A pattern that silently spans generations does not fail,
+# it averages them — and a calibration fitted on that mixture would look
+# perfectly reasonable. CLAUDE.md states the rule: always query the alias.
+
 from __future__ import annotations
 
 import argparse
@@ -289,7 +297,7 @@ def build_stoplist(es_host: str, *, top_k: int = 500, min_places: int = 50,
             }
         },
     }
-    url = f"{es_host.rstrip('/')}/toponyms_*/_search"
+    url = f"{es_host.rstrip('/')}/toponyms/_search"
     try:
         resp = httpx.post(url, json=body, auth=auth, timeout=300)
         resp.raise_for_status()
