@@ -11659,6 +11659,7 @@ commit as the work, not afterwards.**
 | 11 | **Send whg3 its handover** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** or document `--no-cache` in `es.sh` | it taxes every post-retrain compute 11×; the next person will not know. |
+| 14 | **Update the arXiv article** (added by SG, 15 Sep) | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
 
 ⚠ **Sequencing that matters**: 6 must land before any training-data run, 7 before
 anyone trusts an auto-confirm, and 8 after everything else. 2, 3, 4 and 5 all
