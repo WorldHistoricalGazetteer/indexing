@@ -11654,16 +11654,34 @@ commit as the work, not afterwards.**
 | 6 | **Re-point training-pair selection off production** ✅ **GUARDED 15 Sep** (`2fcc24e`) — `ESKNNHelper` now refuses rather than returning `[]`; choosing the source is still open | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
 | 7 | **Recheck `confidence` calibration end-to-end** ✅ **DONE 15 Sep** (§94) — nothing crosses the auto-confirm floor; no recalibration | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
 | 8 | **Drop `toponyms_undscript-20260906t160000z`** — but only after 1–5 are exercised | it is the rollback. Returns ~100 GB of /vast. |
-| 9 | **Publish v8 to `hf/`** | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. |
+| 9 | **Publish v8 to `hf/` + Zenodo deposit** — **PUBLICATION STEP 2** | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. ⚠ **Must precede 14**: the paper cites the dataset DOI, so the deposit has to exist to be cited. Ready now — depends on nothing in 16 or 17. |
 | 10 | **Verify int8 vs fp32** ✅ **DONE 15 Sep** (§91) — costs nothing measurable | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
 | 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** ✅ **DONE 15 Sep** — `--no-cache` is now the default in `es -update-embeddings`, `SYMPHONYM_USE_CACHE=1` restores it | it taxes every post-retrain compute 11×; the next person will not know. |
+| 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**, ⏳ **RUNNING 15 Sep** | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
+| 17 | **place#280 — the two-feature discriminator** | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
 | 15 | ~~**Align the interpreter behind script detection**~~ | 🛑 **WITHDRAWN 15 Sep — the premise was my measurement error (§96). There is no skew: gateway and index writer are both unicodedata 14.0.0.** | ✅ void |
-| 14 | **Update the arXiv article** (added by SG, 15 Sep) | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
+| 14 | **Update the arXiv article** (added by SG, 15 Sep) — **PUBLICATION STEP 3** | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
 
 ⚠ **Sequencing that matters**: 6 must land before any training-data run, 7 before
-anyone trusts an auto-confirm, and 8 after everything else. 2, 3, 4 and 5 all
+anyone trusts an auto-confirm, and 8 after everything else.
+
+### The publication chain, agreed 15 Sep
+
+**16 → 9 → 14**, with **17 running beside it, not before it.**
+
+* **16 first**, because a revision needs numbers on the benchmarks the paper
+  actually reports, and v8 has never been measured on them.
+* **9 next**, because the paper cites the dataset DOI and cannot cite a deposit
+  that does not exist.
+* **14 last**, reporting 16, citing 9, and carrying the two corrections to
+  *published* claims — v7 learned Chinese from Japanese readings (§9) and letter
+  order barely counted (§10). ⚠ Those corrections are the strongest reason to
+  revise at all, and they are independent of any improvement.
+* **17 is not in the chain.** Holding publication for it is a reasonable instinct
+  and wrong on the facts: it improves a serving-path score, and the paper measures
+  the model. 2, 3, 4 and 5 all
 depend on 1 having happened, because each is calibrated against what the index
 and model actually return.
 
