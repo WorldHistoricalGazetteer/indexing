@@ -12431,3 +12431,60 @@ arrives may be bigger.* This one survived because its controls were chosen to
 absorb exactly that — which is a better argument for matched controls than any
 statistic it produced.
 
+---
+
+## 99. ✅ THE PUBLISHED RECALL FORECAST, CHECKED — v8 improves, and lands BELOW the forecast
+
+The artifact publishes v7's retrieval and a **v8 best guess**, explicitly flagged
+as not measured. Both models were run here over the SAME corpus, the SAME
+1,053,229-name haystack and the SAME 4,843 queries — comparing two models rather
+than two runs.
+
+```
+                    v7 measured    v8 measured    artifact's v8 forecast
+  recall@1             0.0593         0.0690        0.10 – 0.16   MISSED
+  recall@10            0.2893         0.3176        0.38 – 0.45   MISSED
+  recall@100           0.4357         0.4547        —
+  recall@200           0.4792         0.4908        0.48 – 0.55   met (low end)
+  MRR                  0.1383         0.1557        —
+  not_found             2,522          2,466        —
+```
+
+**Every metric improved and the two headline forecasts were not met.**
+recall@10 was forecast at 0.38–0.45 and came in at **0.3176**; recall@1 at
+0.10–0.16 and came in at **0.0690**. recall@200 met the bottom of its band.
+
+⚠ **The forecast was optimistic by roughly a factor of two on recall@10.** It was
+published as a range on a page SG shares, and it is now measured. The artifact
+must carry the measured numbers.
+
+### What the shape says, and it is consistent with everything else
+
+recall@200 rose by only +0.0116 while recall@10 rose +0.0283 and MRR +0.0173.
+**v8 is barely finding more than v7 could; it is ordering what it finds much
+better** — the same conclusion MEHDIE reached independently (R@5 flat, R@1 +4.1),
+and the same thing the order-sensitivity bands predicted. Three measurements from
+different directions agreeing is worth more than any one of them.
+
+⚠ And it bounds what re-ranking can ever recover: **recall@200 is the ceiling**,
+because it is the gateway's own pool size. At 0.4908, more than half the correct
+answers are not in the pool at all, and no downstream scoring change — place#280
+included — can reach them.
+
+### 🛑 Discrimination went DOWN
+
+```
+  AUC   v7 0.9324   v8 0.9270    -0.0054
+```
+
+v7's 0.9324 is the figure the artifact publishes as v7 precision. v8 is slightly
+worse at telling a true pair from a plausible impostor, while being better at
+retrieval. Small, and it should be reported rather than omitted: the campaign's
+headline is that v8 ranks better, and this is the one axis where it does not.
+
+⚠ **Both reports label their scorer `symphonym_v7`** — the label is static in
+`run_benchmark`, not derived from the model. The runs are genuinely different
+(the loader printed vocab bounds 113,280/20/1,944 then 114,845/37/2,438, and the
+reports differ on every metric), but **a label that always says v7 is a trap for
+whoever reads these files next.**
+
