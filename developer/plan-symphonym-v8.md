@@ -12147,3 +12147,62 @@ Not a defect and not urgent: the lexical tiers carry absolute quality today and
 do it correctly. Recorded because "v8 is better, so confidence is better" is the
 natural assumption and it is **false** — the improvement stops at the index.
 
+---
+
+## 95. ⚠ CAN THE PHONETIC TERM BE MADE TO SPEND v8's GAIN? MEASURED: NOT BY RETUNING IT
+
+§94 found the phonetic term discriminates genuine from junk by 1.6 of 23.5
+points, identically under v7 and v8. The obvious fix is that
+`knn_pass_quality` maps cosine `[0.70, 1.0] → [0, 1]` while the top-1 cosine of a
+real query never leaves `[0.97, 1.0]` — nine tenths of the range spent on a
+region nothing occupies. Measured top-1 cosines, v8:
+
+```
+  genuine   min 0.99310   max 1.00000   mean 0.99803
+  junk      min 0.97594   max 0.97999   mean 0.97809
+```
+
+and what each MAPPING floor would yield:
+
+```
+  map floor   genuine   junk   separation
+      0.70       23.4   21.8          1.6   <- current
+      0.95       22.6   13.2          9.4
+      0.98       21.2    0.0         21.2
+```
+
+Tempting. **And it does not work**, for the reason §89 already established about
+the *filter* floor, which applies unchanged to the *mapping* floor.
+
+### 🛑 The probes that separate cleanly are the easy ones
+
+Those ten genuine probes bottom out at 0.99310 because each has a near-spelling
+in the corpus — `Nyoo York`'s top hit is `Nyu York`, not `نيويورك`. A genuine
+query whose ONLY match is a hard cross-script one has a top-1 equal to that
+pair's cosine, and §89 measured those as low as **0.9756** — *below* the junk
+mean of 0.978.
+
+So at the current floor the hardest genuine match scores 21.6 against junk's
+21.8, and at a 0.95 floor it scores 12.0 against junk's 13.2. **Raising the
+mapping floor amplifies the signal and the overlap equally.** It rescales; it
+does not discriminate. The information is not in the top-1 cosine at any mapping.
+
+### What could actually work, and why it is not being done now
+
+The neighbourhood *shape* carries signal the top hit does not. Measured earlier:
+`London` r1 1.0000 → r200 0.9797 (spread 0.020), `Xqzwvlm` r1 0.9797 → r200
+0.9323 (spread **0.047**). Junk sits in a flatter, wider neighbourhood — a signal
+in the opposite direction from the one intuition suggests, and usable alongside
+r1. That is a two-feature discriminator and a proper study, not a constant change.
+
+**Recommendation: change nothing in the phonetic term.** Junk already cannot
+auto-confirm (21.8 against a floor of 30), the lexical tiers carry absolute
+quality correctly and are model-independent, and every candidate retune either
+does nothing or under-rates the hardest cross-script matches — which is the
+population Symphonym exists for. The opportunity is real and should be taken
+deliberately with a study, if at all.
+
+⚠ *Recorded mainly so the next person does not "fix" the obvious miscalibration.*
+The mapping really is nine-tenths wasted, it really does look like free signal,
+and tightening it really would delete hard cross-script matches.
+
