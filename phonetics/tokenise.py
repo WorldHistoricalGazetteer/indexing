@@ -56,7 +56,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 # --- BEGIN CANONICAL TOKENISER ---
-# CANONICAL-BLOCK v1 sha256=74fb6176adfae9b44e2a591fee4daab973ba7fc68b7a33fd4411dedba28e6685
+# CANONICAL-BLOCK v2 sha256=db9cefd56b145b3ce73d32313e4f2e7175c9b6fa0e6960712e8eec2ebfc122f8
 # CANONICAL-BLOCK Convention, stated because the same block has been hashed two different
 # CANONICAL-BLOCK ways elsewhere and nothing ever compared them: sha256 over this block
 # CANONICAL-BLOCK INCLUDING both marker lines and EXCLUDING every line beginning
@@ -128,9 +128,22 @@ _SCRIPT_UNICODE_RANGES: List[Tuple[str, List[Tuple[int, int]]]] = [
     # ⚠ Kept in step with `script_detection.SCRIPT_RANGES`, same order, same
     # blocks — `test_tokeniser_contract` compares the two codepoint maps entry
     # for entry, so a divergence here is a test failure rather than a silent
-    # reclassification. The model is UNAFFECTED: `encode_script` falls back to
-    # OTHER for a name the 20-entry `script_vocab.json` does not carry, which is
-    # exactly the id these characters already receive today.
+    # reclassification.
+    #
+    # 🛑 A PORT OF THESE RANGES IS REQUIRED, NOT OPTIONAL. An earlier version of
+    # this comment said the model was UNAFFECTED because `encode_script` falls
+    # back to OTHER for a script the vocabulary does not carry. That was true of
+    # the 20-entry v7 `script_vocab.json` it was written against and is FALSE of
+    # the 37-entry v8 one: the fallback needs the script to be ABSENT, and in v8
+    # these scripts are PRESENT. Measured 15 Sep 2026 against the shipped v8
+    # vocab — Gurmukhi 21, Myanmar 20, Tibetan 22, Khmer 24, Ethiopic 27, Lao 29,
+    # where a detector still carrying only the original 19 ranges sends OTHER=19.
+    #
+    # So an unported client conditions the model differently from the index, on
+    # 3,168 codepoints across 17 scripts, and nothing raises. Two readers — one
+    # of them the author — used the old sentence to justify deferring the port.
+    # ⚠ A claim whose scope was a file that has since changed becomes an
+    # unconditional claim by attrition.
     ("MYANMAR", [(0x1000, 0x109F), (0xA9E0, 0xA9FF), (0xAA60, 0xAA7F)]),
     ("GURMUKHI", [(0x0A00, 0x0A7F)]),
     ("TIBETAN", [(0x0F00, 0x0FFF)]),

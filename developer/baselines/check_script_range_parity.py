@@ -66,8 +66,13 @@ CONTROLS = [
 
 # Ranges the JS table is known to contain. Arithmetic, not inspection: this is
 # what catches a parser that silently drops entries.
-EXPECTED_JS_SCRIPTS = 19
-EXPECTED_JS_RANGES = 56
+# ⚠ Bumped 19/56 -> 36/82 on 15 Sep 2026, when whg3 promoted the ported range
+# table to PRODUCTION (their commit aa70a1891, place#285) — NOT when it landed on
+# dev. These constants describe what production serves, and raising them while
+# prod still served 19 ranges would have made this guard pass against dev and FAIL
+# against prod: green at exactly the moment it should have been red.
+EXPECTED_JS_SCRIPTS = 36
+EXPECTED_JS_RANGES = 82
 
 
 class Untrustworthy(Exception):
@@ -210,8 +215,14 @@ def main() -> int:
         print("\nFAIL: the two tables disagree about a script both of them know. "
               "That is a LIVE defect affecting users now, not a migration issue.")
         return 1
-    print("\nPASS: the tables agree on every shared script. Remaining differences "
-          "are additions the JS cannot yet reach (lost upside, not corruption).")
+    if upside:
+        print("\nPASS: the tables agree on every shared script. The remaining "
+              "differences are additions the JS cannot yet reach (lost upside, "
+              "not corruption).")
+    else:
+        print("\nPASS: FULL PARITY — the two tables agree on every codepoint, with "
+              "no scripts the JS cannot reach. (Before the v8 port this line read "
+              "3,168 codepoints of lost upside.)")
     return 0
 
 
