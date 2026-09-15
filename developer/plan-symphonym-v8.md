@@ -11580,3 +11580,55 @@ characters are entirely different in the two runs**, which is evidence against a
 fixed reserved set. Treat the cause as unknown and the matching count as
 unexplained rather than as established. It remains worth finding before v9, at
 the sharper framing §5.8 H1 already gives it.
+
+---
+
+## 85. ✅ v8 IS STAGED IN PRODUCTION AND NOT YET SERVING — the swap is all that remains
+
+Everything below is done and verified as of 14 Sep 20:55 EDT (15 Sep 01:55 BST).
+**Nothing user-facing has changed**: the `toponyms` alias still points at
+`toponyms_undscript-20260906t160000z`, and the gateway still loads v7.
+
+| stage | result |
+|---|---|
+| embeddings | 73,479,069 in 76.7 min; 0 null doc_id, 73,479,069 distinct, all 128-d, 0 all-zero |
+| index build | 73,479,069 indexed, **0 errors**; ipa 34,210,114 = source; panphon 0 = expected |
+| retrieval proof | London→Лондон r114, Лондон→London r30, Cairo→Kairo r45, Beijing→北京 r225 |
+| titration | 172 → **8 segments** (2/shard), **77.8 GB → 54.1 GB**, 0 deletes throughout |
+| snapshot | `v8-toponyms_v8-20260914t120000z_20260914_200402`, 58.1 GB, 1 index, gates passed |
+| restore | green in prod, 73,479,069 docs, 54.1 GB, 8 segments — **segment count survived** |
+| round trip | on PROD: all probes self-retrieve at 1.0; 北京 neighbours 背景/北景 (same phonemes, different tones) |
+| gateway dir | `/vast/ishi/models/phonetic/symphonym-v8-hf` — identity 1.0000, London/Лондон 0.9947 |
+
+**The index is 54.1 GB against the live index's 100 GB** — roughly half, from two
+independent causes: dropping `panphon_embedding` (~22 GB) and merging away
+per-segment HNSW/doc-values overhead (~24 GB). /vast is at 169.6 GB free with
+both indices resident; dropping the old one after the swap returns ~100 GB.
+
+### The swap, and it is two changes that MUST go together
+
+```
+# 1. alias (atomic, both actions in one request)
+POST /_aliases
+{"actions":[
+  {"remove":{"index":"toponyms_undscript-20260906t160000z","alias":"toponyms"}},
+  {"add":   {"index":"toponyms_v8-20260914t120000z",      "alias":"toponyms"}}]}
+
+# 2. model — .env.local on pitt, then restart the gateway
+SYMPHONYM_MODEL_DIR="/vast/ishi/models/phonetic/symphonym-v8-hf"
+```
+
+🛑 **A v7 gateway against a v8 index is not degraded, it is noise.** The query
+vector and the document vectors would come from different models; cosine between
+them means nothing, every phonetic result is arbitrary, and **nothing anywhere
+errors**. The two changes are one operation.
+
+**Rollback is symmetrical and cheap**: put the alias back and point
+`SYMPHONYM_MODEL_DIR` at `symphonym-v7-hf`. Both old artefacts are untouched —
+which is why the old index must NOT be dropped until the new one has been
+exercised.
+
+⚠ **Not yet done, deliberately**: the browser-side path has never been tested
+against a v8 model, and `/api/reconcile`'s lexical tiers were tuned against v7
+score distributions. Neither blocks the swap; both want checking after it.
+
