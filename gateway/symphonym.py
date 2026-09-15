@@ -330,9 +330,14 @@ def status() -> dict:
         "client_vectors": {
             "service": _aggregate_client_vector_stats(),
             "this_worker": dict(_client_vector_stats, pid=os.getpid()),
-            "note": ("`service` sums every live worker; `this_worker` is the one "
-                     "process that answered this request. A single poll of "
-                     "`this_worker` sees ~1/N of traffic, so zero there is normal."),
+            "note": ("`service` sums every worker that has PUBLISHED — i.e. has "
+                     "answered a health check or counted a vector — so "
+                     "`workers_seen` is a lower bound on live workers, not a "
+                     "census. The accepted/discarded totals are unaffected: a "
+                     "worker that has published nothing has counted nothing. "
+                     "`this_worker` is the single process that answered this "
+                     "request and sees ~1/N of traffic, so zero there is normal "
+                     "and is NOT evidence that clients are failing to declare."),
         },
     }
 
