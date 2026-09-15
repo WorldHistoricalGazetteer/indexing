@@ -11660,7 +11660,7 @@ commit as the work, not afterwards.**
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** ✅ **DONE 15 Sep** — `--no-cache` is now the default in `es -update-embeddings`, `SYMPHONYM_USE_CACHE=1` restores it | it taxes every post-retrain compute 11×; the next person will not know. |
 | 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**; ✅ **MEHDIE DONE 15 Sep (§97)**, cross-script pair validation outstanding | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
-| 17 | **place#280 — the two-feature discriminator** | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
+| 17 | **place#281 — the candidate-pool ceiling** ✅ **MEASUREMENT PHASE COMPLETE 15 Sep** (§102, §105): four of five levers closed; only the model remains. place#280 closed as measured-and-falsified. | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
 | 15 | ~~**Align the interpreter behind script detection**~~ | 🛑 **WITHDRAWN 15 Sep — the premise was my measurement error (§96). There is no skew: gateway and index writer are both unicodedata 14.0.0.** | ✅ void |
 | 14 | **Update the arXiv article** (added by SG, 15 Sep) — **PUBLICATION STEP 3** | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
 
@@ -12727,4 +12727,62 @@ the block region wrong (starting at the sha line rather than the BEGIN marker).
 They caught it because it contradicted a computation they had already run
 correctly — **a new result that disagrees with your own earlier verified one is
 evidence about the new code first.**
+
+---
+
+## 105. ✅ place#281 — LEVER 5, AND THE CONFOUND THAT CAUGHT ME THREE TIMES
+
+**Lever 5: the lexical tiers do not extend recall.** 150 cross-script names with
+one adjacent transposition, so the query is not itself an index entry:
+
+```
+  phonetic pool only (k=200)   0.8533   (128)
+  full reconcile (blended)     0.8267   (124)
+  only by reconcile                 0   <- the tiers rescue nothing
+  only by phonetic                  4   <- in the pool, not on the page of 50
+  found by neither                 22
+```
+
+⚠ **Biased against the tiers by construction** — a transposition is exactly where
+exact matching cannot fire and phonetic excels. The claim is narrow: *for typo'd
+queries the blend does not extend reach.* It is not evidence the tiers are idle;
+§90 measured their real job, which is making `confidence` absolute.
+
+⚠ **0.8533 is NOT comparable to 0.4908.** Finding a place via any toponym in the
+pool from a one-character corruption is a far easier task than reaching a
+cross-script partner. Quoting it against the ceiling would be the denominator
+error caught on the cross-script pairs (§97).
+
+### 🛑 THE FIRST RUN RETURNED 150/150 ON BOTH ROUTES
+
+It queried with the unmodified name, **which is itself an indexed toponym of the
+target place** — so it retrieved itself at cosine 1.0 and its attestations carried
+the place_id. Both routes trivially succeeded.
+
+The tell was `found by neither: 0`. **A task that nothing ever fails is not
+measuring the task.**
+
+⚠ **Third instance of one confound in this issue's work**, so state it generally:
+**when test data is drawn from the corpus being searched, the query is an index
+entry, and "is it retrievable" silently becomes "is it present".** The label stops
+being independent of the retrieval under test. It also invalidated the place#280
+feature capture (80.6% of positives retrieved themselves). Perturbing the query is
+the cheap fix; drawing negatives from real names whose partner is absent is the
+thorough one.
+
+### Closing picture
+
+| lever | verdict |
+|---|---|
+| 1 approximation | dead — exact at production settings, proven by latency |
+| 2 dedup the pool | dead — 92% of misses beyond rank 2000 |
+| 3 multi-form passes | already shipping, **+27.6pp**; the ceiling is a single-pass property |
+| 5 non-phonetic recall | no rescue for typo'd queries |
+| **4 the model** | **the only lever left** |
+
+**What lever 4 must respect**: the loss is concentrated in hard-historic (**4.2%**
+at k=200 against 44.8% cross-script), and recall must not be bought by flattening
+the space — v8 improved retrieval while discrimination AUC *fell* 0.9324 → 0.9270.
+v8 moved the ceiling +0.0116 while moving recall@10 +0.0283: **a retrain that
+improves ordering is not one that improves reach, and this issue is about reach.**
 
