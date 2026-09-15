@@ -169,8 +169,22 @@ class _LocalManifest:
         logger.info(f"Manifest written from DuckDB: {len(result):,} rows -> {self.path}")
 
     def _build_from_es(self):
-        """Build manifest from ES scan (fallback)."""
-        logger.info("Building local toponym manifest (ES scan fallback)...")
+        """Build manifest from ES scan (fallback).
+
+        🛑 This scan filters on ``exists: panphon_embedding``, so against the
+        SERVING index — which has not carried that field since 15 Sep 2026 — it
+        matches nothing and would write an EMPTY manifest, or die in the
+        percentage line with a ZeroDivisionError that names nothing. Both are
+        refused below in favour of saying which index was scanned and why it
+        held nothing.
+        """
+        if not self.index:
+            raise RuntimeError(
+                "no toponyms index was named, so the manifest cannot be built "
+                "from ES. Pass --toponyms-index naming the REBUILD's index. "
+                "(The DuckDB path needs no index and is preferred; this is the "
+                "fallback.)")
+        logger.info(f"Building local toponym manifest (ES scan of {self.index!r})...")
 
         ns_filter = [{"term": {"namespaces": ns}} for ns in self.namespaces]
         query = {
@@ -200,6 +214,17 @@ class _LocalManifest:
                 'lang': src.get('lang', ''),
                 'attestations': attestations,
             })
+
+        if not rows:
+            total = self.es.count(index=self.index)["count"]
+            raise RuntimeError(
+                f"scanned {self.index!r} ({total:,} documents) and NOT ONE "
+                f"carried panphon_embedding in namespaces {self.namespaces}. "
+                f"An empty manifest would be written and every later phase would "
+                f"sample from nothing while reporting success.\n"
+                f"  The serving index omits the field deliberately (--no-panphon).\n"
+                f"  Name the rebuild's own index, or restore snapshot "
+                f"'reextract-ipafix-20260910t175025z' into staging.")
 
         logger.info(f"Scanned {len(rows):,} toponyms from ES")
         logger.info(f"Toponyms with empty attestations: {empty_attestations_count:,} ({empty_attestations_count/len(rows)*100:.1f}%)")
@@ -274,6 +299,7 @@ class TrainingDataGenerator:
             force_regenerate: bool = False,
             skip_to_phase3: bool = False,
             resume_from_pass2: bool = False,
+            toponyms_index: Optional[str] = None,
     ):
         self.es = es
         self.db_path = db_path
@@ -284,7 +310,15 @@ class TrainingDataGenerator:
         self.skip_to_phase3 = skip_to_phase3
         self.resume_from_pass2 = resume_from_pass2
 
-        self.knn = ESKNNHelper(es, index="toponyms")
+        # 🛑 NOT the serving alias. `toponyms` carries no `panphon_embedding`
+        # since 15 Sep 2026 (--no-panphon), and a KNN over an absent field
+        # returns zero hits rather than an error — so this selected no pairs at
+        # all while reporting success. The caller must name the rebuild's own
+        # index; both consumers below get the SAME one, because a manifest built
+        # from one corpus and a KNN run over another is two different corpora
+        # wearing one run id.
+        self.toponyms_index = toponyms_index
+        self.knn = ESKNNHelper(es, index=toponyms_index)
 
         # DuckDB connection is optional
         self.conn = None
@@ -293,7 +327,7 @@ class TrainingDataGenerator:
         # Prefers DuckDB (seconds) over ES scan (minutes) when db_path is available
         self._manifest = _LocalManifest(
             es,
-            index="toponyms",
+            index=toponyms_index,
             namespaces=training_namespaces,
             path=scratch_dir / "toponym_manifest.parquet",
             db_path=db_path,

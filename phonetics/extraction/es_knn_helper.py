@@ -25,7 +25,16 @@ class ESKNNHelper:
 
     MAX_CACHE_SIZE = 100000
 
-    def __init__(self, es, index: str = "toponyms"):
+    def __init__(self, es, index: Optional[str] = None):
+        """``index`` is the toponyms index to KNN over, and has NO default.
+
+        🛑 It defaulted to ``"toponyms"`` — the SERVING ALIAS — until 15 Sep
+        2026, which made production both the automatic choice and the only
+        reachable one: naming any other index required editing this line. The
+        serving index no longer carries ``panphon_embedding`` at all (item 6 /
+        §106), so that default is now wrong as well as dangerous. Pass the
+        rebuild's own toponyms index, or a staging restore of its snapshot.
+        """
         self.es = es
         self.index = index
         self._embedding_cache: Dict[str, List[float]] = {}
@@ -58,6 +67,13 @@ class ESKNNHelper:
         pointed this at production", which looks identical and is now the
         DEFAULT, because ``index`` defaults to ``toponyms``.
         """
+        if not self.index:
+            raise RuntimeError(
+                "no toponyms index was named for training-pair KNN. Pass "
+                "--toponyms-index naming the REBUILD's index (or a staging "
+                "restore of snapshot 'reextract-ipafix-20260910t175025z'). "
+                "There is deliberately no default: the serving alias 'toponyms' "
+                "used to be it, and it no longer carries panphon_embedding.")
         n = self.es.count(index=self.index,
                           query={"exists": {"field": "panphon_embedding"}})["count"]
         if n == 0:

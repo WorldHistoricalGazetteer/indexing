@@ -516,14 +516,39 @@ do_generate_training_data() {
         echo "  DuckDB not found - will read from ES toponyms index"
     fi
 
-    # Check ES toponyms index exists
-    TOPONYM_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/toponyms/_count" | jq -r '.count // 0')
+    # Which index to mine. STAGING's, never production's — this function
+    # already requires staging and points --es-host at it. Overridable for a
+    # restore that landed under a different name.
+    TOPONYMS_INDEX="${TOPONYMS_INDEX:-toponyms}"
+
+    # Check the index exists AND carries the field every KNN here queries.
+    #
+    # 🛑 A DOCUMENT COUNT IS NOT THE PRECONDITION. It was, until 15 Sep 2026,
+    # and it passes happily on a restore of the v8 serving index — which holds
+    # 73.5M documents and zero panphon_embedding, because the serving index
+    # drops it deliberately (--no-panphon). ES answers a KNN over an absent
+    # field with zero hits rather than an error, so the run would select no
+    # training pairs at all and report success. Count the field.
+    TOPONYM_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/${TOPONYMS_INDEX}/_count" | jq -r '.count // 0')
     if [ "$TOPONYM_COUNT" -eq 0 ]; then
-        echo "ERROR: No documents in ES toponyms index"
+        echo "ERROR: No documents in ES index '${TOPONYMS_INDEX}'"
         echo "Run -rebuild-toponyms first to populate the index."
         return 1
     fi
-    echo "  ES toponyms: ${TOPONYM_COUNT} documents"
+    PANPHON_COUNT=$(curl -s -H 'Content-Type: application/json' \
+        "http://${ES_NODE}:${ES_PORT}/${TOPONYMS_INDEX}/_count" \
+        -d '{"query":{"exists":{"field":"panphon_embedding"}}}' | jq -r '.count // 0')
+    if [ "$PANPHON_COUNT" -eq 0 ]; then
+        echo "ERROR: '${TOPONYMS_INDEX}' holds ${TOPONYM_COUNT} documents and NONE"
+        echo "       carry panphon_embedding, which every training-pair KNN queries."
+        echo "       ES returns zero hits (not an error) for a KNN on an absent field,"
+        echo "       so this run would select no pairs at all and report success."
+        echo "       The SERVING index omits the field deliberately (--no-panphon)."
+        echo "       Restore snapshot 'reextract-ipafix-20260910t175025z' into staging,"
+        echo "       or set TOPONYMS_INDEX to the rebuild's own index."
+        return 1
+    fi
+    echo "  ES ${TOPONYMS_INDEX}: ${TOPONYM_COUNT} documents, ${PANPHON_COUNT} with panphon_embedding"
 
     # Show checkpoint status.
     #
@@ -570,6 +595,7 @@ do_generate_training_data() {
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
     echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    echo "  Toponyms idx: ${TOPONYMS_INDEX}"
     if [ -n "$FORCE_FLAG" ]; then
         echo "  Mode:         FORCE (regenerate all)"
     elif [ -n "$SKIP_PHASE3_FLAG" ]; then
@@ -619,6 +645,7 @@ python -m phonetics.extraction.generate_training_data \
     ${DB_ARG} \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
+    --toponyms-index "${TOPONYMS_INDEX}" \
     --training-namespaces gn wd tgn \
     $FORCE_FLAG \
     $SKIP_PHASE3_FLAG \

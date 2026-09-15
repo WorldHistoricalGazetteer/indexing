@@ -11651,7 +11651,7 @@ commit as the work, not afterwards.**
 
 | # | item | why |
 |---|---|---|
-| 6 | **Re-point training-pair selection off production** ✅ **GUARDED 15 Sep** (`2fcc24e`) — `ESKNNHelper` now refuses rather than returning `[]`; choosing the source is still open | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
+| 6 | **Re-point training-pair selection off production** ✅ **DONE 15 Sep** (§107) — the source is now a named choice (`--toponyms-index`), the serving alias is no longer the default *or* the only reachable option, and three separate silent-empty paths refuse | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
 | 7 | **Recheck `confidence` calibration end-to-end** ✅ **DONE 15 Sep** (§94) — nothing crosses the auto-confirm floor; no recalibration | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
 | 8 | **Drop `toponyms_undscript-20260906t160000z`** ✅ **DONE 15 Sep, minutes before 12:07 EDT** (§106) — 100 GB recovered exactly as forecast (avail 169.5gb → 269.5gb) | it was the rollback. It stopped being one the moment item 17's feature capture completed; four preconditions were checked before the delete. |
 | 9 | **Publish v8 to `hf/` + Zenodo deposit** — **PUBLICATION STEP 2**; ✅ **ZENODO DONE 15 Sep — DOI `10.5281/zenodo.22767194`** (concept DOI `10.5281/zenodo.18682016` preserved; published as a new version of the v7 record, not a separate one). `hf/` itself still outstanding. | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. ⚠ **Must precede 14**: the paper cites the dataset DOI, so the deposit has to exist to be cited. Ready now — depends on nothing in 16 or 17. |
@@ -12909,3 +12909,73 @@ where the next person will look before pulling lever 4:
 | 14 | arXiv revision | **the only substantive item left**, and it is now unblocked: DOI `10.5281/zenodo.22767194`, MEHDIE (§97), cross-script (§99), int8 (§91) |
 
 Everything else in §86 is ✅ or void.
+
+---
+
+## 107. ✅ ITEM 6 CLOSED — the training-pair source is a choice now, not a default
+
+The guard from `2fcc24e` was only half of item 6. It stopped the run that pointed
+at production; it did not give anyone a way to point somewhere else. **`index` was
+hardcoded to `"toponyms"` at `generator.py:287`** — so the serving alias was not
+merely the default source, it was the *only reachable* one without editing the
+line. That is what is fixed here.
+
+### What changed
+
+| where | before | after |
+|---|---|---|
+| `ESKNNHelper.__init__` | `index: str = "toponyms"` | no default at all; `None` until named |
+| `generator.py` | `ESKNNHelper(es, index="toponyms")` and `_LocalManifest(index="toponyms")` | both take the caller's `toponyms_index` — the **same** one |
+| `generate_training_data.py` | no way to say | `--toponyms-index`, defaulting to nothing |
+| `symphonym.sh` | preflighted a **document count** | preflights the **field**, and passes `${TOPONYMS_INDEX}` through |
+
+### 🛑 The third silent-empty path, which the KNN guard did not cover
+
+`_LocalManifest._build_from_es` filters on `exists: panphon_embedding` as well.
+Against the serving index it matches nothing, and it does **not** go through
+`assert_panphon_present` — so it would have written an **empty manifest** and let
+every later phase sample from it, or died in
+
+```python
+f"...({empty_attestations_count/len(rows)*100:.1f}%)"
+```
+
+with a `ZeroDivisionError` naming nothing. Both now refuse, saying which index was
+scanned and how many documents it holds.
+
+⚠ **Note how the guard's own scope hid this.** `assert_panphon_present` is
+thorough, correct, and sits on the KNN path — and the manifest reaches the same
+field by a different route. *A guard protects a call site, not a field.* Grep the
+field, not the function.
+
+### The shell preflight was testing the wrong thing
+
+```bash
+TOPONYM_COUNT=$(curl .../toponyms/_count)      # passes on 73.5M v8 docs
+if [ "$TOPONYM_COUNT" -eq 0 ]; then ...        # ...none of which have the field
+```
+
+A document count is not the precondition, and it passes most convincingly exactly
+when it is most wrong: a restore of the v8 index into staging gives 73,479,069
+documents and zero usable ones. It now counts `panphon_embedding` and prints both
+numbers, so the log carries its own denominator
+(`ES toponyms: 73,479,069 documents, 73,479,069 with panphon_embedding`).
+
+### Verified, with a control
+
+```
+index=None           : RuntimeError -> no toponyms index was named for training-pair KNN...
+v8 index (0 panphon) : RuntimeError -> 'toponyms' holds 73,479,069 documents and NONE carry...
+rebuild index        : preflight PASSED, counted 73,000,000   <-- CONTROL
+manifest, index=None : RuntimeError -> no toponyms index was named, so the manifest...
+```
+
+The third line is the one that matters: without a case that **passes**, three
+raising guards are equally consistent with a fake ES that cannot answer anything.
+
+⚠ **What is still a judgement call, and is deliberately not encoded**: *which*
+index to name. The two good answers — the rebuild's own toponyms index, or a
+staging restore of `reextract-ipafix-20260910t175025z` — are both in the error
+text, because the right choice depends on which rebuild the next training run is
+for, and a default guessed today would be wrong by then. **Naming no default is
+the fix, not a gap in it.**

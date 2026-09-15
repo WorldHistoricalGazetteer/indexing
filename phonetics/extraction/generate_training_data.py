@@ -44,6 +44,18 @@ def main():
                         help='Elasticsearch host URL')
     parser.add_argument('--db-path', default=None,
                         help='Path to DuckDB database (optional)')
+    parser.add_argument('--toponyms-index', default=None,
+                        help="Toponyms index to mine training pairs from. NO "
+                             "DEFAULT, deliberately: this was hardcoded to the "
+                             "serving alias 'toponyms', which since 15 Sep 2026 "
+                             "carries no panphon_embedding — every KNN here "
+                             "queries that field, and ES answers a KNN on an "
+                             "absent field with zero hits rather than an error. "
+                             "Name the REBUILD's own toponyms index, or restore "
+                             "snapshot 'reextract-ipafix-20260910t175025z' into "
+                             "staging and name that. Omit it only for runs that "
+                             "never touch ES (DuckDB-backed manifest, phase-1 "
+                             "resume); anything that does will refuse and say so.")
     parser.add_argument('--output-dir', required=True,
                         help='Output directory for training data')
     parser.add_argument('--scratch-dir', default='/tmp',
@@ -92,6 +104,14 @@ def main():
     else:
         logger.info(f"Connected to Elasticsearch at {args.es_host}")
 
+    if args.toponyms_index:
+        logger.info(f"Mining training pairs from index: {args.toponyms_index}")
+    else:
+        logger.warning(
+            "No --toponyms-index given. Any phase that reads ES will REFUSE "
+            "rather than mine the serving index, which carries no "
+            "panphon_embedding.")
+
     if args.force:
         logger.info("Mode: FORCE (regenerating all data)")
     elif args.resume_from_pass2:
@@ -109,6 +129,7 @@ def main():
         force_regenerate=args.force,
         skip_to_phase3=args.skip_to_phase3,
         resume_from_pass2=args.resume_from_pass2,
+        toponyms_index=args.toponyms_index,
     )
 
     stats = generator.generate_all()
