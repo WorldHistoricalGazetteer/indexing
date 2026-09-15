@@ -11643,7 +11643,7 @@ commit as the work, not afterwards.**
 |---|---|---|---|
 | 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ✅ **DONE 15 Sep 02:56 EDT** (§87) |
 | 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ✅ **DONE 15 Sep** (§88) — no recalibration needed; one real bug found |
-| 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ⏳ |
+| 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ✅ **DONE 15 Sep** (§89) — tiers unchanged (they are model-independent); the stale v7 evidence in `knn_pass_quality` replaced |
 | 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ⏳ |
 | 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | ⏳ |
 
@@ -11772,4 +11772,61 @@ produced plausible numbers from two models averaged together. Fixed to use the
 alias (`e97b285`) **before** the recalibration was attempted, which is the only
 reason it is a footnote. `places_*` was fixed in the same pass: harmless today
 with one places index, identical trap at the next places cutover.
+
+---
+
+## 89. ✅ ITEM 3 — THE TIERS NEED NO RETUNE, BUT A DOCSTRING WAS ACTIVELY MISLEADING
+
+**The tier structure is model-independent.** `LEXICAL_EXACT_BOOST` 2.5 >
+near-miss 0.75 + phonetic 1.0 > phonetic 1.0, with `MAX_DISCOVERY_SCORE` 4.25
+scaling raw points to confidence at ~23.5 points per raw point. None of those
+constants is a function of the embedding distribution; the ordering they enforce
+holds whatever the cosines do. Nothing to retune.
+
+**What v8 changes is where real and junk sit INSIDE the phonetic band**, and it
+improves it:
+
+```
+                                    v7        v8A
+  p5 of retrievable positives    0.7404     0.8111   -> 3.2  -> 8.7 conf points
+  p99 of negatives               0.9531     0.8685   -> 19.8 -> 13.2 conf points
+  inversion (junk above real)    16.6 pts   4.5 pts
+```
+
+Phonetic-alone still tops out at ~23.5 points against `MIN_AUTO_CONFIDENCE` 30,
+so a phonetic match with no lexical tier still cannot auto-confirm. Unchanged,
+and still correct.
+
+### 🛑 The real finding: `knn_pass_quality`'s docstring documented a v7 measurement as current fact
+
+It carried a "MEASURED, 2026-08-20 — READ BEFORE 'IMPROVING' THE FLOOR" block
+naming five specific pairs, and it is the first thing anyone touching the floor
+reads. Every number in it was v7. Re-measured on v8 through prod `/api/embed`
+and the live index, same five pairs:
+
+```
+  Brocksborne -> Броксборн        0.9964 -> 0.9910   -0.0054
+  Sant Petersburg -> Saint-Pet…   0.9940 -> 0.9881   -0.0059
+  Nyoo York -> نيويورك             0.9930 -> 0.9756   -0.0174
+  Marsails -> مارساليس             0.9878 -> 0.9769   -0.0109
+  Minster-in-Sheppy -> Shams I    0.9881 -> 0.5707   -0.4174   (JUNK)
+```
+
+**The junk pair fell off a cliff; the genuine ones barely moved.** On these
+pairs v8 separates what v7 could not.
+
+⚠ **But that is five pairs, and the aggregate still overlaps** (0.8111 vs
+0.8685 above). The tempting conclusion — "v8 separated them, so raise the
+floor" — is wrong, and **v8 makes the case against raising it STRONGER**: the
+genuine cross-script matches moved *down*, so a ~0.99 floor would now delete
+more of exactly what Symphonym exists to find. Saturation survives too: the
+200th neighbour of the nonsense query `Xqzwvlm` still sits at 0.9323.
+
+What genuinely improved: the existing 0.7 floor now does real work. The junk pair
+at 0.5707 falls below it and contributes nothing, where under v7 it scored 0.9881
+and contributed almost everything.
+
+⚠ *A measured note with a date is not self-correcting.* This one was right when
+written, and a model change turned it into confident, specific, wrong guidance
+sitting exactly where someone would act on it.
 

@@ -802,6 +802,36 @@ def knn_pass_quality(hits: list[dict],
     (``apply_lexical_boost`` / ``apply_lexical_near_miss``), not from the cosine.
     That is also why the client's own lexical resemblance check was the right
     instinct rather than a workaround (place#199 C).
+
+    RE-MEASURED ON v8, 2026-09-15, same five pairs, prod ``/api/embed`` + the
+    live index. **The conclusion above is unchanged. Its evidence is not, and
+    the numbers had to be replaced before someone acted on the v7 ones.**
+
+    ```
+                                          v7        v8     delta
+      Brocksborne -> Броксборн         0.9964    0.9910   -0.0054
+      Sant Petersburg -> Saint-Pet…    0.9940    0.9881   -0.0059
+      Nyoo York -> نيويورك              0.9930    0.9756   -0.0174
+      Marsails -> مارساليس              0.9878    0.9769   -0.0109
+      Minster-in-Sheppy -> Shams I     0.9881    0.5707   -0.4174  (JUNK)
+    ```
+
+    The junk pair fell off a cliff while the genuine ones barely moved, so on
+    THESE pairs v8 separates what v7 could not. ⚠ **That is five pairs, and the
+    aggregate still overlaps**: on the frozen 4,000-pair test set v8A's 5th
+    percentile of retrievable positives is 0.8111 against a 99th percentile of
+    negatives of 0.8685. Better than v7's 0.7404 / 0.9531, still inverted.
+
+    🛑 **So raising the floor is still wrong, and v8 makes the case STRONGER,
+    not weaker.** The genuine cross-script matches moved DOWN — `Nyoo York →
+    نيويورك` 0.9930 → 0.9756, `Marsails → مارساليس` 0.9878 → 0.9769 — so a floor
+    at ~0.99, already wrong under v7, would now delete more of exactly what
+    Symphonym exists to find. The saturation the note describes also survives:
+    the 200th neighbour of the nonsense query ``Xqzwvlm`` still sits at 0.9323.
+
+    What DID change is that the existing 0.7 floor now does real work: the junk
+    pair at 0.5707 falls below it and contributes nothing, where under v7 it
+    scored 0.9881 and contributed almost everything.
     """
     if not hits:
         return 0.0
