@@ -12379,3 +12379,55 @@ too and should keep reporting it.
   regressed by one query. Report the regression; a uniformly positive table from
   five samples would deserve more suspicion than this one does.
 
+---
+
+## 98. ✅ THE PRE-REGISTERED RE-EMBED DRIFT EXPERIMENT — hypothesis confirmed, effect negligible
+
+`knn-baseline-pre-reembed-20260908T123317Z.json` was captured on 8 Sep precisely
+because it would stop being capturable, with three matched groups of 1,000 ids,
+a power analysis, and its own instructions for finishing it. Run against the v8
+index:
+
+```
+  A_thai_nfkc_changed   n=1000  missing=0   mean top-10 overlap 0.042  sd 0.078
+  B_thai_nfkc_stable    n=1000  missing=0   mean top-10 overlap 0.054  sd 0.089
+  C_latin_case_only     n=1000  missing=0   mean top-10 overlap 0.219  sd 0.238
+
+  A vs B   diff -0.012   t  -3.23   A drifted MORE  (~99%)
+  A vs C   diff -0.178   t -22.42   A drifted MORE  (~99%)
+```
+
+**The pre-registered hypothesis is confirmed and the effect is 1.2 percentage
+points** — on a scale where *both* Thai groups lost ~95% of their top-10
+neighbours. The difference between Thai-that-NFKC-changed and Thai-that-did-not
+is dwarfed by the drift they share. The study was powered for it: the
+pre-registration put the detectable difference at 0.089 SD and the observed
+effect is ~0.145 SD.
+
+### ⚠ What it does NOT license, in the baseline's own words
+
+> *"It CANNOT distinguish an improvement from a regression on its own. It reports
+> how much moved, and whether Thai moved differently from the corpus… It does not
+> license any claim in either direction about the Thai U+0E33 decomposition."*
+
+That holds. Nothing here says the Thai handling got better or worse.
+
+### 🛑 And the design did not anticipate what actually happened
+
+It was written for the D-A/D5 re-embed — a tokenisation change. What landed was a
+re-embed **and a new model and a re-extracted corpus**. So **absolute drift is
+attributable to none of them individually**, and "neighbourhoods moved a lot" is
+not a finding: a new model produces a different embedding space and everything
+reshuffles by construction. Even the Latin control retains only 21.9%.
+
+**The between-group test survives intact** — all three groups took the same model
+and corpus change, which is exactly what B and C were captured for. ⚠ The A-vs-C
+gap (0.042 vs 0.219) is NOT clean: Thai and Latin differ in corpus density and in
+how much the re-extraction touched them, so that comparison carries confounds the
+A-vs-B one does not.
+
+⚠ *A pre-registration is written against an expected change, and the change that
+arrives may be bigger.* This one survived because its controls were chosen to
+absorb exactly that — which is a better argument for matched controls than any
+statistic it produced.
+

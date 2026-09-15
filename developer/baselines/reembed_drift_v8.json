@@ -1,0 +1,17 @@
+{
+ "A_thai_nfkc_changed": {
+  "n": 1000,
+  "missing": 0,
+  "mean_overlap": 0.0415
+ },
+ "B_thai_nfkc_stable": {
+  "n": 1000,
+  "missing": 0,
+  "mean_overlap": 0.0536
+ },
+ "C_latin_case_only": {
+  "n": 1000,
+  "missing": 0,
+  "mean_overlap": 0.2194
+ }
+}
