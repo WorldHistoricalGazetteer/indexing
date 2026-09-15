@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -26,6 +27,67 @@ logger = logging.getLogger("gateway.symphonym")
 # Lazy-loaded singleton
 _model = None
 _model_version: str | None = None
+
+#: 🛑 THE COUNTER IS PER-PROCESS, AND THE GATEWAY RUNS SEVERAL WORKERS.
+#: A module-level dict lives in ONE worker's memory, so `/api/health` reports
+#: whichever worker answered that request. With N workers a single poll sees
+#: roughly 1/N of the traffic and **zero is a perfectly ordinary reading on a
+#: system that is working**. whg3-97 hit exactly that: their first poll after a
+#: successful accepted-vector reconcile read `accepted: 0, last_client_model:
+#: null`, and five subsequent polls read `accepted: 1, "v8"`.
+#:
+#: ⚠ That is this instrument's own failure mode inverted. Its whole job is to
+#: answer "is the embed offload actually on after a deploy?", and a reader who
+#: polls once, sees zero, and concludes the client is not declaring has been
+#: given precisely the false alarm it exists to prevent. The reassuring direction
+#: is no better: one worker showing `discarded` climbing while the others are
+#: fine would read as total failure.
+#:
+#: So each worker publishes its own counts to a pid-named file and the endpoint
+#: SUMS across the live workers. No locking: one writer per file, and a reader
+#: that skips pids which are gone. The per-worker value is still reported, and
+#: the aggregate is best-effort — a health endpoint must not fail because a
+#: counter could not be read.
+_STATS_DIR = Path(tempfile.gettempdir()) / "whg-gateway-client-vectors"
+
+
+def _publish_client_vector_stats() -> None:
+    """Write this worker's counts where the health endpoint can sum them."""
+    try:
+        _STATS_DIR.mkdir(parents=True, exist_ok=True)
+        payload = dict(_client_vector_stats, pid=os.getpid())
+        tmp = _STATS_DIR / f".{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(_STATS_DIR / f"{os.getpid()}.json")   # atomic
+    except Exception:
+        pass          # never let telemetry break a search
+
+
+def _aggregate_client_vector_stats() -> dict | None:
+    """Sum every LIVE worker's counts. None if the aggregate cannot be trusted."""
+    try:
+        total = {"accepted": 0, "discarded": 0, "workers_seen": 0,
+                 "last_client_model": None}
+        newest = -1.0
+        for f in _STATS_DIR.glob("*.json"):
+            try:
+                d = json.loads(f.read_text())
+                pid = int(d.get("pid") or 0)
+                os.kill(pid, 0)               # ⚠ skip dead workers, or a restarted
+            except (ProcessLookupError, ValueError, OSError, json.JSONDecodeError):
+                continue                      #   service double-counts forever
+            except Exception:
+                continue
+            total["accepted"] += int(d.get("accepted") or 0)
+            total["discarded"] += int(d.get("discarded") or 0)
+            total["workers_seen"] += 1
+            mt = f.stat().st_mtime
+            if d.get("last_client_model") and mt > newest:
+                newest, total["last_client_model"] = mt, d["last_client_model"]
+        return total
+    except Exception:
+        return None
+
 
 #: Standing signal, not a debugging aid. The version guard below fails SAFE — a
 #: client vector from the wrong generation is discarded and the query embedded
@@ -257,7 +319,15 @@ def status() -> dict:
         "load": LOAD_GUARD.stats(),
         # Sustained discards after a client is supposed to be declaring its
         # model mean the embed offload is dead and nothing else will say so.
-        "client_vectors": dict(_client_vector_stats),
+        # ⚠ READ `service`, NOT `this_worker`: the latter is one process of
+        # several, and its zero is indistinguishable from "nothing is arriving".
+        "client_vectors": {
+            "service": _aggregate_client_vector_stats(),
+            "this_worker": dict(_client_vector_stats, pid=os.getpid()),
+            "note": ("`service` sums every live worker; `this_worker` is the one "
+                     "process that answered this request. A single poll of "
+                     "`this_worker` sees ~1/N of traffic, so zero there is normal."),
+        },
     }
 
 
@@ -395,6 +465,7 @@ def build_knn_query(
         _client_vector_stats["last_client_model"] = query_vector_model or None
         if not query_vector_model or not server or query_vector_model != server:
             _client_vector_stats["discarded"] += 1
+            _publish_client_vector_stats()
             logger.warning(
                 "discarding client query_vector: client model %r vs server %r — "
                 "embedding server-side instead (a cross-generation vector ranks "
@@ -403,6 +474,7 @@ def build_knn_query(
             query_vector = None
         else:
             _client_vector_stats["accepted"] += 1
+            _publish_client_vector_stats()
 
     if query_vector is None:
         query_vector = quantize_to_byte(embed(name, lang=lang))
