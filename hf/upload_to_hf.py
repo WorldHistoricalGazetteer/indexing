@@ -161,6 +161,16 @@ def read_training_provenance(stats_dir: Path | None) -> dict | None:
     return prov
 
 
+def _version_of(staging: Path) -> str:
+    """The version actually staged — the commit message said "v7" whatever was
+    in the folder, which is a label that stops describing its contents the first
+    time the folder changes."""
+    try:
+        return json.loads((staging / "config.json").read_text()).get("version", "model")
+    except Exception:
+        return "model"
+
+
 def _git_commit_of(path: Path) -> str:
     """The commit of the tree the stats came from, or an explicit 'unknown'."""
     try:
@@ -172,7 +182,8 @@ def _git_commit_of(path: Path) -> str:
 
 
 def write_config(dest: Path, index_stats: dict | None,
-                 training_stats_dir: Path | None = None) -> None:
+                 training_stats_dir: Path | None = None,
+                 template: Path | None = None) -> None:
     """Copy hf/config.json, filling `index` from live measurements and
     `training_corpus` from the training run's own stats.
 
@@ -181,7 +192,9 @@ def write_config(dest: Path, index_stats: dict | None,
     The failure mode is therefore "absent", which is visible, rather than
     "wrong", which is not.
     """
-    cfg = json.loads((HF_DIR / "config.json").read_text())
+    cfg = json.loads((template or HF_DIR / "config.json").read_text())
+    if template:
+        print(f"  config.json: from {template} (version {cfg.get('version')!r})")
     block = cfg.setdefault("index", {})
     block.pop("_note", None)
 
@@ -207,9 +220,23 @@ def write_config(dest: Path, index_stats: dict | None,
 
 
 def build_upload_folder(staging: Path, index_stats: dict | None = None,
-                        training_stats_dir: Path | None = None) -> None:
-    """Assemble all files for upload into a single staging directory."""
+                        training_stats_dir: Path | None = None,
+                        source: Path | None = None) -> None:
+    """Assemble all files for upload into a single staging directory.
+
+    ``source`` is the artefact tree for ONE model version — the same tree that
+    goes to Zenodo, so the Hub and the deposit ship identical bytes rather than
+    two independently-assembled sets that agree until they don't.
+
+    🛑 The evaluation and vocabulary filenames used to be hardcoded to v7
+    (``mehdie_results_v7_ranking.json`` and friends). Publishing v8 through that
+    list would have shipped v8 WEIGHTS beside v7 EVALUATION RESULTS, with every
+    file present and the model card reading as complete — an artefact that
+    cannot be told apart from a correct one by looking at it. What is copied is
+    now whatever the source tree holds.
+    """
     staging.mkdir(parents=True, exist_ok=True)
+    source = source or ZENODO
 
     def cp(src: Path, dst_name: str = None):
         dst = staging / (dst_name or src.name)
@@ -223,43 +250,64 @@ def build_upload_folder(staging: Path, index_stats: dict | None = None,
         else:
             print(f"  WARNING: {src} not found — skipping")
 
-    # Core files from hf/
+    # The model card and the runtime code are the HUB's own — a Zenodo README
+    # has no YAML front matter and would render as prose, not a model card.
     cp(HF_DIR / "README.md")
-    write_config(staging / "config.json", index_stats, training_stats_dir)
     cp(HF_DIR / "requirements.txt")
     cp(HF_DIR / "inference.py")
 
-    # Model weights — prefer safetensors
-    st = HF_DIR / "model.safetensors"
-    pt = ZENODO / "models" / "final_model.pt"
-    if st.exists():
-        cp(st)
-    elif pt.exists():
-        print("  WARNING: model.safetensors not found; uploading final_model.pt instead.")
-        print("           Run hf/convert_to_safetensors.py first for best results.")
-        cp(pt)
+    # config.json: the source tree's own if it has one, so the published config
+    # is the version's, not whatever the repo copy was last left at.
+    src_cfg = source / "models" / "config.json"
+    write_config(staging / "config.json", index_stats, training_stats_dir,
+                 template=src_cfg if src_cfg.exists() else None)
+
+    # Model weights — prefer safetensors, from the source tree
+    for cand in (source / "models" / "model.safetensors",
+                 HF_DIR / "model.safetensors"):
+        if cand.exists():
+            cp(cand, "model.safetensors")
+            print(f"  weights: {cand}")
+            break
     else:
-        print("  ERROR: No model weights found.  Aborting.")
-        sys.exit(1)
+        pt = source / "models" / "final_model.pt"
+        if pt.exists():
+            print("  WARNING: no model.safetensors; uploading final_model.pt instead.")
+            print("           Run hf/convert_to_safetensors.py first for best results.")
+            cp(pt)
+        else:
+            print("  ERROR: No model weights found.  Aborting.")
+            sys.exit(1)
 
-    # Vocabularies
+    # Vocabularies. 🛑 These MUST be the ones the checkpoint was trained with:
+    # a v8 checkpoint against a v7 vocabulary does not raise, it produces
+    # plausible garbage (models/PROVENANCE.md). They come from the same tree as
+    # the weights for exactly that reason.
     for f in ["char_vocab.json", "lang_vocab.json", "script_vocab.json"]:
-        cp(ZENODO / "vocab" / f, f"vocab/{f}")
+        cp(source / "vocab" / f, f"vocab/{f}")
 
-    # Evaluation results
-    for f in [
-        "mehdie_results_v7_ranking.json",
-        "symphonym_v7_pairs_test_report.json",
-    ]:
-        cp(ZENODO / "evaluation" / f, f"evaluation/{f}")
+    # Evaluation + training stats: whatever this version actually has.
+    for sub in ("evaluation", "training_stats"):
+        d = source / sub
+        if not d.is_dir():
+            print(f"  WARNING: {d} not found — {sub}/ will be absent")
+            continue
+        names = sorted(f.name for f in d.iterdir() if f.is_file())
+        for name in names:
+            cp(d / name, f"{sub}/{name}")
+        print(f"  {sub}: {len(names)} file(s) — {', '.join(names[:4])}"
+              f"{' …' if len(names) > 4 else ''}")
 
-    # Training stats
-    for f in ["coverage_stats.json", "phase1_metrics.json",
-              "phase2_metrics.json", "phase3_metrics.json"]:
-        cp(ZENODO / "training_stats" / f, f"training_stats/{f}")
+    # Provenance, licences and the ONNX export travel with the model when present
+    for extra in ("models/PROVENANCE.md", "models/symphonym-v8.onnx",
+                  "models/symphonym-v8.onnx.provenance.json",
+                  "LICENCE.md", "LICENSE"):
+        src = source / extra
+        if src.exists():
+            cp(src, Path(extra).name)
 
     # Epitran extensions
-    cp(ZENODO / "epitran_extensions", "epitran_extensions")
+    cp(source / "epitran_extensions", "epitran_extensions")
 
     print(f"\nStaging directory: {staging}")
     total = sum(f.stat().st_size for f in staging.rglob("*") if f.is_file())
@@ -268,7 +316,16 @@ def build_upload_folder(staging: Path, index_stats: dict | None = None,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo",    default="docuracy/symphonym-v7", help="HuggingFace repo id (default: docuracy/symphonym-v7)")
+    parser.add_argument("--repo", default="docuracy/symphonym-v8",
+                        help="HuggingFace repo id (default: docuracy/symphonym-v8). "
+                             "⚠ A VERSIONED repo name is an identity: pushing v8 into "
+                             "'symphonym-v7' would silently change what every existing "
+                             "snapshot_download of that id returns. New version, new repo.")
+    parser.add_argument("--source-dir", default=None,
+                        help="Artefact tree for the version being published (the SAME "
+                             "tree deposited to Zenodo): expects models/, vocab/, "
+                             "evaluation/, training_stats/, epitran_extensions/. "
+                             f"Default: {ZENODO}")
     parser.add_argument("--staging", default=str(HF_DIR / "_upload_staging"),
                         help="Temporary staging directory (default: hf/_upload_staging)")
     parser.add_argument("--dry-run", action="store_true", help="Assemble files but do not upload")
@@ -312,8 +369,18 @@ def main():
             sys.exit(1)
 
     print("=== Assembling upload folder ===")
-    tsd = Path(args.training_stats_dir) if args.training_stats_dir else None
-    build_upload_folder(staging, index_stats, tsd)
+    source = Path(args.source_dir) if args.source_dir else ZENODO
+    if not (source / "models").is_dir():
+        print(f"ERROR: {source} has no models/ — that is not an artefact tree.")
+        sys.exit(1)
+    # Default the training-stats dir to the SAME tree, so provenance and weights
+    # cannot come from different versions without someone saying so explicitly.
+    if args.training_stats_dir == parser.get_default("training_stats_dir"):
+        tsd = source / "training_stats"
+    else:
+        tsd = Path(args.training_stats_dir) if args.training_stats_dir else None
+    print(f"  source tree: {source}")
+    build_upload_folder(staging, index_stats, tsd, source)
 
     if args.dry_run:
         print("\nDry run — files assembled but not uploaded.")
@@ -340,7 +407,8 @@ def main():
         folder_path=str(staging),
         repo_id=args.repo,
         repo_type="model",
-        commit_message="Upload Symphonym v7 model, vocabularies, and evaluation results",
+        commit_message=(f"Upload Symphonym {_version_of(staging)} model, "
+                        f"vocabularies, and evaluation results"),
     )
     print(f"\nUpload complete: https://huggingface.co/{args.repo}")
 

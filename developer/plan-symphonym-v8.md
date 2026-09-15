@@ -11654,7 +11654,7 @@ commit as the work, not afterwards.**
 | 6 | **Re-point training-pair selection off production** ✅ **DONE 15 Sep** (§107) — the source is now a named choice (`--toponyms-index`), the serving alias is no longer the default *or* the only reachable option, and three separate silent-empty paths refuse | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
 | 7 | **Recheck `confidence` calibration end-to-end** ✅ **DONE 15 Sep** (§94) — nothing crosses the auto-confirm floor; no recalibration | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
 | 8 | **Drop `toponyms_undscript-20260906t160000z`** ✅ **DONE 15 Sep, minutes before 12:07 EDT** (§106) — 100 GB recovered exactly as forecast (avail 169.5gb → 269.5gb) | it was the rollback. It stopped being one the moment item 17's feature capture completed; four preconditions were checked before the delete. |
-| 9 | **Publish v8 to `hf/` + Zenodo deposit** — **PUBLICATION STEP 2**; ✅ **ZENODO DONE 15 Sep — DOI `10.5281/zenodo.22767194`** (concept DOI `10.5281/zenodo.18682016` preserved; published as a new version of the v7 record, not a separate one). `hf/` itself still outstanding. | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. ⚠ **Must precede 14**: the paper cites the dataset DOI, so the deposit has to exist to be cited. Ready now — depends on nothing in 16 or 17. |
+| 9 | **Publish v8 to `hf/` + Zenodo deposit** — **PUBLICATION STEP 2**; ✅ **DONE 15 Sep — BOTH HALVES.** Zenodo DOI `10.5281/zenodo.22767194`; Hub at **https://huggingface.co/docuracy/symphonym-v8** (§108) (concept DOI `10.5281/zenodo.18682016` preserved; published as a new version of the v7 record, not a separate one). | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. ⚠ **Must precede 14**: the paper cites the dataset DOI, so the deposit has to exist to be cited. Ready now — depends on nothing in 16 or 17. |
 | 10 | **Verify int8 vs fp32** ✅ **DONE 15 Sep** (§91) — costs nothing measurable | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
 | 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** ✅ **DONE 15 Sep 12:07 EDT** (§106) — CANCELLED after 1d 00:57 | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
@@ -12979,3 +12979,79 @@ staging restore of `reextract-ipafix-20260910t175025z` — are both in the error
 text, because the right choice depends on which rebuild the next training run is
 for, and a default guessed today would be wrong by then. **Naming no default is
 the fix, not a gap in it.**
+
+---
+
+## 108. ✅ v8 PUBLISHED TO THE HUB — and why it is a NEW repo, not the v7 one
+
+`https://huggingface.co/docuracy/symphonym-v8` — public, 148 files, 46.5 MB.
+Item 9 is now complete on both halves.
+
+### The repo-name decision, which is the one irreversible choice here
+
+Zenodo's v8 went out as a **new version of the v7 record**, preserving the concept
+DOI. The instinct is to do the same on the Hub and push v8 into
+`docuracy/symphonym-v7`. **That would have been wrong**, and the asymmetry is
+worth stating because the two cases look alike:
+
+* a Zenodo **concept DOI is explicitly version-neutral**, and both versions keep
+  their own resolvable DOIs afterwards;
+* a Hub **repo name is an identity**, and `symphonym-v7` names a version. Pushing
+  v8 there would silently change what `snapshot_download("docuracy/symphonym-v7")`
+  returns — for 37 existing downloads — with no error and no way for a caller to
+  notice. That is this campaign's signature fault wearing a publication hat.
+
+So: new repo. v7 stays byte-identical and reachable.
+
+### What was verified before publishing, and from outside afterwards
+
+The uploader was wired to v7 *filenames* throughout — `mehdie_results_v7_ranking.json`
+and friends — so publishing v8 through it would have shipped **v8 weights beside v7
+evaluation results**, every file present, the card reading as complete. It now
+copies whatever the source tree holds, and takes `--source-dir` so the Hub and the
+deposit ship **the same bytes** rather than two independently-assembled sets.
+
+```
+weights v8-shaped, read from the safetensors header not the filename:
+   char_embed [114845,64]   script_embed [37,16]   lang_embed [2438,16]
+   v7-sized tensors present: NONE          <-- control
+vocab md5s == models/PROVENANCE.md:        char/lang/script all OK
+staged bytes == Zenodo-deposited bytes:    model.safetensors + 3 vocabs identical
+canonical tokeniser stamp:                 v2 db9cefd56b145b3c, == phonetics/tokenise.py
+```
+
+Then, anonymously, as a user sees it: `private: false`, config `version v8`,
+114,845 / 37 / 2,438, and the **served** `model.safetensors` header re-read off the
+CDN to confirm v8 shapes rather than trusting the upload's own success line.
+
+### ⚠ I nearly published the right number computed the wrong way
+
+Aggregating MEHDIE for the card, I took a query-weighted mean and got R@1 **88.3**.
+The published convention is an **unweighted mean across the five testsets**, which
+gives **89.3** — and §97 had already established that, *and* warned about exactly
+this. What caught it was the control: re-running the string baselines and finding
+81.5/97.6/99.4/88.5 reproduce the published figures to 0.1, which only happens
+under the right convention. **A benchmark number is meaningless without its
+aggregation rule, and the baselines are what carry that rule.**
+
+### The card states two corrections to published claims
+
+1. **The Chinese contamination.** v7's card explained low CJK–Hiragana similarity
+   as "a genuine phonological mismatch, not a model deficiency". It was not: v7
+   learned Chinese Han characters with **Japanese readings** attached (§9). v8's
+   CJK–Hiragana mean **falls 0.437 → 0.320**, and the fall is the correct
+   direction — the higher v7 number *was* the contamination.
+2. **Discrimination fell.** AUC 0.9324 → 0.9270 is on the card under Limitations,
+   with the note that a threshold-based user should measure before assuming v8 is
+   an upgrade for their use.
+
+Also on the card: recall@200 = 0.4908 as a hard ceiling, the "similarity measures
+the NAME and nothing else" warning, and the vocab md5s under *Migrating from v7* —
+because a v8 checkpoint with a v7 vocabulary does not raise, it produces plausible
+garbage.
+
+### Not done, deliberately
+
+**The v7 card carries no pointer to v8.** Adding one edits an already-published
+artefact, which is a separate publication decision from uploading a new one. It is
+a one-line, non-destructive change and probably worth making — SG's call.
