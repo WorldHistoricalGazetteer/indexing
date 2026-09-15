@@ -11641,7 +11641,7 @@ commit as the work, not afterwards.**
 
 | # | item | why | status |
 |---|---|---|---|
-| 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ⏳ |
+| 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ✅ **DONE 15 Sep 02:56 EDT** (§87) |
 | 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ⏳ |
 | 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ⏳ |
 | 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ⏳ |
@@ -11664,4 +11664,57 @@ commit as the work, not afterwards.**
 anyone trusts an auto-confirm, and 8 after everything else. 2, 3, 4 and 5 all
 depend on 1 having happened, because each is calibrated against what the index
 and model actually return.
+
+---
+
+## 87. ✅ v8 IS SERVING IN PRODUCTION — swapped 15 Sep 02:56 EDT (07:56 BST)
+
+**Order chosen to make a mistake visible rather than silent**: edit
+`.env.local` (inert until a start) → **stop the gateway** → swap the alias while
+nothing is serving → start. The alternative — swap the alias under a running v7
+gateway — leaves a window in which queries are answered with a v7 query vector
+against v8 document vectors. That is not degraded, it is arbitrary, and it
+raises nothing. **~60 seconds of honest downtime beats any window of silent
+nonsense.** The watchdog stands down while a relay request is pending, so it did
+not fight the sequence.
+
+```
+02:55:02  gateway-stop   (via gaz_relay, as gazetteer)
+02:55:2x  POST /_aliases  remove undscript, add v8   — atomic, one request
+02:56:01  gateway-start
+02:56:07  Symphonym model loaded successfully
+```
+
+**Which model is live is answerable from the log**, and this is the cheapest
+check we have: `[SymphonymModel] sanitised 7 out-of-table vocab id(s) → UNK
+(char<114845, script<37, lang<2438)`. v8 is 114845/37/2438; v7 is
+113280/20/1944. The line exists because of §5.8 H1's seven characters — an
+annoyance that turns out to be a free model-identity assertion on every load.
+
+### Verified through the public API, not just the cluster
+
+```
+'Лондон' → Лондон (osm), London wd:Q84 99.99
+'Kairo'  → Kairo ×4
+'Bejing' → Beijing wd:Q956, 北京市, 베이징 99.98    ← misspelled Latin reaching Han and Hangul
+```
+
+### ⚠ And `confidence` was checked for saturation, because the first look invited it
+
+Every hit on a good query returned `confidence` 100.0, which is what a collapsed
+scale would also look like. It is not collapsed — junk still separates:
+
+```
+'Xqzwvlm'    21.9  21.9  21.8     (MIN_AUTO_CONFIDENCE = 30)
+'Zzzzblargh' 22.0  22.0  21.9
+'Лондон'    100.0 100.0 100.0
+```
+
+So **auto-confirm has not silently widened**, which was the live risk to Map your
+Data. Item 7 stays open for the 30–60 band, where a shifted distribution would
+change borderline outcomes without looking obviously wrong at either extreme.
+
+**Rollback, still exact**: alias back to `toponyms_undscript-20260906t160000z`,
+`SYMPHONYM_MODEL_DIR` back to `symphonym-v7-hf` (backup at
+`.env.local.bak-pre-v8-20260915T025435`), restart. Both v7 artefacts untouched.
 
