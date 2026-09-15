@@ -11659,7 +11659,7 @@ commit as the work, not afterwards.**
 | 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** ✅ **DONE 15 Sep** — `--no-cache` is now the default in `es -update-embeddings`, `SYMPHONYM_USE_CACHE=1` restores it | it taxes every post-retrain compute 11×; the next person will not know. |
-| 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**, ⏳ **RUNNING 15 Sep** | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
+| 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**; ✅ **MEHDIE DONE 15 Sep (§97)**, cross-script pair validation outstanding | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
 | 17 | **place#280 — the two-feature discriminator** | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
 | 15 | ~~**Align the interpreter behind script detection**~~ | 🛑 **WITHDRAWN 15 Sep — the premise was my measurement error (§96). There is no skew: gateway and index writer are both unicodedata 14.0.0.** | ✅ void |
 | 14 | **Update the arXiv article** (added by SG, 15 Sep) — **PUBLICATION STEP 3** | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
@@ -12306,4 +12306,76 @@ attractive for removing an invisible dependency, but with no skew to fix it is
 now a tidiness argument against a real cost (it changes which characters are
 counted for existing names, so it implies measurement and a re-embed). **Not
 recommended.**
+
+---
+
+## 97. ✅ v8 ON MEHDIE — the paper's own benchmark, and the result is good
+
+The published table is the MEHDIE Hebrew–Arabic historical benchmark (Sagi et
+al. 2025), **independent and not in training data**, which is why it is the
+strongest evidence in the paper. v8 had never been run on it.
+
+### The baselines are the control, and they reproduce
+
+The paper aggregates as an **unweighted mean across the five testsets** — not
+weighted by query count. Established by re-running the baselines in the same
+pass rather than quoting them:
+
+```
+                      R@1    R@5   R@10    MRR      vs published
+  Levenshtein        81.5   97.6   99.4   88.5   [+0.0 +0.1 -0.0 +0.0]
+  Jaro-Winkler       78.5   96.3   97.8   86.3   [-0.0 +0.1 +0.0 +0.0]
+```
+
+Within 0.1 on every cell. ⚠ *Had I aggregated by query count instead, Levenshtein
+would have come out at 81.0 and the whole comparison would have been quietly
+off-convention* — the baselines are what caught that, which is the reason to
+re-run them rather than carry them over.
+
+### The v8 row
+
+```
+                      R@1    R@5   R@10    MRR
+  Levenshtein        81.5   97.6   99.4   88.5
+  Jaro-Winkler       78.5   96.3   97.8   86.3
+  Symphonym v7       85.2   97.0   97.6   90.8   (published)
+  Symphonym v8       89.3   97.0   98.2   92.8
+                    +4.1   +0.0   +0.6   +2.0
+```
+
+**R@1 +4.1 points, MRR +2.0.** v8 now leads Levenshtein on R@1 by 7.8 points
+where v7 led by 3.7.
+
+### What the shape of the gain says
+
+R@5 is **unchanged** and R@10 moves +0.6, while R@1 and MRR move substantially.
+So v8 is not finding answers v7 could not find — **it is ranking the right answer
+first more often.** That is exactly what the campaign's other measurements
+predicted: the gains were in order sensitivity and separability, not in recall.
+The benchmark agrees with the bands, from an independent direction.
+
+⚠ **Levenshtein still wins R@10** (99.4 vs 98.2). The paper reports that for v7
+too and should keep reporting it.
+
+### ⚠ Honest limits, to carry into the revision
+
+* **137 queries across five testsets.** +4.1 points on R@1 is about **five or six
+  queries** changing rank. Paired (same queries, both models), which is stronger
+  than independent samples, but it is a small benchmark.
+* **The unweighted mean gives a 18-query testset the same weight as a 33-query
+  one.** That is the paper's convention and we match it; it is not the convention
+  that best reflects the data.
+* **Per testset, 4 of 5 improved and 1 regressed**:
+
+```
+  testset7-YaqutSham_KimaSham         33   69.7 -> 78.8   +9.1
+  testset8-KimaShamThurayyaSham       21   95.2 -> 100.0  +4.8
+  testset9-TudelaThurayya             18   94.4 ->  88.9  -5.6
+  testset10-YaqutAndalusMagrebKima    33   72.7 -> 81.8   +9.1
+  testset11-DamastTudela              32   93.8 ->  96.9  +3.1
+```
+
+  The gain is **broad, not one testset carrying it** — and `testset9` genuinely
+  regressed by one query. Report the regression; a uniformly positive table from
+  five samples would deserve more suspicion than this one does.
 
