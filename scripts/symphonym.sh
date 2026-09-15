@@ -1298,6 +1298,26 @@ conda activate whg
 cd "${REPO_DIR}"
 
 echo "Computing embeddings from DuckDB (ALL toponyms)..."
+# 🛑 --no-cache BY DEFAULT, AND IT IS NOT A MICRO-OPTIMISATION.
+# Measured head-to-head on 14 Sep 2026, same corpus, same checkpoint, two GPUs at
+# once: 833 doc/s with the cache, 9,004 without — an ETA of 24h21m against 2h15m
+# for the same 73.5M toponyms. The cost is a synchronous DuckDB insert_many per
+# 2,000-row batch onto shared /vast.
+#
+# And the cache CANNOT help the run that pays for it. Its key includes the
+# checkpoint hash, so a retrain invalidates it by construction: the compute that
+# follows every model we ship is guaranteed to miss on every row. The design taxes
+# every first computation to make a rare repeat cheap.
+#
+# Set SYMPHONYM_USE_CACHE=1 to restore the old behaviour — worth it only when
+# recomputing a checkpoint that has ALREADY been computed (e.g. resuming after a
+# failure), which is the one case the cache was built for.
+SYMPHONYM_CACHE_FLAG="--no-cache"
+if [ "${SYMPHONYM_USE_CACHE:-0}" = "1" ]; then
+    SYMPHONYM_CACHE_FLAG=""
+    echo "SYMPHONYM_USE_CACHE=1 — cache ENABLED; expect ~10x slower on a fresh checkpoint"
+fi
+
 python -u -m phonetics.inference.update_es compute \
     --input-file "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
     --output-file "${EMBEDDINGS_FILE}" \
@@ -1305,6 +1325,7 @@ python -u -m phonetics.inference.update_es compute \
     --vocab-dir "${DATA_DIR}/vocab" \
     --embedding-version ${DATA_VERSION} \
     --batch-size 2000 \
+    \${SYMPHONYM_CACHE_FLAG} \
     --device cuda
 
 echo
