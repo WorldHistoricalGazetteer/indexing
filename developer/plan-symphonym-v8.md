@@ -11632,3 +11632,36 @@ exercised.
 against a v8 model, and `/api/reconcile`'s lexical tiers were tuned against v7
 score distributions. Neither blocks the swap; both want checking after it.
 
+---
+
+## 86. 📋 THE v8 FORWARD PLAN — agreed 15 Sep, worked in order
+
+SG's list, with additions. **Status is maintained here; update it in the same
+commit as the work, not afterwards.**
+
+| # | item | why | status |
+|---|---|---|---|
+| 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ⏳ |
+| 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ⏳ |
+| 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ⏳ |
+| 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ⏳ |
+| 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | ⏳ |
+
+### Added — necessary, and not on the original list
+
+| # | item | why |
+|---|---|---|
+| 6 | **Re-point training-pair selection off production** | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
+| 7 | **Recheck `confidence` calibration end-to-end** | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
+| 8 | **Drop `toponyms_undscript-20260906t160000z`** — but only after 1–5 are exercised | it is the rollback. Returns ~100 GB of /vast. |
+| 9 | **Publish v8 to `hf/`** | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. |
+| 10 | **Verify int8 vs fp32** | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
+| 11 | **Send whg3 its handover** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
+| 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
+| 13 | **Fix the embedding cache (§82)** or document `--no-cache` in `es.sh` | it taxes every post-retrain compute 11×; the next person will not know. |
+
+⚠ **Sequencing that matters**: 6 must land before any training-data run, 7 before
+anyone trusts an auto-confirm, and 8 after everything else. 2, 3, 4 and 5 all
+depend on 1 having happened, because each is calibrated against what the index
+and model actually return.
+
