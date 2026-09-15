@@ -12226,9 +12226,37 @@ I ran the **system** interpreter on the host and reported it as the service's.
 **Two independent proofs, because one measurement is what got me here:**
 
 1. That conda env's python reports 3.11.13 / 14.0.0.
-2. The running code contains `def model_version() -> str | None`, which is a
-   **SyntaxError on 3.9** — and the gateway restarted and served requests after
-   that deploy. It cannot be running 3.9.
+2. ~~The running code contains `def model_version() -> str | None`, a SyntaxError
+   on 3.9, and the gateway served after that deploy.~~ 🛑 **VOID — whg3-97 checked
+   it and it proves nothing.** `gateway/symphonym.py:11` is
+   `from __future__ import annotations`, so the annotation is a string at
+   definition time and `str | None` is legal on 3.7+. Verified by running exactly
+   that construct on the host's 3.9.25: it executes fine.
+
+   ⚠ **So the message whose entire subject was "one measurement is what got me
+   here" offered one measurement and a decoration.** Same shape twice in one
+   breath.
+
+**The proof that does hold — direct measurement of the running processes**, which
+costs one command and which I should have run before writing either version:
+
+```
+  $ ps -u gazetteer -o pid,args | grep spawn_main
+    529625 /home/gazetteer/miniconda/envs/whg/bin/python -c from multiprocessing…
+    529626 /home/gazetteer/miniconda/envs/whg/bin/python -c from multiprocessing…
+  $ /home/gazetteer/miniconda/envs/whg/bin/python -V   ->  3.11.13, unidata 14.0.0
+```
+
+The gateway's multiprocessing workers carry the interpreter's **absolute path in
+their own cmdline**, which `/proc/<pid>/cmdline` exposes regardless of process
+ownership — so this is the running process describing itself, not the code
+describing what it intends. (`/proc/<pid>/exe` is not readable across users, which
+is why the first attempt returned nothing and I reached for inference instead.)
+
+⚠ And `gateway_ctl.sh` names this exact trap in a comment: *"with cron's minimal
+PATH, `python` is system python3.9 … only because THEY activate whg first."*
+**The file that explains the trap is the one that disproves what I concluded from
+falling into it.**
 
 And the impact was zero regardless: **0 of 73,479,069** toponyms contain any of
 the 515 disputed codepoints — the whole corpus, not a sample. The diff is also
