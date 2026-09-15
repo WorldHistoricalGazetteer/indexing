@@ -12538,3 +12538,57 @@ process rather than to the artefact. SG's original failure was most likely
 transient (Zenodo was showing an outage banner); that cannot now be confirmed,
 because the successful publish destroyed the state that would have shown it.
 
+---
+
+## 101. 🛑 A WRONG SENTENCE INSIDE THE CANONICAL BLOCK — held, not fixed, until whg3's deploy lands
+
+`hf/inference.py:257` and its byte-identical twin `phonetics/tokenise.py:131`
+carry, immediately above the 17 newly-split script ranges:
+
+> *"The model is UNAFFECTED: `encode_script` falls back to OTHER for a name the
+> 20-entry `script_vocab.json` does not carry, which is exactly the id these
+> characters already receive today."*
+
+**True of the 20-entry vocabulary it was written against. False of the 37-entry
+one v8 ships** — the fallback requires the script to be ABSENT, and in v8 it is
+present. Verified against the shipped v8 vocab:
+
+```
+  Amritsar    GURMUKHI  canonical=21   an unextended JS detector sends OTHER=19
+  Yangon      MYANMAR   canonical=20   OTHER=19
+  Lhasa       TIBETAN   canonical=22   OTHER=19
+  Addis Ababa ETHIOPIC  canonical=27   OTHER=19
+  Vientiane   LAO       canonical=29   OTHER=19
+  Phnom Penh  KHMER     canonical=24   OTHER=19
+```
+
+So the JS script-range port is **BLOCKING for the v8 browser deploy**, not the
+follow-up §91 called it. Index-time gives these names their real script id and an
+unextended browser sends OTHER — the v7-against-v8 failure again, narrowed to
+3,168 codepoints across 17 scripts. Found by whg3-97, whose tokeniser tripwire
+said so in the right words while both of us filed its instruction as optional.
+
+⚠ **Same shape twice, and it is worth naming.** §93 recorded my "purely additive"
+finding as true of the script vocabulary and false of the pairing. This is the
+same: *a correct statement whose scope was a file that has since changed.* The
+comment was true when written; the vocabulary moved underneath it and nothing
+connects the two. **A conditional claim that does not carry its condition becomes
+an unconditional one by attrition** — and this one sits in the most authoritative
+place in the codebase, positioned exactly where a reader decides whether the port
+is optional.
+
+### Deliberately NOT fixed yet
+
+Any byte change to that block moves `CANONICAL_BLOCK_SHA256`, which would shift
+whg3's port target mid-deploy — during the one operation where query side and
+document side must agree. **Wrong-comment risk is strictly smaller than
+moving-target risk.** Target sha stays
+`74fb6176adfae9b44e2a591fee4daab973ba7fc68b7a33fd4411dedba28e6685`; the comment
+is amended in both files in one commit, with the sha updated, once whg3 reports
+the deploy landed.
+
+⚠ **And the golden fixture will not catch a botched port.** Its eight cases are
+Latin/Cyrillic/Arabic/CJK/Kana/Greek plus whitespace — none exercises the 17 new
+scripts, so they regenerate identically whether or not the ranges were ported.
+A case in a newly-split script is needed for the fixture to have anything to say.
+
