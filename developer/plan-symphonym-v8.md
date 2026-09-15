@@ -12592,3 +12592,90 @@ Latin/Cyrillic/Arabic/CJK/Kana/Greek plus whitespace — none exercises the 17 n
 scripts, so they regenerate identically whether or not the ranges were ported.
 A case in a newly-split script is needed for the fixture to have anything to say.
 
+---
+
+## 102. ✅ place#281 — THREE OF FOUR LEVERS CLOSED BY MEASUREMENT; THE MODEL IS WHAT IS LEFT
+
+| lever | verdict |
+|---|---|
+| 1 — approximation gap | **dead** — HNSW already returns the exact top-200 at production settings |
+| 2 — deduplicate the pool | **dead** — 92% of misses lie beyond rank 2000 |
+| 3 — multi-form passes | **already in production**, worth **+27.6pp**; now quantified |
+| 4 — the model | the remaining lever, and now the only one |
+
+### Lever 1 — approximation costs nothing
+
+300 cross-script queries, k=200, `num_candidates` 400 → 10000: **identical, the
+same 136 of 300 at every setting.** That is also what an ignored parameter looks
+like, so it was not reported until two controls ran. Comparing the full top-200
+lists gave byte-identical output even at the floor — which **failed** the criterion
+set in advance and left the question open. Latency settled it: 2.0ms → 26.0ms
+across the range, so the parameter reaches the engine and the flat recall is real.
+
+⚠ *The convenient answer and the true answer coincided, and only the control
+distinguishes those two situations.*
+
+### Lever 3 — the largest effect found, and it was already shipping
+
+250 groups with ≥4 known co-referents; query with 1, 2, then 3 forms and look for
+a **held-out** fourth name:
+
+```
+  1 form   recall 0.1040      2 forms  0.2080      3 forms  0.3800
+```
+
+`/api/reconcile` already unions one KNN pass per name form, so **production recall
+for a variant-bearing query is materially above the single-pass 0.4908 this issue
+was opened on.** The ceiling is a property of *single-pass* retrieval; Map your
+Data derives variants automatically and is already above it.
+
+### Lever 2 — killed by the test lever 1 made possible
+
+Because the search is exact at k=200, a missed target is missed because 200
+vectors are genuinely closer — so "how far away is it really?" is answerable:
+
+```
+  still missed after 3 forms   155
+    rank 201-2000               12   (8%, median 973)
+    beyond rank 2000           143   (92%)
+```
+
+🛑 **Dedup-by-name must not be built.** The 37%-of-pool-slots figure that
+motivated it measured something real and irrelevant: duplicates are not displacing
+the answers, because the answers are nowhere near.
+
+### What lever 4 has to respect
+
+The loss is concentrated: hard-historic finds its target in **4.2%** of cases at
+k=200 against 44.8% for cross-script. ⚠ And recall must not be bought by
+flattening the space — v8's discrimination AUC already slipped 0.9324 → 0.9270
+while retrieval improved. Pull the true pair closer *without* pulling everything
+closer, and measure both.
+
+---
+
+## 103. 🛑 THE STANDING SIGNAL I BUILT HAD THE FAILURE MODE IT EXISTS TO DETECT
+
+§91 added `client_vectors` to `/api/health` so that a client shipping a matched
+encoder but forgetting to declare it would be visible. The counter is a
+module-level dict and **the gateway runs several workers**, so the endpoint
+reports whichever worker answered. With N workers a single poll sees ~1/N of the
+traffic and **zero is an ordinary reading on a system that is working**.
+
+whg3-97 hit it precisely: their first poll after a successful accepted-vector
+reconcile read `accepted: 0, last_client_model: null`; five subsequent polls read
+`accepted: 1, "v8"`. Confirmed here — 2 `spawn_main` workers, each with its own
+copy.
+
+⚠ **An instrument whose normal reading is indistinguishable from the fault it
+detects is worse than no instrument**, because it manufactures the alarm it was
+built to prevent. I added it *as the fix* for a silent failure and gave it a
+silent failure of its own.
+
+**Fixed** (`c8bf9c6`): each worker publishes to a pid-named file; health sums
+across **live** workers, skipping dead pids so a restart cannot double-count
+forever. One writer per file, so no locking. Both scopes reported, `service`
+marked as the one to read, everything best-effort — a health endpoint must not
+fail because a counter could not be read. Verified with the case that matters: a
+dead worker's leftover file claiming 500/500 is ignored.
+
