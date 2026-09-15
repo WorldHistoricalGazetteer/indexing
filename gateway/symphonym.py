@@ -10,6 +10,7 @@ Loads the Symphonym v7 UniversalEncoder at startup and provides:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -24,6 +25,7 @@ logger = logging.getLogger("gateway.symphonym")
 
 # Lazy-loaded singleton
 _model = None
+_model_version: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +208,25 @@ def _resolve_model_dir(repo_hf: Path | None = None) -> Path:
     return repo_hf  # Return anyway; SymphonymModel will raise on missing files
 
 
+def model_version() -> str | None:
+    """The version string of the CURRENTLY LOADED model, from its own config.
+
+    Used to decide whether a client-supplied ``query_vector`` may be trusted.
+    Read from the model directory's ``config.json`` rather than from settings, so
+    it describes what is actually in memory, not what someone meant to deploy.
+    """
+    global _model_version
+    if _model_version is not None:
+        return _model_version
+    try:
+        cfg = json.loads((Path(_resolve_model_dir()) / "config.json").read_text())
+        _model_version = str(cfg.get("version") or "") or None
+    except Exception as exc:          # never let this break a search
+        logger.warning("symphonym: could not read model version (%s)", exc)
+        _model_version = None
+    return _model_version
+
+
 def status() -> dict:
     """Model availability, for ``/api/health``.
 
@@ -315,6 +336,7 @@ def build_knn_query(
     index: str = "toponyms",
     extra_filter: Optional[dict] = None,
     query_vector: Optional[list[int]] = None,
+    query_vector_model: Optional[str] = None,
 ) -> dict:
     """
     Build an ES KNN search body for phonetic similarity.
@@ -337,6 +359,28 @@ def build_knn_query(
     # A caller-supplied vector (already int8-quantised, e.g. from the browser Symphonym model)
     # lets us skip the server-side embed — the client offloads that cost. Fall back to embedding
     # the query text here when none is provided.
+    #
+    # 🛑 BUT ONLY IF IT CAME FROM THIS MODEL. A vector from a different generation
+    # is not slightly wrong, it is meaningless: cosine between a v7 query vector
+    # and v8 document vectors ranks arbitrarily, and NOTHING raises. This bit us
+    # for real — the v8 swap on 15 Sep 2026 left whg3's browser encoder on v7,
+    # and its vectors reach this function through /api/reconcile's
+    # ``query_vector``, default-on, in production.
+    #
+    # The client cannot be trusted to have been upgraded in lockstep with the
+    # server, so the DEFAULT IS DISTRUST: a vector is used only when the caller
+    # states which model produced it and that matches what we have loaded.
+    # Callers that say nothing get a correct server-side embed and pay the CPU.
+    if query_vector is not None:
+        server = model_version()
+        if not query_vector_model or not server or query_vector_model != server:
+            logger.warning(
+                "discarding client query_vector: client model %r vs server %r — "
+                "embedding server-side instead (a cross-generation vector ranks "
+                "arbitrarily and raises nothing)",
+                query_vector_model or "<unstated>", server or "<unknown>")
+            query_vector = None
+
     if query_vector is None:
         query_vector = quantize_to_byte(embed(name, lang=lang))
 

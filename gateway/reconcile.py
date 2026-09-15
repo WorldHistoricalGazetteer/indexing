@@ -225,7 +225,20 @@ class ReconcileRequest(BaseModel):
         description="Client-computed int8 (128-d) Symphonym embedding for the query. "
                     "When supplied with mode='phonetic'/'fuzzy', the gateway uses it "
                     "directly for KNN and skips the server-side embed (offloads that "
-                    "cost; also lets the client language-condition the embedding).",
+                    "cost; also lets the client language-condition the embedding). "
+                    "⚠ IGNORED unless `query_vector_model` names the model the "
+                    "server has loaded — see that field.",
+    )
+    query_vector_model: Optional[str] = Field(
+        None,
+        description="Which Symphonym generation produced `query_vector` (e.g. 'v8'). "
+                    "REQUIRED for the vector to be used. A vector from a different "
+                    "generation is not approximately right, it is meaningless — "
+                    "cosine between a v7 query vector and v8 document vectors ranks "
+                    "arbitrarily and raises nothing — so an unstated or mismatched "
+                    "value makes the gateway embed server-side instead. Clients are "
+                    "not upgraded in lockstep with the server, so the default is "
+                    "distrust.",
     )
     include_hard_links: bool = Field(
         default=False,
@@ -633,7 +646,8 @@ async def reconcile_search(req: ReconcileRequest):
                            for form in derived_forms]
                 bodies = [
                     (_build_phonetic_knn(form, k=200, similarity=KNN_SIMILARITY_FLOOR,
-                                         query_vector=vec), weight)
+                                         query_vector=vec,
+                                         query_vector_model=req.query_vector_model), weight)
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]

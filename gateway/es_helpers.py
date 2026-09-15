@@ -894,6 +894,7 @@ def build_phonetic_knn(
     k: int = 200,
     similarity: float = 0.7,
     query_vector: list[int] | None = None,
+    query_vector_model: str | None = None,
 ) -> dict | None:
     """
     Build a KNN query body using Symphonym.
@@ -907,6 +908,7 @@ def build_phonetic_knn(
             name=query, lang=lang, k=k,
             num_candidates=max(k * 2, 400),
             query_vector=query_vector,
+            query_vector_model=query_vector_model,
         )
         body["knn"]["similarity"] = similarity
         body["_source"] = ["name", "lang", "attestations"]
