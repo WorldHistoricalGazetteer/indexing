@@ -12036,3 +12036,65 @@ Deploying it, the JS script-detection extension for the 17 new scripts, and
 declaring `query_vector_model: "v8"` — which must land in the SAME deploy, or the
 guard in §91 keeps the offload silently off.
 
+---
+
+## 93. 🛑 THE CHAR AND LANG VOCABULARIES ARE NOT ADDITIVE, AND A MISPAIRING PASSES AN ENGLISH SMOKE TEST
+
+§91 recorded that the **script** vocabulary is purely additive — all 20 v7 names
+keep their v7 ids. That is true, and I stated it carefully. **Nobody checked the
+other two vocabularies, and the implication everyone drew from "additive" is
+false for them.** whg3-97 caught it by running our golden fixture through their
+live JS tokeniser with their *v7* vocabs loaded.
+
+Verified independently here, comparing the shipped v7 and v8 vocabularies
+directly:
+
+```
+  char_vocab    113,269 shared characters, 98 keep their id      0.1%
+  lang_vocab      1,931 shared tags,       20 keep their id      1.0%
+  script_vocab       20 shared names,      20 keep their id    100.0%   <- the exception
+```
+
+### 🛑 The distribution is what makes this dangerous rather than merely bad
+
+```
+  LATIN        52/1,128 stable   4.6%     <- and they are the common ASCII letters
+  CJK          0/93,316          0.0%
+  HANGUL       0/11,625          0.0%
+  ARABIC       0/1,102           0.0%
+  CYRILLIC     0/375             0.0%
+  GREEK        0/365             0.0%
+```
+
+Fifty-two stable characters is nearly nothing — **and it is exactly the wrong
+fifty-two**. They are the frequent Latin letters, so under a mispaired vocabulary
+`London` and `Bury St. Edmunds` tokenise **identically** and return correct
+results, while `Лондон`, `القاهرة` and `Ωμέγα` get ids from an unrelated region of
+the table. whg3 measured precisely that: char_ids identical on 5 of 8 fixture
+cases, renumbered on the 3 non-Latin ones; `script_id` identical 8/8; `lang_id`
+identical only for `und`.
+
+**So a mispaired deploy presents as a working deploy.** An English smoke test
+passes. The breakage lands on the non-Latin scripts a historical gazetteer exists
+to serve, and nothing raises — the same silent-nonsense failure as a
+cross-generation vector, arriving per-user through a cached asset.
+
+### What this changes
+
+* ⚠ **"We tested it and search still works" is not evidence of a correct pairing
+  unless the test includes a non-Latin script.** That belongs in the deploy notes.
+* It converts whg3's cache-busting hazard from a prediction into evidence, and
+  makes the **init-time vocab-hash check the necessary half**: versioned
+  filenames prevent the stale-cache route, but only an assertion at load catches
+  a wrong-but-present vocabulary *however it arrived*. The golden fixture and the
+  ONNX provenance carry all three md5s so that check is writable today.
+* The exporter's `pairing_warning` now carries these numbers rather than the
+  qualitative "embeds plausible nonsense", because a number is what makes someone
+  implement the check.
+
+⚠ *My "purely additive" finding was correct and its scope was not carried
+forward.* I checked the vocabulary that governed the question I was asked, said
+so precisely, and the reassuring headline travelled further than the scope
+attached to it. A true statement about one of three files became, in the reading,
+a statement about the pairing.
+

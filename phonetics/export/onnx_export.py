@@ -221,9 +221,22 @@ def export(args) -> int:
             "batch": 1,
             "padding": "none — seq is the true id count",
         },
-        "pairing_warning": ("These vocab md5s are part of the artefact. A model "
-                            "served with a different vocabulary does not raise; it "
-                            "embeds plausible nonsense. Check them at load time."),
+        "pairing_warning": (
+            "CHECK THESE MD5s AT LOAD TIME AND REFUSE ON MISMATCH. Measured "
+            "v7 -> v8, 15 Sep 2026: of 113,269 characters present in both "
+            "vocabularies, only 98 (0.1%) keep their id, and of 1,931 shared "
+            "language tags only 20 (1.0%). The SCRIPT vocabulary is the "
+            "exception at 100%, which is why 'the vocab is additive' is true of "
+            "scripts and false of everything else. "
+            "The distribution is what makes this dangerous rather than merely "
+            "bad: 52 of the stable characters are common Latin letters, so "
+            "English names tokenise IDENTICALLY under the wrong vocabulary while "
+            "Cyrillic, Arabic, Greek, CJK and Hangul are renumbered wholesale "
+            "(0.0% stable each). A mispaired deploy therefore passes an English "
+            "smoke test and silently breaks exactly the non-Latin scripts a "
+            "historical gazetteer exists to serve. Nothing raises. "
+            "'We tested it and search still works' is not evidence of a correct "
+            "pairing unless the test includes a non-Latin script."),
     }
     Path(str(out_int8) + ".provenance.json").write_text(json.dumps(prov, indent=1) + "\n")
     print(f"\nprovenance: {out_int8}.provenance.json")
