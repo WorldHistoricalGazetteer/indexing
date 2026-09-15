@@ -11653,14 +11653,14 @@ commit as the work, not afterwards.**
 |---|---|---|
 | 6 | **Re-point training-pair selection off production** ✅ **GUARDED 15 Sep** (`2fcc24e`) — `ESKNNHelper` now refuses rather than returning `[]`; choosing the source is still open | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
 | 7 | **Recheck `confidence` calibration end-to-end** ✅ **DONE 15 Sep** (§94) — nothing crosses the auto-confirm floor; no recalibration | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
-| 8 | **Drop `toponyms_undscript-20260906t160000z`** — but only after 1–5 are exercised | it is the rollback. Returns ~100 GB of /vast. |
+| 8 | **Drop `toponyms_undscript-20260906t160000z`** ✅ **DONE 15 Sep, minutes before 12:07 EDT** (§106) — 100 GB recovered exactly as forecast (avail 169.5gb → 269.5gb) | it was the rollback. It stopped being one the moment item 17's feature capture completed; four preconditions were checked before the delete. |
 | 9 | **Publish v8 to `hf/` + Zenodo deposit** — **PUBLICATION STEP 2**; ✅ **ZENODO DONE 15 Sep — DOI `10.5281/zenodo.22767194`** (concept DOI `10.5281/zenodo.18682016` preserved; published as a new version of the v7 record, not a separate one). `hf/` itself still outstanding. | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. ⚠ **Must precede 14**: the paper cites the dataset DOI, so the deposit has to exist to be cited. Ready now — depends on nothing in 16 or 17. |
 | 10 | **Verify int8 vs fp32** ✅ **DONE 15 Sep** (§91) — costs nothing measurable | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
 | 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
-| 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
+| 12 | **Stop staging job 24073245** ✅ **DONE 15 Sep 12:07 EDT** (§106) — CANCELLED after 1d 00:57 | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** ✅ **DONE 15 Sep** — `--no-cache` is now the default in `es -update-embeddings`, `SYMPHONYM_USE_CACHE=1` restores it | it taxes every post-retrain compute 11×; the next person will not know. |
-| 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**; ✅ **MEHDIE DONE 15 Sep (§97)**, cross-script pair validation outstanding | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
-| 17 | **place#281 — the candidate-pool ceiling** ✅ **MEASUREMENT PHASE COMPLETE 15 Sep** (§102, §105): four of five levers closed; only the model remains. place#280 closed as measured-and-falsified. | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
+| 16 | **Re-measure v8 on the PUBLISHED benchmarks** — **PUBLICATION STEP 1**; ✅ **DONE 15 Sep — MEHDIE (§97) and the cross-script pair validation (§99)**. ⚠ This row said "cross-script outstanding" for several hours after §99 measured it — the section was written and the table it feeds was not. | 🛑 **This, not #280, is what blocks the arXiv revision.** The paper's evaluation is the MEHDIE Hebrew–Arabic benchmark (R@1/R@5/R@10/MRR) and the 11,723-pair cross-script validation. We hold results for **v6, v7 and the PanPhon192 ablation — and none for v8**. The v8 campaign measured *different* bands (order, overlap_gap, vs_traditional), chosen to decide a deployment rather than to update a paper, so a revision today could assert v8 is better and not fill in the row. MEHDIE is also the strongest evidence in the paper because it is **independent and not in training data**. |
+| 17 | **place#281 — the candidate-pool ceiling** ✅ **CLOSED 15 Sep as NOT PLANNED** (§102, §105, §106): four of five levers closed by measurement; the fifth is the model and no retrain is scheduled. place#280 closed as measured-and-falsified. | The `(r1, r1 − r_k)` study for the phonetic term (§94, §95). ⚠ **Deliberately NOT a blocker for 9, 14 or 16**: it changes `knn_pass_quality`, a SERVING-path score, while every number the paper reports is MODEL-level — it would not move a single published figure. Its outcome is genuinely uncertain (§95 measured the obvious approach failing). ⚠ But its labelled feature capture **must happen before item 8** drops the v7 index, or the A/B stops being reproducible; capture the data even if the study waits. |
 | 15 | ~~**Align the interpreter behind script detection**~~ | 🛑 **WITHDRAWN 15 Sep — the premise was my measurement error (§96). There is no skew: gateway and index writer are both unicodedata 14.0.0.** | ✅ void |
 | 14 | **Update the arXiv article** (added by SG, 15 Sep) — **PUBLICATION STEP 3** | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
 
@@ -12786,3 +12786,126 @@ the space — v8 improved retrieval while discrimination AUC *fell* 0.9324 → 0
 v8 moved the ceiling +0.0116 while moving recall@10 +0.0283: **a retrain that
 improves ordering is not one that improves reach, and this issue is about reach.**
 
+
+---
+
+## 106. ✅ THE v8 CAMPAIGN'S IRREVERSIBLE STEPS — v7 dropped, staging stopped, place#281 closed
+
+SG, 15 Sep: *"Drop the v7 index and stop staging / A model change is not planned
+any time soon, so close #281."* All three done. This section records what was
+checked before the one step that cannot be undone, and two things that answered
+confidently while knowing nothing.
+
+### 1. Dropping `toponyms_undscript-20260906t160000z`
+
+Four preconditions, all checked **before** the `DELETE`, because afterwards there
+is nothing to check:
+
+```
+alias:   toponyms -> toponyms_v8-20260914t120000z     (v8, not v7)
+other aliases on the v7 index: {}                     (nothing else reaches it)
+snapshot promote-undscript-20260906t160000z: SUCCESS
+   indices ['toponyms_undscript-20260906t160000z']    (exactly this index)
+   shards  {'total': 4, 'failed': 0, 'successful': 4}
+   size    100.1 GiB across 887 files                 (consistent with the live index)
+```
+
+⚠ **The size check is the one that is easy to skip.** A snapshot can be SUCCESS,
+name the right index, report 4/4 shards — and hold almost nothing, which is the
+§69 failure. 100.1 GiB against a 100 GB live index is what makes the SUCCESS mean
+something. A restorable rollback still exists; only the online copy is gone.
+
+Item 17's labelled feature capture had already completed, which is what released
+the interlock in §86 ("its feature capture must happen before item 8"). The v7
+index stopped being the rollback the moment the A/B data was on disk.
+
+### 2. 🛑 A DISK READING THAT WAS BYTE-IDENTICAL TO THE ONE BEFORE THE DELETE
+
+The post-delete check, issued ~5 s after the `DELETE` returned
+`{"acknowledged":true}`, printed **`854.4gb used, 169.5gb avail, 83%`** — digit
+for digit what the pre-delete check had printed. Read at face value that says the
+delete freed nothing, which for a 100 GB index means it did not really happen.
+
+It had happened. Re-read a minute later:
+
+```
+before   854.4gb used   169.5gb avail   83%
+after    754.4gb used   269.5gb avail   73%     (df agrees: 755G / 270G)
+```
+
+Exactly 100 GB. **`_cat/allocation` reports a cached filesystem stat, and shard
+directories are reaped asynchronously** — so for a window after an acknowledged
+delete the cluster truthfully reports the old figure. ⚠ The trap is that an
+unchanged number *looks like* a measurement, not like a missing one, and the
+obvious reaction — re-issue the delete, or conclude the alias was wrong — is
+worse than waiting. **Read a freed-space figure twice, and prefer `df`.**
+
+### 3. 🛑 `squeue` ON pitt RETURNED NOTHING BECAUSE SLURM IS NOT INSTALLED THERE
+
+Checking the staging job before cancelling it, `squeue -M htc -u stg135` on `pitt`
+printed nothing at all — which reads as "the job is already gone". It was running:
+
+```
+which squeue sacct   ->   no squeue in (...), no sacct in (...)
+```
+
+`pitt` is the ES VM and has **no Slurm client binaries**. The command failed, and
+`2>/dev/null` — mine — turned a failure into an empty result set. From crc0 the
+same question answered `24073245 es-staging RUNNING 1-00:56:29 smp-n223`.
+
+⚠ This is an absence with more than one cause, and note that the prohibition I was respecting is what routed me to the
+wrong host: *don't run jobs on login nodes* is about **compute**, and a `squeue`
+read is not compute. **Suppressing stderr on a query whose emptiness you intend to
+act on converts "I cannot ask" into "the answer is no".**
+
+### 4. Stopping staging
+
+`es.sh -staging-stop` on crc0 (it needs `scancel`/`sacct`, which pitt lacks).
+Before cancelling, confirmed nothing of value dies with the node's ephemeral NVMe:
+both snapshot repos are on persistent `/ix1`, and
+`v8-toponyms_v8-20260914t120000z_20260914_200402` is SUCCESS, 4/4 shards.
+
+The script's own verification loop waits for the job to leave RUNNING/PENDING/
+COMPLETING — an **absence** test — so it was confirmed independently against a
+positive terminal state:
+
+```
+24073245 ... CANCELLED by 160527   Elapsed 1-00:57:19   End 2026-09-15T12:07:03
+```
+
+(`sacct` gives a terminal state and an end time; `squeue` still showed
+`COMPLETING` during the epilogue, which is why the absence test alone would have
+been racy on a slower teardown.) The info file is gone and the job is really dead, in that order — the
+11 Sep failure recorded in `es.sh`'s own comment (job 23995748) was the
+opposite: `scancel ""` did nothing, `|| true` swallowed it, and the info file was
+deleted while the instance kept running, orphaned because the only record of how
+to reach it had just been removed.
+
+### 5. place#281 closed as NOT PLANNED
+
+Not as unactionable — the distinction is the whole content of the closing comment.
+Four of five levers were closed by measurement (§102, §105): approximation costs
+nothing, dedup is dead, the multi-form passes are the largest effect and already
+ship, and the lexical tiers do not extend reach. The fifth is the model, and no
+retrain is scheduled.
+
+Three constraints are recorded **on the issue**, not only here, because that is
+where the next person will look before pulling lever 4:
+
+1. a retrain that improves ordering is not one that improves reach;
+2. the loss is concentrated in hard-historic (4.2% at k=200 vs 44.8% cross-script),
+   so the training target is a slice, not the corpus;
+3. **recall must not be bought by flattening the space** — v8 raised recall while
+   discrimination AUC *fell* 0.9324 → 0.9270, so any future attempt needs the AUC
+   as a **gate**, not a footnote.
+
+### What the forward plan now has left
+
+| # | item | state |
+|---|---|---|
+| 5 | browser v8 encoder | whg3 deployed at `aa70a1891`; **ours is done** |
+| 6 | re-point training-pair selection off production | guarded, source still unchosen — **blocks the next training-data run, nothing else** |
+| 9 | `hf/` half of the publication | repo `hf/config.json` is still v7; the Hub upload needs SG's credentials |
+| 14 | arXiv revision | **the only substantive item left**, and it is now unblocked: DOI `10.5281/zenodo.22767194`, MEHDIE (§97), cross-script (§99), int8 (§91) |
+
+Everything else in §86 is ✅ or void.

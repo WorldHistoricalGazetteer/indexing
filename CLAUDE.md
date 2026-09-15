@@ -740,12 +740,21 @@ sbatch processing/es_staging.sbatch
   ES backend. **Always query the ALIAS (`places` / `toponyms`), never a dated
   name** — the example above does, deliberately.
 
-  Index names are dated and the generation moves. **Verified live 6 Sep 2026:**
+  Index names are dated and the generation moves. **Verified live 15 Sep 2026:**
 
   | alias | concrete index | built |
   |-------|----------------|-------|
   | `places` | `places_h3ccode-20260805t120000z` | created 2026-08-06, promoted 6 Aug |
-  | `toponyms` | `toponyms_undscript-20260906t160000z` | promoted 6 Sep 2026 |
+  | `toponyms` | `toponyms_v8-20260914t120000z` | promoted 15 Sep 2026 — Symphonym **v8**, 54.1 GB, **no `panphon_embedding`** |
+
+  🛑 **`toponyms_undscript-20260906t160000z` NO LONGER EXISTS** — deleted 15 Sep
+  once v8 was serving and the A/B capture was done (plan-symphonym-v8 §106). A
+  SUCCESS snapshot remains in `staging_repo` if it is ever needed back.
+  ⚠ **The v8 index carries NO `panphon_embedding` field.** Anything that KNNs over
+  it — `phonetics/extraction/es_knn_helper.py`, and through it the training-pair
+  generator — must read the rebuild's own index, its snapshot, or the DuckDB, not
+  production. A preflight now refuses rather than returning `[]`, which is what it
+  did silently before.
 
   ⚠ **The asymmetry is correct, not a half-finished swap.** There is no
   `toponyms_h3ccode-*`: the `h3ccode` run rebuilt **places only** — H3 is a
