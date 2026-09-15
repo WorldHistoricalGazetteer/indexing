@@ -11645,18 +11645,18 @@ commit as the work, not afterwards.**
 | 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ✅ **DONE 15 Sep** (§88) — no recalibration needed; one real bug found |
 | 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ✅ **DONE 15 Sep** (§89) — tiers unchanged (they are model-independent); the stale v7 evidence in `knn_pass_quality` replaced |
 | 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ✅ **ASSESSED 15 Sep** (§90) — half the premise is confirmed, the layer still stays; **recommend NO removal** |
-| 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | ⏳ |
+| 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | 🔶 **MITIGATED 15 Sep** (§91) — the live bug is closed server-side; the ONNX export is unblocked and outstanding |
 
 ### Added — necessary, and not on the original list
 
 | # | item | why |
 |---|---|---|
-| 6 | **Re-point training-pair selection off production** | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
+| 6 | **Re-point training-pair selection off production** ✅ **GUARDED 15 Sep** (`2fcc24e`) — `ESKNNHelper` now refuses rather than returning `[]`; choosing the source is still open | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
 | 7 | **Recheck `confidence` calibration end-to-end** | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
 | 8 | **Drop `toponyms_undscript-20260906t160000z`** — but only after 1–5 are exercised | it is the rollback. Returns ~100 GB of /vast. |
 | 9 | **Publish v8 to `hf/`** | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. |
-| 10 | **Verify int8 vs fp32** | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
-| 11 | **Send whg3 its handover** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
+| 10 | **Verify int8 vs fp32** ✅ **DONE 15 Sep** (§91) — costs nothing measurable | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
+| 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** or document `--no-cache` in `es.sh` | it taxes every post-retrain compute 11×; the next person will not know. |
 | 14 | **Update the arXiv article** (added by SG, 15 Sep) | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
@@ -11879,4 +11879,65 @@ be taken deliberately with item 7, not folded into a cleanup.
 sorting by `(score, place_id)` is what makes offset pagination consistent (a
 larger pool is a superset whose leading slice is identical). It is structural,
 not model-compensating.
+
+---
+
+## 91. 🛑 THE SWAP BROKE RECONCILE FOR BROWSER CLIENTS, AND WE DID NOT FIND IT — whg3 DID
+
+§87 recorded the swap as clean because the gateway and the index moved together.
+**It was not clean.** whg3, asked only for an ONNX signature, checked the claim
+instead of relaying it and found that *the browser's vector does not stay in the
+browser*:
+
+```
+  reconciliation.js:8270   q.embedding = embByKey[key]
+  reconciliation.js:8281   q.variant_vectors = vecs
+  api/crc_client.py:343    body["query_vector"] = list(embedding)
+```
+
+It is **default-on** (`reconciliation.js:8602`), and the same ONNX blob is on
+`origin/main`, so this was production. From 02:56 EDT every reconcile query
+carrying a client vector was matching **v7 query vectors against v8 document
+vectors** — arbitrary rankings, no error anywhere.
+
+⚠ **§85's own warning named this exact failure and I applied it only to the
+gateway.** "A v7 gateway against a v8 index is not degraded, it is noise" — the
+same sentence is true of any client that embeds, and the reconcile API accepts
+one. *Reasoning about the component you are changing is not the same as
+reasoning about everything that feeds it.*
+
+### The fix: the default is now distrust (`fbf2ce8`, live 03:56 EDT)
+
+`build_knn_query` accepted any supplied vector with **no provenance check at
+all**. `/api/reconcile` now takes `query_vector_model`, and a client vector is
+used only when it names the generation the server has loaded. Unstated or
+mismatched → discarded with a warning, embedded server-side. Clients are not
+upgraded in lockstep with servers, so the cost of being wrong is CPU, not
+silence. Verified live: a v7-declared garbage vector was discarded and the query
+still answered correctly.
+
+⚠ This silently disables whg3's embed offload until they ship v8 and send
+`query_vector_model: "v8"` — deliberately, and they have been told.
+
+### ✅ Item 10 in the same pass: int8 costs nothing measurable
+
+Every band in §80/§87 was measured on fp32 while production serves int8, so v8's
+whole point had never been checked on the served vectors. `v8_suite.py --int8`
+applies the serving quantisation in `_embed` and changes nothing else:
+
+```
+  permutation   5.0 -> 5.0      typo_1_swap  98.4 -> 98.4
+  recall        95.2 -> 95.1    separability -0.0574 -> -0.0558
+  historic_hard 0.5179 -> 0.519 effective rank 11.26 -> 11.27
+```
+
+**The anagram suppression survives quantisation exactly.**
+
+### And the script vocabulary is purely additive, which shrinks item 5
+
+All 20 v7 script names keep their exact v7 ids; **zero moved**; 17 are appended
+at 20-36. So a browser that cannot name a new script still falls through to
+`OTHER`=19 exactly as under v7 — lost upside, not corruption. Checked rather
+than assumed, and it turns the JS script-detection work from a blocker into a
+follow-up.
 
