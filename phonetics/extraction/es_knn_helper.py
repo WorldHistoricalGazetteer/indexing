@@ -32,6 +32,47 @@ class ESKNNHelper:
         self._cache_order: List[str] = []
         self._total_requests = 0
         self._failed_requests = 0
+        self._preflighted = False
+
+    def assert_panphon_present(self) -> int:
+        """Refuse to run against an index with no ``panphon_embedding``.
+
+        🛑 THE SERVING INDEX NO LONGER CARRIES THIS FIELD. Every KNN in this
+        class runs over ``panphon_embedding``, and ES answers a KNN on an absent
+        field with **zero hits, not an error** — so ``find_similar_in_place``
+        returns ``[]`` for every place and training-pair selection is inert while
+        reporting complete success. That exact regression is on record: it once
+        left production carrying 0 of 73.5M, and nothing downstream could tell.
+
+        Since 15 Sep 2026 it is not a bug but a deliberate choice —
+        ``update_es index --no-panphon`` omits the field from the SERVING index,
+        because the gateway never reads it and it cost ~22 GB. The field still
+        exists where it belongs:
+
+          * the rebuild's own toponyms index (what this class should query), or
+            a restore of snapshot ``reextract-ipafix-20260910t175025z``;
+          * ``panphon_features`` in the run's DuckDB, from which
+            ``_embedding_from_packed_features`` reconstructs the vector.
+
+        So the danger is no longer "someone broke the carry-forward" but "someone
+        pointed this at production", which looks identical and is now the
+        DEFAULT, because ``index`` defaults to ``toponyms``.
+        """
+        n = self.es.count(index=self.index,
+                          query={"exists": {"field": "panphon_embedding"}})["count"]
+        if n == 0:
+            total = self.es.count(index=self.index)["count"]
+            raise RuntimeError(
+                f"{self.index!r} holds {total:,} documents and NONE carry "
+                f"panphon_embedding, which every KNN in this class queries. ES "
+                f"returns zero hits rather than an error for that, so this would "
+                f"have selected no training pairs at all while reporting success.\n"
+                f"  The serving index omits the field deliberately (--no-panphon).\n"
+                f"  Point --index at the rebuild's toponyms index, or restore "
+                f"snapshot 'reextract-ipafix-20260910t175025z' into staging, or "
+                f"source pairs from the DuckDB's panphon_features.")
+        self._preflighted = True
+        return n
 
     def _record_request(self, success: bool):
         self._total_requests += 1
@@ -90,6 +131,14 @@ class ESKNNHelper:
             toponym_ids: List[str],
     ) -> List[List[str]]:
         """Cluster toponyms within a place using HDBSCAN."""
+        # Preflight ONCE, on the first real call. Cheap (one count), and it is the
+        # difference between a run that stops with a reason and a run that
+        # returns [] for every place and calls that success — see
+        # assert_panphon_present. Deliberately here rather than in __init__ so
+        # constructing a helper (tests, introspection) costs no ES round trip.
+        if not self._preflighted:
+            self.assert_panphon_present()
+
         n = len(toponym_ids)
 
         if n == 0:

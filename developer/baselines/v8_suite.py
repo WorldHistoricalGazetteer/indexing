@@ -214,12 +214,29 @@ def _load_model(weights: Path, vocab_dir: Path, device: str):
     return m, {**dims, "vocab_counts": counts}
 
 
+#: When true, `_embed` reproduces the SERVING path's int8 quantisation before any
+#: band is computed. Every band in sections 80/87 was measured on fp32 weights
+#: while production stores and queries int8 — so the order-sensitivity gain, the
+#: whole point of v8, had never been confirmed on the vectors actually served.
+#: Set by `run --int8`; nothing else changes, so the two runs are comparable.
+QUANTISE_INT8 = False
+
+
 def _embed(model, names):
     import numpy as np
     V = model.batch_embed([(n, "und") for n in names])
     V = np.asarray(V, dtype="float32")
     norms = np.linalg.norm(V, axis=1, keepdims=True)
-    return V / np.where(norms == 0, 1.0, norms)
+    V = V / np.where(norms == 0, 1.0, norms)
+    if QUANTISE_INT8:
+        # EXACTLY the serving arithmetic: gateway.symphonym.quantize_to_byte and
+        # update_es.quantize_embeddings_to_bytes both round(x * 127) into int8 on
+        # an already L2-normalised vector. Re-normalise afterwards, because
+        # rounding moves the norm and every band compares cosines.
+        V = np.round(V * 127.0).astype(np.int8).astype("float32")
+        norms = np.linalg.norm(V, axis=1, keepdims=True)
+        V = V / np.where(norms == 0, 1.0, norms)
+    return V
 
 
 def _perm(text, rng, min_disp=0.5, tries=25):
@@ -627,7 +644,17 @@ if __name__ == "__main__":
                    help="orthographic similarity below which a historic pair is 'hard'")
     r.add_argument("--n-distract", type=int, default=20,
                    help="impostors per query in the vs-traditional ranking task")
+    r.add_argument("--int8", action="store_true",
+                   help="Quantise embeddings to int8 before scoring, exactly as "
+                        "the serving path does. Every band was otherwise measured "
+                        "on fp32 weights that production never uses.")
     r.set_defaults(func=run)
 
     a = ap.parse_args()
+    if getattr(a, "int8", False):
+        # Module level: a plain assignment already rebinds the module global that
+        # `_embed` reads at call time. A `global` statement here is a SyntaxError,
+        # because the name is assigned earlier in this same module scope.
+        QUANTISE_INT8 = True
+        print("[int8] embeddings will be quantised as the serving path does")
     a.func(a)
