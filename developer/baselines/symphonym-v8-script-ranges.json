@@ -443,9 +443,7 @@
  },
  "correction_2026_09_15": "An earlier version of this note said 'there is no Unicode version behind it', full stop. That is TRUE of the ranges and FALSE of script detection as a whole, and whg3-97 caught it. detect_script decides which characters it counts at all via str.isalpha() (script_detection.py:451), which is resolved by the RUNNING INTERPRETER's Unicode database. Importing no unicodedata does not remove that dependency, it makes it invisible. A baseline file that misstates its own invariant is worse than one with no note, because the next person trusts it and stops pinning.",
  "interpreter_skew_MEASURED_2026_09_15": {
-  "gateway_embeds_QUERIES_with": "Python 3.9.25 / unicodedata 13.0.0",
-  "v8_index_embeddings_computed_with": "Python 3.11.13 / unicodedata 14.0.0",
-  "closed_by_the_v8_re_embed": false,
-  "detail": "The v8 re-embed did NOT close this gap; it reproduced it. 515 codepoints are alphabetic in 14.0.0 but not 13.0.0 (Cypro-Minoan, Tangsa, Vithkuqi, Latin Ext-G, Arabic Extended-B, Toto, Ethiopic Ext-B, Old Uyghur). For a name built from those, index-time detection sees its real script and query-time detection sees no alphabetic characters at all and returns OTHER \u2014 different conditioning, so the query vector cannot match its own document. Not urgent (whg3 sampled 5,307 prod toponyms and found none), but the gateway is not aligned with the corpus it queries."
- }
+  "WITHDRAWN": "There is no skew. See correction_2 below."
+ },
+ "correction_2_2026_09_15": "The 'interpreter skew' recorded here earlier was MY MEASUREMENT ERROR and is withdrawn. I ran `ssh pitt python3` \u2014 the SYSTEM interpreter, 3.9.25 / unicodedata 13.0.0 \u2014 and reported it as the gateway's. The gateway runs under /home/gazetteer/miniconda/envs/whg/bin/python: Python 3.11.13 / unicodedata 14.0.0, the SAME as the index writer. Two independent proofs: gateway_ctl.sh activates that conda env before `python -m gateway`, and the running code contains `def model_version() -> str | None`, which is a SyntaxError on 3.9 \u2014 the gateway restarted and served after that deploy. Corpus impact was in any case measured at 0 of 73,479,069 toponyms containing any of the 515 disputed codepoints. whg3's 13.0.0 pin rests on the same wrong premise and should be revisited on their side."
 }

@@ -11659,7 +11659,7 @@ commit as the work, not afterwards.**
 | 11 | **Send whg3 its handover** ✅ **DONE 15 Sep** | checkpoint path, the three vocab md5s, canonical-block sha256 `74fb6176…`, embed-run identifiers. Outstanding since before the retrain. |
 | 12 | **Stop staging job 24073245** | 6-day QOS, holding an smp node, no longer needed once 1–5 are done. |
 | 13 | **Fix the embedding cache (§82)** ✅ **DONE 15 Sep** — `--no-cache` is now the default in `es -update-embeddings`, `SYMPHONYM_USE_CACHE=1` restores it | it taxes every post-retrain compute 11×; the next person will not know. |
-| 15 | **Align the interpreter behind script detection** | **MEASURED 15 Sep, and the v8 re-embed did NOT close it — it reproduced it.** The gateway embeds QUERIES on Python 3.9.25 / unicodedata **13.0.0**; the v8 index embeddings were computed on Python 3.11.13 / unicodedata **14.0.0**. `detect_script` gates on `str.isalpha()` (`script_detection.py:451`), which the interpreter resolves — so the 515 codepoints alphabetic in 14.0.0 but not 13.0.0 (Cypro-Minoan, Tangsa, Vithkuqi, Latin Ext-G, Arabic Extended-B, Toto, Ethiopic Ext-B, Old Uyghur) get their real script at index time and `OTHER` at query time. Different conditioning, so such a name cannot match its own document. Not urgent (0 in 5,307 sampled prod toponyms, whg3) and not closable by re-embedding alone — either align the interpreters or stop depending on `isalpha()` by deriving "is this a letter we count" from the range table itself, which would remove the dependency rather than pin it. ⚠ Found by whg3-97 correcting a claim I had committed into a baseline file. |
+| 15 | ~~**Align the interpreter behind script detection**~~ | 🛑 **WITHDRAWN 15 Sep — the premise was my measurement error (§96). There is no skew: gateway and index writer are both unicodedata 14.0.0.** | ✅ void |
 | 14 | **Update the arXiv article** (added by SG, 15 Sep) | `arXiv:2601.06932` (doi `10.48550/arXiv.2601.06932`) describes **v7**, and `hf/README.md` cites it alongside the v7 Zenodo dataset `10.5281/zenodo.18682017`. Every headline number in it — ordering, cross-script recall, the Chinese behaviour — is superseded by §80/§87. ⚠ Two of this campaign's findings are *corrections to published claims*, not just improvements: v7 learned Chinese from Japanese readings (§9) and letter order barely counted (§10). A revision therefore has to say what was wrong, not only what is new. Needs: a v8 Zenodo deposit to cite (see 9), and the int8-vs-fp32 numbers (10) so the paper reports what is actually served. |
 
 ⚠ **Sequencing that matters**: 6 must land before any training-data run, 7 before
@@ -12205,4 +12205,59 @@ deliberately with a study, if at all.
 ⚠ *Recorded mainly so the next person does not "fix" the obvious miscalibration.*
 The mapping really is nine-tenths wasted, it really does look like free signal,
 and tightening it really would delete hard cross-script matches.
+
+---
+
+## 96. 🛑 ITEM 15 IS WITHDRAWN — I MEASURED THE WRONG INTERPRETER
+
+§15 claimed the gateway embeds queries on unicodedata **13.0.0** while the index
+was written on **14.0.0**, and I called it a standing defect that re-embedding
+could never close. **It does not exist.**
+
+```
+  what I measured   ssh pitt python3                       3.9.25   unidata 13.0.0
+  what actually runs /home/gazetteer/miniconda/envs/whg    3.11.13  unidata 14.0.0
+  the index writer                                         3.11.13  unidata 14.0.0
+```
+
+I ran the **system** interpreter on the host and reported it as the service's.
+`gateway_ctl.sh` activates the `whg` conda env before `python -m gateway`.
+
+**Two independent proofs, because one measurement is what got me here:**
+
+1. That conda env's python reports 3.11.13 / 14.0.0.
+2. The running code contains `def model_version() -> str | None`, which is a
+   **SyntaxError on 3.9** — and the gateway restarted and served requests after
+   that deploy. It cannot be running 3.9.
+
+And the impact was zero regardless: **0 of 73,479,069** toponyms contain any of
+the 515 disputed codepoints — the whole corpus, not a sample. The diff is also
+one-directional (515 gained in 14.0.0, none lost).
+
+### ⚠ This is §83's own lesson, ignored by its author four hours later
+
+§83 records: *"the resolver's docstring is accurate about the code and misleading
+about production — read the deployed config, not the search order."* I wrote that
+after finding the gateway loads from `SYMPHONYM_MODEL_DIR` rather than the
+documented path. Then I asked "which Python does the gateway use?" and answered
+it by running `python3` on the host instead of asking the same question the same
+way. **Same service, same session, same class of error.**
+
+⚠ **It also felt like a confirmation.** whg3 had said the gateway was 13.0.0,
+sourced from an answer established on 5 Sep. My measurement agreed, so I stopped.
+*A measurement that confirms what you were told is the one that needs more
+scrutiny, not less* — agreement is precisely why you skip the second check.
+
+**Told whg3**: their 13.0.0 pin rests on the same wrong premise and should be
+revisited on their side. Since both interpreters are 14.0.0, JS/Python parity has
+one fewer moving part than either of us believed.
+
+### What survives
+
+Nothing about the skew. The *derived predicate* idea — deriving "is this a letter
+we count" from the range table instead of `str.isalpha()` — remains mildly
+attractive for removing an invisible dependency, but with no skew to fix it is
+now a tidiness argument against a real cost (it changes which characters are
+counted for existing names, so it implies measurement and a re-embed). **Not
+recommended.**
 
