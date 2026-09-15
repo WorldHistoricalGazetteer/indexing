@@ -11642,7 +11642,7 @@ commit as the work, not afterwards.**
 | # | item | why | status |
 |---|---|---|---|
 | 1 | **Swap** — alias + `SYMPHONYM_MODEL_DIR` + gateway restart | §85; one operation in two parts | ✅ **DONE 15 Sep 02:56 EDT** (§87) |
-| 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ⏳ |
+| 2 | **Check the clustering path** | `clustering.js` runs Union-Find in the browser over per-name `phon_emb` int8 vectors shipped by `include_embeddings`. Those are now v8 vectors; its thresholds were set against v7 | ✅ **DONE 15 Sep** (§88) — no recalibration needed; one real bug found |
 | 3 | **Retune `/api/reconcile`'s lexical tiers** | the tier ordering (exact 2.5 > near-miss+phonetic ≤1.75 > phonetic ≤1.0) was calibrated against **v7** score distributions | ⏳ |
 | 4 | **Simplify the v7 re-score/re-sort layer** | added to compensate for v7's poor ranking; v8's separability is 4× better (−0.2127 → −0.0574), so it should be removable | ⏳ |
 | 5 | **Upgrade the browser embedding implementation to v8** | Map your Data derives variants client-side; a v7 browser encoder against a v8 index is the same silent-noise failure as a v7 gateway | ⏳ |
@@ -11718,4 +11718,58 @@ change borderline outcomes without looking obviously wrong at either extreme.
 **Rollback, still exact**: alias back to `toponyms_undscript-20260906t160000z`,
 `SYMPHONYM_MODEL_DIR` back to `symphonym-v7-hf` (backup at
 `.env.local.bak-pre-v8-20260915T025435`), restart. Both v7 artefacts untouched.
+
+---
+
+## 88. ✅ ITEM 2 — THE CLUSTERING PARAMS DO NOT NEED REFITTING, AND THE MEASUREMENT SAYS SO
+
+The worry was reasonable: `clustering_params.json` is `"calibrated": true`,
+fitted by `clustering/calibrate_params.py --calibrate` against **v7** vectors,
+and the browser thresholds `tau_name = 0.75` / `theta_query = 0.21` are applied
+to a composite whose `name` term is `cosine_byte` between two places'
+representative int8 embeddings. Change the model, change the number.
+
+**Both generations were resident, so the same pairs could be scored under each** —
+a comparison that stops being possible the moment item 8 drops the old index.
+400 hard-linked positives, 400 random negatives, the SHIPPED `cosine_byte` and
+`_fetch_embeddings`, index name the only variable:
+
+```
+                            v7          v8      (tau_name = 0.75)
+  pos median            0.9989      0.9987
+  pos p5                0.0444      0.0873
+  pos >= tau_name        79.4%       80.2%
+  neg median            0.0821      0.0845
+  neg p95               0.5342      0.5612
+  neg >= tau_name         0.2%        0.0%
+  separation           -0.4898     -0.4738
+```
+
+**The name signal means the same thing under v8.** 79.4% → 80.2% of positives
+clear `tau_name`; negatives clearing it go 0.2% → 0.0%. And the other three
+fitted signals — spatial, temporal, type — **touch no embedding at all**, so the
+joint fit has no reason to move. No recalibration.
+
+⚠ *Why this is unsurprising in hindsight, which is not the same as predictable:*
+the pairs the clustering scores are mostly near-identical names, which both
+models place at ~1.0. v8's gains are in ordering and in cross-script recall —
+neither of which this signal exercises.
+
+⚠ **Caveat, stated rather than buried**: `_fetch_embeddings` takes the *first*
+attested toponym per place as representative, and hit order is not guaranteed
+identical across two indices, so a place may be represented by a different name
+in each. That adds noise which would *inflate* an apparent difference — and we
+measured almost none, so it bounds the true difference from above rather than
+hiding one.
+
+### What item 2 DID find: a wildcard that now spans two generations
+
+`signal_features.py` and `calibrate_params.py` read `toponyms_*`. Since the swap
+that matches **both** generations — 146,958,138 documents against the alias's
+73,479,069, every toponym twice, once with v7 vectors and once with v8. A
+calibration fitted across that mixture would not have failed; it would have
+produced plausible numbers from two models averaged together. Fixed to use the
+alias (`e97b285`) **before** the recalibration was attempted, which is the only
+reason it is a footnote. `places_*` was fixed in the same pass: harmless today
+with one places index, identical trap at the next places cutover.
 
