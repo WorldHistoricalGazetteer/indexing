@@ -311,6 +311,12 @@ def status() -> dict:
     state place#242 could not report at all, because the process was blocked in
     a syscall instead of running code that could describe itself.
     """
+    # Register THIS worker even when it has counted nothing. Without this a
+    # worker only appears in the aggregate once it increments, so a healthy
+    # service with no client vectors yet reports `workers_seen: 0` — which reads
+    # identically to "no workers are publishing" and reintroduces the ambiguity
+    # this aggregation exists to remove, one level up.
+    _publish_client_vector_stats()
     return {
         "loaded": _model is not None,
         "version": model_version(),
