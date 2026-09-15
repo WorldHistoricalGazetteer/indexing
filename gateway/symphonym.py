@@ -27,6 +27,21 @@ logger = logging.getLogger("gateway.symphonym")
 _model = None
 _model_version: str | None = None
 
+#: Standing signal, not a debugging aid. The version guard below fails SAFE — a
+#: client vector from the wrong generation is discarded and the query embedded
+#: server-side — and that failure is SILENT by design: correct results, no error.
+#: Which means the guard's own failure mode is the bug's failure mode. When a
+#: client ships a matched encoder but forgets to declare it, the offload stays
+#: off forever, the server quietly embeds every query, and nothing says the
+#: feature is doing nothing. A WARNING is findable once you suspect; a counter on
+#: /api/health is noticeable WITHOUT suspicion. Raised by whg3-97, who pointed
+#: out that this is the same class of failure as the one the guard exists to fix.
+_client_vector_stats: dict = {
+    "accepted": 0,          # vectors used: caller declared a matching generation
+    "discarded": 0,         # vectors dropped: unstated or mismatched generation
+    "last_client_model": None,   # what the most recent caller claimed
+}
+
 
 # ---------------------------------------------------------------------------
 # Bounded filesystem access (place#242)
@@ -236,9 +251,13 @@ def status() -> dict:
     """
     return {
         "loaded": _model is not None,
+        "version": model_version(),
         "unreachable_paths": list(_unreachable),
         "probes": [g.stats() for g in _PROBE_GUARDS.values()],
         "load": LOAD_GUARD.stats(),
+        # Sustained discards after a client is supposed to be declaring its
+        # model mean the embed offload is dead and nothing else will say so.
+        "client_vectors": dict(_client_vector_stats),
     }
 
 
@@ -373,13 +392,17 @@ def build_knn_query(
     # Callers that say nothing get a correct server-side embed and pay the CPU.
     if query_vector is not None:
         server = model_version()
+        _client_vector_stats["last_client_model"] = query_vector_model or None
         if not query_vector_model or not server or query_vector_model != server:
+            _client_vector_stats["discarded"] += 1
             logger.warning(
                 "discarding client query_vector: client model %r vs server %r — "
                 "embedding server-side instead (a cross-generation vector ranks "
                 "arbitrarily and raises nothing)",
                 query_vector_model or "<unstated>", server or "<unknown>")
             query_vector = None
+        else:
+            _client_vector_stats["accepted"] += 1
 
     if query_vector is None:
         query_vector = quantize_to_byte(embed(name, lang=lang))

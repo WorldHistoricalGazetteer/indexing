@@ -1,0 +1,444 @@
+{
+ "note": "Hard-coded codepoint ranges. This module imports NO unicodedata, so there is no Unicode version behind it \u2014 parity between Python and JS is parity between two literal tables.",
+ "script_id": {
+  "LATIN": 0,
+  "CYRILLIC": 1,
+  "GREEK": 2,
+  "ARABIC": 3,
+  "HEBREW": 4,
+  "DEVANAGARI": 5,
+  "BENGALI": 6,
+  "TAMIL": 7,
+  "TELUGU": 8,
+  "MALAYALAM": 9,
+  "KANNADA": 10,
+  "GUJARATI": 11,
+  "THAI": 12,
+  "GEORGIAN": 13,
+  "ARMENIAN": 14,
+  "HANGUL": 15,
+  "CJK": 16,
+  "HIRAGANA": 17,
+  "KATAKANA": 18,
+  "OTHER": 19,
+  "MYANMAR": 20,
+  "GURMUKHI": 21,
+  "TIBETAN": 22,
+  "SINHALA": 23,
+  "KHMER": 24,
+  "OL_CHIKI": 25,
+  "TIFINAGH": 26,
+  "ETHIOPIC": 27,
+  "ORIYA": 28,
+  "LAO": 29,
+  "MONGOLIAN": 30,
+  "CANADIAN_ABORIGINAL": 31,
+  "BOPOMOFO": 32,
+  "THAANA": 33,
+  "NKO": 34,
+  "SYRIAC": 35,
+  "COPTIC": 36
+ },
+ "ranges": {
+  "LATIN": [
+   [
+    "0x0000",
+    "0x007F"
+   ],
+   [
+    "0x0080",
+    "0x00FF"
+   ],
+   [
+    "0x0100",
+    "0x017F"
+   ],
+   [
+    "0x0180",
+    "0x024F"
+   ],
+   [
+    "0x0250",
+    "0x02AF"
+   ],
+   [
+    "0x1D00",
+    "0x1D7F"
+   ],
+   [
+    "0x1E00",
+    "0x1EFF"
+   ],
+   [
+    "0x2C60",
+    "0x2C7F"
+   ],
+   [
+    "0xA720",
+    "0xA7FF"
+   ],
+   [
+    "0xAB30",
+    "0xAB6F"
+   ]
+  ],
+  "CYRILLIC": [
+   [
+    "0x0400",
+    "0x04FF"
+   ],
+   [
+    "0x0500",
+    "0x052F"
+   ],
+   [
+    "0x2DE0",
+    "0x2DFF"
+   ],
+   [
+    "0xA640",
+    "0xA69F"
+   ]
+  ],
+  "GREEK": [
+   [
+    "0x0370",
+    "0x03FF"
+   ],
+   [
+    "0x1F00",
+    "0x1FFF"
+   ]
+  ],
+  "ARABIC": [
+   [
+    "0x0600",
+    "0x06FF"
+   ],
+   [
+    "0x0750",
+    "0x077F"
+   ],
+   [
+    "0x08A0",
+    "0x08FF"
+   ],
+   [
+    "0xFB50",
+    "0xFDFF"
+   ],
+   [
+    "0xFE70",
+    "0xFEFF"
+   ]
+  ],
+  "HEBREW": [
+   [
+    "0x0590",
+    "0x05FF"
+   ],
+   [
+    "0xFB00",
+    "0xFB4F"
+   ]
+  ],
+  "DEVANAGARI": [
+   [
+    "0x0900",
+    "0x097F"
+   ],
+   [
+    "0xA8E0",
+    "0xA8FF"
+   ]
+  ],
+  "BENGALI": [
+   [
+    "0x0980",
+    "0x09FF"
+   ]
+  ],
+  "TAMIL": [
+   [
+    "0x0B80",
+    "0x0BFF"
+   ]
+  ],
+  "TELUGU": [
+   [
+    "0x0C00",
+    "0x0C7F"
+   ]
+  ],
+  "MALAYALAM": [
+   [
+    "0x0D00",
+    "0x0D7F"
+   ]
+  ],
+  "KANNADA": [
+   [
+    "0x0C80",
+    "0x0CFF"
+   ]
+  ],
+  "GUJARATI": [
+   [
+    "0x0A80",
+    "0x0AFF"
+   ]
+  ],
+  "THAI": [
+   [
+    "0x0E00",
+    "0x0E7F"
+   ]
+  ],
+  "GEORGIAN": [
+   [
+    "0x10A0",
+    "0x10FF"
+   ],
+   [
+    "0x2D00",
+    "0x2D2F"
+   ]
+  ],
+  "ARMENIAN": [
+   [
+    "0x0530",
+    "0x058F"
+   ],
+   [
+    "0xFB00",
+    "0xFB17"
+   ]
+  ],
+  "HANGUL": [
+   [
+    "0xAC00",
+    "0xD7AF"
+   ],
+   [
+    "0x1100",
+    "0x11FF"
+   ],
+   [
+    "0x3130",
+    "0x318F"
+   ],
+   [
+    "0xA960",
+    "0xA97F"
+   ],
+   [
+    "0xD7B0",
+    "0xD7FF"
+   ]
+  ],
+  "CJK": [
+   [
+    "0x4E00",
+    "0x9FFF"
+   ],
+   [
+    "0x3400",
+    "0x4DBF"
+   ],
+   [
+    "0x20000",
+    "0x2A6DF"
+   ],
+   [
+    "0x2A700",
+    "0x2B73F"
+   ],
+   [
+    "0x2B740",
+    "0x2B81F"
+   ],
+   [
+    "0x2B820",
+    "0x2CEAF"
+   ],
+   [
+    "0x2CEB0",
+    "0x2EBEF"
+   ],
+   [
+    "0x30000",
+    "0x3134F"
+   ],
+   [
+    "0x3000",
+    "0x303F"
+   ],
+   [
+    "0xF900",
+    "0xFAFF"
+   ]
+  ],
+  "HIRAGANA": [
+   [
+    "0x3040",
+    "0x309F"
+   ],
+   [
+    "0x1B000",
+    "0x1B0FF"
+   ]
+  ],
+  "KATAKANA": [
+   [
+    "0x30A0",
+    "0x30FF"
+   ],
+   [
+    "0x31F0",
+    "0x31FF"
+   ],
+   [
+    "0xFF65",
+    "0xFF9F"
+   ]
+  ],
+  "MYANMAR": [
+   [
+    "0x1000",
+    "0x109F"
+   ],
+   [
+    "0xA9E0",
+    "0xA9FF"
+   ],
+   [
+    "0xAA60",
+    "0xAA7F"
+   ]
+  ],
+  "GURMUKHI": [
+   [
+    "0x0A00",
+    "0x0A7F"
+   ]
+  ],
+  "TIBETAN": [
+   [
+    "0x0F00",
+    "0x0FFF"
+   ]
+  ],
+  "SINHALA": [
+   [
+    "0x0D80",
+    "0x0DFF"
+   ]
+  ],
+  "KHMER": [
+   [
+    "0x1780",
+    "0x17FF"
+   ],
+   [
+    "0x19E0",
+    "0x19FF"
+   ]
+  ],
+  "OL_CHIKI": [
+   [
+    "0x1C50",
+    "0x1C7F"
+   ]
+  ],
+  "TIFINAGH": [
+   [
+    "0x2D30",
+    "0x2D7F"
+   ]
+  ],
+  "ETHIOPIC": [
+   [
+    "0x1200",
+    "0x137F"
+   ],
+   [
+    "0x1380",
+    "0x139F"
+   ],
+   [
+    "0x2D80",
+    "0x2DDF"
+   ],
+   [
+    "0xAB00",
+    "0xAB2F"
+   ]
+  ],
+  "ORIYA": [
+   [
+    "0x0B00",
+    "0x0B7F"
+   ]
+  ],
+  "LAO": [
+   [
+    "0x0E80",
+    "0x0EFF"
+   ]
+  ],
+  "MONGOLIAN": [
+   [
+    "0x1800",
+    "0x18AF"
+   ]
+  ],
+  "CANADIAN_ABORIGINAL": [
+   [
+    "0x1400",
+    "0x167F"
+   ],
+   [
+    "0x18B0",
+    "0x18FF"
+   ]
+  ],
+  "BOPOMOFO": [
+   [
+    "0x3100",
+    "0x312F"
+   ],
+   [
+    "0x31A0",
+    "0x31BF"
+   ]
+  ],
+  "THAANA": [
+   [
+    "0x0780",
+    "0x07BF"
+   ]
+  ],
+  "NKO": [
+   [
+    "0x07C0",
+    "0x07FF"
+   ]
+  ],
+  "SYRIAC": [
+   [
+    "0x0700",
+    "0x074F"
+   ],
+   [
+    "0x0860",
+    "0x086F"
+   ]
+  ],
+  "COPTIC": [
+   [
+    "0x2C80",
+    "0x2CFF"
+   ]
+  ]
+ }
+}
