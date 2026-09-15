@@ -11919,6 +11919,40 @@ still answered correctly.
 ⚠ This silently disables whg3's embed offload until they ship v8 and send
 `query_vector_model: "v8"` — deliberately, and they have been told.
 
+### ⚠ `variant_vectors` is a SECOND channel of client vectors, and whg3 made me check
+
+My report to them named only `query_vector`. They came back: the same request
+body carries `variant_vectors`, a list of client int8 vectors positionally
+aligned with `variants`, populated by the same v7 encoder — and *more* used, since
+Map your Data derives variants automatically rather than waiting for a user to
+opt in. **A guard covering only `query_vector` would have stopped half the
+bleeding.**
+
+Verified live rather than by reading the source (three garbage vectors declared
+`v7` in one request):
+
+```
+  discards +3   — one per pass carrying a client vector (primary + 2 variants)
+  variants_used: ['London', 'Londres']   — spellings survived
+  hits: Лондон 100.0, Лондон 100.0, London 100.0
+```
+
+**It was covered, by structure rather than foresight**: `reconcile.py` builds one
+list of passes — primary, client variants, gateway-derived forms — and all of
+them go through a single `_build_phonetic_knn` call, which is where
+`query_vector_model` was threaded. Had variants taken a separate path this would
+have been a half-fix that tested green.
+
+Their requirement that a discarded vector must not take its spelling with it is
+satisfied by construction: the guard sets the vector to `None`, which is already
+the "embed this one yourself" value, and the form lives in a different element of
+the tuple.
+
+⚠ *Two sessions each checked the other's claim instead of relaying it, and each
+check found something.* Theirs found this second channel; mine found that their
+script vocabulary was additive and not corrupting. Neither would have surfaced
+from a summary.
+
 ### ✅ Item 10 in the same pass: int8 costs nothing measurable
 
 Every band in §80/§87 was measured on fp32 while production serves int8, so v8's
