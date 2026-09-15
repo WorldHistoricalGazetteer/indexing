@@ -11652,7 +11652,7 @@ commit as the work, not afterwards.**
 | # | item | why |
 |---|---|---|
 | 6 | **Re-point training-pair selection off production** ✅ **GUARDED 15 Sep** (`2fcc24e`) — `ESKNNHelper` now refuses rather than returning `[]`; choosing the source is still open | `--no-panphon` means prod no longer carries `panphon_embedding`. `generator.py` → `ESKNNHelper.find_similar_in_place` KNNs over that field and returns `[]` — **silently, with no error** — when it is absent. It must read the rebuild's own index, its snapshot, or the DuckDB. This is the exact regression `run_index`'s docstring records; we have re-armed it deliberately and must disarm it before the next training-data run. |
-| 7 | **Recheck `confidence` calibration end-to-end** | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
+| 7 | **Recheck `confidence` calibration end-to-end** ✅ **DONE 15 Sep** (§94) — nothing crosses the auto-confirm floor; no recalibration | `knn_pass_quality = (cosine − 0.7)/0.3` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed against v7's cosine distribution. v8's is materially different. **Map your Data auto-confirms on these numbers**, so a shifted distribution changes what gets auto-accepted without anyone choosing that. Related to 3 but wider: it reaches whg3, not just the gateway. |
 | 8 | **Drop `toponyms_undscript-20260906t160000z`** — but only after 1–5 are exercised | it is the rollback. Returns ~100 GB of /vast. |
 | 9 | **Publish v8 to `hf/`** | `hf/model.safetensors` and `hf/config.json` are still v7 (Feb 2026). Item 5 likely depends on this. |
 | 10 | **Verify int8 vs fp32** ✅ **DONE 15 Sep** (§91) — costs nothing measurable | every band in §80 was measured on fp32 weights; serving quantises to int8. The order-sensitivity gain in particular has never been confirmed on the vectors actually served. |
@@ -12097,4 +12097,53 @@ forward.* I checked the vocabulary that governed the question I was asked, said
 so precisely, and the reassuring headline travelled further than the scope
 attached to it. A true statement about one of three files became, in the reading,
 a statement about the pairing.
+
+---
+
+## 94. ✅ ITEM 7 — AUTO-CONFIRM IS UNCHANGED, AND THE MEASUREMENT EXPOSED SOMETHING BETTER
+
+The worry: `knn_pass_quality` and whg3's `MIN_AUTO_CONFIDENCE = 30` were fixed
+against v7's cosine distribution, and **Map your Data auto-confirms on those
+numbers**. Both models and both indices were still resident, so each probe's v7
+vector went to the v7 index and its v8 vector to the v8 index — the two
+production configurations, not a mix — scored with the SHIPPED
+`knn_pass_quality` and `MAX_DISCOVERY_SCORE`.
+
+```
+                     v7 pts   v8 pts        (phonetic term only, floor = 30)
+  genuine  mean        23.4     23.4
+  genuine  max         23.5     23.5
+  junk     mean        21.8     21.8
+  junk     max         22.1     22.0
+```
+
+**Nothing crosses the floor under either model**, and no probe moved by more than
+0.6 points. Auto-confirm has not silently widened, which was the live risk. No
+recalibration.
+
+### 🛑 The finding underneath: v8's separability gain cannot reach this function
+
+Genuine 23.4 against junk 21.8 is a **1.6-point discriminator on a 23.5-point
+scale** — and it is the same 1.6 points under v7 and v8, despite v8 improving
+separability on the frozen test set fourfold (−0.2127 → −0.0574).
+
+The reason is structural. `knn_pass_quality` reads **the top-1 score of a KNN over
+the whole corpus**, and in 73.5M vectors the nearest neighbour of *anything* sits
+near cosine 1.0 — including `Zzzzblargh`, whose best hit scores 22.0 of a possible
+23.5. So the factor is measuring corpus density, not match quality, and a better
+model cannot move it. The docstring already said this factor is "honest but
+nearly inert in practice"; this is that claim confirmed under a model that should
+have improved it and did not.
+
+⚠ **So v8 bought a real improvement the serving path currently cannot spend.**
+The frozen test set says v8 separates genuine from junk far better than v7; the
+gateway's phonetic term cannot see that, because it asks a question whose answer
+is ~1.0 for every query. Anything that wants the gain has to compare against
+something other than the pass's own top hit — the k-th neighbour, or an absolute
+cosine, though §89 showed a plain absolute threshold still fails because the
+populations overlap.
+
+Not a defect and not urgent: the lexical tiers carry absolute quality today and
+do it correctly. Recorded because "v8 is better, so confidence is better" is the
+natural assumption and it is **false** — the improvement stops at the index.
 
