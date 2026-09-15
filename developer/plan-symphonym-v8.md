@@ -12587,6 +12587,14 @@ moving-target risk.** Target sha stays
 is amended in both files in one commit, with the sha updated, once whg3 reports
 the deploy landed.
 
+✅ **RESOLVED 15 Sep — the freeze is LIFTED and must not be read as still in
+force.** whg3 promoted to production (`aa70a1891`), the comment was corrected in
+both files, and the stamp moved **v1 `74fb6176…` → v2 `db9cefd5…`** (`2ae84f1`).
+The parity guard went to 36/82 in the same commit, and verifies against the
+production JS with **zero** unreachable codepoints where there were 3,168.
+⚠ *A hold recorded and not recorded as lifted keeps executing* — the reason this
+paragraph exists rather than a silent edit.
+
 ⚠ **And the golden fixture will not catch a botched port.** Its eight cases are
 Latin/Cyrillic/Arabic/CJK/Kana/Greek plus whitespace — none exercises the 17 new
 scripts, so they regenerate identically whether or not the ranges were ported.
@@ -12678,4 +12686,45 @@ forever. One writer per file, so no locking. Both scopes reported, `service`
 marked as the one to read, everything best-effort — a health endpoint must not
 fail because a counter could not be read. Verified with the case that matters: a
 dead worker's leftover file claiming 500/500 is ignored.
+
+---
+
+## 104. ⚠ A WITNESS PINNED TO A VERSION STOPS OBSERVING AT THE VERSION BUMP
+
+Bumping the canonical stamp `v1` → `v2` silently disabled one of whg3's two
+witnesses. Theirs matched on a hardcoded `# CANONICAL-BLOCK v1 sha256=`, so the
+regex found nothing, `declared` came back null, and the comparison was **skipped
+rather than failed**.
+
+🛑 **It stopped observing on precisely the event it exists to observe.** A version
+bump is exactly when you most want "does upstream's stamp still describe
+upstream's block" to run — and the version bump is what turned it off. Quietly,
+because *no stamp found* fell through to *nothing to compare* rather than to an
+error. Fixed on their side to `v\d+`, with both witnesses then proven to fire
+against a deliberately corrupted copy.
+
+**Checked on our side rather than assumed**: `tests/test_tokeniser_contract`
+matches on the sentinel plus `sha256=` with no version in the pattern, and
+**raises** when no stamp is found instead of skipping. The 30/30 pass immediately
+after the bump is the empirical confirmation. Sound, but by luck of construction
+rather than by anyone having considered this failure.
+
+⚠ The general form, and it is not about stamps: **a check keyed to a value that
+the change under test is expected to alter will disable itself at the moment of
+the change.** Version numbers, filenames, schema ids, index names, model
+generations. The tell is that the skip path and the pass path are
+indistinguishable from outside — §12's rule, arriving by a new route.
+
+### And the catch came from re-deriving a claim that was true
+
+whg3 verified my "comment-only" assertion. It held —
+`a08313d..2ae84f1` is 0 functional lines. **The verification found the dead
+witness anyway.** ⚠ *Checking a correct claim is not wasted work*: the value is in
+running the machinery, not in the claim turning out false.
+
+⚠ Their own first attempt reported MISMATCH on all three revisions, from getting
+the block region wrong (starting at the sha line rather than the BEGIN marker).
+They caught it because it contradicted a computation they had already run
+correctly — **a new result that disagrees with your own earlier verified one is
+evidence about the new code first.**
 
