@@ -5287,9 +5287,52 @@ checkable and was checked; **the PROVENANCE OF THE NUMBER was not visible in the
 argument, and nobody asked which rows it was measured over** — the same question
 this campaign has pressed on every other claim today.
 
-### ✅ THE RULE DRAFTS WORK — Myanmar 16.6% → 98.7%
+### ✅ THE RULE DRAFTS WORK — ⚠ ON RESIDUE. These are NOT usability figures.
 
-| mode | shipped | drafted |
+🛑 **THE NUMBERS IN THIS TABLE ANSWER "DID A RULE FIRE?", NOT "IS THE OUTPUT
+USABLE?" — and the correct figures are NOT in this repository.** They are in a
+hash-pinned PanPhon table in a comment on
+[place#251](https://github.com/WorldHistoricalGazetteer/place/issues/251)
+(1,500 real toponyms per script, inputs hash-pinned):
+
+*Denominator, which must travel with these figures: **1,500 real toponyms per
+script, inputs hash-pinned**. A usability number quoted without its population
+is the next substitution waiting to happen.*
+
+| mode | residue *(below)* | **PanPhon parsed (usable)** | was |
+|---|---|---|---|
+| `mya-Mymr` | ~~98.7%~~ | **62.7%** | 47.6% |
+| `sin-Sinh` | ~~100.0%~~ | **97.7%** | 82.0% |
+| `cmn-Bopo` | 100.0% residue | **99.8%** | 5.5% |
+
+**Myanmar is 62.7% usable, not 98.7% — a 36-point gap.** Its remaining ~37% is
+mostly the bare-modifier class (`ː` ×502, `ʰ` ×155) that a character map cannot
+express at all. ⚠ **`cmn-Bopo` is the proof the metric cannot be substituted:**
+at the time the section below was written it stood at **100.0% residue and 5.6%
+usable**. The draft later took it to 99.8% parsed — so both figures are true, of
+different moments, and neither licenses reading a residue number as a quality one.
+
+⚠ **Do not quote this table as evidence of transcription QUALITY.** Coverage and
+residue cannot express quality at all, **because a row with a WRONG transcription
+counts as covered** — see `mya-Mymr` `ှ → ʰ` below, which parses cleanly, passes
+every lint, and asserts aspiration where Burmese marks devoicing. **If a number
+is wanted, take a PanPhon-usability figure and carry its denominator.**
+
+⚠ **A mode-level figure is not a corpus figure.** `sin-Sinh` improving says
+nothing about Sinhala coverage: `si` is separately reported at **0.00% on every
+script including Latin** (as are `bo`, `pa`, `am`, `or`, `sat`). Set side by
+side, a reader takes the 0.00% for the corpus effect of the 71.7% → 100.0%.
+
+*(This cross-reference added 21 Sep 2026: the residue figures below were quoted
+into place#251 as usability evidence and withdrawn. The correcting table sat one
+comment away on the issue being commented on. Provenance does not travel with a
+number unless it is written beside it.)*
+
+🛑 **THE TABLE BELOW IS RESIDUE — "did a rule fire?", not "is it usable?".** For
+the usable figures and their denominator, read the top of this section; Myanmar's
+`98.7%` here is `62.7%` there. Do not quote this table on its own.
+
+| mode | shipped *(residue)* | drafted *(residue)* |
 |---|---|---|
 | `mya-Mymr` | 16.6% | **98.7%** |
 | `sin-Sinh` | 71.7% | **100.0%** |
