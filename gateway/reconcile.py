@@ -310,6 +310,13 @@ class CandidateHit(BaseModel):
     temporal_core: Optional[list[Optional[int]]] = None
     aat_ids: list[int] = []
     aat_paths: list[str] = []
+    # Source-vocabulary types as stored: {identifier, label, sourceLabel}.
+    # MUST be declared here or pydantic drops it silently on serialisation
+    # however faithfully the query fetched it (place#273). `aat_ids`/`aat_paths`
+    # above are the AAT projection and are 0% outside `tgn`, so they cannot
+    # stand in for this: the discriminating value (`wd Q3947` house,
+    # `gn S.CSTL`, `osm natural=water`) lives here and is on nearly every record.
+    types: list[dict] = []
     query_match: Optional[dict] = None
 
 
@@ -465,6 +472,7 @@ def _format_candidate(
         namespace=src.get("namespace", ""),
         geometries=geometries,
         links=src.get("links") or [],
+        types=[t for t in (src.get("types") or []) if isinstance(t, dict)],
         query_match=query_match,
         **(clustering or {}),
     )
@@ -801,6 +809,21 @@ async def reconcile_search(req: ReconcileRequest):
             types=_native_types(req.types),
             aat_types=_aat_types(req.types),
             clustering_fields=req.include_clustering_fields,
+            # place#273 — WITHOUT this, candidates carry no type at all, and
+            # 16.6% of *confident* accepted matches were lakes, airfields and
+            # war memorials. It is a RANKING failure, not a coverage one: in 5
+            # of 6 probed rows the correctly-typed settlement was already in
+            # the pool and lost to an identically-named non-settlement, because
+            # nothing downstream could tell them apart.
+            #
+            # `types` reached the response only when `include_clustering_fields`
+            # was set — an opt-in defaulting to false — so the ordinary
+            # reconcile caller never saw it.
+            #
+            # Deliberately `extra_source` rather than the shared base list:
+            # `build_places_filter` also serves /api/search, and widening every
+            # search hit's payload is a separate decision from fixing reconcile.
+            extra_source=["types"],
         )
         places_resp = await client.post(
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
