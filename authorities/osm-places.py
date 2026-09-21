@@ -36,8 +36,11 @@ QUEUE_SIZE = 12
 class ProgressTracker:
     def __init__(self, state_file):
         self.state_file = state_file
-        self.counts = {'node': 0, 'way': 0, 'relation': 0}
-        self.targets = {'node': 0, 'way': 0, 'relation': 0}
+        # 'area' is the place#256 polygon pass. It MUST be present here: the
+        # handler calls should_skip('area')/increment('area'), and these dicts
+        # are indexed directly, so a missing key is a KeyError mid-ingest.
+        self.counts = {'node': 0, 'way': 0, 'relation': 0, 'area': 0}
+        self.targets = {'node': 0, 'way': 0, 'relation': 0, 'area': 0}
         self.start_time = time.time()
         self.load_state()
 
@@ -47,7 +50,12 @@ class ProgressTracker:
             try:
                 with open(self.state_file, 'r') as f:
                     data = json.load(f)
-                    self.targets = data.get('counts', self.targets)
+                    # MERGE, never replace: a checkpoint written before
+                    # place#256 has no 'area' key, and assigning the loaded
+                    # dict wholesale would remove it again — a KeyError on
+                    # resume only, which is the run nobody tests.
+                    self.targets = {**self.targets,
+                                    **(data.get('counts') or {})}
                     print(f"RESUMING from checkpoint: {self.targets}")
             except Exception as e:
                 print(f"Warning: failed to read state file: {e}")
@@ -278,6 +286,59 @@ class OSMHandler(osmium.SimpleHandler):
         self.geom_errors = {'way': 0, 'relation': 0}
         self.geom_invalid = {'relation': 0}
         self.relation_geom_fallbacks = 0
+        # Way ids that osmium's area assembler turned into polygons. The way
+        # pass skips these so a closed area-way is never ALSO written as a
+        # LineString — see `area()` and `apply_file` (place#256).
+        self.area_way_ids = set()
+        self.candidates['area'] = 0
+        self.buffered['area'] = 0
+        self.tag_rejected['area'] = 0
+        self.geom_errors['area'] = 0
+
+    def area(self, a):
+        """Emit a polygon for a closed, area-tagged way (place#256).
+
+        🛑 THIS IS THE FIX FOR THE 10.76M WAY-POLYGON GAP. Every way used to be
+        built with ``create_linestring`` regardless of whether it bounded an
+        area, so a lake, park or landuse block became an open line: `has_geom`
+        true with no usable polygon, `h3_cover` collapsed to a single centroid
+        hex, and `containment=exact` silently degrading to a `repr_point` test.
+        The 10.5M polygons restored in July (place#145) were an in-place
+        augmentation pass, NOT a handler fix, so a re-ingest undid them.
+
+        ⚠ We do NOT decide whether a way is an area — osmium's assembler
+        already did, by emitting it as an ``Area``. Re-deriving that test here
+        would fork the definition, and it is subtle: a CLOSED way carrying
+        ``area=no`` (a loop canal, a ring road) is correctly NOT an area and
+        must stay a LineString. Verified on a fixture: of a closed
+        ``natural=water`` way, an open ``waterway=river`` and a closed
+        ``waterway=canal`` + ``area=no``, osmium emits exactly one Area.
+
+        ⚠ ``area.id`` is NOT the way id — osmium derives it as ``way_id * 2``
+        for a from-way area. Use ``orig_id()``, or every place_id is wrong.
+        """
+        if 'name' not in a.tags: return
+        if self.tracker.should_skip('area'): return
+        self.candidates['area'] += 1
+
+        # The source-specific tag gate is `process_tags` itself, deliberately:
+        # osm accepts 7 keys and ohm 13, and using the OSM set for OHM silently
+        # drops ~57k ways (place#145 OHM canary). Calling each script's own
+        # gate makes that impossible to get wrong here.
+        tags = process_tags(a.tags)
+        if tags:
+            try:
+                wkb = self.wkbfab.create_multipolygon(a)
+                geom = wkblib.loads(wkb, hex=False)
+                geo = mapping(geom)
+                self.buffer_callback(create_doc(a.orig_id(), 'way', tags, geo))
+                self.buffered['area'] += 1
+                self.area_way_ids.add(a.orig_id())
+            except Exception:
+                self.geom_errors['area'] += 1
+        else:
+            self.tag_rejected['area'] += 1
+        self.tracker.increment('area')
 
     def node(self, n):
         if not n.tags: return
@@ -295,6 +356,12 @@ class OSMHandler(osmium.SimpleHandler):
 
     def way(self, w):
         if 'name' not in w.tags: return
+
+        # Already polygonised by the area pass — writing a LineString now would
+        # append a SECOND staged row for the same place_id (the staged writer
+        # appends; it does not dedupe), leaving which geometry survives to
+        # depend on row order (place#256).
+        if w.id in self.area_way_ids: return
 
         if self.tracker.should_skip('way'): return
         self.candidates['way'] += 1
@@ -378,9 +445,41 @@ class OSMHandler(osmium.SimpleHandler):
         Signature keeps ``**_ignored`` so the call site's ``locations=True,
         idx='flex_mem'`` keeps working — locations are now requested below,
         where they belong.
+
+        TWO PASSES, and the order is load-bearing (place#256). Areas are
+        emitted by osmium only AFTER every way in the stream, so a single pass
+        cannot know at way-time whether a closed way is about to be
+        polygonised. Pass 1 collects the area way ids (and writes the
+        polygons); pass 2 then writes LineStrings for everything else, skipping
+        those ids. This mirrors ``processing/osm_way_area_geometry.py``, which
+        is the working reference and the pass that restored 10.5M polygons in
+        July.
+
+        ⚠ The alternative — emit both and let the later row win — was rejected:
+        ``write_staged_place_doc`` APPENDS, so both rows survive into
+        ``places.jsonl`` and which geometry reaches the index depends on row
+        ordering through four downstream stages. That is the implicit
+        dependency this repository keeps paying for.
+
+        ⚠ ``KeyFilter('name')`` is kept on BOTH passes. It does not break area
+        assembly: verified on a fixture whose member nodes are entirely
+        untagged, where the polygon still assembled — so the filter is applied
+        to the yielded stream, not to the location index. It remains a strict
+        superset of the real predicate, because an Area from a way inherits
+        that way's tags, and ``process_tags`` rejects anything without a name.
         """
+        # Pass 1 — area assembly. Closed, area-tagged ways become polygons.
+        fp_areas = (osmium.FileProcessor(path)
+                    .with_locations()   # default storage IS 'flex_mem'
+                    .with_areas()
+                    .with_filter(osmium.filter.KeyFilter('name')))
+        for obj in fp_areas:
+            if isinstance(obj, osmium.osm.Area) and obj.from_way():
+                self.area(obj)
+
+        # Pass 2 — everything else. Ways already polygonised are skipped.
         fp = (osmium.FileProcessor(path)
-              .with_locations(idx='flex_mem')
+              .with_locations()   # default storage IS 'flex_mem'
               .with_filter(osmium.filter.KeyFilter('name')))
         for obj in fp:
             if isinstance(obj, osmium.osm.Node):
