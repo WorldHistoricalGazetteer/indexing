@@ -1145,6 +1145,8 @@ def build_places_filter(
         fclasses: GeoNames feature-class letters (e.g. ``["P", "A"]``).
             Translates to a nested ``types.label`` terms filter — GeoNames
             stores the feature class in the ``label`` field of its type entry.
+            Case-insensitive: the values are lowercased to match the analysed
+            ``text`` field (see the clause below; place#267).
         types: AAT type identifiers (e.g. ``["aat:300008347"]``) or
             source-vocabulary identifiers.  Translates to a nested
             ``types.identifier`` terms filter.
@@ -1176,11 +1178,27 @@ def build_places_filter(
         filter_clauses.append({"terms": {"ccodes": ccodes}})
 
     # Feature-class filter — nested on types.label (GeoNames stores fclass there)
+    #
+    # ``types.label`` is mapped ``text``, so it is ANALYSED at index time and the
+    # standard analyser lowercases: the letter ``P`` is indexed as the term ``p``.
+    # ``terms`` does not analyse its input, so the documented uppercase form
+    # (``["P", "A"]``) matched nothing at all — 0 hits corpus-wide, with or
+    # without a spatial constraint, for as long as the parameter has existed
+    # (place#267). Lowercasing here is what makes the query agree with the index.
+    #
+    # ⚠ Correct for GeoNames feature classes because they are single ASCII
+    # letters, which the standard analyser reduces to exactly one lowercase
+    # token. It is NOT a general fix for filtering ``types.label``: a ``terms``
+    # clause can never match a multi-token value such as ``deserted settlement``
+    # whatever its case. Those exist only under ``whg`` (contributed LPF), and
+    # the durable fix is a ``keyword`` sub-field — a mapping change plus a
+    # backfill over 51.2M documents, deliberately NOT done here.
     if fclasses:
         filter_clauses.append({
             "nested": {
                 "path": "types",
-                "query": {"terms": {"types.label": fclasses}},
+                "query": {"terms": {
+                    "types.label": [f.lower() for f in fclasses]}},
             }
         })
 

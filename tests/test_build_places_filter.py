@@ -47,5 +47,48 @@ class TestUndatedTemporalFilter(unittest.TestCase):
         self.assertNotIn("timespans", json.dumps(_filters(body)))
 
 
+class TestFclassesCaseFolding(unittest.TestCase):
+    """place#267 — ``types.label`` is an analysed ``text`` field, so the
+    standard analyser indexes the feature class ``P`` as the term ``p``.
+    ``terms`` does not analyse its input, so the documented uppercase form
+    matched nothing at all: 0 hits corpus-wide, with or without a spatial
+    constraint, for as long as the parameter existed.
+
+    These assert the case-folding, not the ES behaviour behind it — measured
+    live on 21 Sep 2026: uppercase ``["P"]`` 0 hits, lowercase 5,220,641.
+    """
+
+    def _fclass_terms(self, fclasses):
+        body = build_places_filter(["gn:1"], None, None, None, None,
+                                   fclasses=fclasses)
+        nested = [f for f in _filters(body) if "types.label" in json.dumps(f)]
+        self.assertEqual(len(nested), 1, "expected exactly one fclass clause")
+        return nested[0]["nested"]["query"]["terms"]["types.label"]
+
+    def test_documented_uppercase_form_is_lowercased(self):
+        # The pre-fix build emitted ["P"] here, and ES matched zero documents.
+        self.assertEqual(self._fclass_terms(["P"]), ["p"])
+
+    def test_every_geonames_feature_class_folds(self):
+        classes = ["A", "H", "L", "P", "R", "S", "T", "U", "V"]
+        self.assertEqual(self._fclass_terms(classes),
+                         [c.lower() for c in classes])
+
+    def test_case_is_irrelevant_to_the_emitted_query(self):
+        # The real invariant: how the caller cased it cannot change the result.
+        self.assertEqual(self._fclass_terms(["P", "s"]),
+                         self._fclass_terms(["p", "S"]))
+
+    def test_unknown_fclass_still_yields_a_constraining_clause(self):
+        # Negative control: the fix must not turn the filter into a no-op.
+        # A bogus class must still emit its (unmatchable) term rather than
+        # being dropped — measured live: ["ZZ"] -> 0 hits, as it should.
+        self.assertEqual(self._fclass_terms(["ZZ"]), ["zz"])
+
+    def test_no_fclass_clause_when_unset(self):
+        body = build_places_filter(["gn:1"], None, None, None, None)
+        self.assertNotIn("types.label", json.dumps(_filters(body)))
+
+
 if __name__ == "__main__":
     unittest.main()
