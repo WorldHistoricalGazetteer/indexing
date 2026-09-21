@@ -181,13 +181,10 @@ def _safe_parent(cell: str, res: int) -> Optional[str]:
         return None
 
 
-def _es_h3_terms(cover_by_res: dict[int, set[str]]) -> list[str]:
-    """Region cover cells + their ancestors, for the ES ``h3_cover`` terms
-    recall clause (catches large candidates spanning the region). Capped."""
-    if not _H3_AVAILABLE:
-        return []
+def _expand_with_ancestors(by_res: dict[int, set[str]]) -> set[str]:
+    """Cells plus every ancestor, to res 0."""
     terms: set[str] = set()
-    for res, cells in cover_by_res.items():
+    for res, cells in by_res.items():
         for cell in cells:
             terms.add(cell)
             for parent_res in range(res - 1, -1, -1):
@@ -195,12 +192,94 @@ def _es_h3_terms(cover_by_res: dict[int, set[str]]) -> list[str]:
                 if p is None:
                     break
                 terms.add(p)
-        if len(terms) > _ES_H3_TERMS_CAP:
-            flat: set[str] = set()
-            for cs in cover_by_res.values():
-                flat.update(cs)
-            return list(flat)[:_ES_H3_TERMS_CAP]
-    return list(terms)
+    return terms
+
+
+def _coarsen_finest(by_res: dict[int, set[str]]) -> dict[int, set[str]] | None:
+    """Lift the finest resolution group into its parents, merging it into the
+    next group up. Returns None when nothing can be coarsened further."""
+    live = {r: c for r, c in by_res.items() if c}
+    if not live:
+        return None
+    finest = max(live)
+    if finest == 0:
+        return None
+    out = {r: set(c) for r, c in live.items() if r != finest}
+    parents = out.setdefault(finest - 1, set())
+    for cell in live[finest]:
+        p = _safe_parent(cell, finest - 1)
+        if p is not None:
+            parents.add(p)
+    return out
+
+
+def _es_h3_terms(cover_by_res: dict[int, set[str]]) -> list[str]:
+    """Region cover cells + their ancestors, for the ES ``h3_cover`` terms
+    recall clause (catches large candidates spanning the region).
+
+    This is one branch of a ``should`` — the other admits any candidate whose
+    ``repr_point`` falls in the region bbox — so what this branch uniquely
+    catches is a candidate whose representative point lies OUTSIDE the bbox but
+    whose geometry reaches into the region. That is exactly the large-candidate
+    case, and it is the recall the ancestors provide.
+
+    🛑 **Over-admitting here is free; under-admitting is a silent false
+    negative.** Whatever this returns is only a PREFILTER: ``hit_matches``
+    re-tests every surviving candidate against ``region.cover_by_res``, the true
+    cover, so a term set that is too wide costs a little work and changes no
+    answer. A term set that is too NARROW drops places that should have matched,
+    and nothing downstream can notice.
+
+    So when the set would exceed ``_ES_H3_TERMS_CAP`` it is **coarsened**, not
+    truncated: the finest resolution group is lifted into its parents and the
+    whole set rebuilt, repeatedly, until it fits. A parent cell contains all of
+    its children, so coarsening cannot lose coverage — it only widens.
+
+    ⚠ It previously **truncated** (``list(flat)[:CAP]`` over a set, i.e. an
+    arbitrary subset in hash order) AND discarded every ancestor at the same
+    time — the one clause that catches large candidates, dropped exactly when
+    the region was largest (place#266). Worse, the cap was tested against the
+    partially-built accumulator inside the loop, so the ancestors vanished while
+    the RETURNED count still read under the cap: 4 containers gave 3,399 terms
+    with no ancestors, where 3 gave 3,620 with them. Growing the region made the
+    recall clause smaller, and ``len(result) >= CAP`` detected nothing.
+
+    **Invariant:** every cell in ``cover_by_res`` is represented in the result,
+    by itself or by one of its ancestors. That is the property worth testing —
+    term COUNT is not monotonic in region size under coarsening, and should not
+    be asserted to be.
+    """
+    if not _H3_AVAILABLE:
+        return []
+    by_res: dict[int, set[str]] = {
+        r: set(c) for r, c in cover_by_res.items() if c
+    }
+
+    # Coarsen on the CELL COUNT first, which costs one parent lookup per cell,
+    # before paying for a single ancestor expansion. Each H3 level divides the
+    # count by ~7, so the full expansion lands at ~7/6 of the finest-level count
+    # (1 + 1/7 + 1/49 + ...); _CELL_BUDGET is the cap discounted by that ratio.
+    # Without this the loop re-expanded every cell to res 0 on each attempt —
+    # 502 ms for a 68k-cell cover, on a path that has pinned both workers before
+    # (see _cover_overlaps_region). The expansion below is the authority; this
+    # is only a cheap way to arrive near the answer.
+    _CELL_BUDGET = int(_ES_H3_TERMS_CAP / 1.2)
+    while sum(len(c) for c in by_res.values()) > _CELL_BUDGET:
+        coarser = _coarsen_finest(by_res)
+        if coarser is None:
+            break
+        by_res = coarser
+
+    while True:
+        terms = _expand_with_ancestors(by_res)
+        if len(terms) <= _ES_H3_TERMS_CAP:
+            return list(terms)
+        coarser = _coarsen_finest(by_res)
+        if coarser is None:
+            # Everything is already at res 0 — 122 cells, so this is
+            # unreachable in practice, but never truncate on the way out.
+            return list(terms)
+        by_res = coarser
 
 
 # ---------------------------------------------------------------------------

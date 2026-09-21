@@ -711,5 +711,107 @@ class TestCoverOverlapsRegion(unittest.TestCase):
                          {self.h3.cell_to_parent(self.inside, 4)})
 
 
+@unittest.skipUnless(_DEPS, "h3/shapely not installed")
+class TestEsH3TermsCap(unittest.TestCase):
+    """place#266 — the ES recall terms must never silently shed the region.
+
+    ``_es_h3_terms`` is a PREFILTER: ``hit_matches`` re-tests survivors against
+    the true ``cover_by_res``, so a wide term set costs work and changes no
+    answer, while a narrow one drops places silently. The old implementation
+    truncated (``list(flat)[:CAP]`` over a set) *and* dropped every ancestor,
+    and did so from an accumulator test inside the loop — so the ancestors went
+    while the returned count still read under the cap.
+
+    Two invariants, both offline — no live index, no oracle, no threshold:
+
+    * **coverage** — every region cell is represented, by itself or an ancestor;
+    * **ancestor-closure** — if a term is present, so is every one of its
+      ancestors. This is the one that fires at the silent onset.
+
+    ⚠ Term COUNT is deliberately NOT asserted monotonic in region size:
+    coarsening legitimately shrinks it (measured: 3,620 terms at 3 containers,
+    2,180 at 4). Monotonicity detects the old defect but would reject this fix.
+    """
+
+    def setUp(self):
+        import h3
+        self.h3 = h3
+
+    def _cover(self, k, res=7):
+        """A cover big enough to force coarsening: a grid disk at ``res``."""
+        origin = self.h3.latlng_to_cell(47.0, 8.0, res)
+        return set(self.h3.grid_disk(origin, k))
+
+    def _uncovered(self, cells, terms):
+        T = set(terms)
+        missing = []
+        for c in cells:
+            r = self.h3.get_resolution(c)
+            if c in T:
+                continue
+            if any(self.h3.cell_to_parent(c, pr) in T
+                   for pr in range(r - 1, -1, -1)):
+                continue
+            missing.append(c)
+        return missing
+
+    def _unclosed(self, terms):
+        T = set(terms)
+        bad = []
+        for t in T:
+            r = self.h3.get_resolution(t)
+            if any(self.h3.cell_to_parent(t, pr) not in T
+                   for pr in range(r - 1, -1, -1)):
+                bad.append(t)
+        return bad
+
+    def test_small_region_is_untouched(self):
+        cells = self._cover(5)
+        terms = spatial._es_h3_terms(spatial._group_by_res(cells))
+        self.assertLess(len(terms), spatial._ES_H3_TERMS_CAP)
+        self.assertEqual(self._uncovered(cells, terms), [])
+        self.assertTrue(cells.issubset(set(terms)),
+                        "an uncapped region keeps its own cells verbatim")
+
+    def test_region_far_over_the_cap_still_covers_every_cell(self):
+        cells = self._cover(60)          # ~11k cells, well past the 4,000 cap
+        terms = spatial._es_h3_terms(spatial._group_by_res(cells))
+        self.assertLessEqual(len(terms), spatial._ES_H3_TERMS_CAP)
+        self.assertEqual(self._uncovered(cells, terms), [],
+                         "coarsening must never drop part of the region")
+
+    def test_result_is_always_ancestor_closed(self):
+        # Fires at the SILENT onset: the old code returned a flat, ancestor-less
+        # set whose length was still under the cap, so a length check saw nothing.
+        for k in (5, 20, 40, 60, 90):
+            with self.subTest(k=k):
+                terms = spatial._es_h3_terms(
+                    spatial._group_by_res(self._cover(k)))
+                self.assertEqual(self._unclosed(terms), [])
+
+    def test_growing_the_region_never_uncovers_what_was_covered(self):
+        # The defect's real signature: adding area removed area from the filter.
+        import h3
+        origin = h3.latlng_to_cell(47.0, 8.0, 7)
+        acc = set()
+        for k in (10, 25, 40, 55, 70, 85):
+            acc |= set(h3.grid_disk(origin, k))
+            terms = spatial._es_h3_terms(spatial._group_by_res(acc))
+            self.assertEqual(self._uncovered(acc, terms), [],
+                             f"region of {len(acc)} cells lost coverage at k={k}")
+
+    def test_mixed_resolution_cover_is_handled(self):
+        cells = self._cover(30, res=7) | self._cover(6, res=4)
+        by_res = spatial._group_by_res(cells)
+        self.assertGreater(len(by_res), 1, "fixture must span resolutions")
+        terms = spatial._es_h3_terms(by_res)
+        self.assertEqual(self._uncovered(cells, terms), [])
+        self.assertEqual(self._unclosed(terms), [])
+
+    def test_empty_and_degenerate_inputs(self):
+        self.assertEqual(spatial._es_h3_terms({}), [])
+        self.assertEqual(spatial._es_h3_terms({7: set()}), [])
+
+
 if __name__ == "__main__":
     unittest.main()
