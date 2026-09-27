@@ -69,7 +69,7 @@ Glacial-Lake Dynamics and Source Provenance*
 | Licence | CC BY 4.0 on KGLD-original material; third-party rights explicitly carved out |
 | Documentation | https://kyrgyzstanplanner.com/lakes-of-kyrgyzstan/ |
 | Package | single 249 KB zip, 39 files (16 CSV + 1 GeoJSON + Frictionless descriptor + docs + xlsx) |
-| Local copy | `authorities/kgld/kyrgyzstan_lakes_dataset_v1.0.0.zip` |
+| Local copy | `contributions/kgld/kyrgyzstan_lakes_dataset_v1.0.0.zip` |
 | SHA-256 (zip) | `524cb43f5910d0be249c0c2929e82d933ff95f9ea225db40924b2dc97273251e` |
 
 Downloaded direct from the Zenodo API on 2 Sep 2026; the record has 1 file and 0 prior
@@ -1269,7 +1269,7 @@ Everything numeric above was measured, not inferred. Reproduce with:
   This is not specific to lakes. It was carried into `developer/postmortem-ingestion-faults.md` (commit `5661568`) after being reproduced against the live index — the unwrapped query returns 0, the identical query wrapped in `nested` returns 1,149 — and it is logged there as the third instance of one cause: `geometries` is nested and does not announce it, which has also produced a root-level `geom_class` read returning `None` for all 4,363 `nl` records, and a docstring that called `h3_cover` top-level for four months. The gateway itself never issues a `geo_distance` (`grep -rn "geo_distance" gateway/ processing/` is empty), so the trap is latent — it lies in wait for ad-hoc queries and new spatial code, which is exactly what a future session picking up this analysis would be writing. **Read that post-mortem entry before writing any spatial query against `places`.**
 
 - **AAT lake concepts** — `types/_search` on the live `types_20260404_150351`, matching `term` (**not** `prefLabel`, which is why an earlier query here returned 0 and was wrongly recorded as unverifiable) plus `parent_id: 300008680` / `300132301`. 45 hits; the lake branch is the five concepts listed above. ✅ **This caveat is now closed** — the ids are confirmed against the index, not inferred from `typesystem/data/*.json`.
-- **LPF conversion** — `authorities/kgld/build_lpf.py --validate`, against whg3's own `validation/static/lpf_v2.0.jsonld` with `csl-citation.json` registered under its `$id` (the published `/schema/` URL 403s). Controls in `README-lpf.md`; a bare PASS proves nothing without them.
+- **LPF conversion** — `contributions/kgld/build_lpf.py --validate`, against whg3's own `validation/static/lpf_v2.0.jsonld` with `csl-citation.json` registered under its `$id` (the published `/schema/` URL 403s). Controls in `README-lpf.md`; a bare PASS proves nothing without them.
 
 One thing I could **not** verify, and which a future session must not take on trust:
 

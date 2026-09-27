@@ -20,7 +20,7 @@ The two that most affect the shape of the output:
   geography; the short-lived glacial lakes genuinely formed and drained on record. Emitting
   a date for the rest would be the exact misrepresentation this whole exercise avoids.
 
-Usage:  python3 authorities/kgld/build_lpf.py [--validate]
+Usage:  python3 contributions/kgld/build_lpf.py [--validate]
 """
 
 import argparse

@@ -8,7 +8,7 @@ record (`zenodo_record_22178862.json`).
 **Both outputs are derived. Do not hand-edit them — re-run the builder.**
 
 ```
-python3 authorities/kgld/build_lpf.py --validate
+python3 contributions/kgld/build_lpf.py --validate
 ```
 
 | File | What it is |
