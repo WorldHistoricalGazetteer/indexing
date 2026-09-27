@@ -27,10 +27,17 @@ contributions/<contributor>/
 * Keep the source data **out** of git where it can be fetched. Record the DOI or URL, the version,
   and a checksum instead.
 * A claim that a conversion is lossless needs a round trip that can fail: forward to PLATO, through
-  RDF with `plato_run.mjs`, then back to the source's own cells and diff them. Also run a
-  negative control (corrupt one value in the RDF and confirm the diff reports it).
+  RDF with `plato_run.mjs`, then back to the source's own cells and diff them.
+* The negative controls must corrupt values the comparison actually **reads**. Corrupting one it
+  ignores passes and looks like success. `controls.py` corrupts one value of every predicate in
+  the graph and lists those whose corruption the check did not notice.
+* A value carried twice (a coordinate as text and as numbers; a label and a sourceLabel) must be
+  **required to agree** by the inverse. If the inverse reads only one of them, the other is never
+  verified.
 * LPF is lossy relative to PLATO (form status, per-value certainty, property values and
   meta-attestations are dropped). `plato_run.mjs <file> convert lpf <out>` lists what is lost.
+
+`controls.py`: `python3 controls.py <graph.nt> <workdir> -- <check command with {nt} {out}>`.
 
 `plato_run.mjs` drives the [PLATO tools](https://pelagios.org/plato-tools/) engine from Node:
 `PLATO_TOOLS=<plato-tools checkout> node plato_run.mjs <in> check|convert <target> [<out>]`.

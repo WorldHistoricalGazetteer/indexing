@@ -1,4 +1,4 @@
-"""Prototype: Necessary Reunions place CSVs <-> PLATO place-centric JSON, and a round-trip check.
+"""Necessary Reunions place CSVs <-> PLATO place-centric JSON, and a round-trip check.
 
     python3 neru2plato.py forward  <neru_csv_dir> out.json
     python3 neru2plato.py inverse  in.json <out_dir>
@@ -21,10 +21,24 @@ FILES = {"places": "places", "alt": "altLabels", "types": "placeTypes", "rel": "
 EXT = {  # identity columns -> URI namespace (verbatim URIs pass through)
     "AMH_ID": NS + "ext/amh/", "EXISTING_ID": NS + "ext/globalise/", "EXTERNAL_IDS": NS + "ext/esta/",
 }
-# The NeRu vocabulary a real conversion would publish (its skos:prefLabels). RDF keeps the URI, not
-# PLATO JSON's relationLabel, so the inverse reads the label from here.
+# The NeRu vocabulary a real conversion would publish. The inverse requires a relation's wording
+# (relationLabel, plato:source_label) and its type to agree.
 RELATION_LABELS = {V + "relation/part-of": "Part Of"}
-CERT = {"certain": 1.0, "uncertain": 0.5}
+LEVEL = {"certain": PLATO + "Certain", "uncertain": PLATO + "Uncertain"}
+WORD = {v: k for k, v in LEVEL.items()}
+LAT = "http://www.w3.org/2003/01/geo/wgs84_pos#lat"
+# NeRu's CCODES holds country names; PLATO's ccodes holds ISO 3166-1 alpha-2 codes.
+COUNTRY = {"India": "IN"}
+NAME_OF = {v: k for k, v in COUNTRY.items()}
+
+
+TITLE = "Necessary Reunions places (prototype conversion)"
+PROPS = {LAT: "latitude", V + "workflowFlag": "workflow flag"}
+
+
+def same_num(a, b):
+    """Equal to 15 significant digits: what every decimal -> double -> decimal round trip keeps."""
+    return f"{float(a):.15g}" == f"{float(b):.15g}"
 
 
 def read(d, key):
@@ -48,7 +62,7 @@ def cite(src, page):
 
 def remark(aid, text, src, page, target):
     """A remark with its own source: a meta-attestation on the attestation it comments on."""
-    a = {"@id": aid, **({"notes": text.strip()} if text.strip() else {}), "meta": {"targetAttestation": target, "metaType": V + "meta/remark"}}
+    a = {"@id": aid, **({"notes": text.strip()} if text.strip() else {}), "meta": {"targetAttestation": target, "metaType": PLATO + "Annotates"}}
     a.update(cite(src, page))
     return a
 
@@ -59,7 +73,7 @@ def forward(d, out):
 
     def ent(g):
         if g not in ents:
-            ents[g] = {"@id": se_uri(g), "label": g, "attestations": [], "identityRelations": []}
+            ents[g] = {"@id": se_uri(g), "label": g, "entityIdentifier": g, "namespace": "neru", "attestations": [], "identityRelations": []}
             order.append(g)
         return ents[g]
 
@@ -70,29 +84,26 @@ def forward(d, out):
         e = ent(g)
         e["label"] = r["PREF_LABEL"].strip()
         base = f"{NS}attestation/places/{i}/"
-        # 1. record: the identifier and country code, cited to nothing but the dataset itself
-        props = [{"property": "http://purl.org/dc/terms/identifier", "label": "GLOB_ID", "value": g}]
         if r["CCODES"].strip():
-            props.append({"property": "http://www.wikidata.org/prop/direct/P17", "label": "CCODES", "value": r["CCODES"].strip()})
-        e["attestations"].append({"@id": base + "record", "properties": props})
-        # 2. preferred label
-        a = {"@id": base + "pref", "names": [{"toponym": r["PREF_LABEL"].strip()}], "formStatus": PLATO + "Normalised"}
+            e["ccodes"] = [COUNTRY[r["CCODES"].strip()]]
+        # the preferred label: every place row has one, so this attestation also locates the row
+        a = {"@id": base + "pref", "names": [{"toponym": r["PREF_LABEL"].strip()}], "formStatus": PLATO + "Preferred"}
         a.update(cite(r["PREF_LABEL_SOURCE"], r["PREF_LABEL_SOURCE_PAGE"]))
         e["attestations"].append(a)
         if r["PREF_LABEL_REMARKS"].strip():
             e["attestations"].append(remark(base + "pref-remark", r["PREF_LABEL_REMARKS"], r["PREF_LABEL_REMARKS_SOURCE"], r["PREF_LABEL_REMARKS_SOURCE_PAGE"], base + "pref"))
-        # 3. coordinates, verbatim in the WKT
+        # coordinates: the text verbatim in the WKT, the numbers in reprPoint
         if r["LATITUDE"].strip():
             lat, lon = r["LATITUDE"].strip(), r["LONGITUDE"].strip()
             c = r["COORD_CERTAINTY"]
-            q = {"certainty": CERT[c.strip()], "certaintyNote": c.strip()} if c.strip() else None
+            q = {"certaintyLevel": LEVEL[c.strip()]} if c.strip() else None
             if lon:
                 geom = {"wkt": f"POINT ({lon} {lat})", "reprPoint": [float(lon), float(lat)]}
                 if q:
                     geom["qualification"] = q
                 a = {"@id": base + "coord", "geometries": [geom]}
-            else:  # a latitude with no longitude is not a geometry: keep it as a value
-                pv = {"property": V + "latitude", "label": "latitude only", "value": lat, "sourceLabel": lat}
+            else:  # a latitude with no longitude is not a location
+                pv = {"property": LAT, "label": "latitude", "value": float(lat), "sourceLabel": lat}
                 if q:
                     pv["qualification"] = q
                 a = {"@id": base + "coord", "properties": [pv]}
@@ -100,20 +111,20 @@ def forward(d, out):
             e["attestations"].append(a)
             if r["COORD_REMARKS"].strip():
                 e["attestations"].append(remark(base + "coord-remark", r["COORD_REMARKS"], r["COORD_REMARKS_SOURCE"], r["COORD_REMARKS_SOURCE_PAGE"], base + "coord"))
-        # 4. overall remarks: an attestation with no facet
+        # overall remarks: an attestation with no facet
         if r["OVERALL_REMARKS"].strip() or r["OVERALL_SOURCE"].strip():
             a = {"@id": base + "overall"}
             if r["OVERALL_REMARKS"].strip():
                 a["notes"] = r["OVERALL_REMARKS"].strip()
             a.update(cite(r["OVERALL_SOURCE"], r["OVERALL_SOURCE_PAGE"]))
             e["attestations"].append(a)
-        # 5. identity links (NeRu does not state their strength: closeMatch)
+        # identity links (NeRu does not state their strength)
         for col in ("GEONAMES_ID", "WIKIDATA_ID", "WHG_ID", "TGN_ID", "AMH_ID", "EXISTING_ID", "EXTERNAL_IDS"):
             val = r[col].strip()
             if not val:
                 continue
             obj = val if val.startswith("http") else EXT[col] + val
-            ir = {"@id": f"{base}identity/{col}", "subject": e["@id"], "object": obj, "identityType": "closeMatch", "assertedBy": NS}
+            ir = {"@id": f"{base}identity/{col}", "subject": e["@id"], "object": obj, "identityType": "unspecified", "assertedBy": NS}
             if col == "EXISTING_ID" and r["EXISTING_PLACE"].strip():
                 ir["basis"] = r["EXISTING_PLACE"].strip()
             e["identityRelations"].append(ir)
@@ -166,7 +177,7 @@ def forward(d, out):
             del e["attestations"]
         ses.append(e)
     doc = {"$schema": "https://w3id.org/plato/schemas/place-centric.schema.json", "profile": "place-centric",
-           "gazetteer": {"@id": NS, "title": "Necessary Reunions places (prototype conversion)"},
+           "gazetteer": {"@id": NS, "title": TITLE},
            "spatialEntities": ses}
     json.dump(doc, open(out, "w"), ensure_ascii=False, indent=1)
     print(f"{len(ses)} spatial entities, {sum(len(e.get('attestations', [])) for e in ses)} attestations, "
@@ -179,10 +190,11 @@ def load_entities(path):
     txt = open(path).read()
     try:
         doc = json.loads(txt)
-        return doc["spatialEntities"], doc.get("identityRelations", [])
+        return doc.get("gazetteer", {}), doc["spatialEntities"], doc.get("identityRelations", [])
     except json.JSONDecodeError:
-        lines = [json.loads(l) for l in txt.splitlines() if l.strip()][1:]
-        return [l for l in lines if "subject" not in l], [l for l in lines if "subject" in l]
+        lines = [json.loads(l) for l in txt.splitlines() if l.strip()]
+        head, lines = lines[0].get("gazetteer", {}), lines[1:]
+        return head, [l for l in lines if "subject" not in l], [l for l in lines if "subject" in l]
 
 
 def first(x):
@@ -196,15 +208,35 @@ def cit(a):
 
 
 def inverse(path, outdir):
-    ses, loose_ids = load_entities(path)
+    head, ses, loose_ids = load_entities(path)
     rows = collections.defaultdict(dict)  # (table,row) -> dict
-    glob_of = {}
-    idrels = [ir for e in ses for ir in (e.get("identityRelations") or [])] + loose_ids
+    disagree = []  # a value carried twice (text and number, wording and type) must agree
+    # ...and a value the conversion asserts without the CSVs holding it must be what was written.
+    if head.get("title") != TITLE:
+        disagree.append(["gazetteer", head])
     for e in ses:
+        if e.get("namespace") != "neru":
+            disagree.append([e.get("entityIdentifier"), "namespace", e.get("namespace")])
+        pref = [a for a in e.get("attestations") or [] if a["@id"].endswith("/pref")]
+        want = pref[0]["names"][0]["toponym"] if pref else e.get("entityIdentifier")
+        if e.get("label") != want:
+            disagree.append([e.get("entityIdentifier"), "label", e.get("label"), want])
         for a in e.get("attestations") or []:
-            for p in a.get("properties") or []:
-                if p["property"] == "http://purl.org/dc/terms/identifier":
-                    glob_of[e["@id"]] = p["value"]
+            if a.get("meta"):
+                tail = {"pref-remark": "pref", "coord-remark": "coord", "remark": "name"}[a["@id"].rsplit("/", 1)[1]]
+                if a["meta"].get("metaType") != PLATO + "Annotates" or a["meta"].get("targetAttestation") != a["@id"].rsplit("/", 1)[0] + "/" + tail:
+                    disagree.append([e.get("entityIdentifier"), "meta", a["meta"]])
+            for ty in a.get("types") or []:
+                if ty.get("label") != ty.get("sourceLabel"):
+                    disagree.append([e.get("entityIdentifier"), "type", ty])
+            for pv in a.get("properties") or []:
+                if PROPS.get(pv.get("property")) != pv.get("label"):
+                    disagree.append([e.get("entityIdentifier"), "property", pv])
+    for ir in [ir for e in ses for ir in (e.get("identityRelations") or [])] + loose_ids:
+        if ir.get("assertedBy") != NS:
+            disagree.append([ir["@id"], "assertedBy", ir.get("assertedBy")])
+    glob_of = {e["@id"]: e.get("entityIdentifier") for e in ses}
+    idrels = [ir for e in ses for ir in (e.get("identityRelations") or [])] + loose_ids
     for e in ses:
         g = glob_of.get(e["@id"])
         for a in e.get("attestations") or []:
@@ -214,20 +246,24 @@ def inverse(path, outdir):
             r["GLOB_ID"] = g
             src, loc = cit(a)
             if table == "places":
-                if part == "record":
-                    for p in a["properties"]:
-                        if p["label"] == "CCODES":
-                            r["CCODES"] = p["value"]
-                elif part == "pref":
+                if part == "pref":
                     r.update(PREF_LABEL=a["names"][0]["toponym"], PREF_LABEL_SOURCE=src, PREF_LABEL_SOURCE_PAGE=loc)
+                    if e.get("ccodes"):
+                        r["CCODES"] = NAME_OF[e["ccodes"][0]]
                 elif part == "coord":
                     if a.get("geometries"):
                         gm = first(a["geometries"])
-                        lon, lat = re.match(r"POINT \((\S+) (\S+)\)", gm["wkt"]).groups()
+                        wm = re.fullmatch(r"POINT \((\S+) (\S+)\)", gm["wkt"])
+                        lon, lat = wm.groups() if wm else ("", "")
+                        if not wm or not (same_num(lon, gm["reprPoint"][0]) and same_num(lat, gm["reprPoint"][1])):
+                            disagree.append([g, gm["wkt"], gm["reprPoint"]])
                     else:
                         gm = first(a["properties"]); lon, lat = "", gm["sourceLabel"]
+                        if not same_num(lat, gm["value"]):
+                            disagree.append([g, lat, gm["value"]])
+                    lv = (gm.get("qualification") or {}).get("certaintyLevel")
                     r.update(LATITUDE=lat, LONGITUDE=lon, COORD_SOURCE=src, COORD_SOURCE_PAGE=loc,
-                             COORD_CERTAINTY=(gm.get("qualification") or {}).get("certaintyNote", ""))
+                             COORD_CERTAINTY=WORD[lv] if lv else "")
                 elif part in ("pref-remark", "coord-remark"):
                     k = "PREF_LABEL" if part == "pref-remark" else "COORD"
                     r.update({k + "_REMARKS": a.get("notes", ""), k + "_REMARKS_SOURCE": src, k + "_REMARKS_SOURCE_PAGE": loc})
@@ -245,7 +281,9 @@ def inverse(path, outdir):
             elif table == "rel":
                 rel = first(a["relations"])
                 tgt = next(x for x in ses if x["@id"] == rel["relatesTo"])
-                r.update(RELATION=rel.get("relationLabel") or RELATION_LABELS[rel["relationType"]], RELATED_GLOB_ID=glob_of.get(tgt["@id"], tgt["label"]),
+                if rel.get("relationLabel") != RELATION_LABELS.get(rel["relationType"]):
+                    disagree.append([g, rel.get("relationLabel"), rel["relationType"]])
+                r.update(RELATION=RELATION_LABELS.get(rel["relationType"], ""), RELATED_GLOB_ID=glob_of.get(tgt["@id"]),
                          RELATION_REMARKS=a.get("notes", ""), SOURCE=src, SOURCE_PAGE=loc)
     for ir in idrels:
         m = re.match(re.escape(NS) + r"attestation/places/(\d+)/identity/(\w+)$", ir["@id"])
@@ -262,6 +300,7 @@ def inverse(path, outdir):
     for t in FILES:
         recs = sorted((row, r) for (tb, row), r in rows.items() if tb == t)
         json.dump([{"row": row, **r} for row, r in recs], open(Path(outdir) / f"{t}.json", "w"), ensure_ascii=False, indent=0)
+    json.dump(disagree, open(Path(outdir) / "disagree.json", "w"), ensure_ascii=False)
     print("inverse:", {t: sum(1 for k in rows if k[0] == t) for t in FILES})
 
 
@@ -293,8 +332,12 @@ def compare(d, outdir):
                     diffs += 1
                     if diffs <= 15:
                         print(f"  DIFF {t} row {i} {k!r}: {v.strip()!r} != {b.get(k)!r}")
-    print(f"compared {total} non-empty cells: {diffs} differ; {stripped} had surrounding whitespace (normalised)")
-    return diffs
+    disagree = json.load(open(Path(outdir) / "disagree.json"))
+    for d_ in disagree[:10]:
+        print("  CARRIED TWICE, DISAGREES", d_)
+    print(f"compared {total} non-empty cells: {diffs} differ; {stripped} had surrounding whitespace (normalised); "
+          f"{len(disagree)} values whose two carriers disagree")
+    return diffs + len(disagree)
 
 
 if __name__ == "__main__":

@@ -32,12 +32,25 @@ python3 neru2plato.py  forward <neru csv dir> out.json ; inverse <roundtripped> 
 python3 gavoc2plato.py forward gavoc-atlas-index.csv out.json ; compare gavoc-atlas-index.csv <roundtripped>
 ```
 
-Forward → `plato_run.mjs convert ntriples` → `convert plato-jsonl` → inverse → cell diff:
-**0 differences** in 88,849 / 9,605 / 99,756 non-empty cells, and negative controls fail.
+Forward → `plato_run.mjs convert ntriples` → `convert plato-jsonl` → inverse → compare, against
+PLATO 9d2c36e+ and plato-tools 0007a24+: **0 differences** in 88,849 / 9,605 / 99,756 non-empty
+cells, and **0 disagreements** between the two carriers of any value carried twice (a
+coordinate's text and its numbers, a type's label and sourceLabel, a relation's wording and its
+type, a place's label and its preferred name) or asserted by the conversion itself (dataset title
+and licence, namespace, remark type and target, the atlas citation).
+
+**Controls** (`../controls.py`): corrupting one value of every predicate in the graph makes the
+check fail for 29 of 30 (GLOBALISE: 28 of 29; GAVOC: 14 of 15) predicates. The one that does not
+is `rdf:rest`: pointing a list's terminator at an unknown IRI leaves plato-tools' reading of the
+list unchanged, so no comparison downstream can see it.
 
 What the zero depends on:
 
-* **Normalisation:** only surrounding whitespace is stripped.
+* **Normalisations:** surrounding whitespace is stripped. Numbers are equal to 15 significant
+  digits, the precision any decimal → double → decimal round trip keeps. (JSON-LD writes
+  xsd:double to 16 significant digits, which turns the workbook's `106.82041100000001` into
+  `106.820411`.) GLOBALISE `ccodes` are compared as lists, because the workbook separates codes
+  with `,`, `, ` or `|`. GAVOC treats an empty cell and `-` alike (7 cells).
 * **Left out (spreadsheet artefacts):** blank rows, `TEST_*` formula errors, lookup display
   columns, and a `CHECKED?` that is FALSE on every row.
 * **GLOBALISE Sheet 2 is derived:** it is an overview of sheets 3–6. Its alt labels and types
@@ -47,22 +60,28 @@ What the zero depends on:
 
 * One attestation per source row. The attestation `@id` carries sheet and row, so the inverse
   knows where each fact came from, including attestations that have no facet.
+* **Record identifiers** (GLOB_…, NR_…) → `entityIdentifier`, with `namespace` `globalise` / `neru`.
 * **Citations.** Packed cells such as "(Coolhaas 1979, 24, 183; van Goor 2004, 202)" become one
   citation per source, each with its own locator, whenever re-joining gives back the exact
   string (16,289 of 16,904 cells). The rest stay whole.
-* **Remarks that carry their own source** become meta-attestations on the fact they qualify,
-  typed with a project term: PLATO has no neutral "remark" meta type.
-* **Record identifiers** (GLOB_…) go in a `dcterms:identifier` PropertyValue. PLATO has no
-  slot for them.
-* **A latitude with no longitude** (Generale Missiven; 5 + 4 places) becomes a PropertyValue,
-  not a geometry.
-* **certain/uncertain** becomes 1.0/0.5, with the word kept in `certaintyNote`. The numbers are
-  invented; only the word is data.
-* **NeRu PREF_LABEL** gets form status `Normalised` in NeRu and `Headword` in GLOBALISE; neither
-  fits exactly.
-* **Identity links** are all `closeMatch`, because the source states no strength. AMH, ESTA and
-  `NEW_ADMIN_*` have no resolvable URIs, so placeholder namespaces are used.
-* **NeRu CCODES** holds country *names* ("India"). PLATO's `ccodes` expects ISO alpha-2 codes,
-  so map before using it.
+* **Remarks that carry their own source** → a meta-attestation on the fact it qualifies,
+  `plato:Annotates`, with the remark in its notes.
+* **Coordinates:** the source's text goes in the WKT (GLOBALISE, NeRu) or in the geometry's
+  `sourceLabel` (GAVOC), and the numbers in `reprPoint`/`geojson`. The 42 GAVOC strings that
+  cannot be parsed (`??`, `03-47S/13038E`) become a geometry with only its `sourceLabel`.
+* **A latitude with no longitude** (Generale Missiven; 5 + 4 places) → a PropertyValue with
+  `wgs84_pos#lat`, not a geometry.
+* **certain/uncertain** → `certaintyLevel` `plato:Certain` / `plato:Uncertain`. No number is
+  invented.
+* **PREF labels** → `plato:Preferred`, the contributing project's display form.
+* **GAVOC present names** are printed in the cited index, so they are `Attested`. The `/present`
+  `@id` is what tells them from the name on the map.
+* **Identity links** → `identityType: unspecified`, because the source states no strength. AMH,
+  ESTA and `NEW_ADMIN_*` have no resolvable URIs, so placeholder namespaces are used.
+* **Country codes:** NeRu CCODES holds country *names* ("India"), mapped to `ccodes` `IN`.
+  GLOBALISE codes are alpha-2 already.
+* **Still a workaround:** NeRu's single `annotated` workflow flag (1 cell) is a PropertyValue,
+  which makes it read as a claim about the place.
 
-The gaps above were reported to the PLATO repo on 27 September 2026 for fixing or filing.
+The PLATO gaps this assessment found were resolved in PLATO 9d2c36e (27 September 2026); the
+converters above use the new terms.
