@@ -5,7 +5,7 @@
 //   PLATO_TOOLS=... node plato_run.mjs <in> convert <ntriples|plato-jsonl|plato-json|lpf|tables> <out>
 //
 // PLATO_TOOLS is a checkout of github.com/pelagios/plato-tools with `npm install` run in it.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, createWriteStream, openAsBlob } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -33,7 +33,11 @@ const env = {
     return { write: (s) => parts.push(s), writeBytes: (b) => parts.push(b), close: async () => { outs[name] = parts; return { name, size: 0 }; } };
   },
 };
-const input = await detect([new File([readFileSync(inPath)], inPath.split('/').pop())]);
+// A Blob made from a Buffer streams as ONE chunk, so the text decoder builds a single string and
+// throws ERR_ENCODING_INVALID_ENCODED_DATA once the input passes V8's maximum string length, at
+// about 512 MB. openAsBlob is backed by the file and streams it, so size stops mattering.
+const blob = await openAsBlob(inPath);
+const input = await detect([new File([blob], inPath.split('/').pop())]);
 const r = await run({ input, action, target, options: {} }, env);
 const by = {};
 for (const i of r.report.items) by[i.severity] = (by[i.severity] || 0) + 1;
@@ -41,7 +45,11 @@ console.log(action, target || '', 'from', input.format, JSON.stringify(r.report.
 for (const i of r.report.items.slice(0, 12)) console.log('  ', i.severity, i.kind || '', (i.message || '').slice(0, 300), i.count ? `x${i.count}` : '');
 if (outPath) {
   const p = outs[Object.keys(outs)[0]];
-  writeFileSync(outPath, typeof p[0] === 'string' ? p.join('') : Buffer.concat(p.map((b) => Buffer.from(b))));
+  // Write chunk by chunk. Joining them into one string throws RangeError: Invalid string length
+  // once the output passes V8's maximum string size, which a whole-corpus conversion does.
+  const ws = createWriteStream(outPath);
+  for (const chunk of p) ws.write(typeof chunk === 'string' ? chunk : Buffer.from(chunk));
+  await new Promise((res, rej) => { ws.end(); ws.on('finish', res); ws.on('error', rej); });
   console.log('  wrote', outPath);
 }
 process.exit(by.error ? 1 : 0);
