@@ -50,3 +50,42 @@ were rebuilt at the new path and are byte-identical.
 `authorities/hgis/` stays where it is. It looks like a contribution (its inputs are two
 `whg_dataset_*.lpf` files), but `authorities/hgis-places.py` stages it as the `hgis` authority,
 reading from `DATA_DIR/authorities/hgis/`.
+
+## Statistical tables (PLATO issue #14)
+
+`cube_encode.py` encodes Vision of Britain's `occ_1851_ew` and Vision of Ireland's twelve nCubes
+under PLATO's statistics design, where a `plato:PropertyValue` is also a `qb:Observation`. It was
+written to test that design and is kept because the release notes re-run it.
+
+```
+python3 cube_encode.py vob <gbhd dir>  vob-cube.json     # forward
+python3 cube_encode.py voi <voi repo>  voi-cube.json
+python3 cube_encode.py inverse <returned .json|.jsonl> back.json
+python3 cube_encode.py compare-vob <gbhd dir> back.json  # 0 differences over 204,050 values
+python3 cube_encode.py compare-voi <voi repo> back.json  # 0 differences over 1,023,036 values
+```
+
+Checking a cube export is `plato-tools datacube FILE…`, which streams the file and reports a
+constraint over nothing as not tested rather than passed. `cube_ic.py` here runs the
+specification's own SPARQL instead, which is worth having only as a cross-check on a sample or a
+small corpus: on Vision of Britain it agrees with `plato-tools datacube` on all five constraints
+and takes eleven minutes against four seconds.
+
+Two traps `cube_ic.py` exists to document, both of which made a check report success over nothing:
+
+* **Normalise before running the specification's queries.** The export writes a structure's
+  components abbreviated (`_:c qb:dimension <p>`), and the spec's queries reach them only through
+  `qb:componentProperty`, which section 10.3 adds. Run them as written on the export and IC-11,
+  IC-12 and IC-14 find no components and hold vacuously. `--raw` skips normalisation to show this.
+* **Declare what the export adds.** Until plato-tools 14c6047 the cube export wrote
+  `sdmx-dimension:refArea` on every observation and declared it in no structure, so IC-12 read the
+  same occupation in all 55 registration counties as 28,620 duplicate observations, and IC-11 could
+  never have reported a missing area.
+
+`controls.py` is the right way to check a round trip can fail: one corruption per predicate, every
+one required to be caught. Six hand-picked controls over the cube round trip caught three; the
+three that passed silently were fields the comparison never read (the parsed number beside the
+printed cell, the dimension codes that *are* the cell, and the universe link). Reading them took
+the values checked from 174,900 to 204,050 on Vision of Britain and from 511,518 to 1,023,036 on
+Vision of Ireland. Report the values checked beside the differences: 0 differences over half the
+data looks exactly like 0 differences over all of it.
