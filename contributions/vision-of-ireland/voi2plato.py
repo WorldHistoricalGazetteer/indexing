@@ -225,8 +225,15 @@ def inverse(rt, out):
                 rec["stats"].setdefault(year, []).append(
                     {"table": table, "cell": cell, "value": p["value"]})
         rebuilt[uid] = rec
+    # Record which return file this was rebuilt from. A missing or empty one already fails
+    # loudly; a STALE one from an earlier good run would not, so its size and time are carried
+    # into the result and printed by compare.
+    st = os.stat(rt)
+    rebuilt["_from"] = {"path": os.path.abspath(rt), "bytes": st.st_size,
+                        "mtime": __import__("datetime").datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")}
     json.dump(rebuilt, open(out, "w"), ensure_ascii=False)
-    print(f"rebuilt {len(rebuilt)} units -> {out}")
+    print(f"  rebuilt from {rebuilt['_from']['path']} ({st.st_size:,} bytes, {rebuilt['_from']['mtime']})")
+    print(f"rebuilt {len(rebuilt) - 1} units -> {out}")
 
 
 def compare(root, rebuilt_path):
@@ -291,5 +298,23 @@ if __name__ == "__main__":
         inverse(sys.argv[2], sys.argv[3])
     elif cmd == "compare":
         sys.exit(compare(sys.argv[2], sys.argv[3]))
+    elif cmd == "compare-sub":
+        # Per-predicate controls on a subset: they establish that the comparison READS each
+        # predicate, which does not depend on how many units carry it.
+        got = json.load(open(sys.argv[3], encoding="utf-8"))
+        got.pop("_from", None)
+        keep = set(got)
+        units = load_units(sys.argv[2])
+        for k in [u for u in units if str(u) not in keep]:
+            del units[k]
+        import tempfile, os as _os
+        d = tempfile.mkdtemp()
+        _os.makedirs(_os.path.join(d, "site/data/units"), exist_ok=True)
+        json.dump(units, open(_os.path.join(d, "site/data/units/all.json"), "w"), ensure_ascii=False)
+        json.dump(authorities(sys.argv[2]),
+                  open(_os.path.join(d, "site/data/authorities.json"), "w"), ensure_ascii=False)
+        tmp = sys.argv[3] + ".sub"
+        json.dump(got, open(tmp, "w"), ensure_ascii=False)
+        sys.exit(compare(d, tmp))
     else:
         sys.exit("forward | inverse | compare")

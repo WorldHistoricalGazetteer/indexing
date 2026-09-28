@@ -29,7 +29,7 @@ Open vocabularies are used as the ontology intends rather than treated as gaps: 
 form status, name types and relation types all take project URIs, and Pleiades already mints its
 own, so its URIs are used directly.
 """
-import gzip, json, re, sys
+import gzip, hashlib, json, os, re, sys
 from urllib.parse import quote
 
 UNSAFE = ' \t"\'<>{}|\\^`[]'
@@ -64,6 +64,29 @@ def safe_uri(u):
 PLATO = "https://w3id.org/plato#"
 NS = "https://pleiades.stoa.org/plato/"
 PL = "https://pleiades.stoa.org/places/"
+CITO = "http://purl.org/spar/cito/"
+# Pleiades writes six values as cito: URIs, but CiTO 2.9.0 declares only four of them; seeFurther
+# (143,418) and seeAlso (3,192) are not CiTO properties. PLATO accepts CiTO only, so those two are
+# mapped. seeFurther -> citesForInformation is reversible, nothing else maps there. seeAlso ->
+# citesAsRelated is NOT: Pleiades uses citesAsRelated itself, so the two collide and the source's
+# own term is kept beside it for those 3,192 alone.
+CITATION_FUNCTION = {
+    "cites": CITO + "cites",
+    "citesAsEvidence": CITO + "citesAsEvidence",
+    "citesAsDataSource": CITO + "citesAsDataSource",
+    "citesAsRelated": CITO + "citesAsRelated",
+    "seeFurther": CITO + "citesForInformation",
+    "seeAlso": CITO + "citesAsRelated",
+}
+AMBIGUOUS_FUNCTION = {"seeAlso"}
+TRANSCRIPTION = {
+    "accurate": PLATO + "TranscriptionAccurate",
+    "inaccurate": PLATO + "TranscriptionInaccurate",
+    "false": PLATO + "TranscriptionFalse",
+    "complete": PLATO + "TranscriptionComplete",
+    "reconstructable": PLATO + "TranscriptionReconstructable",
+    "non-reconstructable": PLATO + "TranscriptionNonReconstructable",
+}
 # Pleiades language values are not all BCP-47: the literal string 'None' (16), 'asyr' (15),
 # 'cana' (10), 'etruscan-in-latin-characters' (9), 'osar' (6), 'arbd' (2). Only well-formed tags
 # go in `language`; the rest are kept verbatim on the name's sourceLabel path via nameType so
@@ -126,17 +149,53 @@ def span(s, e):
     return o or None
 
 
+# A shortTitle that is really a locator: "Helsinki Atlas 2001, 12, map 2 grid D4", "BAtlas 24 C3".
+# The tail after the work and its year is where in the work, not what the work is called.
+LOCATOR_TAIL = re.compile(
+    r"^(?P<work>.*?\b(?:\d{4}[a-z]?|n\.d\.))[,;]\s*(?P<loc>(?:p{1,2}\.|pp|f\.|no\.|col\.|s\.v\.|map\b|"
+    r"grid\b|vol\.|\d).*)$")
+
+
+def split_locator(title):
+    """Return (work title, locator) where a title carries its own locator, else (title, None)."""
+    if not title:
+        return title, None
+    m = LOCATOR_TAIL.match(title.strip())
+    if not m:
+        return title, None
+    work, loc = m.group("work").strip(), m.group("loc").strip()
+    return (work, loc) if work and loc else (title, None)
+
+
 def source_of(r):
-    """A Pleiades reference becomes a PLATO source. Its FUNCTION has nowhere to go here."""
+    """A Pleiades reference becomes a PLATO source.
+
+    FIXED: the identity was minted from bibliographicURI alone, but Pleiades reuses one URI for
+    references that describe DIFFERENT works: 2,243 of its 43,906 distinct bibliographic URIs carry
+    more than one shortTitle or formattedCitation, one of them eleven. That made a single RDF
+    subject carry several conflicting titles and citation strings, of which a second serialisation
+    kept one: 35,294 distinct triples did not survive, which the convert-back-convert stability
+    test found after a 0-difference round trip and 34 of 34 per-predicate controls had passed.
+
+    Now each distinct description gets its own identity, and the shared URI stays on every one of
+    them as authority_uri, so the link to Pleiades' bibliography is not lost.
+    """
     uri = safe_uri(r.get("bibliographicURI") or r.get("accessURI") or r.get("alternateURI"))
-    o = {"title": r.get("shortTitle") or r.get("formattedCitation") or uri or "untitled",
-         "authorityType": "source"}
+    title, locator = split_locator(r.get("shortTitle"))
+    title = title or r.get("formattedCitation") or uri or "untitled"
+    o = {"title": title, "authorityType": "source"}
     if uri:
-        o["@id"] = uri
         o["uri"] = uri
+        # The identity is the description, not the URI. Where one URI describes one work, the
+        # digest is constant and the source keeps a single stable identity.
+        key = json.dumps([uri, title, r.get("formattedCitation") or ""], sort_keys=True)
+        digest = hashlib.sha1(key.encode()).hexdigest()[:12]
+        # An IRI has at most one fragment, and 16,013 of Pleiades' bibliography URIs already carry
+        # one (#Tovar-1989), so the digest extends that fragment rather than adding a second.
+        o["@id"] = f"{uri}-{digest}" if "#" in uri else f"{uri}#{digest}"
     if r.get("formattedCitation"):
         o["citation"] = r["formattedCitation"]
-    return o
+    return o, locator
 
 
 def citations(refs, parked):
@@ -148,12 +207,21 @@ def citations(refs, parked):
     """
     out = []
     for i, r in enumerate(refs or []):
-        c = {"source": source_of(r)}
+        src, from_title = source_of(r)
+        c = {"source": src}
         if r.get("citationDetail") is not None:
             c["locator"] = str(r["citationDetail"])  # one is an integer in the source
+        elif from_title:
+            # The locator was inside the shortTitle; it belongs on the citation.
+            c["locator"] = from_title
+        fn = CITATION_FUNCTION.get(r["type"])
+        if fn:
+            c["citationFunction"] = fn
         out.append(c)
-        parked.append({"property": NS + "citationFunction/" + quote(r["type"], safe=""),
-                       "label": "citationType", "value": r["type"], "sourceLabel": r["type"]})
+        # Only where the mapping is many-to-one does the source's own term still need parking.
+        if r["type"] in AMBIGUOUS_FUNCTION:
+            parked.append({"property": NS + "citationFunction/" + quote(r["type"], safe=""),
+                           "label": "citationType", "value": r["type"], "sourceLabel": r["type"]})
     return out
 
 
@@ -199,12 +267,15 @@ def forward(src, out):
             nt = [x.strip() for x in (nm.get("nameType") or "").split(",") if x.strip()]
             if nt:
                 name["nameType"] = nt
-            # FINDING: transcription accuracy and completeness judge the reading. No slot exists,
-            # so they are parked as PropertyValues, which asserts them of the place.
+            # CLOSED in PLATO cf87b78: these judge the reading and are now qualifications on the
+            # name, rather than PropertyValues asserted of the place.
+            qual = {}
             for k in ("transcriptionAccuracy", "transcriptionCompleteness"):
-                if nm.get(k):
-                    parked.append({"property": NS + "field/" + k, "label": k,
-                                   "value": nm[k], "sourceLabel": nm[k]})
+                v = TRANSCRIPTION.get(nm.get(k))
+                if v:
+                    qual[k] = v
+            if qual:
+                name["qualification"] = qual
             base = {"names": [name]}
             if nm.get("associationCertainty"):
                 base["certaintyLevel"] = NS + "certainty/" + quote(nm["associationCertainty"], safe="")
@@ -222,9 +293,11 @@ def forward(src, out):
                     # own sourced claim. The parked PropertyValues must NOT: they are a workaround
                     # for things with no home, and repeating them would multiply the very counts
                     # this conversion exists to measure. They go on the first only.
+                    # Each period attestation carries its own citations, so each needs its own
+                    # copy of the marker that disambiguates seeAlso from citesAsRelated. The
+                    # marker is per citation, not per name, so it is NOT dropped for later
+                    # periods; an earlier version dropped it and the round trip caught that.
                     one = json.loads(json.dumps(base))
-                    if j:
-                        one.pop("properties", None)
                     e["attestations"].append({
                         "@id": f"{b}name/{i}/{j}", **one,
                         "timespans": [{"label": a.get("timePeriod"),
@@ -302,6 +375,10 @@ def forward(src, out):
           f"{n['conns']} connections, {n['refs']} citations) -> {out}")
 
 
+REVERSE_FUNCTION = {v: k for k, v in CITATION_FUNCTION.items() if k not in AMBIGUOUS_FUNCTION}
+REVERSE_TRANSCRIPTION = {v: k for k, v in TRANSCRIPTION.items()}
+
+
 def load_ses(path):
     if path.endswith(".jsonl"):
         ses = []
@@ -324,9 +401,35 @@ def inverse(rt, out):
                "connections": {}, "citationTypes": []}
         for a in e.get("attestations", []):
             aid = a["@id"]
-            for p in a.get("properties", []):
-                if p.get("label") == "citationType":
-                    rec["citationTypes"].append(p["value"])
+            parked_fn = [p["value"] for p in a.get("properties", [])
+                         if p.get("label") == "citationType"]
+            # A name attested in several periods is several claims, and each carries the same
+            # citations, faithfully. The source has them once per name, so only the first period's
+            # copy is counted; the rest must agree with it, and are checked below.
+            m_np = re.search(r"/name/(\d+)/(\d+)$", aid)
+            fns = []
+            for c in a.get("citations", []):
+                fn = c.get("citationFunction")
+                if fn is None:
+                    continue
+                # citesAsRelated is the target of both Pleiades' own citesAsRelated and its
+                # seeAlso, so it is the one value the mapping cannot reverse on its own. The
+                # parked term disambiguates it, and is carried for that reason alone.
+                if fn == CITO + "citesAsRelated" and parked_fn:
+                    fns.append(parked_fn.pop(0))
+                else:
+                    fns.append(REVERSE_FUNCTION[fn])
+            if m_np:
+                i_n, j_n = m_np.group(1), int(m_np.group(2))
+                prev = rec.setdefault("_namefns", {})
+                if j_n == 0:
+                    prev[i_n] = fns
+                    rec["citationTypes"].extend(fns)
+                elif prev.get(i_n) != fns:
+                    rec["citationTypes"].append(
+                        f"<period {j_n} of name {i_n} cites {fns} but period 0 cites {prev.get(i_n)}>")
+            else:
+                rec["citationTypes"].extend(fns)
             if "/type/" in aid:
                 rec["placeTypes"].append(a["types"][0]["label"])
             elif "/name/" in aid:
@@ -337,9 +440,9 @@ def inverse(rt, out):
                                                 "transcriptionCompleteness": None,
                                                 "romanized": nm.get("romanized"),
                                                 "language": nm.get("language")})
-                for p in a.get("properties", []):
-                    if p.get("label") in ("transcriptionAccuracy", "transcriptionCompleteness"):
-                        d[p["label"]] = p["value"]
+                for k, v in (nm.get("qualification") or {}).items():
+                    if k in ("transcriptionAccuracy", "transcriptionCompleteness"):
+                        d[k] = REVERSE_TRANSCRIPTION.get(v)
                 ts = (a.get("timespans") or [{}])[0]
                 if ts.get("label"):
                     d["periods"].append(ts["label"])
@@ -353,15 +456,27 @@ def inverse(rt, out):
                 r = a["relations"][0]
                 rec["connections"][i] = {"connectsTo": r["relatesTo"],
                                          "connectionType": r.get("relationLabel")}
+        rec.pop("_namefns", None)
         rebuilt[pid] = rec
+    # Record which return file this was rebuilt from. A missing or empty one already fails
+    # loudly; a STALE one from an earlier good run would not, so its size and time are carried
+    # into the result and printed by compare.
+    st = os.stat(rt)
+    rebuilt["_from"] = {"path": os.path.abspath(rt), "bytes": st.st_size,
+                        "mtime": __import__("datetime").datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")}
     json.dump(rebuilt, open(out, "w"), ensure_ascii=False)
-    print(f"rebuilt {len(rebuilt)} places -> {out}")
+    print(f"  rebuilt from {rebuilt['_from']['path']} ({st.st_size:,} bytes, {rebuilt['_from']['mtime']})")
+    print(f"rebuilt {len(rebuilt) - 1} places -> {out}")
 
 
 def compare(src, rebuilt_path):
     with gzip.open(src) as f:
         graph = json.load(f)["@graph"]
     got = json.load(open(rebuilt_path, encoding="utf-8"))
+    src_info = got.pop("_from", None)
+    if src_info:
+        print(f"  comparing against a rebuild of {src_info['path']} "
+              f"({src_info['bytes']:,} bytes, {src_info['mtime']})")
     diffs, checked = [], 0
 
     def chk(cond, msg):
@@ -421,5 +536,32 @@ if __name__ == "__main__":
         inverse(sys.argv[2], sys.argv[3])
     elif cmd == "compare":
         sys.exit(compare(sys.argv[2], sys.argv[3]))
+    elif cmd == "compare-sub":
+        # The per-predicate controls run on a subset, because a full reverse leg is 24 minutes and
+        # 30 of them would be half a day. What they establish is that the COMPARISON reads each
+        # predicate, which does not depend on how many places carry it. Places absent from the
+        # subset are therefore not counted as missing.
+        import gzip as _gz
+        got = json.load(open(sys.argv[3], encoding="utf-8"))
+        got.pop("_from", None)
+        keep = set(got)
+        with _gz.open(sys.argv[2]) as f:
+            graph = json.load(f)["@graph"]
+        tmp = sys.argv[3] + ".sub"
+        json.dump(got, open(tmp, "w"), ensure_ascii=False)
+        import types
+        orig = globals()["compare"]
+        def _sub(src, rp):
+            import gzip
+            g2 = [p for p in graph if p["id"] in keep]
+            class _F:
+                def __enter__(self_): return self_
+                def __exit__(self_, *a): pass
+            import io, json as _j
+            data = _j.dumps({"@graph": g2}).encode()
+            path = sys.argv[3] + ".subsrc.json.gz"
+            with gzip.open(path, "wb") as fh: fh.write(data)
+            return orig(path, rp)
+        sys.exit(_sub(sys.argv[2], tmp))
     else:
         sys.exit("forward | inverse | compare")

@@ -330,5 +330,23 @@ if __name__ == "__main__":
         sys.exit(compare_vob(sys.argv[2], sys.argv[3]))
     elif cmd == "compare-voi":
         sys.exit(compare_voi(sys.argv[2], sys.argv[3]))
+    elif cmd == "compare-voi-sub":
+        # Per-predicate controls run on a subset, so only the units actually present are compared.
+        # Pointing the whole-corpus comparison at a subset makes the CLEAN graph fail, and
+        # controls.py then refuses to run at all, which is how this was noticed.
+        got = json.load(open(sys.argv[3], encoding="utf-8"))
+        got.pop("_from", None)
+        keep = {v["unit"] for v in got.values() if isinstance(v, dict) and v.get("unit")}
+        units = {}
+        for q in sorted(glob.glob(os.path.join(sys.argv[2], "site/data/units/*.json"))):
+            units.update(json.load(open(q, encoding="utf-8")))
+        units = {k: v for k, v in units.items() if str(k) in keep}
+        import tempfile
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "site/data/units"), exist_ok=True)
+        json.dump(units, open(os.path.join(d, "site/data/units/all.json"), "w"), ensure_ascii=False)
+        tmp = sys.argv[3] + ".sub"
+        json.dump(got, open(tmp, "w"), ensure_ascii=False)
+        sys.exit(compare_voi(d, tmp))
     else:
         (vob if cmd == "vob" else voi)(sys.argv[2], sys.argv[3])
