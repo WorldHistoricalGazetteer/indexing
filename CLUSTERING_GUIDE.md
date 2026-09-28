@@ -12,14 +12,11 @@
 **Status:** **SUPERSEDED** — was: Operational (HDBSCAN-based, second full run)
 **Repository:** `WorldHistoricalGazetteer/indexing`
 
-> **V4 note (ArangoDB migration).** This guide describes the current Elasticsearch-based system. In the planned V4 architecture (§4.2), ArangoDB replaces Elasticsearch as the primary data store and pairwise links are stored as graph edges. Under V4:
->
-> - **Phases 1–3** (discovering pairwise links) and **calibration** (§8) carry over largely unchanged — the link-discovery logic is independent of the storage backend.
-> - **Phase 4** (batch cluster computation) and the **`clusters` index** become redundant. Cluster membership is resolved on-the-fly by graph traversal at query time, which also enables per-query confidence thresholds (e.g. "show me the cluster at ≥ 0.6" vs "≥ 0.8").
-> - **Staging/snapshot infrastructure** (§4.1) and the **operational commands** in §6 are specific to the CRC Slurm + ES environment and will not apply to V4.
-> - **Membership documents** (§3) are eliminated entirely; the `cluster_state` index is replaced by ArangoDB metadata.
->
-> Sections marked with these concerns will note their V4 status where relevant.
+> **V4 note (retired).** An earlier version of this guide planned to move clustering onto ArangoDB,
+> resolving cluster membership by graph traversal at query time (§4.2). That plan is retired
+> (2026-09-28, WorldHistoricalGazetteer/place#301): WHG v4 stays on PostgreSQL/PostGIS with
+> Elasticsearch. The query-time confidence threshold it aimed for was delivered client-side instead
+> (see the banner above).
 
 ---
 
@@ -227,23 +224,11 @@ es -cluster --resume --slurm
 
 This skips phases that already completed (checkpointed to the `cluster_state` index) and picks up from where it left off.
 
-### 4.2 V4 Environment (Future — ArangoDB Graph Model)
+### 4.2 V4 Environment (retired)
 
-In the planned V4 architecture, Elasticsearch is replaced by ArangoDB as the primary data store. The clustering results will migrate as follows:
-
-- **Pairwise link documents** become **Attestation nodes** with edges:
-  - `subject_of` → Place A
-  - `relates_to` → Place B
-  - `typed_by` → an Authority document with label `sameAs` (for hard links) or `sameAs_candidate` (for algorithmic soft links)
-  - `sourced_by` → the algorithm, source authority, or contributing dataset
-  - `certainty` = the composite score
-  - `certainty_note` = the algorithm version string
-
-- **Membership documents are discarded entirely.** Cluster membership becomes a graph traversal query — "find all places reachable from this one via `sameAs` / `sameAs_candidate` edges." This is more flexible than pre-computed clusters because it allows different confidence thresholds at query time.
-
-- **Gateway reconciliation grouping** shifts from ES `terms` lookups to AQL graph traversal queries.
-
-The migration is a one-time batch operation: iterate all pairwise docs → create attestation nodes and edges → delete the `clusters` index.
+This section described migrating the clustering results into ArangoDB as attestation nodes and
+edges, with membership resolved by graph traversal. That plan is retired (place#301). Query-time
+thresholds are provided by client-side clustering in whg3 `clustering.js`.
 
 ---
 
