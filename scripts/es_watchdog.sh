@@ -5,11 +5,11 @@
 # 2026-07-20 system-wide OOM killed ES but not the VM).
 #
 # WHY a stg135-side watchdog (not a gazetteer cron):
-#   ES/Kibana/gateway run as `gazetteer`, which cannot be SSH'd (sshd AllowUsers)
-#   and whose crontab we cannot edit. But group-`ishi` users CAN submit an
-#   allowlisted `es-start` token to gaz_relay, which the existing 1-min gazetteer
-#   relay cron executes AS gazetteer. So this watchdog needs no privilege: it
-#   only detects a down ES and drops that same token — the proven restart path.
+#   ES/Kibana/gateway run as `gazetteer`, which cannot be SSH'd (sshd AllowUsers).
+#   This watchdog only detects a down ES and runs the allowlisted `es-start` op
+#   through scripts/gaz_run.sh, which executes it as gazetteer via stg135's
+#   `sudo /bin/su - gazetteer` rule. (Until 2026-09-29 it went through the
+#   cron-polled gaz_relay, now retired.)
 #
 # LIVENESS SIGNAL: any HTTP response from localhost:9201 (200 / 401 / 503 …) means
 #   the ES process is listening = up. Only curl_code "000" (connection refused /
@@ -31,7 +31,6 @@ set -uo pipefail
 
 REPO=/vast/ishi/elastic
 ES_URL=http://localhost:9201/_cluster/health
-RELAY=$REPO/.gaz_relay                    # existing relay drop-dir (check for queued reqs)
 STATE=$REPO/.es_watchdog                  # our own state (fail counter, last-start stamp)
 LOG=$REPO/logs/es_watchdog.log
 DISABLE_FLAG=$REPO/.es_watchdog.disabled
@@ -45,7 +44,7 @@ LASTSTART=$STATE/laststart
 
 log(){ echo "[$(date '+%F %T')] $*" >> "$LOG" 2>/dev/null; }
 
-# Single-instance lock: a gaz_request submission can block up to ~240s, longer than
+# Single-instance lock: a gaz_run op can block up to ~240s, longer than
 # the 2-min cron interval — don't let runs stack. (No stderr redirect on this exec:
 # it would silence the script's stderr for its whole remaining lifetime.)
 exec 9>"$STATE/.lock" || exit 0
@@ -88,17 +87,11 @@ if [ $(( now - last )) -lt "$COOLDOWN" ]; then
     exit 0
 fi
 
-# Don't double-submit if a relay request is already queued/processing.
-if ls "$RELAY"/req-* "$RELAY"/.processing-* >/dev/null 2>&1; then
-    log "a gaz_relay request is already pending/processing — skipping submission."
-    exit 0
-fi
-
-# Act: submit the allowlisted es-start token; the gazetteer relay executes it.
+# Act: run the allowlisted es-start op as gazetteer.
 echo "$now" > "$LASTSTART"
-log "ES down for $n consecutive checks — submitting es-start via gaz_relay."
-out=$(bash "$REPO/scripts/gaz_request.sh" es-start 240 2>&1)
-log "gaz_request es-start result:"
+log "ES down for $n consecutive checks — running es-start as gazetteer."
+out=$(bash "$REPO/scripts/gaz_run.sh" es-start 240 2>&1)
+log "gaz_run es-start result:"
 printf '%s\n' "$out" >> "$LOG" 2>/dev/null
 
 # Fresh failure accounting after an action.

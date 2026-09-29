@@ -603,8 +603,8 @@ start_gateway() {
 
     cd "$REPO_DIR"
     # Use an explicit interpreter so the gateway starts with the right conda env
-    # even when no conda is active in the caller's shell (e.g. the gaz_relay cron,
-    # which has no .bashrc). Set GATEWAY_PYTHON in .env.local to the whg env python
+    # even when no conda is active in the caller's shell (e.g. cron, or gaz_run.sh's
+    # non-interactive su shell). Set GATEWAY_PYTHON in .env.local to the whg env python
     # (pitt: /home/gazetteer/miniconda/envs/whg/bin/python); defaults to `python`.
     nohup "${GATEWAY_PYTHON:-python}" -m gateway \
         > "$GATEWAY_LOG_DIR/nohup.out" 2>&1 &

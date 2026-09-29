@@ -14,7 +14,7 @@
 #
 # EVIDENCE FIRST: a wedge leaves no trace — uvicorn's access log records a request
 # only when it completes, so the request that hung is invisible. The watchdog
-# therefore submits `gateway-dump` (py-spy) BEFORE the restart, so the next
+# therefore runs `gateway-dump` (py-spy) BEFORE the restart, so the next
 # occurrence can be diagnosed instead of merely survived.
 #
 # ANTI-THRASH: FAIL_THRESHOLD consecutive failures before acting, a COOLDOWN
@@ -33,7 +33,6 @@ set -uo pipefail
 
 REPO=/vast/ishi/elastic
 GW_URL=http://localhost:9200/openapi.json
-RELAY=$REPO/.gaz_relay
 STATE=$REPO/.gateway_watchdog
 LOG=$REPO/logs/gateway_watchdog.log
 DISABLE_FLAG=$REPO/.gateway_watchdog.disabled
@@ -48,7 +47,7 @@ LASTSTART=$STATE/laststart
 
 log(){ echo "[$(date '+%F %T')] $*" >> "$LOG" 2>/dev/null; }
 
-# Single-instance lock: a gaz_request submission can block for minutes, longer than
+# Single-instance lock: a gaz_run op can block for minutes, longer than
 # the cron interval — don't let runs stack.
 exec 9>"$STATE/.lock" || exit 0
 flock -n 9 || exit 0
@@ -82,21 +81,16 @@ if [ $(( now - last )) -lt "$COOLDOWN" ]; then
     exit 0
 fi
 
-if ls "$RELAY"/req-* "$RELAY"/.processing-* >/dev/null 2>&1; then
-    log "a gaz_relay request is already pending/processing — skipping submission."
-    exit 0
-fi
-
 echo "$now" > "$LASTSTART"
 
 # Evidence before recovery: what was it doing? Short timeout — a dump is worth
 # having, but never at the cost of delaying the restart.
 log "gateway down for $n consecutive checks — capturing a stack dump first."
-dump_out=$(bash "$REPO/scripts/gaz_request.sh" gateway-dump 120 2>&1)
+dump_out=$(bash "$REPO/scripts/gaz_run.sh" gateway-dump 120 2>&1)
 printf '%s\n' "$dump_out" >> "$LOG" 2>/dev/null
 
-log "submitting gateway-restart via gaz_relay."
-out=$(bash "$REPO/scripts/gaz_request.sh" gateway-restart 240 2>&1)
+log "running gateway-restart as gazetteer."
+out=$(bash "$REPO/scripts/gaz_run.sh" gateway-restart 240 2>&1)
 printf '%s\n' "$out" >> "$LOG" 2>/dev/null
 
 rm -f "$FAILCT" 2>/dev/null

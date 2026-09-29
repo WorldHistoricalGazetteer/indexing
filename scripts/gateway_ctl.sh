@@ -132,7 +132,7 @@ do_pull() {
 }
 _activate_conda() {
     # gateway_ctl may be invoked from a bare environment where the whg conda env
-    # is NOT active — notably the cron-driven gaz_relay (which reaches this script
+    # is NOT active — notably cron or gaz_run.sh's non-interactive su shell (which reach this script
     # with cron's minimal PATH, so `python` is system python3.9 and `python -m
     # gateway` dies on import). Interactive `gw` and the @reboot boot script work
     # only because THEY activate whg first. Activate gazetteer's LOCAL miniconda
