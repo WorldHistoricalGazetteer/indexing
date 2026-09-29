@@ -263,6 +263,11 @@ cd /vast/ishi/elastic
 - Credentials: `/ix1/ishi/secrets/`, `/ix1/ishi/es/config/`
 - Snapshot exchange: `/ix1/ishi/snapshots/`
 
+**Storage retention is governed by `developer/storage-retention-policy.md`** (how many ES
+snapshots and toponym DB generations to keep, what is never deleted, how to delete safely, and
+`umask 002`). Read it before creating snapshots, working databases or model downloads, and before
+deleting anything on `/ix1` or `/vast`.
+
 The boundary planner reads the OSM PBF from `/ix1` once per rebuild (its
 prefilter output is persisted to `/vast` so workers never read `/ix1`).
 
