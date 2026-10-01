@@ -12,7 +12,7 @@ Nothing here is staged or submitted to WHG.
 |---|---|
 | What | Trismegistos Geo, the geographical file of [Trismegistos](https://www.trismegistos.org/) (KU Leuven) |
 | Where | `authorities/trismegistos/tm_geo.db`, read in place and opened `immutable`, so no side files are made. Built by `build_database.py` from `TM_geo.sql`, with links to other gazetteers from TM's GeoRelations service |
-| Version | phpMyAdmin dump of the `tm` database, generated 8 April 2026, 09:52 (MySQL 8.0.25); committed 14 April 2026 (ce6d838) |
+| Version | phpMyAdmin dump of the `tm` database's `geo` table, generated 8 April 2026, 09:52 (MySQL 8.0.25). Sent to Stephen Gadd by Tom Gheldof of Trismegistos in April 2026, as "the most recent data dump … containing all current 64,857 place names and the fields available via TM Data Services API"; committed 14 April 2026 (ce6d838). The concordances came from TM's GeoRelations Matcher API, as Tom advised |
 | Checksums | `TM_geo.sql` sha256 `9743cd5873bb89c3e18cba19c2a6ee1d167564a35c87495563da9490fa65a6d5`; `tm_geo.db` sha256 `a92c4d00de7159012e0cea8579a5c12b06b7e3f9e15b134665e8c0ac5b5fc360` |
 | Licence | CC BY-SA 4.0, as recorded in `processing/settings.py` (verified at trismegistos.org/dataservices, 6 June 2026). Rights: Trismegistos / KU Leuven |
 | Not here | The links between texts and places, which hold TM's actual evidence. TM has them; whether it publishes them is a question for TM |
