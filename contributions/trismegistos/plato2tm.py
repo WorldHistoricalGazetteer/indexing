@@ -18,9 +18,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tm2plato import DB, P, PLACE, IDENTITY, TM, GAZETTEER, TITLE, DESCRIPTION, CITO, variants, year, country_codes, location, types  # noqa: E402
+from tm2plato import (DB, P, PLACE, IDENTITY, TM, GAZETTEER, TITLE, DESCRIPTION, CITO, DEMOTIC, EGYPTOLOGICAL, LAND_OF_A_PEOPLE, NOME,  # noqa: E402
+                      variants, year, country_codes, located, citation, is_people)
 
 CCODES = country_codes()
+LESS = P + 'LessCertain'
 
 # What tm2plato.py claims to carry, field by field; the rest it says it does not (see README.md).
 CARRIED = ['standard_name', 'latin_name', 'greek_unicode', 'egyptian_unicode', 'coptic_unicode', 'ethnicon', 'status',
@@ -30,10 +32,13 @@ NOT_CARRIED = {'region': 'not mapped (it repeats the province outside Egypt, and
                'full_name': 'only its modern name in brackets is carried; the rest repeats country, region and name'}
 
 
+def doubted(a):
+    return a.get('certaintyLevel') == LESS
+
+
 def from_plato(rec):
     """One PLATO record -> TM's fields, as far as the PLATO says them."""
     out = collections.defaultdict(list)
-    ccodes = rec.get('ccodes') or []
     for a in rec.get('attestations', []):
         for n in a.get('names', []):
             form = n.get('sourceLabel') or n['toponym']
@@ -45,15 +50,17 @@ def from_plato(rec):
                 out['latin_name'].append(form)
             elif n.get('language') == 'grc':
                 out['greek_unicode'].append(form)
-            elif n.get('language') == 'egy':
+            elif n.get('language') == DEMOTIC:
                 out['egyptian_unicode'].append(form)
             elif n.get('language') == 'cop':
                 out['coptic_unicode'].append(form)
-            ts = a.get('timespans') or []
-            if ts:
-                out['window'].append((ts[0].get('startEarliest'), ts[0].get('endLatest'), ts[0].get('sourceLabel')))
+        # The attestation window: the one attestation whose timespans are the span of the evidence.
+        for ts in a.get('timespans') or []:
+            out['window'].append((a.get('timespanRole'), ts.get('startEarliest'), ts.get('endLatest'), ts.get('sourceLabel')))
+        if 'timespanRole' in a and not a.get('timespans'):
+            out['window'].append((a.get('timespanRole'), None, None, None))
         for t in a.get('types', []):
-            out['status'].append(t.get('sourceLabel') or t['label'] + ('?' if (t.get('qualification') or {}).get('certaintyLevel') == P + 'LessCertain' else ''))
+            out['status'].append(t.get('sourceLabel') or t['label'] + ('?' if doubted(t.get('qualification') or {}) else ''))
         for g in a.get('geometries', []):
             if 'geojson' in g:
                 # Carried twice, as TM's text and as GeoJSON numbers: they must agree, or neither is trusted.
@@ -65,10 +72,20 @@ def from_plato(rec):
                 out['location'].append(g.get('sourceLabel'))
         for r in a.get('relations', []):
             label = r.get('relatedLabel', '')
-            out['nomos_code' if label.startswith('nome ') else 'province'].append(label[5:] if label.startswith('nome ') else label)
+            if (r.get('relatesTo') or '').startswith(GAZETTEER):
+                # A minted province or nome; doubt about a nome code is doubt about the relation.
+                if label.startswith('nome '):
+                    out['nomos_code'].append(label[5:] + ('?' if doubted(a) else ''))
+                else:
+                    out['province'].append(label + ('?' if doubted(a) else ''))
+            elif 'relationLabel' in r:
+                out['location'].append(r['relationLabel'])
+            else:
+                out['country_doubt'].append(label + ('?' if doubted(a) else ''))
     for i in rec.get('identityRelations', []):
         out['georelations'].append(i['object'])
-    out['ccodes'] = ccodes
+    out['ccodes'] = rec.get('ccodes') or []
+    out['location'] = sorted(set(out['location']))
     return out
 
 
@@ -86,7 +103,7 @@ def from_tm(r, rel, wd):
     f['coordinates'] = [r['coordinates']] if r['coordinates'] else []
     f['location'] = [r['location']] if r['location'] and r['location'].lower() != 'unknown' else []
     f['province'] = [r['province']] if r['province'] and r['province'] != 'N/A' else []
-    f['nomos_code'] = [r['nomos_code'].rstrip('?')] if r['nomos_code'] and re.fullmatch(r'(U|L|00)\d*[a-z]?\??', r['nomos_code']) else []
+    f['nomos_code'] = [r['nomos_code']] if r['nomos_code'] and NOME.fullmatch(r['nomos_code']) else []
     objs = set()
     for partner, pid in rel:
         if partner == 'wikipedia' and pid in wd:
@@ -97,19 +114,27 @@ def from_tm(r, rel, wd):
     return f
 
 
-SCRIPT = {'grc': ('Grek', None), 'cop': ('Copt', None), 'egy': ('Latn', 'Egyptological transliteration')}
+SCRIPT = {'grc': ('Grek', None), 'cop': ('Copt', None), DEMOTIC: ('Latn', EGYPTOLOGICAL)}
 HEADER = {'@id': GAZETTEER, 'title': TITLE, 'description': DESCRIPTION, 'licence': 'https://creativecommons.org/licenses/by-sa/4.0/', 'status': 'draft'}
 
 
-def disagreements(rec, r):
+def no_ids(a):
+    return {k: v for k, v in a.items() if k != '@id'}
+
+
+def disagreements(rec, r, units):
     """Everything the PLATO says twice, or derives from a value it also keeps, must agree with it: a
-    value carried twice and read once is never verified. Returns what does not."""
+    value carried twice and read once is never verified. Returns what does not, and records which
+    minted units this record points at, for the check of the units themselves."""
     out = []
+    people = is_people(r['status'])
     want = r['standard_name'] or r['latin_name'] or r['full_name']
     if rec.get('label') != want:
         out.append(('label', rec.get('label'), want))
     if rec.get('entityIdentifier') != str(r['tm_geo_id']) or rec.get('namespace') != 'https://www.trismegistos.org/geo/':
         out.append(('identifier', rec.get('entityIdentifier'), rec.get('namespace')))
+    cite = citation(r['tm_geo_id'])
+    positions = []
     for a in rec.get('attestations', []):
         for c in a.get('citations', []):
             src = c.get('source') if isinstance(c.get('source'), dict) else {'@id': c.get('source')}
@@ -119,27 +144,66 @@ def disagreements(rec, r):
             script, system = SCRIPT.get(n.get('language'), (None, None))
             if (n.get('script'), n.get('transliterationSystem')) != (script, system):
                 out.append(('script', n.get('language'), n.get('script'), n.get('transliterationSystem')))
+            # A people's record is the land it lived in: every name but the demonyms is toponym and ethnonym.
+            kind = n.get('nameType')
+            if kind != ['demonym'] and kind != (['toponym', 'ethnonym'] if people else None):
+                out.append(('nameType', n.get('toponym'), kind, people))
         for t in a.get('types', []):
-            if t.get('sourceLabel') and t['label'] != t['sourceLabel'].split(':')[0].replace('?', '').strip():
-                out.append(('type label', t['label'], t['sourceLabel']))
+            if t.get('sourceLabel'):
+                cls = t['sourceLabel'].split(':')[0].replace('?', '').strip()
+                if t['label'] != (LAND_OF_A_PEOPLE if cls == 'people' else cls):
+                    out.append(('type label', t['label'], t['sourceLabel']))
+            elif t['label'] == LAND_OF_A_PEOPLE:
+                out.append(('type label', t['label'], None))
         for rl in a.get('relations', []):
             label = rl.get('relatedLabel', '')
-            kind, key = ('nome', label[5:]) if label.startswith('nome ') else ('province', label)
-            iri = f"{GAZETTEER}/{kind}/{re.sub(r'[^A-Za-z0-9]+', '-', key).strip('-')}"
-            if rl.get('relatesTo') != iri or rl.get('relationType') != P + 'ContainedIn':
-                out.append(('relation', rl.get('relatesTo'), iri))
-        for g in a.get('geometries', []):
-            if 'geojson' not in g:
-                expected = location(g.get('sourceLabel', ''))[0].get('qualification')
-                if g.get('qualification') != expected:
-                    out.append(('location', g.get('qualification'), expected))
+            if (rl.get('relatesTo') or '').startswith(GAZETTEER):
+                kind, key = ('nome', label[5:]) if label.startswith('nome ') else ('province', label)
+                iri = f"{GAZETTEER}/{kind}/{re.sub(r'[^A-Za-z0-9]+', '-', key).strip('-')}"
+                if rl.get('relatesTo') != iri or rl.get('relationType') != P + 'ContainedIn' or 'relationLabel' in rl:
+                    out.append(('relation', rl.get('relatesTo'), iri))
+                units[iri].add(r['tm_geo_id'])
+            elif 'relationLabel' not in rl:
+                # Doubt about the country: a relation by name alone, with the doubt on the attestation.
+                if (rl.get('relationType'), label, rl.get('relatesTo'), doubted(a), r['country'].endswith('?')) != (P + 'ContainedIn', r['country'].rstrip('?').strip(), None, True, True) or rec.get('ccodes'):
+                    out.append(('country doubt', rl, r['country'], rec.get('ccodes')))
+        if any('geojson' not in g for g in a.get('geometries', [])) or any('relationLabel' in rl for rl in a.get('relations', [])):
+            positions.append(no_ids(a))
+        if (a.get('timespans') or 'timespanRole' in a) and set(a) - {'timespans', 'timespanRole', 'citations', '@id'}:
+            out.append(('window', 'not an attestation of the timespan alone', sorted(a)))
+    # A location in words: its positions must be exactly what the words give, with the words on each.
+    if r['location'] and r['location'].lower() != 'unknown':
+        expect = sorted(json.dumps(a, sort_keys=True) for a in located(r['location'], cite)[0])
+        got = sorted(json.dumps(a, sort_keys=True) for a in positions)
+        if expect != got:
+            out.append(('location', got[:2], expect[:2]))
+    elif positions:
+        out.append(('location', 'positions with no location', len(positions)))
+    # An identity link: its basis names the partner whose address pattern its object follows (a
+    # Wikipedia slug resolved to Wikidata is a Wikidata link), from TM, of unspecified type.
     for i in rec.get('identityRelations', []):
         partner = next((k for k, v in IDENTITY.items() if i['object'].startswith(v.split('{}')[0])), None)
         src = i.get('source') if isinstance(i.get('source'), dict) else {'@id': i.get('source')}
-        if i.get('basis') != f'Trismegistos GeoRelations ({partner})' and not i.get('basis', '').startswith('Trismegistos GeoRelations (wikipedia') \
-                or src.get('@id') != TM['@id'] or i.get('identityType') != 'unspecified':
+        if (i.get('basis'), src.get('@id'), i.get('identityType')) != (f'Trismegistos GeoRelations ({partner})', TM['@id'], 'unspecified'):
             out.append(('identity', i.get('basis'), src.get('@id'), i.get('identityType')))
     return out
+
+
+def check_units(units, records):
+    """The minted units: each must be in the file with the name or code TM gives it, attested from
+    the first TM record that names it, and saying in how many records it is named."""
+    bad = []
+    for iri, ids in sorted(units.items()):
+        u = records.get(iri)
+        kind, key = iri[len(GAZETTEER) + 1:].split('/', 1)
+        label = u.get('label') if u else None
+        name = (label[5:] if kind == 'nome' else label) if label else None
+        want = [{'names': [{'toponym': name}], 'citations': citation(min(ids)),
+                 'notes': f'Trismegistos names this unit in {len(ids)} record{"s" if len(ids) != 1 else ""} without a record of its own, so it is minted as a place of this dataset.'}]
+        got = [no_ids(a) for a in (u or {}).get('attestations', [])]
+        if u is None or not label or re.sub(r'[^A-Za-z0-9]+', '-', name).strip('-') != key or got != want:
+            bad.append({'unit': iri, 'got': got[:1], 'want': want})
+    return bad
 
 
 def main():
@@ -154,17 +218,20 @@ def main():
     for t, p, i in conn.execute('SELECT tm_geo_id, partner, partner_id FROM georelations'):
         rel[t].append((p, i))
     wd = {s: q for s, q in conn.execute('SELECT slug, qid FROM _wikidata_resolved') if q}
-    plato, head = {}, {}
+    plato, others, head = {}, {}, {}
     with open(a.plato, encoding='utf-8') as fh:
         for line in fh:
             rec = json.loads(line)
             iri = rec.get('@id', '')
             if 'gazetteer' in rec:
                 head = rec['gazetteer']
-            if iri.startswith(PLACE.format('')):
+            elif iri.startswith(PLACE.format('')):
                 plato[int(iri[len(PLACE.format('')):])] = rec
+            else:
+                others[iri] = rec
     have, match, unmapped = collections.Counter(), collections.Counter(), collections.Counter()
     diffs = collections.defaultdict(list)
+    units = collections.defaultdict(set)
     missing = 0
     for r in map(dict, conn.execute('SELECT * FROM geo ORDER BY tm_geo_id')):
         rec = plato.get(r['tm_geo_id'])
@@ -173,7 +240,7 @@ def main():
             continue
         mine, theirs = from_plato(rec), from_tm(r, rel[r['tm_geo_id']], wd)
         have['agreement'] += 1
-        dis = disagreements(rec, r)
+        dis = disagreements(rec, r, units)
         match['agreement'] += not dis
         if dis and len(diffs['agreement']) < 5:
             diffs['agreement'].append({'tm': r['tm_geo_id'], 'disagree': dis[:3]})
@@ -186,36 +253,44 @@ def main():
                 match[k] += ok
                 if not ok and len(diffs[k]) < 5:
                     diffs[k].append({'tm': r['tm_geo_id'], 'source': theirs[k], 'plato': mine[k]})
-        # The attestation window, on every attested name: the same two years and written form.
-        if r['begin_date'] or r['end_date']:
+        # The attestation window: one attestation, EvidenceSpan, the same two years and written form;
+        # and no other attestation dated at all.
+        if r['begin_date'] or r['end_date'] or mine['window']:
             have['dates'] += 1
             written = r['begin_date_fmt'] if r['begin_date_fmt'] == r['end_date_fmt'] else f"{r['begin_date_fmt']} - {r['end_date_fmt']}"
-            want = (year(r['begin_date']), year(r['end_date']), written)
-            wins = set(mine['window'])
-            ok = wins == {want} or (not mine['window'] and not any(theirs[k] for k in ('latin_name', 'greek_unicode', 'egyptian_unicode', 'coptic_unicode', 'ethnicon')))
+            want = [(P + 'EvidenceSpan', year(r['begin_date']), year(r['end_date']), written)] if r['begin_date'] or r['end_date'] else []
+            ok = mine['window'] == want
             match['dates'] += ok
             if not ok and len(diffs['dates']) < 5:
-                diffs['dates'].append({'tm': r['tm_geo_id'], 'source': want, 'plato': sorted(wins)})
+                diffs['dates'].append({'tm': r['tm_geo_id'], 'source': want, 'plato': mine['window']})
         if r['country'] and r['country'] != 'ghost name':
             have['country'] += 1
+            doubt = r['country'].endswith('?')
             code = CCODES.get(r['country'].rstrip('?').strip())
-            ok = mine['ccodes'] == ([code] if code else [])
+            if doubt:
+                ok = mine['ccodes'] == [] and mine['country_doubt'] == [r['country']]
+            else:
+                ok = mine['ccodes'] == ([code] if code else []) and not mine['country_doubt']
             match['country'] += ok
             if not ok and len(diffs['country']) < 5:
-                diffs['country'].append({'tm': r['tm_geo_id'], 'source': r['country'], 'plato': mine['ccodes']})
-            if not code:
+                diffs['country'].append({'tm': r['tm_geo_id'], 'source': r['country'], 'plato': (mine['ccodes'], mine['country_doubt'])})
+            if not code and not doubt:
                 unmapped[r['country']] += 1
     have['header'] = 1
     match['header'] = int(all(head.get(k) == v for k, v in HEADER.items()))
     if not match['header']:
         diffs['header'].append({k: head.get(k) for k in ('@id', 'title', 'licence', 'status')})
+    have['units'] = len(units)
+    bad_units = check_units(units, others)
+    match['units'] = len(units) - len(bad_units)
+    diffs['units'] = bad_units[:5]
     total = conn.execute('SELECT COUNT(*) FROM geo').fetchone()[0]
-    print(f'{len(plato)} of {total} TM records found in {a.plato}' + (' (a sample: only those compared)' if a.only_present else ''))
+    print(f'{len(plato)} of {total} TM records found in {a.plato}, with {len(others)} other places' + (' (a sample: only those compared)' if a.only_present else ''))
     bad = False
     for k in sorted(have):
         flag = '' if match[k] == have[k] else '   DIFFERS'
         bad |= bool(flag)
-        print(f'  {k:18} {match[k]:6} of {have[k]:6} records match{flag}')
+        print(f'  {k:18} {match[k]:6} of {have[k]:6} {"units" if k == "units" else "records"} match{flag}')
         for d in diffs[k][:3]:
             print(f'      e.g. {d}')
     if unmapped:
