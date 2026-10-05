@@ -1192,6 +1192,12 @@ AUTHORITIES = [
             {
                 # Built locally by authorities/trismegistos/build_database.py
                 # from TM_geo.sql + TM GeoRelations API
+                # (https://www.trismegistos.org/dataservices/georelations/documentation/).
+                # TM_geo.sql is NOT fetchable: Tom Gheldof (Trismegistos) emailed it to
+                # SG in April 2026 — phpMyAdmin dump of 8 Apr 2026, `geo` table only,
+                # all 64,857 places with the TM Data Services API fields. sha256
+                # 9743cd5873bb89c3e18cba19c2a6ee1d167564a35c87495563da9490fa65a6d5.
+                # A newer dump has to be requested from TM, hence the empty url.
                 'url': '',
                 'name': 'tm_geo.db',
                 'file_type': 'sqlite',
