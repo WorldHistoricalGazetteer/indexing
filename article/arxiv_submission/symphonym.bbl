@@ -1,4 +1,4 @@
-\begin{thebibliography}{19}
+\begin{thebibliography}{21}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -24,17 +24,23 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations}, 2018.
 
-\bibitem[Gadd(2026{\natexlab{a}})]{symphonym2026hf}
+\bibitem[Gadd(2026{\natexlab{a}})]{symphonym2026}
 Stephen Gadd.
-\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
-  toponym matching, 2026{\natexlab{a}}.
-\newblock URL \url{https://huggingface.co/docuracy/symphonym-v7}.
+\newblock Symphonym: Universal phonetic embeddings for cross-script name
+  matching, 2026{\natexlab{a}}.
+\newblock URL \url{https://arxiv.org/abs/2601.06932}.
 
-\bibitem[Gadd(2026{\natexlab{b}})]{symphonym2026zenodo}
+\bibitem[Gadd(2026{\natexlab{b}})]{symphonym2026hf}
 Stephen Gadd.
-\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
+\newblock Symphonym v8 --- universal phonetic embeddings for cross-script
   toponym matching, 2026{\natexlab{b}}.
-\newblock URL \url{https://doi.org/10.5281/zenodo.18682017}.
+\newblock URL \url{https://huggingface.co/docuracy/symphonym-v8}.
+
+\bibitem[Gadd(2026{\natexlab{c}})]{symphonym2026zenodo}
+Stephen Gadd.
+\newblock Symphonym v8 --- universal phonetic embeddings for cross-script
+  toponym matching, 2026{\natexlab{c}}.
+\newblock URL \url{https://doi.org/10.5281/zenodo.22767194}.
 
 \bibitem[Gadd(1990)]{gadd1990phonix}
 T.~N. Gadd.
@@ -55,6 +61,15 @@ Geoffrey Hinton, Oriol Vinyals, and Jeff Dean.
 \newblock \emph{arXiv preprint arXiv:1503.02531}, 2015.
 \newblock \doi{10.48550/arXiv.1503.02531}.
 \newblock URL \url{https://arxiv.org/abs/1503.02531}.
+
+\bibitem[Kolani et~al.(2025)Kolani, Melichov, Calev, and
+  Alper]{kolani2025phonikudhebrewgraphemetophonemeconversion}
+Yakov Kolani, Maxim Melichov, Cobi Calev, and Morris Alper.
+\newblock Phonikud: Hebrew grapheme-to-phoneme conversion for real-time
+  text-to-speech.
+\newblock 2025.
+\newblock \doi{10.48550/arXiv.2506.12311}.
+\newblock URL \url{https://arxiv.org/abs/2506.12311}.
 
 \bibitem[Malkov and Yashunin(2020)]{malkov2020hnsw}
 Yu.~A. Malkov and D.~A. Yashunin.

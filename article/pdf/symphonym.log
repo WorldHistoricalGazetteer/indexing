@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.3.28)  29 MAR 2026 12:16
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.3.28)  5 OCT 2026 08:02
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1352,9 +1352,9 @@ hai;language=dflt;"
 (fontspec)             - 'small caps'  (m/sc) with NFSS spec.: 
 
 (pdf/symphonym.aux
-LaTeX Info: Redefining \rmfamily on input line 21.
-LaTeX Info: Redefining \sffamily on input line 21.
-LaTeX Info: Redefining \ttfamily on input line 21.
+LaTeX Info: Redefining \rmfamily on input line 20.
+LaTeX Info: Redefining \sffamily on input line 20.
+LaTeX Info: Redefining \ttfamily on input line 20.
 )
 \openout1 = `symphonym.aux'.
 
@@ -1505,161 +1505,186 @@ Overfull \hbox (0.69589pt too wide) in paragraph at lines 175--176
  then transfers this knowl-[]
  []
 
+[1
+
+]
 LaTeX Font Info:    Font shape `TU/Amiri-Regular(0)/m/n' will be
 (Font)              scaled to size 10.95pt on input line 186.
 LaTeX Font Info:    Font shape `TU/NotoSerifCJK-Regular(0)/m/n' will be
 (Font)              scaled to size 10.95pt on input line 186.
-[1
 
-]
-LaTeX Font Info:    Font shape `TU/NotoSerifBengali-Regular(0)/m/n' will be
-(Font)              scaled to size 10.95pt on input line 190.
+Overfull \hbox (4.00723pt too wide) in paragraph at lines 186--187
+[]\TU/LinLibertine(0)/m/n/10.95 cultural, cross-temporal scholarship, yet no ex
+isting computational method bridges[]
+ []
+
 
 Overfull \hbox (12.81177pt too wide) in paragraph at lines 190--191
 [][]\TU/LinLibertine(0)/m/n/10.95 The phonetic encoding of names has a long com
 putational history. Soundex ([][][]Rus-[][]
  []
 
-LaTeX Font Info:    Font shape `TU/NotoSerifGeorgian-Regular(0)/m/n' will be
-(Font)              scaled to size 10.95pt on input line 192.
-[2] [3] [4]
-Overfull \hbox (7.6791pt too wide) in paragraph at lines 289--290
+[2]
+Overfull \hbox (1.9036pt too wide) in paragraph at lines 203--204
+[]\TU/LinLibertine(0)/m/n/10.95 non-phonetic signal. The system is deployed wit
+hin the World Historical Gazetteer[]
+ []
+
+[3] [4]
+Overfull \hbox (4.67517pt too wide) in paragraph at lines 294--295
 [] []\TU/LinLibertine(0)/b/n/10.95 Length-Aware Representation.[] \TU/LinLibert
-ine(0)/m/n/10.95 Toponym lengths vary dramatically (from two-[]
+ine(0)/m/n/10.95 Toponym lengths vary dramatically, and naive[]
  []
 
 [5] [6]
-Overfull \hbox (1.72147pt too wide) in paragraph at lines 328--329
-[]\TU/LinLibertine(0)/m/n/10.95 struction pass scans the entire 66.9M corpus, y
-ielding 113,280 tokens across twenty[]
+Overfull \hbox (1.4501pt too wide) in paragraph at lines 328--329
+[]\TU/LinLibertine(0)/m/n/10.95 emphasis because it inverts a common practice. 
+The rejected candidate \TU/LinLibertine(0)/b/n/10.95 M \TU/LinLibertine(0)/m/n/
+10.95 achieved[]
  []
 
 [7]
-Overfull \hbox (29.7096pt too wide) in paragraph at lines 337--338
-[]\TU/LinLibertine(0)/m/n/10.95 IPA transcriptions are generated via three comp
-lementary backends: Epitran ([][][]Mortensen[][]
+LaTeX Font Info:    Font shape `TU/NotoSerifBengali-Regular(0)/m/n' will be
+(Font)              scaled to size 10.95pt on input line 337.
+
+Overfull \hbox (10.16481pt too wide) in paragraph at lines 337--338
+[]\TU/LinLibertine(0)/m/n/10.95 Cologne record yields two clusters, Germanic (K
+öln, Keulen) and Romance (Cologne,[]
  []
 
 
-Overfull \hbox (15.67259pt too wide) in paragraph at lines 339--340
-[] []\TU/LinLibertine(0)/b/n/10.95 Epitran Extensions.[] \TU/LinLibertine(0)/m/
-n/10.95 Epitran ships with approximately 150 grapheme-to-phoneme[]
+Overfull \hbox (1.5961pt too wide) in paragraph at lines 337--338
+[]\TU/LinLibertine(0)/m/n/10.95 never learns that phonetically unrelated exonym
+s are equivalent. A London record[]
  []
 
-[8]
-Overfull \hbox (5.15704pt too wide) in paragraph at lines 345--346
-[]\TU/LinLibertine(0)/m/n/10.95 pairs yield approximately 20.4 million Phase 1 
-training triplets and 8 million Phase 3[]
- []
 
-LaTeX Font Info:    Font shape `TU/NotoSerifHebrew-Regular(0)/m/n' will be
-(Font)              scaled to size 10.95pt on input line 353.
-
-Overfull \hbox (10.66759pt too wide) in paragraph at lines 357--358
+Overfull \hbox (10.66759pt too wide) in paragraph at lines 353--354
 []\TU/LinLibertine(0)/m/n/10.95 Symphonym is evaluated on the MEHDIE Hebrew-Ara
 bic historical toponym bench-[]
  []
 
-
-Overfull \hbox (0.64755pt too wide) in paragraph at lines 359--360
+[8]
+Overfull \hbox (0.64755pt too wide) in paragraph at lines 357--358
 [][]\TU/LinLibertine(0)/m/n/10.95 PanPhon192 achieves only 41.1% R@1 and 45.0% 
 MRR, roughly half the trained[]
  []
 
+
+Overfull \hbox (3.02812pt too wide) in paragraph at lines 363--364
+[] []\TU/LinLibertine(0)/b/n/10.95 Comparison with the MEHDIE System.[] \TU/Lin
+Libertine(0)/m/n/10.95 Direct comparison with the MEHDIE[]
+ []
+
+
+Overfull \hbox (9.24377pt too wide) in paragraph at lines 363--364
+[]\TU/LinLibertine(0)/m/n/10.95 threshold-based F-5 metrics, incommensurable wi
+th ranking metrics. Their pipeline,[]
+ []
+
 [9]
-Overfull \hbox (8.04414pt too wide) in paragraph at lines 367--368
-[]\TU/LinLibertine(0)/m/n/10.95 The model was deployed to a staging Elasticsear
-ch instance containing all 66,924,548[]
+Overfull \hbox (10.62103pt too wide) in paragraph at lines 374--375
+[]\TU/LinLibertine(0)/m/n/10.95 R@1 trails \TU/lmtt/m/n/10.95 difflib \TU/LinLi
+bertine(0)/m/n/10.95 ratio (0.909), Jaro-Winkler (0.903) and Levenshtein (0.887
+).[]
+ []
+
+[10] [11]
+Overfull \hbox (6.14984pt too wide) in paragraph at lines 408--409
+[]\TU/LinLibertine(0)/m/n/10.95 posite direction, since its purpose is to teach
+ that \TU/lmtt/m/n/10.95 Lodnon \TU/LinLibertine(0)/m/n/10.95 should still matc
+h \TU/lmtt/m/n/10.95 London\TU/LinLibertine(0)/m/n/10.95 .[]
  []
 
 
-Overfull \hbox (12.71246pt too wide) in paragraph at lines 367--368
-[]\TU/LinLibertine(0)/m/n/10.95 script-pair bins (LATIN-CYRILLIC, ARABIC-BENGAL
-I, CJK-HANGUL, and so forth).[]
- []
-
-
-Overfull \hbox (2.082pt too wide) in paragraph at lines 369--370
-[][]\TU/LinLibertine(0)/m/n/10.95 The 0.75 cosine similarity threshold is desig
-ned as a high-recall pruning thresh-[]
- []
-
-[10]
-Overfull \hbox (11.48972pt too wide) in paragraph at lines 371--372
-[]\TU/LinLibertine(0)/m/n/10.95 0.981), Devanagari-Kannada (0.976), Devanagari-
-Telugu (0.976), Cyrillic-Latin (0.923,[]
- []
-
-
-Overfull \hbox (2.53886pt too wide) in paragraph at lines 371--372
-[]\TU/LinLibertine(0)/m/n/10.95 clude CJK-Latin (0.808, $\OML/cmm/m/it/10.95 n$
-\TU/LinLibertine(0)/m/n/10.95 =1,073) and the CJK-Hiragana case discussed above
- (0.437,[]
- []
-
-[11]
-Overfull \hbox (6.5512pt too wide) in paragraph at lines 386--387
-[]\TU/LinLibertine(0)/m/n/10.95 permutations of “Deryke/Derico/Diryk Shotynbake
-r/Shuttynbaker/Shotyngbaker”,[]
- []
-
-
-Overfull \hbox (8.73396pt too wide) in paragraph at lines 388--389
-[]\TU/LinLibertine(0)/m/n/10.95 Symphonym’s performance derives from the three-
-phase training curriculum rather[]
+Overfull \hbox (15.52296pt too wide) in paragraph at lines 412--413
+[] []\TU/LinLibertine(0)/b/n/10.95 The transferable point.[] \TU/LinLibertine(0
+)/m/n/10.95 An augmentation introduced to confer robustness teaches[]
  []
 
 [12]
-Overfull \hbox (7.34212pt too wide) in paragraph at lines 397--398
-[]\TU/LinLibertine(0)/m/n/10.95 geographic biases. GeoNames over-represents pop
-ulated places with official names;[]
+Overfull \hbox (5.05844pt too wide) in paragraph at lines 426--427
+[]\TU/LinLibertine(0)/m/n/10.95 test set, the quantised model reproduces the fu
+ll-precision model’s order-sensitivity[]
+ []
+
+
+Overfull \hbox (2.64941pt too wide) in paragraph at lines 434--435
+[] []\TU/LinLibertine(0)/b/n/10.95 Cross-temporal Generalisation.[] \TU/LinLibe
+rtine(0)/m/n/10.95 The most significant positive finding is cross-[]
  []
 
 [13]
-Overfull \hbox (11.50307pt too wide) in paragraph at lines 415--416
-[]\TU/LinLibertine(0)/m/n/10.95 available at [][][]$[][][][][] [] [] [] [][][] 
-[] [][][] [] [][] [] [][][][] [] [][][][][][] [] [][][][][][][][]$[][][] ([][][
-]Gadd[][][], [][][]2026b[][][]). Train-[]
+Overfull \hbox (3.1632pt too wide) in paragraph at lines 443--444
+[]\TU/LinLibertine(0)/m/n/10.95 A project on the London customs accounts (1380–
+1560) applied the first-generation[]
  []
 
 
-Overfull \hbox (27.26138pt too wide) in paragraph at lines 415--416
-[]\TU/LinLibertine(0)/m/n/10.95 ing code and inference utilities are available 
-at [][][]$[][][][][] [] [] [] [][][][][][][][][][][] [] [][] [] [][][][][][][][
-] []$[][]
+Overfull \hbox (8.29509pt too wide) in paragraph at lines 445--446
+[] []\TU/LinLibertine(0)/b/n/10.95 What it shows.[] \TU/LinLibertine(0)/m/n/10.
+95 The encoder served as the FAISS candidate generator for spelling-[]
+ []
+
+[14]
+Overfull \hbox (10.8838pt too wide) in paragraph at lines 460--461
+[] []\TU/LinLibertine(0)/b/n/10.95 Retrieval Ceiling.[] \TU/LinLibertine(0)/m/n
+/10.95 More than half of correct answers lie outside the 200-candidate[]
+ []
+
+[15]
+Overfull \hbox (5.38326pt too wide) in paragraph at lines 468--469
+[] []\TU/LinLibertine(0)/b/n/10.95 Training Data Coverage.[] \TU/LinLibertine(0
+)/m/n/10.95 Despite stratified sampling, sources retain geographic[]
+ []
+
+[16]
+Overfull \hbox (3.88803pt too wide) in paragraph at lines 495--496
+[][]$[][][][][][] [] [][][][][][][][]$[][][] \TU/LinLibertine(0)/m/n/10.95 ([][
+][]Gadd[][][], [][][]2026c[][][]); the model, its canonical tokeniser, and an O
+NNX[]
  []
 
 
-Overfull \hbox (44.10234pt too wide) in paragraph at lines 415--416
-[][]$[][][][][][][][][][][][][]$[][][] \TU/LinLibertine(0)/m/n/10.95 ([][][]Gad
-d[][][], [][][]2026a[][][]) and [][][]$[][][][][] [] [] [] [][][][][][] [] [][]
-[] [] [][][][][][][][][][][][][][][][][][][][][][][][] []$[][]
+Overfull \hbox (14.61038pt too wide) in paragraph at lines 495--496
+[]\TU/LinLibertine(0)/m/n/10.95 export are at [][][]$[][][][][] [] [] [] [][][]
+[][][][][][][][] [] [][] [] [][][][][][][][] [] [][][][][][][][][][][][][]$[][]
+[] ([][][]Gadd[][][], [][][]2026b[][][]).[]
  []
 
 
-Overfull \hbox (14.74911pt too wide) in paragraph at lines 415--416
-[]\TU/LinLibertine(0)/m/n/10.95 ames ([][][]$[][][][][] [] [] [] [][][] [] [][]
-[][][][][][] [] [][][][]$[][][]), Wikidata ([][][]$[][][][][] [] [] [] [][][] [
-] [][][][][][][][] [] [][][][]$[][][]),[]
+Overfull \hbox (22.30095pt too wide) in paragraph at lines 495--496
+[][]$[][][] [] [][][] [] [][] [] [][][][] [] [][][][][][] [] [][][][][][][][]$[
+][][] \TU/LinLibertine(0)/m/n/10.95 and [][][]$[][][][][] [] [] [] [][][][][][]
+[][][][][] [] [][] [] [][][][][][][][] []$[][]
  []
 
-(pdf/symphonym.bbl [14]
-Underfull \hbox (badness 1062) in paragraph at lines 28--32
-[]\TU/LinLibertine(0)/m/n/10.95 toponym matching, 2026a.  URL [][][]$[][][][][]
+
+Overfull \hbox (38.72235pt too wide) in paragraph at lines 495--496
+[]\TU/LinLibertine(0)/m/n/10.95 code and inference utilities are at [][][]$[][]
+[][][] [] [] [] [][][][][][] [] [][][] [] [][][][][][][][][][][][][][][][][][][
+][][][][][] []$[][]
+ []
+
+
+Overfull \hbox (0.32956pt too wide) in paragraph at lines 495--496
+[][]$[][][][][] [] [][][][][][][][][][][][] [] [][][][]$[][][]\TU/LinLibertine(
+0)/m/n/10.95 ). The MEHDIE benchmark is available via [][][]Sagi et al.[][][][]
+
+ []
+
+(pdf/symphonym.bbl [17]
+Underfull \hbox (badness 1033) in paragraph at lines 34--38
+[]\TU/LinLibertine(0)/m/n/10.95 toponym matching, 2026b.  URL [][][]$[][][][][]
  [] [] [] [][][][][][][][][][][] [] [][] [] [][][][][][][][] []$[][]
  []
 
-[15]) [16] [17]
-Underfull \hbox (badness 10000) in paragraph at lines 470--470
-[][]|\TU/LinLibertine(0)/m/n/10 Cross-script equiva-[]
+[18]) [19] [20]
+Overfull \hbox (35.81247pt too wide) in paragraph at lines 535--546
+ [][][][] 
  []
 
-
-Underfull \hbox (badness 10000) in paragraph at lines 471--472
-[][]|\TU/LinLibertine(0)/m/n/10 Zurich/Zürich, Krakow/Kraków, São[]
- []
-
-[18]
+[21] [22] [23] [24]
 The property list \polyglossia@langsetup contains the pairs (without outer
 braces):
 >  {latex/script}  =>  {latin}
@@ -1694,22 +1719,22 @@ braces):
 >  {english/babelname}  =>  {american}
 >  {english/localnumeral}  =>  {polyglossia@C@localnumeral}
 >  {english/Localnumeral}  =>  {polyglossia@C@localnumeral}.
- [19] (pdf/symphonym.aux
-LaTeX Info: Redefining \rmfamily on input line 21.
-LaTeX Info: Redefining \sffamily on input line 21.
-LaTeX Info: Redefining \ttfamily on input line 21.
-Package cleveref Info: loaded `english' language definitions on input line 21.
+ [25] (pdf/symphonym.aux
+LaTeX Info: Redefining \rmfamily on input line 20.
+LaTeX Info: Redefining \sffamily on input line 20.
+LaTeX Info: Redefining \ttfamily on input line 20.
+Package cleveref Info: loaded `english' language definitions on input line 20.
 )
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
-(rerunfilecheck)             Checksum: 044E62E30EBEEBED62EC3AADA85D9AAE;2362.
+(rerunfilecheck)             Checksum: 6B7137C981691ECD698B32D0AE4E6414;3432.
  ) 
 Here is how much of TeX's memory you used:
- 36529 strings out of 477407
- 805743 string characters out of 5844518
- 1309768 words of memory out of 5000000
- 56496 multiletter control sequences out of 15000+600000
- 478870 words of font info for 126 fonts, out of 8000000 for 9000
+ 36558 strings out of 477407
+ 806330 string characters out of 5844518
+ 1312713 words of memory out of 5000000
+ 56526 multiletter control sequences out of 15000+600000
+ 478862 words of font info for 125 fonts, out of 8000000 for 9000
  682 hyphenation exceptions out of 8191
- 84i,11n,131p,2411b,981s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,10n,131p,2297b,985s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.xdv (19 pages, 508044 bytes).
+Output written on pdf/symphonym.xdv (25 pages, 587904 bytes).

@@ -5,46 +5,47 @@ The style file: plainnat.bst
 Database file #1: references.bib
 Warning--entry type for "symphonym2026zenodo" isn't style-file defined
 --line 365 of file references.bib
+Warning--empty journal in kolani2025phonikudhebrewgraphemetophonemeconversion
 Warning--empty journal in zhu2022charsiu-g2p
-You've used 19 entries,
+You've used 21 entries,
             2773 wiz_defined-function locations,
-            726 strings with 8914 characters,
-and the built_in function-call counts, 9654 in all, are:
-= -- 893
-> -- 528
-< -- 14
-+ -- 181
-- -- 161
-* -- 770
-:= -- 1460
-add.period$ -- 79
-call.type$ -- 19
-change.case$ -- 110
-chr.to.int$ -- 18
-cite$ -- 39
-duplicate$ -- 440
-empty$ -- 783
-format.name$ -- 184
-if$ -- 2057
-int.to.chr$ -- 2
+            735 strings with 9306 characters,
+and the built_in function-call counts, 10443 in all, are:
+= -- 961
+> -- 577
+< -- 15
++ -- 199
+- -- 176
+* -- 831
+:= -- 1585
+add.period$ -- 87
+call.type$ -- 21
+change.case$ -- 121
+chr.to.int$ -- 19
+cite$ -- 44
+duplicate$ -- 475
+empty$ -- 846
+format.name$ -- 201
+if$ -- 2219
+int.to.chr$ -- 3
 int.to.str$ -- 1
-missing$ -- 16
-newline$ -- 123
-num.names$ -- 78
-pop$ -- 223
+missing$ -- 17
+newline$ -- 135
+num.names$ -- 86
+pop$ -- 249
 preamble$ -- 1
-purify$ -- 91
+purify$ -- 100
 quote$ -- 0
-skip$ -- 351
+skip$ -- 380
 stack$ -- 0
-substring$ -- 369
-swap$ -- 74
+substring$ -- 373
+swap$ -- 76
 text.length$ -- 5
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 209
-warning$ -- 1
-while$ -- 85
+type$ -- 231
+warning$ -- 2
+while$ -- 91
 width$ -- 0
-write$ -- 289
-(There were 2 warnings)
+write$ -- 316
+(There were 3 warnings)

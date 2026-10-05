@@ -156,11 +156,11 @@
 \newcommand{\vecb}[1]{\mathbf{#1}}
 \newcommand{\embdim}{128}
 
-\title{Symphonym: Universal Phonetic Embeddings for Cross-Script Toponym Matching in Geospatial Data Integration}
+\title{Symphonym: Universal Phonetic Embeddings for Cross-Script Toponym Matching}
 
 \author{Stephen Gadd\\
-\small School of Advanced Study, University of London, UK\\
-\small Institute for Spatial History Innovation, University of Pittsburgh, USA\\
+\small World Historical Gazetteer, Institute for Spatial History Innovation,\\
+\small University of Pittsburgh, USA\\
 \small ORCiD: 0000-0003-3060-0181\\
 \small \texttt{stephen.gadd@sas.ac.uk}\\
 \small \texttt{stephen.gadd@pitt.edu}}
@@ -492,7 +492,7 @@ No relevant financial or non-financial interests to disclose.
 \subsection*{Data Availability Statement}
 \label{subsec:availability}
 
-All trained models, vocabularies, extension files, and evaluation results for the generation reported here are openly available at \url{https://doi.org/10.5281/zenodo.22767194} \citep{symphonym2026zenodo}; the model, its canonical tokeniser, and an ONNX export are at \url{https://huggingface.co/docuracy/symphonym-v8} \citep{symphonym2026hf}. The artefacts of the first generation remain available and unchanged at \url{https://doi.org/10.5281/zenodo.18682017} and \url{https://huggingface.co/docuracy/symphonym-v7}. Because weights, vocabularies, and index must correspond (Section~\ref{subsec:student}), the published artefacts carry checksums for all three, and the model card states explicitly that embeddings are not comparable across generations. Training code and inference utilities are at \url{https://github.com/WorldHistoricalGazetteer/whgazetteer}. Training data derive from publicly available sources: GeoNames (\url{https://www.geonames.org/}), Wikidata (\url{https://www.wikidata.org/}), and Getty TGN (\url{https://www.getty.edu/research/tools/vocabularies/tgn/}). The MEHDIE benchmark is available via \citet{mehdie2025}.
+All trained models, vocabularies, extension files, and evaluation results for the generation reported here are openly available at \url{https://doi.org/10.5281/zenodo.22767194} \citep{symphonym2026zenodo}; the model, its canonical tokeniser, and an ONNX export are at \url{https://huggingface.co/docuracy/symphonym-v8} \citep{symphonym2026hf}. The artefacts of the first generation remain available and unchanged at \url{https://doi.org/10.5281/zenodo.18682017} and \url{https://huggingface.co/docuracy/symphonym-v7}. Because weights, vocabularies, and index must correspond (Section~\ref{subsec:student}), the published artefacts carry checksums for all three, and the model card states explicitly that embeddings are not comparable across generations. Training code and inference utilities are at \url{https://github.com/WorldHistoricalGazetteer/indexing/tree/main/phonetics}. Training data derive from publicly available sources: GeoNames (\url{https://www.geonames.org/}), Wikidata (\url{https://www.wikidata.org/}), and Getty TGN (\url{https://www.getty.edu/research/tools/vocabularies/tgn/}). The MEHDIE benchmark is available via \citet{mehdie2025}.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
@@ -620,6 +620,7 @@ CJK--Hiragana        & 0.437 & \textbf{0.320} & 65 \\
 \begin{table}[p]
 \centering
 \small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lrrrrr}
 \toprule
  & \textbf{First gen.} & \textbf{A} & \textbf{B} & \textbf{G} & \textbf{M} \\
@@ -632,7 +633,7 @@ Latin--Latin (R@1)       & 0.8527 & \textbf{0.8495} & 0.8370 & 0.8464 & 0.8370 \
 \midrule
 Phase 1 / 2 / 3 val.\ loss & --- & 0.0056 & --- & --- & \emph{0.0051 / 0.0467 / 0.0206} \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \caption{Four candidate models scored on one frozen test set under a rule fixed before any candidate finished. Arm \textbf{A} was selected. B and G lead the headline figure by roughly twelve pairs in four thousand, while A leads the collateral measures by larger margins and is the only candidate with no regression on historical Latin pairs. Note arm \textbf{M}: it achieved the best validation loss at all three training phases and is the worst of the four in deployment. Phase loss orders candidates within a fixed objective and does not compare across recipes.}
 \label{tab:arms}
 \end{table}

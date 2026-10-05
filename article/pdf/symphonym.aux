@@ -16,12 +16,12 @@
 \global\let\hyper@last\relax 
 \gdef\HyperFirstAtBeginDocument#1{#1}
 \providecommand*\HyPL@Entry[1]{}
-\citation{hill2006georeferencing}
 \HyPL@Entry{0<</S/D>>}
 \selectlanguage *{english}
 \@writefile{toc}{\selectlanguage *{english}}
 \@writefile{lof}{\selectlanguage *{english}}
 \@writefile{lot}{\selectlanguage *{english}}
+\citation{hill2006georeferencing}
 \citation{odell1918}
 \citation{philips1990}
 \citation{gadd1990phonix}
@@ -29,113 +29,167 @@
 \citation{conneau2018,artetxe2018}
 \citation{qiu2024geobert,rama2016,mehdie2025}
 \citation{mehdie2025}
+\citation{hinton2015distilling}
+\citation{mortensen2016}
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{2}{section.1}\protected@file@percent }
 \newlabel{sec:introduction}{{1}{2}{Introduction}{section.1}{}}
-\newlabel{sec:introduction@cref}{{[section][1][]1}{[1][1][]2}}
+\newlabel{sec:introduction@cref}{{[section][1][]1}{[1][2][]2}}
+\citation{symphonym2026}
 \citation{hinton2015distilling}
+\@writefile{toc}{\contentsline {paragraph}{Contributions of this revision.}{3}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Scope.}{3}{section*.2}\protected@file@percent }
 \citation{mortensen2016}
-\citation{mehdie2025}
-\citation{hinton2015distilling}
-\citation{mortensen2016}
-\@writefile{toc}{\contentsline {paragraph}{Scope.}{4}{section*.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {2}Materials and Methods}{4}{section.2}\protected@file@percent }
 \newlabel{sec:methods}{{2}{4}{Materials and Methods}{section.2}{}}
-\newlabel{sec:methods@cref}{{[section][2][]2}{[1][4][]4}}
+\newlabel{sec:methods@cref}{{[section][2][]2}{[1][3][]4}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Architecture Overview}{4}{subsection.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Teacher Network}{4}{subsection.2.2}\protected@file@percent }
-\newlabel{subsec:teacher}{{2.2}{4}{Teacher Network}{subsection.2.2}{}}
-\newlabel{subsec:teacher@cref}{{[subsection][2][2]2.2}{[1][4][]4}}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Teacher-Student architecture. \textbf  {Left}: The Teacher converts toponyms to IPA, extracts articulatory features, and encodes to 128-d embeddings (training only). \textbf  {Right}: The Student processes raw characters with script/language metadata (deployed at inference). \textbf  {Bottom}: Three training phases progressively transfer phonetic knowledge.\relax }}{5}{figure.caption.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Teacher-Student architecture. \textbf  {Left}: The Teacher converts toponyms to IPA, extracts articulatory features, and encodes to 128-d embeddings (training only). \textbf  {Right}: The Student processes raw characters with script/language metadata (deployed at inference). \textbf  {Bottom}: Three training phases progressively transfer phonetic knowledge.\relax }}{4}{figure.caption.3}\protected@file@percent }
 \providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
-\newlabel{fig:architecture}{{1}{5}{Teacher-Student architecture. \textbf {Left}: The Teacher converts toponyms to IPA, extracts articulatory features, and encodes to 128-d embeddings (training only). \textbf {Right}: The Student processes raw characters with script/language metadata (deployed at inference). \textbf {Bottom}: Three training phases progressively transfer phonetic knowledge.\relax }{figure.caption.2}{}}
-\newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][4][]5}}
+\newlabel{fig:architecture}{{1}{4}{Teacher-Student architecture. \textbf {Left}: The Teacher converts toponyms to IPA, extracts articulatory features, and encodes to 128-d embeddings (training only). \textbf {Right}: The Student processes raw characters with script/language metadata (deployed at inference). \textbf {Bottom}: Three training phases progressively transfer phonetic knowledge.\relax }{figure.caption.3}{}}
+\newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][3][]4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Teacher Network}{5}{subsection.2.2}\protected@file@percent }
+\newlabel{subsec:teacher}{{2.2}{5}{Teacher Network}{subsection.2.2}{}}
+\newlabel{subsec:teacher@cref}{{[subsection][2][2]2.2}{[1][4][]5}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Student Network}{5}{subsection.2.3}\protected@file@percent }
 \newlabel{subsec:student}{{2.3}{5}{Student Network}{subsection.2.3}{}}
 \newlabel{subsec:student@cref}{{[subsection][3][2]2.3}{[1][5][]5}}
-\@writefile{toc}{\contentsline {paragraph}{Length-Aware Representation.}{5}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Length-Aware Representation.}{5}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Vocabulary generations are not additive.}{6}{section*.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Training Curriculum}{6}{subsection.2.4}\protected@file@percent }
 \newlabel{subsec:training}{{2.4}{6}{Training Curriculum}{subsection.2.4}{}}
 \newlabel{subsec:training@cref}{{[subsection][4][2]2.4}{[1][6][]6}}
-\@writefile{toc}{\contentsline {paragraph}{Phase 1: Teacher Training.}{6}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phase 1: Teacher Training.}{6}{section*.6}\protected@file@percent }
 \newlabel{eq:phase1-loss}{{1}{6}{Phase 1: Teacher Training}{equation.2.1}{}}
 \newlabel{eq:phase1-loss@cref}{{[equation][1][]1}{[1][6][]6}}
-\@writefile{toc}{\contentsline {paragraph}{Phase 2: Student-Teacher Alignment.}{6}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phase 2: Student-Teacher Alignment.}{6}{section*.7}\protected@file@percent }
 \newlabel{eq:phase2-loss}{{2}{6}{Phase 2: Student-Teacher Alignment}{equation.2.2}{}}
 \newlabel{eq:phase2-loss@cref}{{[equation][2][]2}{[1][6][]6}}
-\@writefile{toc}{\contentsline {paragraph}{Phase 3: Discriminative Fine-Tuning.}{6}{section*.6}\protected@file@percent }
-\newlabel{eq:phase3-loss}{{3}{6}{Phase 3: Discriminative Fine-Tuning}{equation.2.3}{}}
-\newlabel{eq:phase3-loss@cref}{{[equation][3][]3}{[1][6][]6}}
+\@writefile{toc}{\contentsline {paragraph}{Phase 3: Discriminative Fine-Tuning.}{6}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Permutation negatives.}{6}{section*.9}\protected@file@percent }
 \citation{mcinnes2017hdbscan}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Training Data}{7}{subsection.2.5}\protected@file@percent }
-\newlabel{subsec:data}{{2.5}{7}{Training Data}{subsection.2.5}{}}
-\newlabel{subsec:data@cref}{{[subsection][5][2]2.5}{[1][7][]7}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.5.1}Data Selection and Curation}{7}{subsubsection.2.5.1}\protected@file@percent }
-\newlabel{subsec:selection}{{2.5.1}{7}{Data Selection and Curation}{subsubsection.2.5.1}{}}
-\newlabel{subsec:selection@cref}{{[subsubsection][1][2,5]2.5.1}{[1][7][]7}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Model Selection}{7}{subsection.2.5}\protected@file@percent }
+\newlabel{subsec:selection-model}{{2.5}{7}{Model Selection}{subsection.2.5}{}}
+\newlabel{subsec:selection-model@cref}{{[subsection][5][2]2.5}{[1][7][]7}}
+\@writefile{toc}{\contentsline {paragraph}{Training loss does not order candidates across recipes.}{7}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Training Data}{7}{subsection.2.6}\protected@file@percent }
+\newlabel{subsec:data}{{2.6}{7}{Training Data}{subsection.2.6}{}}
+\newlabel{subsec:data@cref}{{[subsection][6][2]2.6}{[1][7][]7}}
 \citation{mortensen2018}
+\citation{kolani2025phonikudhebrewgraphemetophonemeconversion}
 \citation{zhu2022charsiu-g2p}
-\citation{mortensen2016}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.5.2}IPA Transcription and Feature Extraction}{8}{subsubsection.2.5.2}\protected@file@percent }
-\newlabel{subsec:g2p}{{2.5.2}{8}{IPA Transcription and Feature Extraction}{subsubsection.2.5.2}{}}
-\newlabel{subsec:g2p@cref}{{[subsubsection][2][2,5]2.5.2}{[1][8][]8}}
-\@writefile{toc}{\contentsline {paragraph}{Epitran Extensions.}{8}{section*.7}\protected@file@percent }
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.5.3}Dataset Statistics}{9}{subsubsection.2.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.1}IPA Transcription}{8}{subsubsection.2.6.1}\protected@file@percent }
+\newlabel{subsec:g2p}{{2.6.1}{8}{IPA Transcription}{subsubsection.2.6.1}{}}
+\newlabel{subsec:g2p@cref}{{[subsubsection][1][2,6]2.6.1}{[1][8][]8}}
+\@writefile{toc}{\contentsline {paragraph}{Epitran Extensions.}{8}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{A systematic failure this treatment does not cover.}{8}{section*.12}\protected@file@percent }
+\citation{mehdie2025}
 \@writefile{toc}{\contentsline {section}{\numberline {3}Results}{9}{section.3}\protected@file@percent }
 \newlabel{sec:results}{{3}{9}{Results}{section.3}{}}
-\newlabel{sec:results@cref}{{[section][3][]3}{[1][9][]9}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Embedding Quality}{9}{subsection.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}MEHDIE Benchmark}{9}{subsection.3.2}\protected@file@percent }
-\citation{mehdie2025}
-\@writefile{toc}{\contentsline {paragraph}{Comparison with MEHDIE System.}{10}{section*.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Production Deployment}{10}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:results@cref}{{[section][3][]3}{[1][8][]9}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}MEHDIE Benchmark}{9}{subsection.3.1}\protected@file@percent }
+\newlabel{subsec:mehdie}{{3.1}{9}{MEHDIE Benchmark}{subsection.3.1}{}}
+\newlabel{subsec:mehdie@cref}{{[subsection][1][3]3.1}{[1][8][]9}}
+\@writefile{toc}{\contentsline {paragraph}{Aggregation.}{9}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The shape of the improvement.}{9}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Limits of this benchmark.}{9}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Comparison with the MEHDIE System.}{10}{section*.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Where the Method Wins, and Where It Does Not}{10}{subsection.3.2}\protected@file@percent }
+\newlabel{subsec:vstraditional}{{3.2}{10}{Where the Method Wins, and Where It Does Not}{subsection.3.2}{}}
+\newlabel{subsec:vstraditional@cref}{{[subsection][2][3]3.2}{[1][10][]10}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Cross-Script Pair Validation}{11}{subsection.3.3}\protected@file@percent }
+\newlabel{subsec:crossscript}{{3.3}{11}{Cross-Script Pair Validation}{subsection.3.3}{}}
+\newlabel{subsec:crossscript@cref}{{[subsection][3][3]3.3}{[1][10][]11}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}A Corrected Result: Chinese Learned Through Japanese}{11}{subsection.3.4}\protected@file@percent }
+\newlabel{subsec:contamination}{{3.4}{11}{A Corrected Result: Chinese Learned Through Japanese}{subsection.3.4}{}}
+\newlabel{subsec:contamination@cref}{{[subsection][4][3]3.4}{[1][11][]11}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Character Order Was Barely Learned}{11}{subsection.3.5}\protected@file@percent }
+\newlabel{subsec:order}{{3.5}{11}{Character Order Was Barely Learned}{subsection.3.5}{}}
+\newlabel{subsec:order@cref}{{[subsection][5][3]3.5}{[1][11][]11}}
+\@writefile{toc}{\contentsline {paragraph}{The transferable point.}{12}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Retrieval, and a Trade-off}{12}{subsection.3.6}\protected@file@percent }
+\newlabel{subsec:tradeoffs}{{3.6}{12}{Retrieval, and a Trade-off}{subsection.3.6}{}}
+\newlabel{subsec:tradeoffs@cref}{{[subsection][6][3]3.6}{[1][12][]12}}
+\@writefile{toc}{\contentsline {paragraph}{A ceiling on re-ranking.}{12}{section*.18}\protected@file@percent }
 \citation{malkov2020hnsw}
-\@writefile{toc}{\contentsline {paragraph}{KNN Retrieval.}{11}{section*.9}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Scalability.}{11}{section*.10}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Discussion}{12}{section.4}\protected@file@percent }
-\newlabel{sec:discussion}{{4}{12}{Discussion}{section.4}{}}
-\newlabel{sec:discussion@cref}{{[section][4][]4}{[1][11][]12}}
-\@writefile{toc}{\contentsline {paragraph}{Cross-temporal Generalisation.}{12}{section*.11}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Value of Neural Training.}{12}{section*.12}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Same-script Performance.}{13}{section*.13}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Deployment Considerations.}{13}{section*.14}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Limitations}{13}{subsection.4.1}\protected@file@percent }
-\newlabel{subsec:limitations}{{4.1}{13}{Limitations}{subsection.4.1}{}}
-\newlabel{subsec:limitations@cref}{{[subsection][1][4]4.1}{[1][13][]13}}
-\@writefile{toc}{\contentsline {paragraph}{Training Data Coverage.}{13}{section*.15}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Tonal Languages.}{13}{section*.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Discrimination fell.}{13}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Deployment}{13}{subsection.3.7}\protected@file@percent }
+\newlabel{subsec:deployment}{{3.7}{13}{Deployment}{subsection.3.7}{}}
+\newlabel{subsec:deployment@cref}{{[subsection][7][3]3.7}{[1][13][]13}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Discussion}{13}{section.4}\protected@file@percent }
+\newlabel{sec:discussion}{{4}{13}{Discussion}{section.4}{}}
+\newlabel{sec:discussion@cref}{{[section][4][]4}{[1][13][]13}}
+\@writefile{toc}{\contentsline {paragraph}{Cross-temporal Generalisation.}{13}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Value of Neural Training.}{14}{section*.21}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Same-script behaviour is correct, and is not the same as being useful.}{14}{section*.22}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}An Independent Out-of-Domain Deployment}{14}{subsection.4.1}\protected@file@percent }
+\newlabel{subsec:customs}{{4.1}{14}{An Independent Out-of-Domain Deployment}{subsection.4.1}{}}
+\newlabel{subsec:customs@cref}{{[subsection][1][4]4.1}{[1][14][]14}}
+\@writefile{toc}{\contentsline {paragraph}{What it shows.}{14}{section*.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{What it does not show.}{14}{section*.24}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The instructive failure is in the integration, not the model.}{15}{section*.25}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implication for publishing embedding models.}{15}{section*.26}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Caveats.}{15}{section*.27}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Limitations}{15}{subsection.4.2}\protected@file@percent }
+\newlabel{subsec:limitations}{{4.2}{15}{Limitations}{subsection.4.2}{}}
+\newlabel{subsec:limitations@cref}{{[subsection][2][4]4.2}{[1][15][]15}}
+\@writefile{toc}{\contentsline {paragraph}{Retrieval Ceiling.}{15}{section*.28}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Discrimination.}{15}{section*.29}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Same-script Matching.}{16}{section*.30}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Name Matching Is Not Place Matching.}{16}{section*.31}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Training Data Coverage.}{16}{section*.32}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Tonal Languages.}{16}{section*.33}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Confusable Pairs.}{16}{section*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{G2P Quality.}{16}{section*.35}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Conclusion}{16}{section.5}\protected@file@percent }
+\newlabel{sec:conclusion}{{5}{16}{Conclusion}{section.5}{}}
+\newlabel{sec:conclusion@cref}{{[section][5][]5}{[1][16][]16}}
 \citation{symphonym2026zenodo}
 \citation{symphonym2026hf}
 \citation{mehdie2025}
 \bibstyle{plainnat}
 \bibdata{references}
 \bibcite{artetxe2018}{{1}{2018}{{Artetxe et~al.}}{{Artetxe, Labaka, and Agirre}}}
-\@writefile{toc}{\contentsline {paragraph}{Confusable Pairs.}{14}{section*.17}\protected@file@percent }
+\newlabel{subsec:availability}{{5}{17}{Data Availability Statement}{section*.38}{}}
+\newlabel{subsec:availability@cref}{{[section][5][]5}{[1][17][]17}}
 \bibcite{conneau2018}{{2}{2018}{{Conneau et~al.}}{{Conneau, Lample, Ranzato, Denoyer, and Jégou}}}
-\bibcite{symphonym2026hf}{{3}{2026{a}}{{Gadd}}{{}}}
-\bibcite{symphonym2026zenodo}{{4}{2026{b}}{{Gadd}}{{}}}
-\bibcite{gadd1990phonix}{{5}{1990}{{Gadd}}{{}}}
-\bibcite{hill2006georeferencing}{{6}{2006}{{Hill}}{{}}}
-\bibcite{hinton2015distilling}{{7}{2015}{{Hinton et~al.}}{{Hinton, Vinyals, and Dean}}}
-\bibcite{malkov2020hnsw}{{8}{2020}{{Malkov and Yashunin}}{{}}}
-\bibcite{mcinnes2017hdbscan}{{9}{2017}{{McInnes et~al.}}{{McInnes, Healy, and Astels}}}
-\bibcite{mortensen2016}{{10}{2016}{{Mortensen et~al.}}{{Mortensen, Littell, Bharadwaj, Goyal, Dyer, and Levin}}}
-\bibcite{mortensen2018}{{11}{2018}{{Mortensen et~al.}}{{Mortensen, Dalmia, and Littell}}}
-\bibcite{philips1990}{{12}{1990}{{Philips}}{{}}}
-\bibcite{qiu2024geobert}{{13}{2024}{{Qiu et~al.}}{{Qiu, Li, Hu, Tian, Ma, and Zhu}}}
-\bibcite{rama2016}{{14}{2016}{{Rama}}{{}}}
-\bibcite{recchia2013}{{15}{2013}{{Recchia and Louwerse}}{{}}}
-\bibcite{odell1918}{{16}{1918}{{Russell}}{{}}}
-\bibcite{mehdie2025}{{17}{2025}{{Sagi et~al.}}{{Sagi, Zaga, Rusinek, Fekete, Bjerva, and Hose}}}
-\bibcite{santos2018}{{18}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
-\bibcite{zhu2022charsiu-g2p}{{19}{2022}{{Zhu et~al.}}{{Zhu, Zhang, and Jurgens}}}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Overall IPA coverage is 54.0\% (31.1M toponyms).\relax }}{17}{table.caption.22}\protected@file@percent }
-\newlabel{tab:script-distribution}{{1}{17}{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Overall IPA coverage is 54.0\% (31.1M toponyms).\relax }{table.caption.22}{}}
-\newlabel{tab:script-distribution@cref}{{[table][1][]1}{[1][17][]17}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Production embedding quality diagnostics. Cross-script matching is the primary design goal. Tested on 66.9M toponyms with 100\% embedding coverage across 20 scripts.\relax }}{18}{table.caption.23}\protected@file@percent }
-\newlabel{tab:embedding-quality}{{2}{18}{Production embedding quality diagnostics. Cross-script matching is the primary design goal. Tested on 66.9M toponyms with 100\% embedding coverage across 20 scripts.\relax }{table.caption.23}{}}
-\newlabel{tab:embedding-quality@cref}{{[table][2][]2}{[1][18][]18}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces MEHDIE benchmark ranking metrics (all values in \%). PanPhon192 is the raw 192-dimensional articulatory feature representation used as \emph  {input} to the Teacher (phonetic features before any neural training). String baselines are augmented with AnyAscii romanisation. Symphonym achieves the highest mean R@1 (85.2\%) and MRR (90.8\%), doubling PanPhon192's MRR (45.0\%) and outperforming both string baselines.\relax }}{19}{table.caption.24}\protected@file@percent }
-\newlabel{tab:mehdie-ranking}{{3}{19}{MEHDIE benchmark ranking metrics (all values in \%). PanPhon192 is the raw 192-dimensional articulatory feature representation used as \emph {input} to the Teacher (phonetic features before any neural training). String baselines are augmented with AnyAscii romanisation. Symphonym achieves the highest mean R@1 (85.2\%) and MRR (90.8\%), doubling PanPhon192's MRR (45.0\%) and outperforming both string baselines.\relax }{table.caption.24}{}}
-\newlabel{tab:mehdie-ranking@cref}{{[table][3][]3}{[1][19][]19}}
-\gdef \@abspage@last{19}
+\bibcite{symphonym2026}{{3}{2026{a}}{{Gadd}}{{}}}
+\bibcite{symphonym2026hf}{{4}{2026{b}}{{Gadd}}{{}}}
+\bibcite{symphonym2026zenodo}{{5}{2026{c}}{{Gadd}}{{}}}
+\bibcite{gadd1990phonix}{{6}{1990}{{Gadd}}{{}}}
+\bibcite{hill2006georeferencing}{{7}{2006}{{Hill}}{{}}}
+\bibcite{hinton2015distilling}{{8}{2015}{{Hinton et~al.}}{{Hinton, Vinyals, and Dean}}}
+\bibcite{kolani2025phonikudhebrewgraphemetophonemeconversion}{{9}{2025}{{Kolani et~al.}}{{Kolani, Melichov, Calev, and Alper}}}
+\bibcite{malkov2020hnsw}{{10}{2020}{{Malkov and Yashunin}}{{}}}
+\bibcite{mcinnes2017hdbscan}{{11}{2017}{{McInnes et~al.}}{{McInnes, Healy, and Astels}}}
+\bibcite{mortensen2016}{{12}{2016}{{Mortensen et~al.}}{{Mortensen, Littell, Bharadwaj, Goyal, Dyer, and Levin}}}
+\bibcite{mortensen2018}{{13}{2018}{{Mortensen et~al.}}{{Mortensen, Dalmia, and Littell}}}
+\bibcite{philips1990}{{14}{1990}{{Philips}}{{}}}
+\bibcite{qiu2024geobert}{{15}{2024}{{Qiu et~al.}}{{Qiu, Li, Hu, Tian, Ma, and Zhu}}}
+\bibcite{rama2016}{{16}{2016}{{Rama}}{{}}}
+\bibcite{recchia2013}{{17}{2013}{{Recchia and Louwerse}}{{}}}
+\bibcite{odell1918}{{18}{1918}{{Russell}}{{}}}
+\bibcite{mehdie2025}{{19}{2025}{{Sagi et~al.}}{{Sagi, Zaga, Rusinek, Fekete, Bjerva, and Hose}}}
+\bibcite{santos2018}{{20}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
+\bibcite{zhu2022charsiu-g2p}{{21}{2022}{{Zhu et~al.}}{{Zhu, Zhang, and Jurgens}}}
+\citation{mehdie2025}
+\citation{mehdie2025}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces MEHDIE Hebrew-Arabic historical benchmark\nobreakspace  {}\citep  {mehdie2025}: unweighted mean across five testsets (137 queries), the benchmark's own convention. String baselines were re-run rather than quoted and reproduce their published values to within 0.1 points, confirming like-for-like aggregation. R@5 is unchanged between generations and R@10 moves 0.6 points, while R@1 gains 4.1: the improvement is in ranking, not reach.\relax }}{20}{table.caption.40}\protected@file@percent }
+\newlabel{tab:mehdie-ranking}{{1}{20}{MEHDIE Hebrew-Arabic historical benchmark~\citep {mehdie2025}: unweighted mean across five testsets (137 queries), the benchmark's own convention. String baselines were re-run rather than quoted and reproduce their published values to within 0.1 points, confirming like-for-like aggregation. R@5 is unchanged between generations and R@10 moves 0.6 points, while R@1 gains 4.1: the improvement is in ranking, not reach.\relax }{table.caption.40}{}}
+\newlabel{tab:mehdie-ranking@cref}{{[table][1][]1}{[1][20][]20}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Recall@1 against string baselines, each query ranked against twenty-one candidates. Phonetic embedding and string distance fail in different places: across scripts the string metrics do not function at all, while within the Latin script they are the better instrument. The two are complementary channels, not competitors.\relax }}{21}{table.caption.41}\protected@file@percent }
+\newlabel{tab:vstraditional}{{2}{21}{Recall@1 against string baselines, each query ranked against twenty-one candidates. Phonetic embedding and string distance fail in different places: across scripts the string metrics do not function at all, while within the Latin script they are the better instrument. The two are complementary channels, not competitors.\relax }{table.caption.41}{}}
+\newlabel{tab:vstraditional@cref}{{[table][2][]2}{[1][21][]21}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Proportion of each band clearing the 0.7 production retrieval gate, over 319 queries. In the first generation a meaningless anagram was retrievable almost as often as a genuine variant, because nothing in training made character order matter. Permutation negatives close the gap without sacrificing tolerance of typographic errors, which is the distinction required: some reordering is a typing slip, and some destroys the name.\relax }}{22}{table.caption.42}\protected@file@percent }
+\newlabel{tab:order}{{3}{22}{Proportion of each band clearing the 0.7 production retrieval gate, over 319 queries. In the first generation a meaningless anagram was retrievable almost as often as a genuine variant, because nothing in training made character order matter. Permutation negatives close the gap without sacrificing tolerance of typographic errors, which is the distinction required: some reordering is a typing slip, and some destroys the name.\relax }{table.caption.42}{}}
+\newlabel{tab:order@cref}{{[table][3][]3}{[1][22][]22}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Retrieval over one fixed haystack of 1,053,229 names with 4,843 queries, both generations scored on the same corpus and queries. Every retrieval metric improves, but recall@200 least of all: the gain is in ordering. Since 200 is the deployed candidate-pool size, recall@200 = 0.4908 is a ceiling that no downstream re-ranking can raise. Discrimination moved in the opposite direction.\relax }}{23}{table.caption.43}\protected@file@percent }
+\newlabel{tab:retrieval}{{4}{23}{Retrieval over one fixed haystack of 1,053,229 names with 4,843 queries, both generations scored on the same corpus and queries. Every retrieval metric improves, but recall@200 least of all: the gain is in ordering. Since 200 is the deployed candidate-pool size, recall@200 = 0.4908 is a ceiling that no downstream re-ranking can raise. Discrimination moved in the opposite direction.\relax }{table.caption.43}{}}
+\newlabel{tab:retrieval@cref}{{[table][4][]4}{[1][23][]23}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Mean cosine similarity for representative script pairs. The CJK-Hiragana row is the correction of Section\nobreakspace  {}\ref  {subsec:contamination}: the score \emph  {falls}, and falling is correct, because the first generation's higher value arose from Chinese toponyms transcribed with Japanese readings. Overall pass rate at the 0.75 threshold is essentially unchanged between generations (90.7\% against 90.8\%).\relax }}{24}{table.caption.44}\protected@file@percent }
+\newlabel{tab:scriptpairs}{{5}{24}{Mean cosine similarity for representative script pairs. The CJK-Hiragana row is the correction of Section~\ref {subsec:contamination}: the score \emph {falls}, and falling is correct, because the first generation's higher value arose from Chinese toponyms transcribed with Japanese readings. Overall pass rate at the 0.75 threshold is essentially unchanged between generations (90.7\% against 90.8\%).\relax }{table.caption.44}{}}
+\newlabel{tab:scriptpairs@cref}{{[table][5][]5}{[1][24][]24}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Four candidate models scored on one frozen test set under a rule fixed before any candidate finished. Arm \textbf  {A} was selected. B and G lead the headline figure by roughly twelve pairs in four thousand, while A leads the collateral measures by larger margins and is the only candidate with no regression on historical Latin pairs. Note arm \textbf  {M}: it achieved the best validation loss at all three training phases and is the worst of the four in deployment. Phase loss orders candidates within a fixed objective and does not compare across recipes.\relax }}{25}{table.caption.45}\protected@file@percent }
+\newlabel{tab:arms}{{6}{25}{Four candidate models scored on one frozen test set under a rule fixed before any candidate finished. Arm \textbf {A} was selected. B and G lead the headline figure by roughly twelve pairs in four thousand, while A leads the collateral measures by larger margins and is the only candidate with no regression on historical Latin pairs. Note arm \textbf {M}: it achieved the best validation loss at all three training phases and is the worst of the four in deployment. Phase loss orders candidates within a fixed objective and does not compare across recipes.\relax }{table.caption.45}{}}
+\newlabel{tab:arms@cref}{{[table][6][]6}{[1][25][]25}}
+\gdef \@abspage@last{25}
