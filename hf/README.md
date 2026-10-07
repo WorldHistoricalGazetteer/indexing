@@ -294,7 +294,7 @@ against a live index of 72,703,777.
 ```bibtex
 @misc{symphonym2026,
     author        = {Gadd, Stephen},
-    title         = {Symphonym: Universal Phonetic Embeddings for Cross-Script Name Matching},
+    title         = {Symphonym: Universal Phonetic Embeddings for Cross-Script Toponym Matching},
     year          = {2026},
     eprint        = {2601.06932},
     archivePrefix = {arXiv},
