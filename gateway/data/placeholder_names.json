@@ -1,0 +1,10 @@
+{
+ "_meta": {
+  "description": "Toponym names that are cataloguing placeholders, not names (place#216). Each entry is a regular expression matched case-insensitively against the WHOLE trimmed toponym name. 'exclude' removes the name from name-match discovery; 'demote' multiplies its contribution by demote_weight. Records stay in the index and remain reachable by id, by their other names, and spatially. See gateway/placeholders.py.",
+  "status": "EMPTY BY DESIGN — no rule is active until the Technical Director approves the pattern list proposed on place#216. A gateway restart picks up an edit.",
+  "example": {"exclude": ["oknoname.*", "unnamed", "\\?+"], "demote": ["unknown"], "demote_weight": 0.25}
+ },
+ "exclude": [],
+ "demote": [],
+ "demote_weight": 0.25
+}
