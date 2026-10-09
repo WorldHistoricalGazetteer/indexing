@@ -15,6 +15,7 @@ from urllib.parse import quote
 import orjson  # Much faster than json
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE, WIKIDATA_P1014_FILE
+from processing.titles import preferred_label
 from processing.temporal import (
     PRECISION_YEAR,
     attested_at,
@@ -321,7 +322,6 @@ def create_place_doc_fast(entity, entity_bytes):
 
     # Extract labels efficiently
     labels = entity.get('labels', {})
-    title = labels.get('en', {}).get('value') or labels.get('mul', {}).get('value') or qid
 
     # Build toponyms — attach the entity-level timespan when available so
     # toponym attestations span the period the place actually existed (real
@@ -332,6 +332,7 @@ def create_place_doc_fast(entity, entity_bytes):
 
     toponyms = []
     seen = set()
+    names = []  # (label, lang) in stored order — the title is chosen from these
 
     for lang, label_obj in labels.items():
         name = label_obj.get('value')
@@ -344,6 +345,7 @@ def create_place_doc_fast(entity, entity_bytes):
                 entry['timespans'] = timespans
             toponyms.append(entry)
             seen.add(lst)
+            names.append((name, lang))
 
     # Add aliases
     for lang, alias_list in entity.get('aliases', {}).items():
@@ -358,6 +360,16 @@ def create_place_doc_fast(entity, entity_bytes):
                     entry['timespans'] = timespans
                 toponyms.append(entry)
                 seen.add(lst)
+                names.append((name, lang))
+
+    # Title: the preferred name (en, en-*, mul, else the first name), the
+    # QID only when the entity has no usable name at all. The rule is shared
+    # with the gateway's read-time repair (processing/titles.py) so a
+    # re-ingest shows the same name the repair already shows (place#290).
+    # 2.72M wd records were stored with the QID as title by the old
+    # `labels['en'] or labels['mul'] or qid` fallback; the QID remains the
+    # identifier (`place_id` = wd:Q…) whichever name is chosen.
+    title = preferred_label(names) or qid
 
     # Build base document
     doc = {
