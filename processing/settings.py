@@ -826,6 +826,10 @@ AUTHORITIES = [
     {  # 24,000 place names
         'dataset_name': 'Index Villaris',
         'namespace': 'iv',
+        # place#288: [1680, 2023] = the publication year (1680, attested_at) joined to
+        # the digital edition's release year (2023, attested_at for the modern-name
+        # toponyms) -- two compilation years, not a span of history described.
+        'coverage_extent': [],
         'redistributable': True,  # CC-BY-SA-4.0
         # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
@@ -1252,6 +1256,10 @@ AUTHORITIES = [
     {  # ~17.5K places from Alcedo's 1786-89 Diccionario (ANR TopUrbi digitisation)
         'dataset_name': 'Alcedo',
         'namespace': 'alc',
+        # place#288: [1786, 1789] is the dictionary's publication window, stamped on
+        # every entry by authorities/alcedo-places.py (attested_window; no entry is
+        # dated individually) -- the compilation date, not a stated coverage range.
+        'coverage_extent': [],
         'redistributable': True,  # CC-BY-NC: non-commercial redistribution permitted
         'api_item': '',
         # Antonio de Alcedo, Diccionario geográfico-histórico de las Indias

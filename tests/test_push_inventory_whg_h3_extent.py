@@ -148,7 +148,13 @@ class TestPublishedTemporalExtent(_StagedSandbox):
         self.assertEqual(by_ns["kain_par"]["coverage_extent"], [None, 1851])
         self.assertEqual(by_ns["un"]["coverage_extent"], [])
         self.assertEqual(by_ns["nl"]["coverage_extent"], [])
-        self.assertNotIn("coverage_extent", by_ns["gb"])
+        # place#288 audit: alc (publication window) and iv (1680 + the 2023 release year)
+        self.assertEqual(by_ns["alc"]["coverage_extent"], [])
+        self.assertEqual(by_ns["iv"]["coverage_extent"], [])
+        # Audited and deliberately left: the extent is a window the source states
+        # about the period it describes.
+        for ns in ("gb", "hgis", "vob_rd", "ukhc"):
+            self.assertNotIn("coverage_extent", by_ns[ns], ns)
 
 
 class TestEveryAuthorityHasAName(unittest.TestCase):
