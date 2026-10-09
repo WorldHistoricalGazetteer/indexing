@@ -71,6 +71,27 @@ def noisy_ring(n: int, span: float = 4.0, seed: int = 1) -> Polygon:
     return Polygon(pts)
 
 
+def fractal_ring(levels: int = 14, span: float = 40.0, rough: float = 0.2, seed: int = 7) -> Polygon:
+    """A coastline-like ring by midpoint displacement: self-similar, so
+    Douglas-Peucker keeps far fewer vertices than the noisy-ring model predicts
+    (place#319: Russia, 98,904 raw vertices, was served at 6% of its 1 MB cap).
+    ``levels=14`` is 131,073 vertices."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0, 2 * np.pi, 9)[:-1]
+    pts = np.c_[10 + span / 2 * np.cos(t) * (1 + .25 * np.sin(3 * t)), 50 + span / 4 * np.sin(t)]
+    for _ in range(levels):
+        nxt = np.roll(pts, -1, axis=0)
+        seg = nxt - pts
+        length = np.hypot(seg[:, 0], seg[:, 1])
+        nrm = np.c_[-seg[:, 1], seg[:, 0]] / np.maximum(length, 1e-12)[:, None]
+        mid = (pts + nxt) / 2 + nrm * (rng.normal(size=len(length)) * rough * length)[:, None]
+        out = np.empty((2 * len(pts), 2))
+        out[0::2], out[1::2] = pts, mid
+        pts = out
+    return Polygon(pts)
+
+
 # What the store holds. kain_par is a withheld authority; its polygon is IN the
 # store so the 451 is shown to be a refusal, not a miss. wd:Q5_0 is lent to
 # og:5; nl:9_0 is lent to og:6 (and must not leak through the loan).
@@ -487,8 +508,10 @@ class TestLargeNoisyGeometry(unittest.TestCase):
         self.assertLess(grown, rss_mb, f"{n} noisy vertices grew RSS by {grown:.0f} MB")
         self.assertTrue(simplified)
         self.assertLessEqual(size, geometry.GEOMETRY_MAX_BYTES_DEFAULT)
-        # Not over-simplified either: the least-simplified fit sits near the cap.
-        self.assertGreater(size, geometry.GEOMETRY_MAX_BYTES_DEFAULT // 4, f"over-simplified to {size} bytes")
+        # Not over-simplified either: the least-simplified fit sits in the landing
+        # band, 50-95% of the cap (place#319 tuning; the aim is ~75%).
+        self.assertGreaterEqual(size, geometry.GEOMETRY_MAX_BYTES_DEFAULT * 0.5, f"over-simplified to {size} bytes")
+        self.assertLessEqual(size, geometry.GEOMETRY_MAX_BYTES_DEFAULT * 0.95)
         out = shape(gj)
         self.assertTrue(out.is_valid)
         self.assertAlmostEqual(out.area, geom.area, delta=0.02 * geom.area)
@@ -498,6 +521,43 @@ class TestLargeNoisyGeometry(unittest.TestCase):
 
     def test_1m_vertex_noisy_ring(self):
         self._bound(1_000_000, wall_s=geometry.GEOMETRY_TIME_BUDGET_S, rss_mb=250)
+
+
+class TestFitLandsNearTheCap(unittest.TestCase):
+    """place#319 tuning: a fit lands in 50-95% of ``max_bytes`` on rings whose
+    Douglas-Peucker behaviour differs from the noisy-ring model the first
+    tolerance is derived from, and the time bound still holds."""
+
+    def _fit(self, geom, cap=geometry.GEOMETRY_MAX_BYTES_DEFAULT):
+        t0 = time.perf_counter()
+        gj, simplified, tol, size = bound_geometry(geom, None, cap, Deadline(geometry.GEOMETRY_TIME_BUDGET_S))
+        elapsed = time.perf_counter() - t0
+        self.assertTrue(simplified)
+        self.assertLess(elapsed, geometry.GEOMETRY_TIME_BUDGET_S)
+        self.assertLessEqual(size, cap)
+        self.assertGreaterEqual(size, cap * 0.5, f"landed at {size / cap:.0%} of the cap")
+        self.assertLessEqual(size, cap * 0.95)
+        self.assertTrue(shape(gj).is_valid)
+        return size
+
+    def test_coastline_like_ring_lands_in_band(self):
+        # Before the retry this landed at 20% of the cap.
+        self._fit(fractal_ring(14, rough=0.2))
+
+    def test_rougher_coastline_lands_in_band(self):
+        self._fit(fractal_ring(14, rough=0.35))
+
+    def test_noisy_ring_at_a_small_cap_lands_in_band(self):
+        self._fit(noisy_ring(200_000), cap=200_000)
+
+    def test_no_time_for_a_retry_still_fits_under_the_cap(self):
+        # A deadline too short to afford a second pass over the original: the
+        # retry is skipped, the fit may undershoot, but it must never exceed the cap.
+        geom = fractal_ring(14, rough=0.2)
+        d = Deadline(geometry.GEOMETRY_TIME_BUDGET_S)
+        d.remaining = lambda: 0.0
+        _, _, _, size = bound_geometry(geom, None, geometry.GEOMETRY_MAX_BYTES_DEFAULT, d)
+        self.assertLessEqual(size, geometry.GEOMETRY_MAX_BYTES_DEFAULT)
 
 
 class TestKeyConstruction(unittest.TestCase):

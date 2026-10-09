@@ -53,7 +53,11 @@ ring, at a tenth of the cost), from a tolerance derived from the size
 ratio rather than from a fixed fine fraction of the extent, then one
 topology-preserving pass over the small result, repaired with
 ``make_valid`` if it needs it. The response says so (``simplified``,
-``tolerance``). A caller may also ask for a tolerance directly.
+``tolerance``). A caller may also ask for a tolerance directly. The first
+tolerance is a model fitted to noisy rings; when it lands outside 55-100% of the
+vertex target (a real coastline keeps far fewer vertices than it predicts), up to
+``_MAX_REFINE`` bracketed retries move it into the band, a retry over the original
+only if the deadline can afford it.
 
 Licence. Geometry is source content, so this is a redistribution surface in
 exactly the sense of place#269: an authority whose terms do not let WHG
@@ -77,6 +81,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import time
 from functools import lru_cache
@@ -130,6 +135,16 @@ _WKB_BYTES_PER_VERTEX = 16
 _TOL_GAIN = 0.3
 _AIM_OVER_TARGET = 2.0
 _MAX_PASSES = 8
+# Landing band for a fit, as a fraction of the vertex target (cap / 22): the
+# first tolerance is retried from the original when it lands below _BAND_LOW,
+# aiming at _BAND_AIM. The topology-preserving pass and the real byte count then
+# move the result a few per cent, so the served size lands in 50-90% of max_bytes.
+_BAND_LOW = 0.55
+_BAND_AIM = 0.75
+_MAX_REFINE = 6
+# A retry is a pass over the original geometry: demand this many multiples of the
+# first pass's duration left on the deadline before spending it.
+_REFINE_TIME_FACTOR = 3.0
 
 _ENTITY_PREFIX = "place:"
 
@@ -329,6 +344,31 @@ def _too_large(n: int, cap: int) -> HTTPException:
     })
 
 
+def _next_tol(lo: Optional[tuple[float, int]], hi: Optional[tuple[float, int]], aim_n: int) -> Optional[float]:
+    """Next tolerance to try for *aim_n* retained vertices.
+
+    *lo* is the finest tolerance measured that kept too many vertices, *hi* the
+    coarsest that kept too few; either may be unknown. Inside a bracket it
+    interpolates in log-log space, clamped to the middle of the bracket (on a
+    noisy ring the retained count falls off a cliff as the tolerance reaches the
+    noise amplitude, so a bare power-law extrapolation can land on 75 vertices;
+    a bracket cannot). Outside one it extrapolates with a power law of exponent
+    0.7 (coastline-like rings) and takes at most a 4x step."""
+    if lo and hi:
+        (tl, nl), (th, nh) = lo, hi
+        if th <= tl or nl <= 0 or nh <= 0 or nl <= nh:
+            return None
+        f = math.log(nl / aim_n) / math.log(nl / nh)
+        f = min(0.85, max(0.15, f))
+        return tl * (th / tl) ** f
+    pt = lo or hi
+    if not pt or pt[1] <= 0:
+        return None
+    t, n = pt
+    step = (n / aim_n) ** (1.0 / 0.7)
+    return t * min(4.0, max(0.25, step))
+
+
 def bound_geometry(geom, tolerance: Optional[float], max_bytes: int,
                    deadline: Optional[Deadline] = None) -> tuple[dict, bool, Optional[float], int]:
     """Serialise *geom* within *max_bytes*, simplifying cumulatively if it must.
@@ -356,14 +396,55 @@ def bound_geometry(geom, tolerance: Optional[float], max_bytes: int,
         # Won't fit by the byte estimate: coarse passes from a tolerance the
         # size ratio implies, each on the previous candidate.
         tol = max(tol or 0.0, perimeter / (_TOL_GAIN * _AIM_OVER_TARGET * target))
-        for _ in range(_MAX_PASSES):
+        first = cand
+        t0 = time.monotonic()
+        cand = cand.simplify(tol, preserve_topology=False)
+        pass_s = time.monotonic() - t0
+        simplified = True
+        n = _coords(cand)
+        # The tolerance model above is fitted to noisy rings. On a real coastline
+        # (self-similar, with long smooth stretches) Douglas-Peucker keeps far
+        # fewer vertices than it predicts (Russia, 98,904 raw vertices, landed at
+        # 6% of a 1 MB cap). Undershooting is a lost-detail error the caller cannot
+        # see, so when the first pass lands below the band, re-run from the
+        # ORIGINAL at a tolerance interpolated in log-log space between the points
+        # measured so far. Each retry costs a pass over the original, so it runs
+        # only if the deadline can afford it with the final passes still to come.
+        floor_n = int(target * _BAND_LOW)
+        aim_n = int(target * _BAND_AIM)
+        # lo: finest tolerance that kept too many vertices (with its candidate, the
+        # source for any coarser pass); hi: coarsest that kept too few.
+        lo: Optional[tuple[float, int]] = None
+        hi: Optional[tuple[float, int]] = None
+        lo_cand = first
+        if n > target:
+            lo, lo_cand = (tol, n), cand
+        elif n < floor_n:
+            hi = (tol, n)
+        for _ in range(_MAX_REFINE):
+            if floor_n <= n <= target:
+                break
+            tol_new = _next_tol(lo, hi, aim_n)
+            if tol_new is None:
+                break
+            if lo_cand is first and deadline is not None \
+                    and deadline.remaining() < _REFINE_TIME_FACTOR * max(pass_s, 0.01):
+                break  # a pass over the original that the deadline cannot afford
             check("simplify")
-            cand = cand.simplify(tol, preserve_topology=False)
-            simplified = True
+            tol = tol_new
+            cand = lo_cand.simplify(tol, preserve_topology=False)
             n = _coords(cand)
+            if n > target:
+                lo, lo_cand = (tol, n), cand
+            elif n < floor_n:
+                hi = (tol, n)
+        for _ in range(_MAX_PASSES):
             if n <= target:
                 break
+            check("simplify")
             tol *= max(1.5, min(3.0, n / target))
+            cand = cand.simplify(tol, preserve_topology=False)
+            n = _coords(cand)
 
     # Final pass: topology-preserving over the (now small) candidate, then the
     # real byte test; the estimate can be off, so keep doubling if it is.
