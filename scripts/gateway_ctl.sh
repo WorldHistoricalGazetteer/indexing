@@ -181,7 +181,37 @@ do_restart() {
         echo "WARNING: pull failed (offline / no git auth / ownership) — restarting on CURRENT code." >&2
     fi
     do_stop
-    do_start
+    do_start || return $?
+    _verify_head
+}
+_verify_head() {
+    # A failed pull is a warning by design (above), so a restart meant to ship new
+    # code can silently restart the OLD code (place#318). After the start, put the
+    # running HEAD next to origin/main and make a difference impossible to miss.
+    # origin/main comes from `git ls-remote` (the same deploy-key path the pull uses,
+    # no local ref to go stale). Exit codes: 0 match or origin unreachable (cannot
+    # verify, warned); 3 CONFIRMED mismatch. The only automatic caller,
+    # gateway_watchdog.sh, ignores the exit status of gateway-restart (it judges
+    # recovery by probing openapi.json), so a non-zero here cannot stop a recovery;
+    # the service is already started by this point either way.
+    local run remote
+    run="$(git -C "$GATEWAY_DIR" -c "safe.directory=$GATEWAY_DIR" rev-parse HEAD 2>/dev/null)"
+    remote="$(timeout 20 git -C "$GATEWAY_DIR" -c "safe.directory=$GATEWAY_DIR" ls-remote origin refs/heads/main 2>/dev/null | cut -f1)"
+    echo "Running HEAD : ${run:-unknown}"
+    echo "origin/main  : ${remote:-unknown}"
+    if [[ -z "$run" || -z "$remote" ]]; then
+        echo "WARNING: could not compare running HEAD with origin/main (git or network unavailable) - deployed code NOT verified." >&2
+        return 0
+    fi
+    if [[ "$run" == "$remote" ]]; then
+        echo "OK: gateway is running origin/main (${run:0:9})."
+        return 0
+    fi
+    echo "################################################################" >&2
+    echo "WARNING: GATEWAY IS RUNNING STALE CODE - HEAD ${run:0:9} != origin/main ${remote:0:9}" >&2
+    echo "         The pull failed or origin has moved. Run 'gateway_ctl.sh pull' as gazetteer, then restart." >&2
+    echo "################################################################" >&2
+    return 3
 }
 case "${1:-status}" in
     start)   do_start   ;;
