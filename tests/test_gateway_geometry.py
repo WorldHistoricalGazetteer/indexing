@@ -717,9 +717,10 @@ class TestRouteIsMounted(unittest.TestCase):
     def test_app_registers_the_route_before_the_catch_all(self):
         from gateway.app import app
         paths = [getattr(r, "path", None) for r in app.routes]
-        self.assertIn("/api/geometry/{place_id}", paths)
+        # ``:path`` — the id may contain ``/`` (place#319); see TestSlashInTheContributedId.
+        self.assertIn("/api/geometry/{place_id:path}", paths)
         # Routers registered first match first; the proxy catch-all must come after.
-        self.assertLess(paths.index("/api/geometry/{place_id}"), paths.index("/{path:path}"))
+        self.assertLess(paths.index("/api/geometry/{place_id:path}"), paths.index("/{path:path}"))
 
     def test_the_grant_header_is_declared_on_the_route(self):
         # A grant that FastAPI never passes to the handler would make every
@@ -731,6 +732,89 @@ class TestRouteIsMounted(unittest.TestCase):
         headers = {p["name"]: p for p in params if p["in"] == "header"}
         self.assertIn(geometry.GRANT_HEADER, headers)
         self.assertFalse(headers[geometry.GRANT_HEADER].get("required", False))
+
+
+class TestSlashInTheContributedId(GeometryEndpointBase):
+    """A contributed ``src_id`` may contain ``/`` — ``whg:1760:https://sferaproject.org/toponyms/persia/``
+    is a real one (place#319 gap). Through the real app, not the handler: the
+    route must take the whole remainder of the path, decoded, or the request
+    falls through to the ES catch-all and Django can only report a gateway
+    failure (503) where the answer is a 200, 404 or 451.
+
+    Django percent-encodes the id (``/`` → ``%2F``, ``:`` kept); the ASGI
+    server decodes it before routing, so the route sees the slashes either
+    way. Both forms are exercised.
+    """
+
+    SLASH_ID = "whg:42:https://sferaproject.org/toponyms/persia/"
+    extra_store = {SLASH_ID + "_0": _square(44, 44, 45, 45)}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Import the app BEFORE setUp patches httpx.AsyncClient: the patch
+        # lands on the shared httpx module, and gateway.proxy evaluates
+        # ``httpx.AsyncClient | None`` at import time.
+        from fastapi.testclient import TestClient
+        from gateway.app import app
+        cls.client = TestClient(app)
+
+    def setUp(self):
+        super().setUp()
+        self.es.docs = {**ES, self.SLASH_ID: {
+            "place_id": self.SLASH_ID, "namespace": "whg", "geometries": [
+                {"geometry_index": 0, "has_geom": True, "geom_class": "area",
+                 "geom_ref": self.SLASH_ID + "_0"}]}}
+        self._env = mock.patch.dict(os.environ, {geometry.GRANT_SECRET_ENV: SECRET})
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
+    def _grant(self, pid):
+        return {geometry.GRANT_HEADER: geometry.sign_grant(pid, int(time.time()) + 120, SECRET)}
+
+    def _served(self, resp):
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertEqual(body["place_id"], self.SLASH_ID)
+        self.assertEqual(body["dataset"], "whg:42")
+        self.assertTrue(shape(body["geometry"]).equals(self.extra_store[self.SLASH_ID + "_0"]))
+        self.assertEqual([c["query"]["term"]["place_id"] for c in self.es.calls], [self.SLASH_ID],
+                         "the index is asked for the decoded id, once")
+
+    def test_percent_encoded_id_as_django_sends_it(self):
+        from urllib.parse import quote
+        url = "/api/geometry/" + quote(self.SLASH_ID, safe=":")
+        self.assertIn("%2F", url)
+        self.assertNotIn("/", url[len("/api/geometry/"):], "the id travels as one path segment")
+        self._served(self.client.get(url, headers=self._grant(self.SLASH_ID)))
+
+    def test_raw_slashes_in_the_path(self):
+        self._served(self.client.get("/api/geometry/" + self.SLASH_ID, headers=self._grant(self.SLASH_ID)))
+
+    def test_unknown_slash_id_is_the_routes_404_not_the_proxys(self):
+        from urllib.parse import quote
+        pid = "whg:42:https://example.org/nowhere/"
+        resp = self.client.get("/api/geometry/" + quote(pid, safe=":"), headers=self._grant(pid))
+        self.assertEqual(resp.status_code, 404, resp.text)
+        self.assertEqual(resp.json()["detail"], {"error": "not found", "id": pid})
+
+    def test_ungranted_slash_id_is_451_before_the_index_is_asked(self):
+        from urllib.parse import quote
+        resp = self.client.get("/api/geometry/" + quote(self.SLASH_ID, safe=":"))
+        self.assertEqual(resp.status_code, 451, resp.text)
+        self.assertEqual(resp.json()["detail"]["error"], "source licence not determined")
+        self.assertEqual(self.es.calls, [])
+
+    def test_the_old_single_segment_form_is_unchanged(self):
+        ok = self.client.get("/api/geometry/osm:r1")
+        self.assertEqual(ok.status_code, 200, ok.text)
+        self.assertEqual(ok.json()["place_id"], "osm:r1")
+        prefixed = self.client.get("/api/geometry/place:osm:r1")
+        self.assertEqual(prefixed.json()["place_id"], "osm:r1")
+        miss = self.client.get("/api/geometry/osm:r999")
+        self.assertEqual((miss.status_code, miss.json()["detail"]["error"]), (404, "not found"))
+        bare = self.client.get("/api/geometry/r1")
+        self.assertEqual(bare.status_code, 422)
 
 
 if __name__ == "__main__":
