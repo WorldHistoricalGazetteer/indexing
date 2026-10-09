@@ -68,6 +68,25 @@ full-precision polygon to a browser as JSON is not any of those. The whg3
 proxy applies the same determination from its registry copy, and the
 refusal wins wherever the two disagree.
 
+Contributed datasets (``whg:<dataset_id>:<src_id>``, place#319 follow-up).
+The store holds their polygons too (the per-dataset tilesets are built from
+it), but nothing on this host knows whether a dataset is public, embargoed,
+or under a licence that permits redistribution: that is Django's data (the
+``Dataset`` row, its collaborators, the registry's ``whg:<id>`` row), and it
+changes without a re-index. So the DECISION stays in Django, and this
+endpoint serves a ``whg:`` place only when the request carries a grant that
+Django signed for exactly that place id, with the shared secret
+``CRC_GATEWAY_API_KEY`` (the bearer Django already sends and this gateway
+otherwise ignores). ``X-WHG-Geometry-Grant: v1.<expires>.<hmac-sha256 hex>``
+over ``"geometry|<place_id>|<expires>"``; a grant lives at most
+``GRANT_MAX_TTL_S``. A missing, malformed, expired or mis-signed grant, or a
+gateway with no secret configured, is the same 451 as before: fail closed.
+The grant covers the named dataset's own geometries only; a ``whg:`` polygon
+borrowed from another dataset, or borrowed by an authority place, stays
+withheld as undetermined. The Pitt firewall allow-lists the app host, so the
+signature is not the only wall; it is the one that stops anyone on that
+host, or a logged request, from asking for a dataset Django did not clear.
+
 Fields are DECLARED on ``GeometryResponse``: FastAPI drops anything the
 response model does not name (reference_gateway_response_models).
 """
@@ -75,6 +94,8 @@ response model does not name (reference_gateway_response_models).
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -83,7 +104,7 @@ from functools import lru_cache
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
@@ -133,6 +154,15 @@ _MAX_PASSES = 8
 
 _ENTITY_PREFIX = "place:"
 
+# Contributed data: served only under a Django-signed grant (module docstring).
+WHG_NAMESPACE = "whg"
+GRANT_HEADER = "X-WHG-Geometry-Grant"
+GRANT_VERSION = "v1"
+GRANT_SECRET_ENV = "CRC_GATEWAY_API_KEY"
+# A grant Django mints is good for ~2 minutes; anything claiming longer than
+# this is refused outright, so a leaked long-lived token cannot be minted at all.
+GRANT_MAX_TTL_S = 600
+
 _ES_SOURCE = [
     "place_id",
     "namespace",
@@ -163,6 +193,7 @@ class GeometryResponse(BaseModel):
     tolerance: Optional[float] = Field(None, description="Douglas–Peucker tolerance applied (degrees), if any")
     elapsed_ms: int = Field(description="Server time spent assembling the response")
     source: str = Field("geom-store", description="Where the geometry came from")
+    dataset: Optional[str] = Field(None, description="For contributed data, the dataset the grant covered (whg:<id>)")
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +242,76 @@ def _undetermined_detail(namespace: str, place_id: str, lender: Optional[str] = 
         "id": place_id,
         "namespace": namespace,
     }
+
+
+def _ungranted_detail(place_id: str, reason: str) -> dict:
+    """451 for a contributed place whose request carried no grant this gateway
+    can verify. Same ``error`` as the undetermined case — to a consumer it IS
+    undetermined here — with ``grant`` naming why, for the Django log."""
+    return {
+        "error": "source licence not determined",
+        "detail": ("Contributed data is served only under a grant signed by WHG for this "
+                   "place, which this request did not carry (or which could not be "
+                   f"verified: {reason}). The dataset's visibility and licence are "
+                   "decided by WHG, not here."),
+        "id": place_id,
+        "namespace": WHG_NAMESPACE,
+        "grant": reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Contributed-dataset grant (signed by Django; module docstring)
+# ---------------------------------------------------------------------------
+
+def contributed_dataset(place_id: str) -> Optional[str]:
+    """``"whg:<dataset_id>"`` for a canonical contributed id
+    ``whg:<dataset_id>:<src_id>``; None for anything else, including the
+    pre-namespacing ``whg:<pk>`` form, which names no dataset."""
+    parts = place_id.split(":", 2)
+    if len(parts) != 3 or parts[0] != WHG_NAMESPACE or not parts[1].isdigit() or not parts[2]:
+        return None
+    return f"{WHG_NAMESPACE}:{parts[1]}"
+
+
+def grant_message(place_id: str, expires: int) -> bytes:
+    return f"geometry|{place_id}|{int(expires)}".encode("utf-8")
+
+
+def sign_grant(place_id: str, expires: int, secret: str) -> str:
+    """The grant Django mints: ``v1.<expires>.<hex>``. Here for the tests and
+    as the reference the whg3 side (``api/dataset_access.py``) must match."""
+    sig = hmac.new(secret.encode("utf-8"), grant_message(place_id, expires), hashlib.sha256).hexdigest()
+    return f"{GRANT_VERSION}.{int(expires)}.{sig}"
+
+
+def _grant_secret() -> str:
+    # Read per request, not at import: the gateway's .env.local is the only
+    # place it lives, and a test must be able to take it away.
+    return os.getenv(GRANT_SECRET_ENV) or ""
+
+
+def verify_grant(grant: Optional[str], place_id: str, now: Optional[float] = None) -> tuple[bool, str]:
+    """``(ok, reason)``. Every refusal is closed: no secret on this host means
+    no contributed geometry is served, whatever the header says."""
+    secret = _grant_secret()
+    if not secret:
+        return False, "no secret configured"
+    if not grant:
+        return False, "missing"
+    parts = grant.strip().split(".")
+    if len(parts) != 3 or parts[0] != GRANT_VERSION or not parts[1].isdigit():
+        return False, "malformed"
+    expires = int(parts[1])
+    now = time.time() if now is None else now
+    if expires < now:
+        return False, "expired"
+    if expires - now > GRANT_MAX_TTL_S:
+        return False, "too long-lived"
+    expected = sign_grant(place_id, expires, secret).split(".")[2]
+    if not hmac.compare_digest(expected, parts[2].lower()):
+        return False, "bad signature"
+    return True, "ok"
 
 
 def _withheld_detail(namespace: str, place_id: str, lender: Optional[str] = None) -> dict:
@@ -526,6 +627,10 @@ async def place_geometry(
         GEOMETRY_MAX_BYTES_DEFAULT, ge=GEOMETRY_MAX_BYTES_FLOOR, le=GEOMETRY_MAX_BYTES_CEILING,
         description="Response size cap on the serialised geometry",
     ),
+    grant: Optional[str] = Header(
+        None, alias=GRANT_HEADER,
+        description="Contributed (whg:) data only: the grant WHG signed for this place id",
+    ),
 ):
     """One place's stored geometry as GeoJSON (see the module docstring).
 
@@ -533,11 +638,13 @@ async def place_geometry(
       /api/geometry/osm:r62149
       /api/geometry/ohm:r2660219?max_bytes=200000
       /api/geometry/clio:1234?tolerance=0.01
+      /api/geometry/whg:1234:abc  (with ``X-WHG-Geometry-Grant`` from Django)
 
     404 ``error: "not found"`` (unknown place) / ``"no geometry"`` (point-only)
     / ``"geometry incomplete"`` (store short of the index); 413 ``"geometry too
-    large"`` / ``"geometry budget exceeded"``; 451 withheld source; 503 store
-    unavailable or endpoint busy; 502 index failure.
+    large"`` / ``"geometry budget exceeded"``; 451 withheld source, or a
+    contributed place without a verifiable grant; 503 store unavailable or
+    endpoint busy; 502 index failure.
     """
     deadline = Deadline(GEOMETRY_TIME_BUDGET_S)
     if not _SHAPELY_AVAILABLE:  # pragma: no cover
@@ -556,9 +663,19 @@ async def place_geometry(
     except Exception as exc:  # noqa: BLE001
         logger.error("licence determination unavailable: %s", exc)
         raise HTTPException(status_code=503, detail={"error": "licence determination unavailable"})
-    if namespace not in authorities:
+    granted_dataset: Optional[str] = None
+    if namespace == WHG_NAMESPACE:
+        # Contributed: Django decided, and says so with a grant bound to this
+        # id. Verified before the index is asked, so an ungranted request
+        # learns nothing — not even whether the id exists.
+        granted_dataset = contributed_dataset(pid)
+        ok, reason = verify_grant(grant, pid) if granted_dataset else (False, "not a canonical whg:<dataset>:<id>")
+        if not ok:
+            logger.info("geometry: contributed %s refused (%s)", pid, reason)
+            raise HTTPException(status_code=451, detail=_ungranted_detail(pid, reason))
+    elif namespace not in authorities:
         raise HTTPException(status_code=451, detail=_undetermined_detail(namespace, pid))
-    if namespace in withheld:
+    elif namespace in withheld:
         raise HTTPException(status_code=451, detail=_withheld_detail(namespace, pid))
 
     reader = spatial.get_geom_reader()
@@ -592,6 +709,13 @@ async def place_geometry(
         src = hits[0].get("_source", {})
         keyed = geom_keys_for(src)
         for key, lender in keyed:
+            if lender == WHG_NAMESPACE:
+                # The grant covers one dataset's own geometries. A polygon lent
+                # by another contributed dataset, or to an authority place, has
+                # no determination here — the same 451 as before the grant existed.
+                if granted_dataset and key.startswith(granted_dataset + ":"):
+                    continue
+                raise HTTPException(status_code=451, detail=_undetermined_detail(lender, pid, lender=key))
             if lender not in authorities:
                 raise HTTPException(status_code=451, detail=_undetermined_detail(lender, pid, lender=key))
             if lender in withheld:
@@ -606,4 +730,5 @@ async def place_geometry(
             "error": "no geometry", "id": pid,
             "detail": "The index locates this place by a point only; no polygon or line is stored for it.",
         })
-    return GeometryResponse(place_id=pid, namespace=src.get("namespace") or namespace, **payload)
+    return GeometryResponse(place_id=pid, namespace=src.get("namespace") or namespace,
+                            dataset=granted_dataset, **payload)
