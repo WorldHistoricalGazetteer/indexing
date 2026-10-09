@@ -124,11 +124,23 @@ class NonPolygonsGetNoAnchor(unittest.TestCase):
             {"type": "Point", "coordinates": [1.0, 2.0]}))
         self.assertIsNone(f)
 
-    def test_line_features_yield_nothing_here(self):
+    def test_line_features_anchor_on_their_longest_segment(self):
+        """place#166 (plan §3.3): a line is a shape, so it gets one anchor —
+        the midpoint of its longest segment, which is ON the line. The
+        earlier expectation (no anchor for lines) was the gap this closes:
+        ``pl``'s 230 routes had nothing to label."""
+        from shapely.geometry import LineString, shape
         from processing.generate_tiles import _label_point_feature
-        f = _label_point_feature(_feature(
-            {"type": "LineString", "coordinates": [[0, 0], [1, 1]]}))
-        self.assertIsNone(f)
+        line = {"type": "LineString",
+                "coordinates": [[0, 0], [1, 0], [1, 5], [1.2, 5]]}
+        f = _label_point_feature(_feature(line))
+        self.assertIsNotNone(f)
+        self.assertEqual(f["properties"]["label"], 1)
+        pt = shape(f["geometry"])
+        # longest segment is (1,0)-(1,5): midpoint (1, 2.5)
+        self.assertAlmostEqual(pt.x, 1.0, places=6)
+        self.assertAlmostEqual(pt.y, 2.5, places=6)
+        self.assertLess(LineString(line["coordinates"]).distance(pt), 1e-9)
 
     def test_a_nameless_polygon_yields_nothing(self):
         """No name, nothing to draw — an empty label is pure tile bytes."""

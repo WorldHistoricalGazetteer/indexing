@@ -127,11 +127,12 @@ TILE_OPEN_START_YEAR = -9999
 # gazetteer renders a deceptively sparse scatter of tiny fills at low zoom even
 # when it has tens of thousands of features. (An earlier cut fed the Atlas
 # ``_heat`` layer with polygon centroid points, but that reads as a misleading
-# sparse dot field — see the reopened #140.) Instead, for polygon-*dominant*
-# buckets we emit ONE **dissolved** (unary_union) footprint polygon, tagged
+# sparse dot field — see the reopened #140.) Instead, for every bucket that
+# streams ANY shape (place#166: formerly only polygon-*dominant* buckets) we
+# emit ONE **dissolved** (unary_union) footprint polygon, tagged
 # ``coverage: 1`` and capped at ``_COVERAGE_MAXZOOM``, so the Atlas can style it
 # as a solid "this gazetteer covers this region" fill at low zoom; the real
-# boundaries are pinned to ``_BOUNDARY_MINZOOM`` and take over on zoom-in. The two
+# shapes are pinned to ``_BOUNDARY_MINZOOM`` and take over on zoom-in. The two
 # passes are tiled separately and ``tile-join``'d into the single source-layer
 # (see ``developer/place140-coverage-design/`` for the model + whg3 styling).
 #
@@ -145,6 +146,64 @@ _BOUNDARY_MINZOOM = 8
 # tiling. ~0.008° (~900 m) keeps the outline light (footprints are ~0.2 MB even
 # for the 23k-parish kain_par) while staying visually faithful at z0-7.
 _COVERAGE_SIMPLIFY_DEG = 0.008
+
+# Per-geometry CHANNELS (place#166). A bucket used to pick ONE tiling mode by
+# majority vote (``polygon > point``), and that one switch decided four
+# unrelated things at once: whether a low-zoom extent is emitted, whether the
+# real features are pinned to z8+, whether points are clustered, and whether
+# tippecanoe runs no-drop or coalesce. Those are properties of a geometry
+# TYPE, not of a bucket, so every hybrid gazetteer got at least one wrong —
+# ``wd``'s polygons had no extent, ``pl``'s lines had no representation at
+# all below z8 (and were counted as points), and ``hgis``'s points vanished
+# below z8 and never heated.
+#
+# Now every feature routes itself by geometry type into one of four channels,
+# each its own tippecanoe pass with its own zoom range and flags, and all are
+# ``tile-join``ed into the ONE source-layer named after the bucket, told apart
+# by a property — the convention ``coverage: 1`` already established:
+#
+#   channel   contents                         zooms   tippecanoe          marker
+#   points    Point features                   0-10    cluster, coalesce   (Point, unmarked)
+#   shapes    Polygon / LineString features    8-10    preserve_all        (geometry type)
+#   extent    one dissolved footprint          0-7     plain               coverage: 1
+#   labels    one anchor per shape             0-10    preserve_all        label: 1
+#
+# A bucket emits every channel its data supports; there is no vote. The z8
+# pin applies to ``shapes`` only, and only when an ``extent`` was actually
+# tiled to own the zooms below it — otherwise the shapes are tiled from z0
+# so nothing can be invisible everywhere. ``extent`` is
+# ``unary_union(polygons ∪ buffer(lines, _LINE_BUFFER_DEG))``; points
+# contribute nothing to it because the clustered heatmap IS their extent.
+CHANNEL_POINTS = "points"
+CHANNEL_SHAPES = "shapes"
+CHANNEL_EXTENT = "extent"
+CHANNEL_LABELS = "labels"
+CHANNELS: tuple[str, ...] = (CHANNEL_POINTS, CHANNEL_SHAPES, CHANNEL_EXTENT,
+                             CHANNEL_LABELS)
+
+# Lines are buffered to this width (degrees) before joining the extent union,
+# so a route gazetteer reads at z0-7 as the same mottle a polygon gazetteer
+# does. Deliberately about the footprint's own simplify tolerance: a buffer
+# narrower than that is lost to the final simplify, and a wider one claims
+# area the line never covered.
+_LINE_BUFFER_DEG = 0.01
+
+# Interior rings smaller than this (square degrees, ~1 km²) are dropped from
+# the dissolved extent. Each polygon is simplified BEFORE the union so the
+# union of ~50k shapes is tractable (``wd``), and independently simplified
+# neighbours leave sub-tolerance slivers along shared borders that would
+# otherwise survive as pinholes in the footprint. Nothing of that size is
+# visible at z7 (~1.2 km/px), the last zoom the extent is drawn at.
+_EXTENT_MIN_HOLE_AREA = _COVERAGE_SIMPLIFY_DEG ** 2
+
+# Sidecar written beside every built ``<bucket>.mbtiles``: what the stream
+# counted and which channels were tiled at which zooms. It is the build's own
+# ledger, and ``processing/verify_tileset_channels.py`` holds the tileset to
+# it — a tileset whose ledger says "shapes were streamed" and whose metadata
+# carries no ``label`` field fails verification. Without the ledger a
+# verifier can only check a tileset against itself, which a broken build
+# passes just as well as a working one.
+CHANNEL_LEDGER_SUFFIX = ".channels.json"
 
 # tippecanoe ``--postfilter`` that dedupes the ``;``-delimited ``aat`` string on
 # clustered points (``--accumulate-attribute=aat:concat`` concatenates member
@@ -1400,16 +1459,156 @@ def _polygonal_parts(geom):
             yield from _polygonal_parts(g)
 
 
-def _accumulate_coverage(geom_json, sink: list) -> None:
-    """Add a feature geometry's polygonal parts to the coverage-union ``sink``.
+def _linear_parts(geom):
+    """Yield the LineString parts of a shapely geometry (incl. the linear
+    members of a GeometryCollection); everything else is skipped."""
+    t = geom.geom_type
+    if t == "LineString":
+        if not geom.is_empty:
+            yield geom
+    elif t == "MultiLineString":
+        for g in geom.geoms:
+            if not g.is_empty:
+                yield g
+    elif t == "GeometryCollection":
+        for g in geom.geoms:
+            yield from _linear_parts(g)
 
-    ``sink`` is a list of shapely polygons later dissolved via ``unary_union``.
-    Invalid rings are repaired with ``make_valid`` so the union can't choke on a
-    self-intersecting source polygon. Non-polygon geometries contribute nothing.
+
+_POINT_TYPES = frozenset(("Point", "MultiPoint"))
+_POLYGON_TYPES = frozenset(("Polygon", "MultiPolygon"))
+_LINE_TYPES = frozenset(("LineString", "MultiLineString"))
+
+
+def _geometry_kind(geom_json) -> str | None:
+    """Classify a GeoJSON geometry as ``"point"``, ``"polygon"`` or ``"line"``.
+
+    This is the ONLY place the channel routing looks, so a geometry type the
+    pipeline has never produced before lands somewhere deliberate rather than
+    being counted as a point by elimination — which is what the old
+    ``is_poly = type in (Polygon, MultiPolygon, GeometryCollection)`` test did
+    to every LineString (``pl``: "poly=0 point=18,250" in the 7 Aug log, for a
+    bucket whose tiles carried 230 lines).
+
+    A GeometryCollection is classified by its most areal member: polygon if it
+    holds any, else line, else point. ``None`` for anything unrecognised.
+    """
+    if not isinstance(geom_json, dict):
+        return None
+    t = geom_json.get("type")
+    if t in _POINT_TYPES:
+        return "point"
+    if t in _POLYGON_TYPES:
+        return "polygon"
+    if t in _LINE_TYPES:
+        return "line"
+    if t == "GeometryCollection":
+        kinds = {_geometry_kind(g) for g in geom_json.get("geometries") or []}
+        for k in ("polygon", "line", "point"):
+            if k in kinds:
+                return k
+    return None
+
+
+def _channel_for(kind: str | None) -> str | None:
+    """Which channel a feature of this geometry kind is written to."""
+    if kind == "point":
+        return CHANNEL_POINTS
+    if kind in ("polygon", "line"):
+        return CHANNEL_SHAPES
+    return None
+
+
+# Above this many parts, the pairwise bbox precheck goes through an STRtree
+# rather than a double loop. Archipelago states have thousands of parts.
+_DISSOLVE_TREE_THRESHOLD = 32
+
+
+def _dissolve_parts(geom_json):
+    """Per-feature dissolve (place#166 §3): a MultiPolygon whose parts touch
+    or overlap is ``unary_union``ed so a place made of several adjacent
+    fragments renders without internal borders.
+
+    Guarded by a bbox-intersection precheck so the common cases — a single
+    Polygon, or a MultiPolygon of genuinely disjoint islands — never pay for
+    the union. Returns the input unchanged whenever there is nothing to do or
+    anything fails: a dissolve is a rendering nicety, never a reason to lose
+    the feature.
+    """
+    if not isinstance(geom_json, dict) or geom_json.get("type") != "MultiPolygon":
+        return geom_json
+    coords = geom_json.get("coordinates") or []
+    if len(coords) < 2:
+        return geom_json
+    try:
+        from shapely.geometry import shape
+        from shapely.ops import unary_union
+        from shapely.validation import make_valid
+
+        g = shape(geom_json)
+        parts = [p for p in g.geoms if not p.is_empty]
+        if len(parts) < 2:
+            return geom_json
+
+        touching = False
+        if len(parts) <= _DISSOLVE_TREE_THRESHOLD:
+            bounds = [p.bounds for p in parts]
+            for i in range(len(bounds)):
+                ax0, ay0, ax1, ay1 = bounds[i]
+                for j in range(i + 1, len(bounds)):
+                    bx0, by0, bx1, by1 = bounds[j]
+                    if ax0 <= bx1 and bx0 <= ax1 and ay0 <= by1 and by0 <= ay1:
+                        touching = True
+                        break
+                if touching:
+                    break
+        else:
+            from shapely import STRtree
+            tree = STRtree(parts)
+            left, right = tree.query(parts, predicate="intersects")
+            touching = bool(((left != right)).any())
+        if not touching:
+            return geom_json
+
+        fixed = [p if p.is_valid else make_valid(p) for p in parts]
+        merged = unary_union(fixed)
+        if merged.is_empty:
+            return geom_json
+        polys = list(_polygonal_parts(merged))
+        if not polys:
+            return geom_json
+        if len(polys) == 1:
+            out = polys[0]
+        else:
+            from shapely.geometry import MultiPolygon
+            flat: list = []
+            for p in polys:
+                flat.extend(p.geoms if p.geom_type == "MultiPolygon" else [p])
+            out = MultiPolygon(flat) if len(flat) > 1 else flat[0]
+        return out.__geo_interface__
+    except Exception:
+        return geom_json
+
+
+def _accumulate_coverage(geom_json, sink: list) -> None:
+    """Add a feature geometry's EXTENT contribution to the union ``sink``.
+
+    ``sink`` is a list of shapely polygons later dissolved via ``unary_union``
+    into the ``coverage: 1`` footprint. Polygons contribute their (repaired,
+    pre-simplified) rings; lines contribute a ``_LINE_BUFFER_DEG`` buffer so a
+    route gazetteer has a low-zoom extent at all (place#166 — previously lines
+    contributed nothing, and ``pl`` drew as a bare scatter below z8). Points
+    contribute nothing: the clustered heatmap is their extent.
+
+    Each polygon is simplified at the footprint's own tolerance BEFORE the
+    union. The union's cost is in vertices, and the footprint is simplified
+    at that tolerance afterwards anyway, so nothing visible is lost; without
+    it the union of ``wd``'s ~51k boundaries is the long pole of its build.
     """
     if not isinstance(geom_json, dict):
         return
-    if geom_json.get("type") not in ("Polygon", "MultiPolygon", "GeometryCollection"):
+    kind = _geometry_kind(geom_json)
+    if kind not in ("polygon", "line"):
         return
     try:
         from shapely.geometry import shape
@@ -1417,9 +1616,36 @@ def _accumulate_coverage(geom_json, sink: list) -> None:
         g = shape(geom_json)
         if not g.is_valid:
             g = make_valid(g)
-        sink.extend(_polygonal_parts(g))
+        for part in _polygonal_parts(g):
+            simplified = part.simplify(_COVERAGE_SIMPLIFY_DEG, preserve_topology=True)
+            sink.append(simplified if not simplified.is_empty else part)
+        for line in _linear_parts(g):
+            buffered = (line.simplify(_COVERAGE_SIMPLIFY_DEG, preserve_topology=True)
+                        .buffer(_LINE_BUFFER_DEG))
+            if not buffered.is_empty:
+                sink.append(buffered)
     except Exception:
         pass
+
+
+def _drop_small_holes(geom):
+    """Remove interior rings below ``_EXTENT_MIN_HOLE_AREA`` from a polygonal
+    geometry. Pre-simplified neighbours leave sliver gaps along shared borders
+    that the union preserves as pinholes; none is visible at z7."""
+    from shapely.geometry import MultiPolygon, Polygon
+
+    def _one(p):
+        if not p.interiors:
+            return p
+        keep = [r for r in p.interiors
+                if Polygon(r).area >= _EXTENT_MIN_HOLE_AREA]
+        return p if len(keep) == len(p.interiors) else Polygon(p.exterior, keep)
+
+    if geom.geom_type == "Polygon":
+        return _one(geom)
+    if geom.geom_type == "MultiPolygon":
+        return MultiPolygon([_one(p) for p in geom.geoms])
+    return geom
 
 
 # Properties carried onto a label anchor. The style's label layers filter on
@@ -1484,8 +1710,31 @@ def _label_anchor(geom):
         return None
 
 
+def _line_anchor(geom):
+    """Label anchor for a linear geometry: the midpoint of the longest
+    constituent segment (plan §3.3), which keeps the label on a straight
+    stretch of a route rather than at a vertex or off the line entirely as a
+    centroid would be. None when there is no segment of positive length."""
+    best = None
+    best_len = 0.0
+    for line in _linear_parts(geom):
+        coords = list(line.coords)
+        for (x0, y0, *_), (x1, y1, *_) in zip(coords, coords[1:]):
+            seg = (x1 - x0) ** 2 + (y1 - y0) ** 2
+            if seg > best_len:
+                best_len = seg
+                best = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    if best is None:
+        return None
+    from shapely.geometry import Point
+    return Point(best)
+
+
 def _label_point_feature(feature: dict) -> dict[str, Any] | None:
-    """One label anchor per polygonal feature, marked ``label: 1`` (place#159).
+    """One label anchor per SHAPE feature, marked ``label: 1`` (place#159).
+
+    Polygons anchor at their pole of inaccessibility; lines (place#166) at
+    the midpoint of their longest segment. Points yield nothing.
 
     A polygon is cut at every tile edge, and MapLibre draws one symbol per
     feature *per tile* — so Nebraska got five "Nebraska" labels and Italy
@@ -1507,8 +1756,8 @@ def _label_point_feature(feature: dict) -> dict[str, Any] | None:
     geom_json = feature.get("geometry")
     if not isinstance(geom_json, dict):
         return None
-    if geom_json.get("type") not in ("Polygon", "MultiPolygon",
-                                     "GeometryCollection"):
+    kind = _geometry_kind(geom_json)
+    if kind not in ("polygon", "line"):
         return None
     try:
         from shapely.geometry import shape
@@ -1516,7 +1765,7 @@ def _label_point_feature(feature: dict) -> dict[str, Any] | None:
         g = shape(geom_json)
         if not g.is_valid:
             g = make_valid(g)
-        anchor = _label_anchor(g)
+        anchor = _label_anchor(g) if kind == "polygon" else _line_anchor(g)
     except Exception:
         return None
     if anchor is None or anchor.is_empty:
@@ -1560,6 +1809,7 @@ def _coverage_feature(poly_geoms: list, namespace: str) -> dict[str, Any] | None
         merged = merged.simplify(_COVERAGE_SIMPLIFY_DEG, preserve_topology=True)
         if merged.is_empty:
             return None
+        merged = _drop_small_holes(merged)
         return {
             "type": "Feature",
             "properties": {
@@ -1638,50 +1888,87 @@ def _doc_belongs_to_bucket(
     return False, False
 
 
+class BucketStream:
+    """What ``_stream_bucket`` produced for one bucket (place#166).
+
+    * ``paths`` — ``{channel: Path}`` for every channel that received at
+      least one feature; empty channels have no entry and no file.
+    * ``counts`` — ``{"point": n, "polygon": n, "line": n}`` of REAL features
+      (synthetic extent and label anchors are not counted here).
+    * ``written`` — ``{namespace: real-feature count}`` for metrics.
+    * ``labels`` — label anchors written.
+    * ``extent`` — True when a dissolved footprint was written.
+    """
+
+    __slots__ = ("paths", "counts", "written", "labels", "extent")
+
+    def __init__(self) -> None:
+        self.paths: dict[str, Path] = {}
+        self.counts: dict[str, int] = {"point": 0, "polygon": 0, "line": 0}
+        self.written: dict[str, int] = {}
+        self.labels: int = 0
+        self.extent: bool = False
+
+    @property
+    def shapes(self) -> int:
+        return self.counts["polygon"] + self.counts["line"]
+
+    def as_ledger(self) -> dict[str, Any]:
+        return {
+            "counts": dict(self.counts),
+            "written": dict(self.written),
+            "label_anchors": self.labels,
+            "extent": self.extent,
+            "channels_streamed": sorted(self.paths),
+        }
+
+
+def channel_paths(bucket: str, out_dir: Path) -> dict[str, Path]:
+    """The GeoJSONL path for each channel of ``bucket`` under ``out_dir``."""
+    return {ch: out_dir / f"{bucket}.{ch}.geojsonl" for ch in CHANNELS}
+
+
 def _stream_bucket(
     bucket: str,
     reader: GeomStoreReader,
     *,
-    geojsonl_path: Path,
-    collect_coverage: bool = False,
-    labels_path: Path | None = None,
+    out_dir: Path,
+    emit_labels: bool = True,
+    emit_extent: bool = True,
     tier_counts: dict[str, int] | None = None,
-) -> tuple[dict[str, int], dict[str, int], list]:
-    """Stream every contributing namespace's docs into one bucket output file.
+) -> BucketStream:
+    """Stream every contributing namespace's docs into per-CHANNEL GeoJSONL.
 
-    Truncates the output file once at the start so reruns are clean. Returns
-    ``(written, geom_counts, coverage_geoms)``:
+    Each feature routes itself by geometry type (``_geometry_kind``) into the
+    ``points`` or ``shapes`` channel; every shape additionally yields one
+    label anchor into ``labels`` and contributes to the dissolved footprint
+    written as the single ``extent`` feature. There is no per-bucket vote:
+    a bucket with 11 M points and 51k polygons gets all four channels, and a
+    bucket with 892 polygons and 13k points gets all four too.
 
-    * ``written`` — ``{namespace: real-feature count}`` (metrics / wall-time).
-    * ``geom_counts`` — ``{"polygon": n, "point": n}`` used by the caller to pick
-      the tiling mode (polygon-dominant → coverage footprint, else point heatmap).
-    * ``coverage_geoms`` — shapely polygons accumulated for the dissolved footprint
-      when ``collect_coverage`` is set (place#140), else empty.
-
-    The real-boundary features are pinned above the crossover by tiling the BASE
-    pass at ``--minimum-zoom _BOUNDARY_MINZOOM`` (per-feature ``tippecanoe:minzoom``
-    in ``properties`` is NOT honoured by the current tippecanoe), so the low zooms
-    are owned by the dissolved coverage footprint (a separate pass).
+    Files are truncated at the start so reruns are clean, and empty channels
+    are removed afterwards so the caller never tiles an empty file. The z8
+    pin for shapes is applied by the tippecanoe stage (``--minimum-zoom``),
+    not here — tippecanoe ignores a per-feature minzoom in ``properties``.
     """
+    stream = BucketStream()
     contributors = _bucket_contributors(bucket)
     if not contributors:
-        return {}, {"polygon": 0, "point": 0}, []
+        return stream
 
     require_boundary = bucket in _FIXED_BUCKETS
-    geojsonl_path.write_bytes(b"")
+    paths = channel_paths(bucket, out_dir)
+    for p in paths.values():
+        p.write_bytes(b"")
     written: dict[str, int] = defaultdict(int)
-    counts = {"polygon": 0, "point": 0}
-    coverage_geoms: list = []
+    extent_geoms: list = []
 
-    # place#159: one label anchor per polygon, its own tippecanoe pass (never
-    # clustered, own zoom range) but the SAME layer name, so tile-join merges
-    # it into one source-layer distinguished by `label: 1`.
-    labels_fh = None
-    if labels_path is not None:
-        labels_path.write_bytes(b"")
-        labels_fh = open(labels_path, "ab")
-
-    with open(geojsonl_path, "ab") as fh:
+    handles = {
+        CHANNEL_POINTS: open(paths[CHANNEL_POINTS], "ab"),
+        CHANNEL_SHAPES: open(paths[CHANNEL_SHAPES], "ab"),
+    }
+    labels_fh = open(paths[CHANNEL_LABELS], "ab") if emit_labels else None
+    try:
         for namespace in contributors:
             for doc in _iter_namespace_docs(namespace):
                 place_id = doc.get("place_id") or ""
@@ -1700,27 +1987,52 @@ def _stream_bucket(
                 )
                 if feature is None:
                     continue
-                geom = feature.get("geometry") or {}
-                is_poly = geom.get("type") in ("Polygon", "MultiPolygon", "GeometryCollection")
-                if is_poly:
-                    counts["polygon"] += 1
-                    if collect_coverage:
-                        _accumulate_coverage(geom, coverage_geoms)
+                geom = feature.get("geometry")
+                kind = _geometry_kind(geom)
+                channel = _channel_for(kind)
+                if channel is None:
+                    continue
+                if kind == "polygon":
+                    # Per-feature dissolve: adjacent fragments of one place
+                    # render without internal borders (plan §3, use case 1).
+                    feature["geometry"] = geom = _dissolve_parts(geom)
+                stream.counts[kind] += 1
+                if channel == CHANNEL_SHAPES:
+                    if emit_extent:
+                        _accumulate_coverage(geom, extent_geoms)
                     if labels_fh is not None:
                         lf = _label_point_feature(feature)
                         if lf is not None:
                             labels_fh.write(orjson.dumps(lf))
                             labels_fh.write(b"\n")
-                else:
-                    counts["point"] += 1
+                            stream.labels += 1
+                fh = handles[channel]
                 fh.write(orjson.dumps(feature))
                 fh.write(b"\n")
                 written[ns] += 1
+    finally:
+        for h in handles.values():
+            h.close()
+        if labels_fh is not None:
+            labels_fh.close()
 
-    if labels_fh is not None:
-        labels_fh.close()
+    if emit_extent and extent_geoms:
+        ns0 = contributors[0]
+        cov_feature = _coverage_feature(extent_geoms, ns0)
+        if cov_feature is not None:
+            paths[CHANNEL_EXTENT].write_bytes(orjson.dumps(cov_feature) + b"\n")
+            stream.extent = True
 
-    return dict(written), counts, coverage_geoms
+    stream.written = dict(written)
+    for ch, p in paths.items():
+        if p.exists() and p.stat().st_size > 0:
+            stream.paths[ch] = p
+        else:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    return stream
 
 
 def _stream_bucket_banded(
@@ -1925,28 +2237,161 @@ def tile_join(
     return True
 
 
-def _with_labels(mbtiles_list: list[Path], bucket: str,
-                 labels_geojsonl: Path | None, out_dir: Path,
-                 description: str, maxzoom: int = 10) -> list[Path]:
-    """Append a label-anchor mbtiles to a tile-join input list (place#159).
+def _channel_plan(
+    stream: "BucketStream",
+    *,
+    ctx_cfg: dict[str, Any] | None = None,
+    maxzoom: int = 10,
+) -> list[dict[str, Any]]:
+    """The tippecanoe passes a streamed bucket needs, one per non-empty channel.
 
-    Same layer name as the shapes, so tile-join folds the anchors into the one
-    source-layer where `label: 1` distinguishes them. Points are tiny and never
-    clustered — ``preserve_all`` keeps every anchor rather than shedding the
-    densest, because a dropped label is a place that silently loses its name.
+    Pure: decides zoom ranges and flags from what was streamed, so it can be
+    tested without tippecanoe. Each entry: ``{channel, minzoom, maxzoom,
+    cluster_points, preserve_all, required}``. ``required`` says whether a
+    failed pass fails the bucket (``points`` / ``shapes`` carry the real
+    features) or is survivable with a warning (``extent`` / ``labels`` are
+    derived and the map degrades gracefully without them).
 
-    Returns the list unchanged when there is nothing to add, so the caller need
-    not branch.
+    The shapes and labels passes start at ``_BOUNDARY_MINZOOM`` ONLY when an
+    extent was streamed to own the zooms beneath them. A bucket whose extent
+    union failed tiles its shapes from z0 instead — the old code pinned them
+    to z8 and then deployed "boundaries without footprint", i.e. nothing at
+    all below z8.
+
+    Context-overlay buckets (``ctx_cfg``) keep their own zoom range and
+    clustering choice for the points pass and emit no derived channels.
     """
-    if labels_geojsonl is None:
-        return mbtiles_list
-    label_mbtiles = out_dir / f"{bucket}.labels.mbtiles"
-    if generate_tileset(labels_geojsonl, label_mbtiles, bucket, description,
-                        minzoom=0, maxzoom=maxzoom,
-                        preserve_all=True):
-        return mbtiles_list + [label_mbtiles]
-    print(f"  ⚠ {bucket}: label pass failed — tileset will have no anchors")
-    return mbtiles_list
+    plan: list[dict[str, Any]] = []
+    # Order matters for tile-join only in that the first input's metadata
+    # name wins; every pass uses the same layer/name, so any order works.
+    # Extent is listed first so its outcome is known before shapes decide
+    # their minzoom — ``_build_channels`` honours this order.
+    if CHANNEL_EXTENT in stream.paths:
+        plan.append({"channel": CHANNEL_EXTENT, "minzoom": 0,
+                     "maxzoom": _COVERAGE_MAXZOOM,
+                     "cluster_points": False, "preserve_all": False,
+                     "required": False})
+    if CHANNEL_SHAPES in stream.paths:
+        plan.append({"channel": CHANNEL_SHAPES,
+                     "minzoom": _BOUNDARY_MINZOOM if CHANNEL_EXTENT in stream.paths else 0,
+                     "maxzoom": maxzoom,
+                     "cluster_points": False, "preserve_all": True,
+                     "required": True})
+    if CHANNEL_POINTS in stream.paths:
+        if ctx_cfg is not None:
+            plan.append({"channel": CHANNEL_POINTS,
+                         "minzoom": ctx_cfg["minzoom"], "maxzoom": ctx_cfg["maxzoom"],
+                         "cluster_points": ctx_cfg["cluster_points"],
+                         "preserve_all": False, "required": True})
+        else:
+            plan.append({"channel": CHANNEL_POINTS, "minzoom": 0,
+                         "maxzoom": maxzoom,
+                         "cluster_points": True, "preserve_all": False,
+                         "required": True})
+    if CHANNEL_LABELS in stream.paths:
+        # Labels share the shapes' minzoom: an anchor for a shape that is
+        # not drawn below z8 is bytes in every low-zoom tile for nothing —
+        # and at z0 ONE tile holds every anchor in the bucket (wd: 51k),
+        # which is exactly the oversize-tile shape place#160 warned about.
+        plan.append({"channel": CHANNEL_LABELS,
+                     "minzoom": _BOUNDARY_MINZOOM if CHANNEL_EXTENT in stream.paths else 0,
+                     "maxzoom": maxzoom,
+                     "cluster_points": False, "preserve_all": True,
+                     "required": False})
+    return plan
+
+
+def _build_channels(
+    bucket: str,
+    stream: "BucketStream",
+    *,
+    out_dir: Path,
+    mbtiles: Path,
+    description: str,
+    ctx_cfg: dict[str, Any] | None = None,
+) -> tuple[bool, list[str]]:
+    """Tile every channel of ``stream`` and ``tile-join`` them into ``mbtiles``.
+
+    Returns ``(built, failures)``. ``built`` is True when the final bucket
+    tileset exists; ``failures`` names the passes that failed, including the
+    survivable ones (``extent`` / ``labels``) so the caller can log them.
+
+    When the extent pass fails the shapes pass is re-planned from z0, so a
+    footprint failure degrades to "boundaries everywhere" rather than
+    "boundaries nowhere below z8".
+    """
+    plan = _channel_plan(stream, ctx_cfg=ctx_cfg)
+    if not plan:
+        return False, []
+    failures: list[str] = []
+    built_mbtiles: list[Path] = []
+    extent_ok = CHANNEL_EXTENT not in stream.paths
+    ledger_channels: dict[str, dict[str, Any]] = {}
+
+    for pass_ in plan:
+        ch = pass_["channel"]
+        src = stream.paths[ch]
+        minzoom = pass_["minzoom"]
+        if ch in (CHANNEL_SHAPES, CHANNEL_LABELS) and not extent_ok:
+            minzoom = 0
+        target = out_dir / f"{bucket}.{ch}.mbtiles"
+        print(f"\n  channel '{ch}' (z{minzoom}-{pass_['maxzoom']}"
+              f"{', clustered' if pass_['cluster_points'] else ''}"
+              f"{', no-drop' if pass_['preserve_all'] else ''})")
+        ok = generate_tileset(
+            src, target, bucket, description,
+            minzoom=minzoom, maxzoom=pass_["maxzoom"],
+            cluster_points=pass_["cluster_points"],
+            preserve_all=pass_["preserve_all"],
+        )
+        if ok:
+            built_mbtiles.append(target)
+            ledger_channels[ch] = {"minzoom": minzoom, "maxzoom": pass_["maxzoom"],
+                                   "cluster_points": pass_["cluster_points"],
+                                   "preserve_all": pass_["preserve_all"]}
+            if ch == CHANNEL_EXTENT:
+                extent_ok = True
+        else:
+            failures.append(f"{bucket}/{ch}")
+            if ch == CHANNEL_EXTENT:
+                print(f"  ⚠ {bucket}: extent pass failed — shapes will be "
+                      f"tiled from z0 instead of pinned to z{_BOUNDARY_MINZOOM}")
+            elif ch == CHANNEL_LABELS:
+                print(f"  ⚠ {bucket}: label pass failed — tileset will have no anchors")
+            if pass_["required"]:
+                return False, failures
+
+    if not built_mbtiles:
+        return False, failures
+    if not tile_join(built_mbtiles, mbtiles, layer_name=bucket):
+        failures.append(f"{bucket}/join")
+        return False, failures
+
+    _write_channel_ledger(bucket, stream, ledger_channels, mbtiles)
+    return True, failures
+
+
+def _write_channel_ledger(bucket: str, stream: "BucketStream",
+                          channels: dict[str, dict[str, Any]],
+                          mbtiles: Path) -> Path:
+    """Write ``<bucket>.channels.json`` beside the built tileset.
+
+    The verifier reads this to know what the tileset SHOULD contain. The
+    build writes it, the verifier never does — a ledger the checker could
+    regenerate from the artefact would agree with the artefact by
+    construction.
+    """
+    ledger = {
+        "bucket": bucket,
+        "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "mbtiles": mbtiles.name,
+        "mbtiles_bytes": mbtiles.stat().st_size if mbtiles.exists() else None,
+        "channels": channels,
+        **stream.as_ledger(),
+    }
+    path = mbtiles.with_name(bucket + CHANNEL_LEDGER_SUFFIX)
+    path.write_text(json.dumps(ledger, indent=2, sort_keys=True), encoding="utf-8")
+    return path
 
 
 def generate_tiles_from_staged(
@@ -2046,9 +2491,8 @@ def generate_tiles_from_staged(
     bucket_counts: dict[str, int] = {}
     per_namespace_totals: dict[str, int] = defaultdict(int)
     bucket_band_paths: dict[str, dict[str, Path]] = {}   # bucket → {band_name: geojsonl}
-    bucket_label_paths: dict[str, dict[str, Path]] = {}  # place#159 label anchors
-    bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
-    bucket_coverage_geojsonl: dict[str, Path] = {}        # place#140 dissolved footprint
+    bucket_label_paths: dict[str, dict[str, Path]] = {}  # place#159 label anchors (banded)
+    bucket_streams: dict[str, BucketStream] = {}          # place#166 per-channel streams
     bucket_uses_bands: dict[str, bool] = {}
     # bucket → which geometry tier produced each feature; the publish gate's
     # entire input. Populated by ``_build_staged_feature`` during streaming.
@@ -2082,49 +2526,30 @@ def generate_tiles_from_staged(
                         per_namespace_totals[ns] += n
             else:
                 bucket_uses_bands[bucket] = False
-                geojsonl_path = out_dir / f"{bucket}.geojsonl"
-                bucket_geojsonl[bucket] = geojsonl_path
-                # place#140: for polygon-bearing buckets we accumulate a dissolved
-                # low-zoom COVERAGE FOOTPRINT (a separate pass, tile-join'd back
-                # into the one source-layer). Context-overlay buckets (point-only
-                # capitals) and the banded fixed admin buckets are excluded — the
-                # latter go through ``_stream_bucket_banded``. Whether a footprint
-                # is actually emitted is decided AFTER streaming, from the
-                # polygon/point mix (see the tippecanoe stage).
-                collect_cov = bucket not in _CONTEXT_OVERLAY_BUCKETS
-                print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
-                # place#159 phase 2: label anchors for the per-namespace
-                # polygon buckets too. Deferred originally because whg3's
-                # loadGazetteerStyle would heatmap the anchors until it gains
-                # the `!has label` filter — a map-appearance problem, not a
-                # data one, and the tileset is the slow half to produce.
-                labels_geojsonl = out_dir / f"{bucket}.labels.geojsonl"
+                # place#166: every feature routes itself into a channel by
+                # geometry type; no per-bucket vote. Context-overlay buckets
+                # (pre-filtered point subsets such as world capitals) get no
+                # derived channels — no footprint, no anchors.
+                is_ctx = bucket in _CONTEXT_OVERLAY_BUCKETS
+                print(f"\nStreaming bucket '{bucket}' (channels) from {_bucket_contributors(bucket)} ...")
                 tiers = bucket_tiers.setdefault(bucket, {})
-                written, geom_counts, cov_geoms = _stream_bucket(
-                    bucket, reader, geojsonl_path=geojsonl_path,
-                    collect_coverage=collect_cov,
-                    labels_path=labels_geojsonl,
+                stream = _stream_bucket(
+                    bucket, reader, out_dir=out_dir,
+                    emit_labels=not is_ctx, emit_extent=not is_ctx,
                     tier_counts=tiers,
                 )
-                if not (labels_geojsonl.exists()
-                        and labels_geojsonl.stat().st_size > 0):
-                    labels_geojsonl = None
-                bucket_counts[bucket] = sum(written.values())
-                for ns, n in written.items():
+                bucket_streams[bucket] = stream
+                bucket_counts[bucket] = sum(stream.written.values())
+                c = stream.counts
+                for ns, n in stream.written.items():
                     per_namespace_totals[ns] += n
                     print(f"  {ns} → {bucket}: {n:,} features "
-                          f"(poly={geom_counts['polygon']:,} point={geom_counts['point']:,})")
-                # Polygon-dominant → emit the dissolved coverage footprint.
-                if (collect_cov and cov_geoms
-                        and geom_counts["polygon"] > geom_counts["point"]):
-                    ns0 = _bucket_contributors(bucket)[0] if _bucket_contributors(bucket) else bucket
-                    cov_feature = _coverage_feature(cov_geoms, ns0)
-                    if cov_feature is not None:
-                        cov_path = out_dir / f"{bucket}.coverage.geojsonl"
-                        cov_path.write_bytes(orjson.dumps(cov_feature) + b"\n")
-                        bucket_coverage_geojsonl[bucket] = cov_path
-                        print(f"  + dissolved coverage footprint (place#140) "
-                              f"from {geom_counts['polygon']:,} polygons")
+                          f"(poly={c['polygon']:,} line={c['line']:,} point={c['point']:,})")
+                if stream.labels:
+                    print(f"  + {stream.labels:,} label anchors (place#159)")
+                if stream.extent:
+                    print(f"  + dissolved extent footprint (place#140/#166) "
+                          f"from {c['polygon']:,} polygons and {c['line']:,} lines")
     finally:
         try:
             reader.close()
@@ -2211,121 +2636,45 @@ def generate_tiles_from_staged(
                 else:
                     bucket_failures.append(bucket)
             else:
-                geojsonl = bucket_geojsonl[bucket]
-                coverage_geojsonl = bucket_coverage_geojsonl.get(bucket)
-                has_coverage = bool(
-                    coverage_geojsonl and coverage_geojsonl.exists()
-                    and coverage_geojsonl.stat().st_size > 0
-                )
-                # Context-overlay buckets carry their own per-bucket config (zoom
-                # range, no clustering) — pre-filtered small subsets (e.g. world
-                # capitals) that don't want density coalescing.
+                stream = bucket_streams.get(bucket)
+                if stream is None or not stream.paths:
+                    # Empty streams ("nothing to tile") are benign; a build
+                    # that fails on a non-empty input is a real failure and
+                    # must not be recorded as completed — otherwise wall-time
+                    # estimators pick up the partial run and undersize the
+                    # next attempt's Slurm budget.
+                    empty_buckets.append(bucket)
+                    print(f"  {bucket}: nothing to tile — source carries no "
+                          f"renderable geometry (not a failure)")
+                    continue
                 ctx_cfg = _CONTEXT_OVERLAY_BUCKETS.get(bucket)
-                if ctx_cfg is not None:
-                    tile_minzoom = ctx_cfg["minzoom"]
-                    tile_maxzoom = ctx_cfg["maxzoom"]
-                    tile_cluster = ctx_cfg["cluster_points"]
-                    tile_description = ctx_cfg.get("description") or description
+                tile_description = (ctx_cfg.get("description") or description
+                                    if ctx_cfg is not None else description)
+                built, channel_failures = _build_channels(
+                    bucket, stream, out_dir=out_dir, mbtiles=mbtiles,
+                    description=tile_description, ctx_cfg=ctx_cfg,
+                )
+                for f in channel_failures:
+                    print(f"  ⚠ channel pass failed: {f}")
+                if built:
+                    tilesets_generated.append(mbtiles)
+                    # Per-bucket auto-push to the tileserver. Push failure is
+                    # non-fatal here — the .mbtiles is still on /ix1 for a
+                    # later catch-up push and the pipeline can continue. The
+                    # eventual tileserver service restart is the user's
+                    # manual step and gates on every bucket having pushed
+                    # (see ``push_failures`` below).
+                    gate_ok, gate_reasons = publish_gate(
+                        bucket, bucket_tiers.get(bucket, {}), mbtiles
+                    )
+                    _log_gate(bucket, bucket_tiers.get(bucket, {}),
+                              gate_ok, gate_reasons)
+                    if not gate_ok:
+                        gate_refusals[bucket] = gate_reasons
+                    elif deploy and not push_mbtiles_to_tileserver(mbtiles):
+                        push_failures.append(bucket)
                 else:
-                    # Polygon-dominant buckets (a coverage footprint was emitted)
-                    # gate the real boundaries to the crossover: the BASE pass
-                    # starts at _BOUNDARY_MINZOOM so nothing renders below z8 (the
-                    # footprint owns z0-7), and uses the no-drop preserve_all pass
-                    # so every boundary survives from z8 up. Point-dominant buckets
-                    # keep the full-zoom point heatmap (clustering). (place#140)
-                    tile_minzoom = _BOUNDARY_MINZOOM if has_coverage else 0
-                    tile_maxzoom = 10
-                    tile_cluster = not has_coverage
-                    tile_description = description
-
-                # place#140: polygon-dominant bucket → tile the pinned real
-                # features to a BASE mbtiles (no-drop) and the dissolved footprint
-                # to its OWN mbtiles (maxzoom 7), then ``tile-join`` both into the
-                # single bucket source-layer. Point buckets skip this entirely.
-                # A join is needed for the coverage footprint AND for label
-                # anchors. Keying it on has_coverage alone silently dropped
-                # labels from every point-DOMINANT bucket that still has some
-                # polygons — `hgis` (892 polygons among 13,213 points) built
-                # its base straight to the final file, so tile_join never ran
-                # and _with_labels never fired.
-                needs_join = has_coverage or labels_geojsonl is not None
-                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if needs_join else mbtiles
-
-                if generate_tileset(
-                    geojsonl, base_mbtiles, bucket, tile_description,
-                    minzoom=tile_minzoom,
-                    maxzoom=tile_maxzoom,
-                    cluster_points=tile_cluster,
-                    preserve_all=has_coverage,
-                ):
-                    built = True
-                    if has_coverage:
-                        cov_mbtiles = out_dir / f"{bucket}.coverage.mbtiles"
-                        # Single dissolved polygon, capped at z7 by its per-feature
-                        # tippecanoe:maxzoom; render it down to z0.
-                        if generate_tileset(
-                            coverage_geojsonl, cov_mbtiles, bucket, tile_description,
-                            minzoom=0, maxzoom=_COVERAGE_MAXZOOM,
-                            cluster_points=False,
-                        ):
-                            built = tile_join(
-                                _with_labels([base_mbtiles, cov_mbtiles],
-                                             bucket, labels_geojsonl, out_dir,
-                                             tile_description, tile_maxzoom),
-                                mbtiles, layer_name=bucket,
-                            )
-                        else:
-                            # Footprint failed — keep the boundaries; the single-
-                            # input join just renames base → final.
-                            print(f"  ⚠ {bucket}: coverage pass failed — "
-                                  "deploying boundaries without footprint")
-                            built = tile_join(
-                                _with_labels([base_mbtiles], bucket,
-                                             labels_geojsonl, out_dir,
-                                             tile_description, tile_maxzoom),
-                                mbtiles, layer_name=bucket)
-                    elif labels_geojsonl is not None:
-                        # No footprint, but there are polygons to label.
-                        built = tile_join(
-                            _with_labels([base_mbtiles], bucket,
-                                         labels_geojsonl, out_dir,
-                                         tile_description, tile_maxzoom),
-                            mbtiles, layer_name=bucket)
-
-                    if built:
-                        tilesets_generated.append(mbtiles)
-                        # Per-bucket auto-push to the tileserver. Routes via the
-                        # Pitt VM proxy because CRC compute nodes have no SSH key
-                        # for the tileserver. Push failure is non-fatal here —
-                        # the .mbtiles is still on /ix1 for a later catch-up
-                        # push and the pipeline can continue. The eventual
-                        # tileserver service restart is the user's manual step
-                        # and gates on every bucket having pushed (see
-                        # ``push_failures`` below).
-                        gate_ok, gate_reasons = publish_gate(
-                            bucket, bucket_tiers.get(bucket, {}), mbtiles
-                        )
-                        _log_gate(bucket, bucket_tiers.get(bucket, {}),
-                                  gate_ok, gate_reasons)
-                        if not gate_ok:
-                            gate_refusals[bucket] = gate_reasons
-                        elif deploy and not push_mbtiles_to_tileserver(mbtiles):
-                            push_failures.append(bucket)
-                    else:
-                        bucket_failures.append(bucket)
-                else:
-                    # Empty GeoJSONL ("nothing to tile") is benign;
-                    # tippecanoe exiting non-zero on a non-empty input is
-                    # a real failure (typically OOM) and must not be
-                    # recorded as completed — otherwise wall-time
-                    # estimators pick up the partial run and undersize
-                    # the next attempt's Slurm budget.
-                    if geojsonl.exists() and geojsonl.stat().st_size > 0:
-                        bucket_failures.append(bucket)
-                    else:
-                        empty_buckets.append(bucket)
-                        print(f"  {bucket}: nothing to tile — source carries no "
-                              f"renderable geometry (not a failure)")
+                    bucket_failures.append(bucket)
 
     # Distinguish per-namespace status: if any bucket the namespace contributes
     # to failed tippecanoe, mark its tiles stage failed; otherwise completed.

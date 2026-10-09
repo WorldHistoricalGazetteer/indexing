@@ -267,6 +267,7 @@ def _build_sbatch_script(
     depend_on: str | None,
     output_dir: Path | None,
     suffix: str,
+    deploy: bool = True,
 ) -> str:
     log_dir = Path(_REPO) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -280,6 +281,13 @@ def _build_sbatch_script(
     output_arg = ""
     if output_dir is not None:
         output_arg = f" --output-dir {output_dir}"
+    if not deploy:
+        # place#166 rolling retile: build to disk only. The tileserver volume
+        # is thin (7.4 GB free against 7.8 GB of per-namespace tilesets, 9 Oct
+        # 2026), so a parallel array pushing every bucket as it finishes is
+        # exactly how a push fills the disk mid-transfer. Pushes are then run
+        # serially from one task with ``--redeploy-only``, verifying between.
+        output_arg += " --no-deploy"
 
     lines = [
         "#!/bin/bash",
@@ -400,8 +408,14 @@ def submit(
     output_dir: Path | None = None,
     with_restart: bool = True,
     only_buckets: list[str] | None = None,
+    deploy: bool = True,
 ) -> list[str]:
     manifest = load_run_manifest(manifest_path)
+    if not deploy and with_restart:
+        # A restart job after an array that pushed nothing would restart the
+        # tileserver for no reason, and would record the run as deployed.
+        print("--no-deploy given: the trailing tileserver-restart job is not submitted")
+        with_restart = False
     buckets = _eligible_buckets(manifest)
 
     if only_buckets:
@@ -453,6 +467,7 @@ def submit(
             depend_on=depend_on,
             output_dir=output_dir,
             suffix=suffix,
+            deploy=deploy,
         )
         sbatch_path = work_dir / f"tiles_array.{suffix}.sbatch"
         sbatch_path.write_text(sbatch_text, encoding="utf-8")
@@ -508,6 +523,13 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                         help="Print sbatch but do not submit")
     parser.add_argument(
+        "--no-deploy", dest="deploy", action="store_false", default=True,
+        help="Build tilesets to --output-dir only; do not push them to the "
+             "tileserver from the array tasks and do not submit the restart "
+             "job. Push afterwards, one bucket at a time, with "
+             "`generate_tiles --redeploy-only` (place#166 runbook).",
+    )
+    parser.add_argument(
         "--no-restart", dest="with_restart", action="store_false", default=True,
         help="Skip the trailing tileserver-restart job (default: submit it "
              "with afterok dependency on every tile array)",
@@ -545,6 +567,7 @@ def main() -> None:
         output_dir=Path(args.output_dir) if args.output_dir else None,
         with_restart=args.with_restart,
         only_buckets=args.only_buckets,
+        deploy=args.deploy,
     )
 
 

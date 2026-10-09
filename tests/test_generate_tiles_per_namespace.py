@@ -217,7 +217,13 @@ class TestCoverageFootprint(unittest.TestCase):
         generate_tiles._accumulate_coverage({"type": "Point", "coordinates": [0, 0]}, sink)
         self.assertEqual(len(sink), 1)  # point contributes nothing
 
-    def test_stream_bucket_pins_polygons_and_collects_coverage(self):
+    def test_stream_bucket_routes_each_geometry_to_its_channel(self):
+        """place#166: there is no majority vote. Two polygons and one point
+        yield a shapes channel, a points channel, an extent AND labels — and
+        the point goes to the points channel, not into the shapes file where
+        the old single pass would have pinned it to z8 and left it unclustered."""
+        from processing.generate_tiles import (
+            CHANNEL_EXTENT, CHANNEL_LABELS, CHANNEL_POINTS, CHANNEL_SHAPES)
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             src = tmp / "kain_par" / "final"
@@ -234,22 +240,28 @@ class TestCoverageFootprint(unittest.TestCase):
                 for d in docs:
                     fh.write(json.dumps(d) + "\n")
             reader = _FakeReader({"kain_par:1_0": self._POLY_A, "kain_par:2_0": self._POLY_B})
-            out = tmp / "kain_par.geojsonl"
+            out = tmp / "tiles"
+            out.mkdir()
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
-                written, counts, cov_geoms = generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, collect_coverage=True)
-            self.assertEqual(written, {"kain_par": 3})
-            self.assertEqual(counts, {"polygon": 2, "point": 1})
-            self.assertEqual(len(cov_geoms), 2)  # two polygons accumulated
-            feats = [json.loads(l) for l in out.read_text().splitlines()]
-            polys = [f for f in feats if f["geometry"]["type"] == "Polygon"]
-            pts = [f for f in feats if f["geometry"]["type"] == "Point"]
-            self.assertEqual(len(polys), 2)
-            self.assertEqual(len(pts), 1)
-            # boundary z8 gating is done by the base tile PASS (--minimum-zoom),
-            # not a per-feature property (tippecanoe ignores properties minzoom).
+                stream = generate_tiles._stream_bucket("kain_par", reader, out_dir=out)
+            self.assertEqual(stream.written, {"kain_par": 3})
+            self.assertEqual(stream.counts, {"polygon": 2, "line": 0, "point": 1})
+            self.assertEqual(set(stream.paths),
+                             {CHANNEL_SHAPES, CHANNEL_POINTS, CHANNEL_EXTENT, CHANNEL_LABELS})
+            shapes = [json.loads(l) for l in stream.paths[CHANNEL_SHAPES].read_text().splitlines()]
+            points = [json.loads(l) for l in stream.paths[CHANNEL_POINTS].read_text().splitlines()]
+            self.assertEqual([f["geometry"]["type"] for f in shapes], ["Polygon", "Polygon"])
+            self.assertEqual([f["geometry"]["type"] for f in points], ["Point"])
+            self.assertTrue(stream.extent)
+            self.assertEqual(stream.labels, 2)
+            # the z8 pin is applied by the tippecanoe PASS (--minimum-zoom),
+            # not by a per-feature property (tippecanoe ignores those).
+            for f in shapes:
+                self.assertNotIn("tippecanoe:minzoom", f["properties"])
 
-    def test_stream_bucket_no_coverage_collection_when_disabled(self):
+    def test_stream_bucket_without_derived_channels(self):
+        """Context overlays: no footprint, no anchors, just the features."""
+        from processing.generate_tiles import CHANNEL_SHAPES
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             src = tmp / "kain_par" / "final"
@@ -260,13 +272,17 @@ class TestCoverageFootprint(unittest.TestCase):
                     "geometries": [{"geom_ref": "kain_par:1_0"}],
                 }) + "\n")
             reader = _FakeReader({"kain_par:1_0": self._POLY_A})
-            out = tmp / "kain_par.geojsonl"
+            out = tmp / "tiles"
+            out.mkdir()
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
-                written, counts, cov_geoms = generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, collect_coverage=False)
-            self.assertEqual(counts, {"polygon": 1, "point": 0})
-            self.assertEqual(cov_geoms, [])  # not collected
-            feat = json.loads(out.read_text().splitlines()[0])
+                stream = generate_tiles._stream_bucket(
+                    "kain_par", reader, out_dir=out,
+                    emit_labels=False, emit_extent=False)
+            self.assertEqual(stream.counts, {"polygon": 1, "line": 0, "point": 0})
+            self.assertEqual(set(stream.paths), {CHANNEL_SHAPES})
+            self.assertFalse(stream.extent)
+            self.assertEqual(stream.labels, 0)
+            feat = json.loads(stream.paths[CHANNEL_SHAPES].read_text().splitlines()[0])
             self.assertEqual(feat["geometry"]["type"], "Polygon")
 
 

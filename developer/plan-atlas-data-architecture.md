@@ -639,10 +639,16 @@ and are blocked by nothing.
 **Retile of the per-namespace gazetteers (cheaper — 16–64 GB tiers):**
 
 6. Channel model in `_stream_bucket`: split the majority vote into per-type channels; extent from
-   polygons ∪ buffered lines; per-feature dissolve (§3).
-7. Labels channel for gazetteers.
+   polygons ∪ buffered lines; per-feature dissolve (§3). **Implemented 9 Oct 2026 on
+   `feat/tile-channels` — see `plan-tile-channels-166.md`, which is now the record for items
+   6–8 (design, the whg3 change, the re-tile runbook and the decisions still open). Not retiled.**
+7. Labels channel for gazetteers. **Was already live since 7 Aug; lines now get anchors too, and
+   anchors share the shapes' z8 pin rather than the 0–10 of the table in §3 (see
+   `plan-tile-channels-166.md` §7.2).**
 8. Registry: assert `region_source` buckets publish shapes; surface partial-coverage sources
-   (`wd`) honestly.
+   (`wd`) honestly. **The assertion lives in `processing/verify_tileset_channels.py`
+   (`--region-source` / `--region-sources-url`), not in the registry push, because the push runs
+   from pitt without the tiles.**
 
 **Separately scoped:**
 
