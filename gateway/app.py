@@ -111,6 +111,17 @@ async def _inflight_sweeper():
 
 # ---- Application Lifecycle ----
 
+async def _warm_aat_labels():
+    try:
+        from . import aat_labels
+        from .es_helpers import es_auth
+        await aat_labels.warm(es_auth())
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — never kill startup over labels
+        logger.exception("AAT label cache warm-up failed (lazy load will retry)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Gateway starting — ES: {ES_BACKEND}, Kibana: {KIBANA_BACKEND}")
@@ -122,7 +133,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Symphonym model not available: {e} — /api/search/phonetic will fail")
     sweeper = asyncio.create_task(_inflight_sweeper())
+    # Warm the per-worker AAT label cache in the background (2026-10-09): a
+    # slow `types` read must not delay startup, and
+    # /api/search loads it lazily anyway if this has not finished.
+    aat_warm = asyncio.create_task(_warm_aat_labels())
     yield
+    aat_warm.cancel()
     sweeper.cancel()
     try:
         await sweeper

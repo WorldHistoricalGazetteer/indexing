@@ -21,6 +21,7 @@ import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from .titles import display_title
 from .config import (
     ES_BACKEND,
     PLACES_INDEX,
@@ -101,6 +102,10 @@ class PlaceDetail(BaseModel):
     place_id: str
     namespace: str = ""
     title: str = ""
+    # place#290: when the STORED title is a bare Wikidata QID ("Q12345", ~2.72M
+    # wd places), `title` carries the preferred toponym instead (en, else the
+    # first name) and the QID moves here. Null whenever `title` is as stored.
+    qid_title: str | None = None
     names: list[CandidateName] = []
     ccodes: list[str] = []
     types: list[dict] = []
@@ -391,10 +396,12 @@ def _format_place_detail(
         for r in (src.get("relations") or [])
     ]
 
+    title, qid_title = display_title(src.get("title", "") or "", names)
     detail = PlaceDetail(
         place_id=pid,
         namespace=src.get("namespace", ""),
-        title=src.get("title", ""),
+        title=title,
+        qid_title=qid_title,
         names=names,
         ccodes=src.get("ccodes") or [],
         types=types,

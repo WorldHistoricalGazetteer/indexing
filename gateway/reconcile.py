@@ -57,6 +57,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from . import spatial
+from .titles import display_title
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .clustering_payload import (
     assemble_clustering_fields,
@@ -288,6 +289,10 @@ class CandidateGeometry(BaseModel):
 class CandidateHit(BaseModel):
     place_id: str = Field(description="Namespaced ID, e.g. gn:745044")
     title: str
+    # place#290: when the STORED title is a bare Wikidata QID ("Q12345", ~2.72M
+    # wd places), `title` carries the preferred toponym instead (en, else the
+    # first name) and the QID moves here. Null whenever `title` is as stored.
+    qid_title: Optional[str] = None
     names: list[CandidateName] = []
     ccodes: list[str] = []
     score: float = 0
@@ -338,6 +343,11 @@ class ReconcileResponse(BaseModel):
     # for, the only way to see a namespace that was queried but matched nothing.
     namespaces: list[str] = []
     namespaces_searched: list[str] = []
+    # The namespace exclusion actually applied (place#294) — the default
+    # `exclude_namespaces=["gb"]` hides OS Open Names unless asked for, and a
+    # consumer cannot otherwise tell a user that a source was left out. Empty
+    # when an explicit `namespaces` scope overrode it or none was requested.
+    namespaces_excluded: list[str] = []
     scope: Optional[ScopeInfo] = None  # geographic-scope diagnostics (when scope requested)
     variants_used: list[str] = []  # name variants actually queried in discovery (post-cap)
     # Name forms the GATEWAY derived from `query` and queried alongside it —
@@ -462,9 +472,11 @@ def _format_candidate(
             geometries.append(CandidateGeometry(repr_point=point, is_area=is_area,
                                                 has_geom=has_geom))
 
+    title, qid_title = display_title(src.get("title", "") or "", names)
     return CandidateHit(
         place_id=src.get("place_id", ""),
-        title=src.get("title", ""),
+        title=title,
+        qid_title=qid_title,
         names=names,
         ccodes=src.get("ccodes") or [],
         score=score,
@@ -534,8 +546,10 @@ async def reconcile_search(req: ReconcileRequest):
     has_query = bool(req.query and req.query.strip())
     # Echoed on every return path, empty ones included (place#157).
     ns_searched = list(req.namespaces or [])
+    # Echoed alongside it (place#294): the exclusion that really applies.
+    ns_excluded = [] if req.namespaces else list(req.exclude_namespaces or [])
     if not has_query and not req.contained_in and not req.bounds:
-        return ReconcileResponse(namespaces_searched=ns_searched)
+        return ReconcileResponse(namespaces_searched=ns_searched, namespaces_excluded=ns_excluded)
     pure_spatial = not has_query
 
     variants, variant_vectors = _normalise_variants(req) if has_query else ([], [])
@@ -609,13 +623,13 @@ async def reconcile_search(req: ReconcileRequest):
             logger.info("reconcile: scope requested but not applied — %s", scope.message)
             return ReconcileResponse(
                 scope=scope, variants_used=variants,
-                namespaces_searched=ns_searched,
+                namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
             )
 
         if pure_spatial and region is None and not req.bounds:
             return ReconcileResponse(
                 scope=scope, variants_used=variants,
-                namespaces_searched=ns_searched,
+                namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
             )
 
         # ------------------------------------------------------------------
@@ -768,7 +782,7 @@ async def reconcile_search(req: ReconcileRequest):
             if not place_scores:
                 return ReconcileResponse(
                 scope=scope, variants_used=variants,
-                namespaces_searched=ns_searched,
+                namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
             )
 
         # ------------------------------------------------------------------
@@ -952,7 +966,7 @@ async def reconcile_search(req: ReconcileRequest):
     return ReconcileResponse(
         hits=candidates,
         namespaces=_collect_namespaces(candidates),
-        namespaces_searched=ns_searched,
+        namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
         scope=scope,
         variants_used=variants,
         derived_forms=derived_forms,

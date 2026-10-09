@@ -23,7 +23,8 @@ import httpx
 from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 
-from . import spatial
+from . import aat_labels, spatial
+from .titles import display_title
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .clustering_payload import (
     assemble_clustering_fields,
@@ -69,28 +70,14 @@ TYPES_INDEX = "types"
 
 
 async def _resolve_aat_labels(aat_ids: list[int], auth) -> dict[int, str]:
-    """``{aat_id: term}`` friendly labels from the `types` index (best-effort)."""
-    if not aat_ids:
-        return {}
-    body = {
-        "size": len(aat_ids),
-        "query": {"terms": {"aat_id": aat_ids}},
-        "_source": ["aat_id", "term"],
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{ES_BACKEND}/{TYPES_INDEX}/_search",
-                json=body, auth=auth, headers=ES_HEADERS,
-            )
-            resp.raise_for_status()
-            return {
-                h["_source"]["aat_id"]: (h["_source"].get("term") or "")
-                for h in resp.json().get("hits", {}).get("hits", [])
-            }
-    except Exception as e:  # non-fatal — facet falls back to bare ids
-        logger.warning("AAT label resolution failed (non-fatal): %s", e)
-        return {}
+    """``{aat_id: term}`` friendly labels (best-effort, never raises).
+
+    Served from a per-worker cache of the whole ``types`` index
+    (:mod:`gateway.aat_labels`); a failed read and a missing concept are logged
+    differently there. Ids absent from the result are labelled with the bare id
+    by the caller.
+    """
+    return await aat_labels.resolve_labels(aat_ids, auth)
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +203,10 @@ class SearchHit(BaseModel):
     """A single search result."""
     place_id: str
     title: str
+    # place#290: when the STORED title is a bare Wikidata QID ("Q12345", ~2.72M
+    # wd places), `title` carries the preferred toponym instead (en, else the
+    # first name) and the QID moves here. Null whenever `title` is as stored.
+    qid_title: Optional[str] = None
     names: list[dict] = []        # [{"label": ..., "lang": ...}, ...]
     ccodes: list[str] = []
     types: list[dict] = []        # [{"identifier": ..., "label": ..., "sourceLabel": ...}, ...]
@@ -262,6 +253,11 @@ class SearchResponse(BaseModel):
     # cannot express.
     namespaces: list[str] = []
     namespaces_searched: list[str] = []
+    # The namespace exclusion actually applied (place#294) — the default
+    # `exclude_namespaces=["gb"]` hides OS Open Names unless asked for, and a
+    # consumer cannot otherwise tell a user that a source was left out. Empty
+    # when an explicit `namespaces` scope overrode it or none was requested.
+    namespaces_excluded: list[str] = []
     # Name forms the GATEWAY derived from `query` and searched alongside it —
     # bracketed qualifiers stripped both ways (place#199). Empty unless the query
     # contained brackets. The twin of /api/reconcile's field of the same name.
@@ -356,11 +352,13 @@ async def search(req: SearchRequest):
     # empty ones, where "we searched chgis and it matched nothing" is precisely
     # the fact a consumer cannot recover from an empty hit list (place#157).
     ns_searched = list(req.namespaces or [])
+    # Echoed alongside it (place#294): the exclusion that really applies.
+    ns_excluded = [] if req.namespaces else list(req.exclude_namespaces or [])
     # Browse mode only applies when there is no query — a query always takes the
     # ranked toponym-discovery path (browse is a no-query enumeration).
     browse = req.browse and not has_query
     if not has_query and not req.contained_in and not req.bounds and not browse:
-        return SearchResponse(namespaces_searched=ns_searched)
+        return SearchResponse(namespaces_searched=ns_searched, namespaces_excluded=ns_excluded)
     pure_spatial = not has_query
 
     # Name forms the gateway derives from the query itself. Search has no
@@ -422,13 +420,13 @@ async def search(req: SearchRequest):
             # the reason — the same contract /api/reconcile already honoured.
             logger.info("search: scope requested but not applied — %s", scope.message)
             return SearchResponse(
-                namespaces_searched=ns_searched,
+                namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
                 derived_forms=derived_forms,
                 scope=scope,
             )
 
         if pure_spatial and region is None and not req.bounds and not browse:
-            return SearchResponse(namespaces_searched=ns_searched, scope=scope)
+            return SearchResponse(namespaces_searched=ns_searched, namespaces_excluded=ns_excluded, scope=scope)
 
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -521,7 +519,7 @@ async def search(req: SearchRequest):
                                   include_prefixes, match_names)
 
             if not place_scores:
-                return SearchResponse(namespaces_searched=ns_searched,
+                return SearchResponse(namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
                                       derived_forms=derived_forms, scope=scope)
 
         # ------------------------------------------------------------------
@@ -762,9 +760,11 @@ async def search(req: SearchRequest):
                 "sourceLabel": t.get("sourceLabel", ""),
             })
 
+        title, qid_title = display_title(src.get("title", "") or "", names)
         hit_kwargs = dict(
             place_id=pid,
-            title=src.get("title", "") or "",
+            title=title,
+            qid_title=qid_title,
             names=names,
             ccodes=src.get("ccodes") or [],  # _source may carry ccodes: null
             types=types,
@@ -885,7 +885,7 @@ async def search(req: SearchRequest):
         total=total,
         max_score=results[0].score if results else 0,
         namespaces=collect_namespaces(results),
-        namespaces_searched=ns_searched,
+        namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
         derived_forms=derived_forms,
         scope=scope,
         facets=facets,
