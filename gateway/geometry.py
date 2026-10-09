@@ -12,38 +12,61 @@ happens to carry. The full polygon has been readable from the gateway host
 since place#165 put the store index into SQLite (gateway RSS +3.8 MB, not
 +5.4 GB), so it can simply be served.
 
-What this returns. The union of every stored geometry of the place (a place
-may carry several — ``geom_ref`` keys are ``"<place_id>_<geometry_index>"``),
-as one GeoJSON geometry, with its bounds and the vertex count. Point-only
+What this returns. The union of every stored geometry of the place, as one
+GeoJSON geometry, with its bounds and the vertex count. A place's geometries
+are keyed by their own ``geom_ref`` (``"<place_id>_<geometry_index>"`` for
+the place's own, or ANOTHER place's key where the geometry is borrowed — og
+places carry wd polygons, ``processing/interlink_ottgaz.py``). Point-only
 places have nothing in the store and are a 404 with ``error: "no geometry"``,
-which is a different answer from ``error: "not found"`` (no such place).
+which is a different answer from ``error: "not found"`` (no such place). A
+place whose index entry promises a stored geometry the store cannot produce
+is a 404 ``error: "geometry incomplete"`` naming the counts: a partial union
+would be the very truncation this endpoint exists to remove.
 
-Size bound. Some stored polygons run to hundreds of thousands of vertices.
-The response is capped at ``max_bytes`` (default ``GEOMETRY_MAX_BYTES``,
-1 MB; ceiling 5 MB): a geometry over the cap is simplified with
-Douglas–Peucker (topology-preserving), starting at 1/65536 of its own extent
-(sub-metre for anything smaller than a county) and doubling until it fits,
-so the result is the least-simplified geometry under the cap rather than
-the first one that happened to fit; the response says so (``simplified``,
-``tolerance``). Measured locally on a synthetic 200k-vertex, 7.7 MB
-polygon: 0.9 s to a first-step fit (a smooth shape loses nearly everything
-at any tolerance; a real coastline will take more doublings and more
-time). A caller may also ask for a tolerance directly.
-Coordinates are rounded to 6 decimals (~0.1 m) in either case. A geometry
-that cannot be brought under the cap in 20 doublings is a 413 carrying its
-bounds, which has not been observed and would mean the cap is set absurdly
-low.
+Cost bound. This gateway also serves prod search and reconciliation, so no
+request may hold a worker for long, whatever the polygon. Three guards, all
+tunable by environment:
+
+* ``GEOMETRY_MAX_RAW_VERTICES`` (1.5 M): checked on the WKB byte length
+  (16 bytes per 2-D coordinate, so an upper bound on the count) before
+  anything is parsed — over it is a 413, not a computation. (Measured: one non-topology simplify pass over a noisy
+  1 M-vertex ring is ~1 s at the tolerance the size ratio implies, ~8 s at
+  a fine one; a topology-preserving pass is 10× that again.)
+* ``GEOMETRY_TIME_BUDGET_S`` (6 s): a per-request deadline that starts when
+  the request arrives, is checked between every stage (queue, index read,
+  store read, parse, union, each simplify pass, serialise) and aborts with a
+  413 ``error: "geometry budget exceeded"``. A thread cannot be killed
+  mid-pass, so the vertex cap is what keeps any single pass short; the
+  deadline is what stops passes being queued behind it.
+* ``GEOMETRY_CONCURRENCY`` (2): a semaphore in front of the worker thread. A
+  burst of continent clicks queues here and is refused with 503 (and
+  ``Retry-After``) once its own deadline passes, instead of filling the
+  thread pool and the host's memory.
+
+Size bound. The response is capped at ``max_bytes`` (default
+``GEOMETRY_MAX_BYTES``, 1 MB; ceiling 5 MB). Compact GeoJSON at 6 decimals
+costs ~22 bytes per vertex, so the cap is a vertex target. A geometry over
+it is simplified CUMULATIVELY — each pass runs on the previous candidate,
+never again on the original — with ``preserve_topology=False`` for the
+coarse passes (same vertex counts as the topology-preserving form on a
+ring, at a tenth of the cost), from a tolerance derived from the size
+ratio rather than from a fixed fine fraction of the extent, then one
+topology-preserving pass over the small result, repaired with
+``make_valid`` if it needs it. The response says so (``simplified``,
+``tolerance``). A caller may also ask for a tolerance directly.
 
 Licence. Geometry is source content, so this is a redistribution surface in
 exactly the sense of place#269: an authority whose terms do not let WHG
 re-serve its records (``redistributable: False`` in
 ``processing.settings.AUTHORITIES`` — kain_par, nl, chgis as of 2026-07-22)
-gets a 451 naming the source and rights holder, before Elasticsearch or the
-store is touched. Indexing, search and reconciliation remain permitted for
-every authority; handing a complete, full-precision polygon to a browser as
-JSON is not any of those. The whg3 proxy applies the same determination from
-its registry copy, so the two cannot disagree without one of them being
-stale — and if they do, the refusal wins.
+gets a 451 naming the source and rights holder. The place's own namespace is
+checked before Elasticsearch is touched; the LENDING namespace of each
+borrowed geometry is checked once the index entry is read, so an og place
+cannot hand out an nl polygon through its wd link. Indexing, search and
+reconciliation remain permitted for every authority; handing a complete,
+full-precision polygon to a browser as JSON is not any of those. The whg3
+proxy applies the same determination from its registry copy, and the
+refusal wins wherever the two disagree.
 
 Fields are DECLARED on ``GeometryResponse``: FastAPI drops anything the
 response model does not name (reference_gateway_response_models).
@@ -55,18 +78,21 @@ import asyncio
 import json
 import logging
 import os
+import time
 from functools import lru_cache
 from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from starlette.responses import JSONResponse
 
 from . import spatial
 from .config import ES_BACKEND, PLACES_INDEX
 from .es_helpers import ES_HEADERS, es_auth
 
 try:
+    import shapely
     from shapely import wkb as _wkb
     from shapely.geometry import mapping as _mapping
     from shapely.ops import unary_union as _unary_union
@@ -78,17 +104,32 @@ logger = logging.getLogger("gateway.geometry")
 
 router = APIRouter(prefix="/api", tags=["Geometry"])
 
-# Size bound on the serialised geometry (bytes of compact JSON). The default
-# is an environment setting so the gateway host can tune it without a deploy;
-# the ceiling is a hard limit on what a caller may ask for.
+# Size bound on the serialised geometry (bytes of compact JSON).
 GEOMETRY_MAX_BYTES_DEFAULT = int(os.getenv("GEOMETRY_MAX_BYTES", "1000000"))
 GEOMETRY_MAX_BYTES_CEILING = 5_000_000
 GEOMETRY_MAX_BYTES_FLOOR = 10_000
-# Automatic simplification starts at this fraction of the geometry's own
-# extent and doubles the tolerance up to this many times.
-_AUTO_TOLERANCE_DIVISOR = 65536
-_AUTO_TOLERANCE_STEPS = 20
+# Cost bounds (module docstring).
+GEOMETRY_MAX_RAW_VERTICES = int(os.getenv("GEOMETRY_MAX_RAW_VERTICES", "1500000"))
+GEOMETRY_TIME_BUDGET_S = float(os.getenv("GEOMETRY_TIME_BUDGET_S", "6"))
+GEOMETRY_CONCURRENCY = int(os.getenv("GEOMETRY_CONCURRENCY", "2"))
+
 COORD_DECIMALS = 6
+# Compact JSON "[-12.345678,51.234567]," at 6 decimals — the size → vertex
+# conversion the cap is applied through.
+_JSON_BYTES_PER_VERTEX = 22
+# WKB: 16 bytes per 2-D coordinate, plus headers — so bytes/16 bounds the
+# vertex count from above before anything is parsed.
+_WKB_BYTES_PER_VERTEX = 16
+# Measured on noisy rings: Douglas–Peucker retains about
+# extent_perimeter / (0.3 × tolerance) vertices at the reduction ratios a
+# 1 MB cap implies, where the extent perimeter is 2 × (width + height) of
+# the bounds — NOT ``geom.length``, which vertex noise inflates without
+# bound (a 200k-vertex ring with 2% radial noise is 8,000° long). The first
+# pass aims ~2× over the target so that one cheap cumulative pass lands it,
+# giving close to the least-simplified fit; the loop adapts after.
+_TOL_GAIN = 0.3
+_AIM_OVER_TARGET = 2.0
+_MAX_PASSES = 8
 
 _ENTITY_PREFIX = "place:"
 
@@ -98,6 +139,8 @@ _ES_SOURCE = [
     "geometries.geometry_index",
     "geometries.geom_class",
     "geometries.has_geom",
+    "geometries.geom_ref",
+    "geometries.source",
 ]
 
 
@@ -109,13 +152,16 @@ class GeometryResponse(BaseModel):
     place_id: str
     namespace: str = ""
     geometry: dict = Field(description="GeoJSON geometry: the union of the place's stored geometries")
-    geometry_count: int = Field(description="How many stored geometries were merged")
-    bounds: Optional[list[float]] = Field(None, description="[west, south, east, north] of the returned geometry")
+    geometry_count: int = Field(description="Stored geometries merged into the response")
+    geometry_expected: int = Field(description="Stored geometries the index entry promised (equals geometry_count: a shortfall is a 404)")
+    bounds: Optional[list[float]] = Field(None, description="[west, south, east, north] of the FULL geometry")
     vertex_count: int = Field(description="Coordinate pairs in the returned geometry")
+    raw_vertex_count: int = Field(description="Coordinate pairs in the stored geometry before any simplification")
     bytes: int = Field(description="Size of the compact-JSON geometry")
     max_bytes: int = Field(description="The cap this response was bounded to")
     simplified: bool = Field(description="Whether the geometry was simplified to fit, or at the caller's request")
     tolerance: Optional[float] = Field(None, description="Douglas–Peucker tolerance applied (degrees), if any")
+    elapsed_ms: int = Field(description="Server time spent assembling the response")
     source: str = Field("geom-store", description="Where the geometry came from")
 
 
@@ -149,14 +195,15 @@ def non_redistributable_namespaces() -> frozenset[str]:
     )
 
 
-def _withheld_detail(namespace: str, place_id: str) -> dict:
+def _withheld_detail(namespace: str, place_id: str, lender: Optional[str] = None) -> dict:
     a = _authorities_by_namespace().get(namespace, {})
     name = a.get("dataset_name") or namespace
+    borrowed = (f" This place's geometry is borrowed from {name}." if lender else "")
     return {
         "error": "source not redistributable",
         "detail": (f"{name} is indexed and searchable through WHG, but its terms do not "
                    f"permit WHG to redistribute its records, and geometry is source "
-                   f"content. Obtain the data from the source under its own terms."),
+                   f"content.{borrowed} Obtain the data from the source under its own terms."),
         "id": place_id,
         "namespace": namespace,
         "source": {
@@ -166,6 +213,35 @@ def _withheld_detail(namespace: str, place_id: str) -> dict:
             "license": a.get("license_spdx"),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Deadline
+# ---------------------------------------------------------------------------
+
+class Deadline:
+    """Per-request budget, checked between stages (a stage cannot be interrupted)."""
+
+    def __init__(self, budget_s: float):
+        self.started = time.monotonic()
+        self.until = self.started + budget_s
+        self.budget_s = budget_s
+
+    def remaining(self) -> float:
+        return max(0.0, self.until - time.monotonic())
+
+    def elapsed_ms(self) -> int:
+        return int((time.monotonic() - self.started) * 1000)
+
+    def check(self, stage: str) -> None:
+        if time.monotonic() > self.until:
+            raise HTTPException(status_code=413, detail={
+                "error": "geometry budget exceeded",
+                "detail": (f"Assembling this geometry exceeded the {self.budget_s:g} s budget "
+                           f"(at: {stage}). It is too large to serve whole; the tiles still carry it."),
+                "stage": stage,
+                "budget_s": self.budget_s,
+            })
 
 
 # ---------------------------------------------------------------------------
@@ -209,98 +285,211 @@ def _size(gj: dict) -> int:
     return len(json.dumps(gj, separators=(",", ":")))
 
 
-def bound_geometry(geom, tolerance: Optional[float], max_bytes: int) -> tuple[dict, bool, Optional[float], int]:
-    """Serialise *geom* within *max_bytes*, simplifying if it must.
+def _coords(geom) -> int:
+    return int(shapely.get_num_coordinates(geom))
+
+
+def _repair(geom):
+    """A non-topology pass can self-intersect a ring; mend it, keeping only
+    what is polygonal (a line sliver is not a region)."""
+    if geom.is_valid:
+        return geom
+    fixed = shapely.make_valid(geom)
+    if fixed.geom_type == "GeometryCollection":
+        parts = [g for g in fixed.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+        if parts:
+            fixed = _unary_union(parts) if len(parts) > 1 else parts[0]
+    return fixed
+
+
+def _too_large(n: int, cap: int) -> HTTPException:
+    return HTTPException(status_code=413, detail={
+        "error": "geometry too large",
+        "detail": (f"Stored geometry: about {n:,} vertices, above the {cap:,} this endpoint "
+                   f"will serve whole. The tiles still carry it."),
+        "vertex_count": n, "max_vertices": cap,
+    })
+
+
+def bound_geometry(geom, tolerance: Optional[float], max_bytes: int,
+                   deadline: Optional[Deadline] = None) -> tuple[dict, bool, Optional[float], int]:
+    """Serialise *geom* within *max_bytes*, simplifying cumulatively if it must.
 
     Returns ``(geojson, simplified, tolerance, bytes)``. Raises
-    ``HTTPException(413)`` if the geometry cannot be brought under the cap.
+    ``HTTPException(413)`` if the geometry cannot be brought under the cap, or
+    the deadline passes between passes.
     """
+    check = deadline.check if deadline is not None else (lambda stage: None)
+    target = max(64, max_bytes // _JSON_BYTES_PER_VERTEX)
+    cand = geom
+    tol: Optional[float] = None
     simplified = False
-    tol = tolerance if tolerance else None
-    if tol:
-        geom = geom.simplify(tol, preserve_topology=True)
-        simplified = True
-    gj = _geojson(geom)
-    size = _size(gj)
-    if size <= max_bytes:
-        return gj, simplified, tol, size
+    n = _coords(cand)
+
+    if tolerance:
+        check("simplify")
+        cand = cand.simplify(tolerance, preserve_topology=False)
+        tol, simplified = tolerance, True
+        n = _coords(cand)
 
     minx, miny, maxx, maxy = geom.bounds
-    span = max(maxx - minx, maxy - miny) or 1e-6
-    tol = tol or span / _AUTO_TOLERANCE_DIVISOR
-    for _ in range(_AUTO_TOLERANCE_STEPS):
-        cand = geom.simplify(tol, preserve_topology=True)
-        if cand.is_empty:
+    perimeter = 2 * ((maxx - minx) + (maxy - miny)) or 1e-9
+    if n > target:
+        # Won't fit by the byte estimate: coarse passes from a tolerance the
+        # size ratio implies, each on the previous candidate.
+        tol = max(tol or 0.0, perimeter / (_TOL_GAIN * _AIM_OVER_TARGET * target))
+        for _ in range(_MAX_PASSES):
+            check("simplify")
+            cand = cand.simplify(tol, preserve_topology=False)
+            simplified = True
+            n = _coords(cand)
+            if n <= target:
+                break
+            tol *= max(1.5, min(3.0, n / target))
+
+    # Final pass: topology-preserving over the (now small) candidate, then the
+    # real byte test; the estimate can be off, so keep doubling if it is.
+    for _ in range(_MAX_PASSES):
+        check("serialise")
+        final = _repair(cand.simplify(tol, preserve_topology=True)) if tol else cand
+        if final.is_empty:
             break
-        gj = _geojson(cand)
+        gj = _geojson(final)
         size = _size(gj)
         if size <= max_bytes:
-            return gj, True, tol, size
-        tol *= 2
+            return gj, simplified, tol, size
+        tol = (tol or perimeter / (_TOL_GAIN * target)) * 2
+        cand = cand.simplify(tol, preserve_topology=False)
+        simplified = True
     raise HTTPException(status_code=413, detail={
         "error": "geometry too large",
-        "detail": (f"The geometry could not be simplified under {max_bytes} bytes "
-                   f"(last attempt {size} bytes at tolerance {tol:g})."),
+        "detail": f"The geometry could not be simplified under {max_bytes} bytes.",
         "bounds": [minx, miny, maxx, maxy],
         "max_bytes": max_bytes,
     })
 
 
-def _assemble(reader, place_id: str, keys: list[str],
-              tolerance: Optional[float], max_bytes: int) -> Optional[dict]:
-    """Read, union and bound. Returns the response payload, or None when the
-    store holds nothing for any key (a located-but-point-only place)."""
-    shapes = []
-    for key in keys:
-        try:
-            raw = reader.get_wkb(key)
-        except Exception as exc:  # noqa: BLE001 — one bad key must not hide the rest
-            logger.warning("geom-store read failed for %s: %s", key, exc)
-            raw = None
-        if not raw:
-            continue
-        try:
-            shp = _wkb.loads(raw)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("geom-store WKB unreadable for %s: %s", key, exc)
-            continue
-        if shp is not None and not shp.is_empty:
-            shapes.append(shp)
-    if not shapes:
-        return None
-    geom = _unary_union(shapes) if len(shapes) > 1 else shapes[0]
-    gj, simplified, tol, size = bound_geometry(geom, tolerance, max_bytes)
-    minx, miny, maxx, maxy = geom.bounds
-    return {
-        "geometry": gj,
-        "geometry_count": len(shapes),
-        "bounds": [round(minx, COORD_DECIMALS), round(miny, COORD_DECIMALS),
-                   round(maxx, COORD_DECIMALS), round(maxy, COORD_DECIMALS)],
-        "vertex_count": vertex_count(gj),
-        "bytes": size,
-        "max_bytes": max_bytes,
-        "simplified": simplified,
-        "tolerance": tol,
-    }
+def geom_keys_for(src: dict) -> list[tuple[str, str]]:
+    """``(store key, lending namespace)`` per stored geometry of a place.
 
-
-def geom_keys_for(src: dict) -> list[str]:
-    """The store keys a place ``_source`` can be expected to have.
-
-    ``has_geom: False`` entries are points carried inline as ``repr_point``;
-    the store holds nothing for them, so they are not asked for.
+    The key is the entry's own ``geom_ref`` where the index records one — it
+    is the only thing that names a BORROWED geometry (og → wd) — and the
+    positional ``"<place_id>_<geometry_index>"`` otherwise. The lender is the
+    key's namespace (a geom_ref always carries one); ``source`` is consulted
+    only when the key does not say. ``has_geom: False`` entries are points
+    carried inline as ``repr_point``; the store holds nothing for them.
     """
     pid = src.get("place_id")
-    keys: list[str] = []
+    out: list[tuple[str, str]] = []
     if not pid:
-        return keys
+        return out
+    own_ns = pid.split(":", 1)[0]
     for idx, g in enumerate(src.get("geometries", []) or []):
         if not isinstance(g, dict):
             continue
         if g.get("has_geom") is False:
             continue
-        keys.append(f"{pid}_{g.get('geometry_index', idx)}")
-    return keys
+        key = g.get("geom_ref") or f"{pid}_{g.get('geometry_index', idx)}"
+        lender = key.split(":", 1)[0] if ":" in key else (g.get("source") or own_ns)
+        out.append((key, lender))
+    return out
+
+
+def _assemble(reader, place_id: str, keys: list[str], tolerance: Optional[float],
+              max_bytes: int, deadline: Deadline) -> Optional[dict]:
+    """Read, union and bound. Returns the response payload, or None when the
+    index promised no stored geometry at all (a located-but-point-only place).
+    Raises 404 ``geometry incomplete`` when it promised more than the store
+    produced, and 413 when the geometry is over the vertex cap or the budget.
+    """
+    if not keys:
+        return None
+    raws: list[bytes] = []
+    missing: list[str] = []
+    total = 0
+    byte_cap = GEOMETRY_MAX_RAW_VERTICES * _WKB_BYTES_PER_VERTEX
+    for key in keys:
+        deadline.check("store read")
+        try:
+            # Uncached on purpose: the reader's LRU is keyed by entry, not
+            # bytes, and would fill with exactly the largest polygons.
+            raw = reader.get_wkb(key, cached=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("geom-store read failed for %s: %s", key, exc)
+            raw = None
+        if not raw:
+            missing.append(key)
+            continue
+        total += len(raw)
+        if total > byte_cap:
+            # bytes/16 bounds the vertex count from above (headers only add),
+            # so a geometry refused here would also fail a post-parse count —
+            # which is why there is no second check after parsing.
+            raise _too_large(total // _WKB_BYTES_PER_VERTEX, GEOMETRY_MAX_RAW_VERTICES)
+        raws.append(raw)
+    if missing:
+        logger.warning("geom-store incomplete for %s: %d of %d keys missing (%s)",
+                       place_id, len(missing), len(keys), ", ".join(missing[:5]))
+        raise HTTPException(status_code=404, detail={
+            "error": "geometry incomplete", "id": place_id,
+            "detail": (f"The index records {len(keys)} stored geometries for this place "
+                       f"but the store could produce only {len(raws)}; a partial outline "
+                       f"is not served."),
+            "expected": len(keys), "found": len(raws),
+        })
+
+    deadline.check("parse")
+    shapes = []
+    for raw in raws:
+        try:
+            shp = _wkb.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("geom-store WKB unreadable for %s: %s", place_id, exc)
+            raise HTTPException(status_code=404, detail={
+                "error": "geometry incomplete", "id": place_id,
+                "detail": "A stored geometry for this place could not be read.",
+                "expected": len(keys), "found": len(shapes),
+            })
+        if shp is not None and not shp.is_empty:
+            shapes.append(shp)
+    if not shapes:
+        return None
+    raw_vertices = sum(_coords(s) for s in shapes)
+
+    deadline.check("union")
+    geom = _unary_union(shapes) if len(shapes) > 1 else shapes[0]
+    minx, miny, maxx, maxy = geom.bounds
+    gj, simplified, tol, size = bound_geometry(geom, tolerance, max_bytes, deadline)
+    return {
+        "geometry": gj,
+        "geometry_count": len(shapes),
+        "geometry_expected": len(keys),
+        "bounds": [round(minx, COORD_DECIMALS), round(miny, COORD_DECIMALS),
+                   round(maxx, COORD_DECIMALS), round(maxy, COORD_DECIMALS)],
+        "vertex_count": vertex_count(gj),
+        "raw_vertex_count": raw_vertices,
+        "bytes": size,
+        "max_bytes": max_bytes,
+        "simplified": simplified,
+        "tolerance": tol,
+        "elapsed_ms": deadline.elapsed_ms(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Concurrency limit (per event loop, so tests under asyncio.run() stay isolated)
+# ---------------------------------------------------------------------------
+
+_semaphores: dict[int, asyncio.Semaphore] = {}
+
+
+def _semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _semaphores.get(id(loop))
+    if sem is None:
+        sem = asyncio.Semaphore(GEOMETRY_CONCURRENCY)
+        _semaphores[id(loop)] = sem
+    return sem
 
 
 # ---------------------------------------------------------------------------
@@ -327,10 +516,12 @@ async def place_geometry(
       /api/geometry/ohm:r2660219?max_bytes=200000
       /api/geometry/clio:1234?tolerance=0.01
 
-    404 ``error: "not found"`` for an unknown place; 404 ``error: "no geometry"``
-    for a place the store has nothing for (point-only); 451 for an authority
-    WHG may not redistribute; 503 when the geom store is unavailable.
+    404 ``error: "not found"`` (unknown place) / ``"no geometry"`` (point-only)
+    / ``"geometry incomplete"`` (store short of the index); 413 ``"geometry too
+    large"`` / ``"geometry budget exceeded"``; 451 withheld source; 503 store
+    unavailable or endpoint busy; 502 index failure.
     """
+    deadline = Deadline(GEOMETRY_TIME_BUDGET_S)
     if not _SHAPELY_AVAILABLE:  # pragma: no cover
         raise HTTPException(status_code=503, detail={"error": "shapely unavailable"})
     pid = place_id[len(_ENTITY_PREFIX):] if place_id.startswith(_ENTITY_PREFIX) else place_id
@@ -353,25 +544,40 @@ async def place_geometry(
     if reader is None:
         raise HTTPException(status_code=503, detail={"error": "geometry store unavailable"})
 
+    sem = _semaphore()
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{ES_BACKEND}/{PLACES_INDEX}/_search",
-                json={"size": 1, "query": {"term": {"place_id": pid}}, "_source": _ES_SOURCE},
-                auth=es_auth(), headers=ES_HEADERS,
-            )
-            resp.raise_for_status()
-            hits = resp.json().get("hits", {}).get("hits", [])
-    except httpx.HTTPError as exc:
-        logger.warning("ES lookup failed for %s: %s", pid, exc)
-        raise HTTPException(status_code=502, detail={"error": "index unavailable"})
-    if not hits:
-        raise HTTPException(status_code=404, detail={"error": "not found", "id": pid})
-    src = hits[0].get("_source", {})
-    keys = geom_keys_for(src)
-    payload = None
-    if keys:
-        payload = await asyncio.to_thread(_assemble, reader, pid, keys, tolerance, max_bytes)
+        await asyncio.wait_for(sem.acquire(), timeout=deadline.remaining())
+    except asyncio.TimeoutError:
+        logger.warning("geometry: busy, refused %s after %.1fs in queue", pid, deadline.budget_s)
+        return JSONResponse(status_code=503, headers={"Retry-After": "5"}, content={"detail": {
+            "error": "geometry endpoint busy",
+            "detail": f"{GEOMETRY_CONCURRENCY} geometries are already being assembled; try again shortly.",
+        }})
+    try:
+        try:
+            async with httpx.AsyncClient(timeout=min(10.0, max(1.0, deadline.remaining()))) as client:
+                resp = await client.post(
+                    f"{ES_BACKEND}/{PLACES_INDEX}/_search",
+                    json={"size": 1, "query": {"term": {"place_id": pid}}, "_source": _ES_SOURCE},
+                    auth=es_auth(), headers=ES_HEADERS,
+                )
+                resp.raise_for_status()
+                hits = resp.json().get("hits", {}).get("hits", [])
+        except httpx.HTTPError as exc:
+            logger.warning("ES lookup failed for %s: %s", pid, exc)
+            raise HTTPException(status_code=502, detail={"error": "index unavailable"})
+        if not hits:
+            raise HTTPException(status_code=404, detail={"error": "not found", "id": pid})
+        src = hits[0].get("_source", {})
+        keyed = geom_keys_for(src)
+        for key, lender in keyed:
+            if lender in withheld:
+                raise HTTPException(status_code=451, detail=_withheld_detail(lender, pid, lender=key))
+        deadline.check("index read")
+        payload = await asyncio.to_thread(
+            _assemble, reader, pid, [k for k, _ in keyed], tolerance, max_bytes, deadline)
+    finally:
+        sem.release()
     if payload is None:
         raise HTTPException(status_code=404, detail={
             "error": "no geometry", "id": pid,
