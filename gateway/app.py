@@ -39,6 +39,7 @@ from .config import (
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
 from .extend import router as extend_router
+from .geometry import router as geometry_router
 from .links import router as links_router
 from .places import router as places_router
 from .reconcile import router as reconcile_router
@@ -181,6 +182,8 @@ app.include_router(search_router)
 app.include_router(places_router)
 # Mount data extension endpoint (OpenRefine extend)
 app.include_router(extend_router)
+# Mount one-place geometry from the geom store (plan §5.3; Atlas area selection)
+app.include_router(geometry_router)
 # Mount re-ingest endpoints (admin-triggered authority refresh)
 app.include_router(reingest_router)
 # Mount contributor hard-link receiver (POST/DELETE /api/links) — must precede

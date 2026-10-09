@@ -802,6 +802,16 @@ class GeomStoreReader:
             return None
         return _wkb_to_geojson(wkb)
 
+    def get_wkb(self, geom_key: str) -> bytes | None:
+        """Return the raw WKB for *geom_key*, or ``None``.
+
+        For callers that go on to build a Shapely geometry anyway (the
+        gateway's ``/api/geometry``): ``get()`` would round-trip the bytes
+        through a GeoJSON dict and a JSON dump/load first, which on a
+        100k-vertex boundary is the slowest part of the request.
+        """
+        return self._cached_wkb(geom_key)
+
     def __contains__(self, geom_key: str) -> bool:
         if self._sqlite_path is not None:
             return self._conn().execute(
