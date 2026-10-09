@@ -266,11 +266,16 @@ def process_row(row):
     # ota = Ottoman Turkish (Arabic script). Modern/translit are Latin; the
     # region spans TR + BG + GR, so modern names are tagged @und (unknown)
     # rather than forcing @tr.
+    # The modern name is dated like the others: it identifies the place the
+    # registers recorded, somewhere in 1830-1849, and is how a user searches
+    # for a place that existed then. It used to carry a literal 2000..2025
+    # lifespan, which made the registry publish temporal_extent [1830, 2025]
+    # for a register covering 1830-1849 (place#288): a snapshot year posing as
+    # coverage, the conflation that issue removes.
     toponyms, seen = [], set()
     _toponym(row.get('ottoman'), 'ota', timespans, toponyms, seen)
     _toponym(row.get('translit'), 'ota-Latn', timespans, toponyms, seen)
-    modern_ts = [{'start': {'in': 2000}, 'end': {'in': 2025}}]
-    _toponym(modern, 'und', modern_ts, toponyms, seen)
+    _toponym(modern, 'und', timespans, toponyms, seen)
 
     if not toponyms:
         return None  # nothing searchable
