@@ -185,8 +185,8 @@ class TestSearchHandlerAssemblesTheTitle(unittest.TestCase):
         self.assertIn("Q3777", [h["qid_title"] for h in dumped["hits"]])
 
     def test_aat_facet_labels_come_from_the_cache(self):
-        topo = [{"_score": 1.0, "_source": {"name": "X", "lang": "en", "attestations": ["gn:1"]}}]
-        places = [{"_source": {"place_id": "gn:1", "namespace": "gn", "title": "X"}}]
+        topo = [{"_score": 1.0, "_source": {"name": "Xanadu", "lang": "en", "attestations": ["gn:1"]}}]
+        places = [{"_source": {"place_id": "gn:1", "namespace": "gn", "title": "Xanadu"}}]
         aggs = {"type_facets": {"by_aat": {"buckets": [
             {"key": 300008347, "doc_count": 3}, {"key": 300391431, "doc_count": 1}]}}}
         fake = _FakeES(topo, places, aggs)
@@ -194,8 +194,8 @@ class TestSearchHandlerAssemblesTheTitle(unittest.TestCase):
         self.addCleanup(aat_labels.reset_cache)
         lookup = mock.AsyncMock(return_value={300008347: "inhabited places"})
         with mock.patch.object(aat_labels, "_lookup", lookup):
-            resp = self._search(SearchRequest(query="X", mode="exact"), fake)
-            again = self._search(SearchRequest(query="X", mode="exact"), fake)
+            resp = self._search(SearchRequest(query="Xanadu", mode="exact"), fake)
+            again = self._search(SearchRequest(query="Xanadu", mode="exact"), fake)
         # Second search served from the cache: no new lookup for either id
         # (the labelled one is cached, the missing one negatively cached).
         self.assertEqual(lookup.await_count, 1)

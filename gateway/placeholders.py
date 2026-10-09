@@ -27,9 +27,9 @@ WHOLE trimmed name (``fullmatch``), so ``no ?name`` matches ``Noname`` and not
 the name from discovery altogether; ``demote`` multiplies its contribution by
 ``demote_weight``. A name matching both is excluded.
 
-**The committed file is empty, so the mechanism is a no-op until the
-Technical Director rules on the pattern list** (the census and proposal are on
-place#216). The rule set is cached for the process lifetime — restart the
+The committed file carries the tiers the Technical Director approved on
+place#216 (2026-10-09): census 2's T1 as ``exclude``, T2 as ``demote``. The
+rule set is cached for the process lifetime — restart the
 gateway to pick up a change, matching the deploy model of the other data
 files. A missing or unreadable file, or a pattern that does not compile, must
 never take discovery down: bad patterns are logged and skipped.

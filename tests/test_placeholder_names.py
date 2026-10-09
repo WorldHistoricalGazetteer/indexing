@@ -72,50 +72,66 @@ OKNONAME = _rules(exclude=[r"oknoname.*"])
 
 
 # ---------------------------------------------------------------------------
-# The committed default is a no-op
+# The committed rule file — the tiers approved on place#216 (2026-10-09)
 # ---------------------------------------------------------------------------
 
-class TestCommittedDefaultIsEmpty(unittest.TestCase):
-    """Nothing deploys as a behaviour change until the pattern list is ruled on."""
+COMMITTED = Path(__file__).resolve().parents[1] / "gateway" / "data" / "placeholder_names.json"
 
-    def test_the_committed_file_has_no_rules(self):
-        path = Path(__file__).resolve().parents[1] / "gateway" / "data" / "placeholder_names.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(data["exclude"], [])
-        self.assertEqual(data["demote"], [])
-        rules = load_rules_from(path)
-        self.assertFalse(rules.active)
+# (name, expected classification) — census 2 on place#216. T1 = exclude, T2 = demote,
+# T3 = None. The T3 rows are the real names each pattern must NOT reach.
+CENSUS_PROBES = [
+    ("Oknoname 037068 Dam", "exclude"), ("Oknoname Dam", "exclude"),
+    ("Unnamed", "exclude"), ("unnamed shipwreck", "exclude"), ("Unnamed Mineshaft", "exclude"),
+    ("Unknown", "exclude"), ("?", "exclude"), ("...", "exclude"), ("-", "exclude"),
+    ("X", "exclude"), ("xx", "exclude"), ("Fixme", "exclude"), ("TBA", "exclude"),
+    ("Sin nombre", "exclude"), ("名称不明", "exclude"), ("без названия", "exclude"),
+    ("Desconocida", "exclude"), ("Unbekannt", "exclude"), ("Senza nome", "exclude"),
+    ("Ohne Namen", "exclude"), ("Sans nom", "exclude"), ("Sem nome", "exclude"),
+    ("Onbekend", "exclude"), ("Naamloos", "exclude"), ("Bezimienny", "exclude"),
+    ("No Name", "demote"), ("Noname", "demote"), ("Nimetön", "demote"), ("Q1", "demote"),
+    ("Q7", "demote"), ("286", "demote"), ("NA", "demote"), ("N/A", "demote"),
+    ("Na", "demote"), ("NN", "demote"), ("N.N.", "demote"),
+    ("No Name Creek", None), ("Nameless Point", None), ("Untitled", None),
+    ("Unknown Pond", None), ("Unknown Soldier", None), ("Sin Nombre, Cerro", None),
+    ("Desconocida Reef", None), ("Nimetönlampi", None), ("Namnlösen", None),
+    ("无名岛", None), ("Lac Inconnu", None), ("M25", None), ("manzana 349", None),
+    ("Nil", None), ("None", None), ("Todo", None), ("[ROMAN ROAD]", None),
+    ("(Holy Roman Empire)", None), ("Halton Holegate", None), ("London", None),
+    ("Xanten", None), ("Q-Park", None),
+]
+
+
+class TestCommittedRules(unittest.TestCase):
+
+    def test_the_file_loads_whole(self):
+        data = json.loads(COMMITTED.read_text(encoding="utf-8"))
+        rules = load_rules_from(COMMITTED)
+        self.assertTrue(rules.active)
         self.assertEqual(rules.rejected, ())
+        self.assertEqual(len(rules.exclude), len(data["exclude"]))
+        self.assertEqual(len(rules.demote), len(data["demote"]))
+        self.assertEqual(rules.demote_weight, 0.25)
 
-    def test_the_configured_rules_are_inactive(self):
+    def test_census_probes(self):
+        rules = load_rules_from(COMMITTED)
+        for name, expected in CENSUS_PROBES:
+            with self.subTest(name=name):
+                self.assertEqual(rules.classify(name), expected)
+
+    def test_the_configured_rules_are_the_committed_ones(self):
         load_placeholder_rules.cache_clear()
         try:
-            self.assertFalse(load_placeholder_rules().active)
+            self.assertEqual(load_placeholder_rules().classify("Oknoname Dam"), "exclude")
         finally:
             load_placeholder_rules.cache_clear()
 
-    def test_with_empty_rules_the_helpers_are_unchanged(self):
-        # Same inputs through the three tiers, once with the (empty) default and
-        # once with explicit EMPTY_RULES: identical pools, placeholder included.
+    def test_empty_rules_leave_the_helpers_unchanged(self):
+        # The mechanism with EMPTY_RULES is the pre-#216 behaviour: placeholder kept.
         knn = _knn([(PLACEHOLDER, 0.99, ["gn:1"]), (REAL, 0.98, ["wd:2"])])
-        default_pool, explicit_pool = {}, {}
-        collect_place_ids(knn, default_pool, normalise=True)
-        collect_place_ids(knn, explicit_pool, normalise=True, placeholder_rules=EMPTY_RULES)
-        self.assertEqual(default_pool, explicit_pool)
-        self.assertIn("gn:1", default_pool)
-        self.assertEqual(default_pool["gn:1"], 1.0)   # the placeholder sets the scale
-
-        lex = _hits([(PLACEHOLDER, ["gn:1"]), (REAL, ["wd:2"])])
         pool = {}
-        n = apply_lexical_boost(lex, pool, {PLACEHOLDER.lower(): LEXICAL_EXACT_BOOST,
-                                            REAL.lower(): LEXICAL_EXACT_BOOST})
-        self.assertEqual(n, 2)
-        self.assertEqual(pool["gn:1"], LEXICAL_EXACT_BOOST)
-
-        pool = {}
-        n = apply_lexical_near_miss(lex, pool, {"Oknoname 037068 Dam": 1.0})
-        self.assertEqual(n, 1)
-        self.assertAlmostEqual(pool["gn:1"], LEXICAL_FUZZY_BOOST)
+        collect_place_ids(knn, pool, normalise=True, placeholder_rules=EMPTY_RULES)
+        self.assertEqual(pool["gn:1"], 1.0)   # the placeholder sets the scale
+        self.assertIn("wd:2", pool)
 
 
 # ---------------------------------------------------------------------------

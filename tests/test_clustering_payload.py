@@ -175,7 +175,7 @@ class TestQueryMatchCapture(unittest.TestCase):
     def test_match_names_optional(self):
         # No match_names dict passed → behaves exactly as before, no error.
         scores: dict = {}
-        collect_place_ids([self._hit("X", 1.0, "gn:1")], scores)
+        collect_place_ids([self._hit("Xanadu", 1.0, "gn:1")], scores)
         self.assertEqual(scores, {"gn:1": 1.0})
 
 

@@ -80,7 +80,7 @@ PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 # Placeholder toponyms in name-match discovery (place#216). A JSON file of
 # regular expressions — {"exclude": [...], "demote": [...], "demote_weight": w}
 # — matched against the toponym NAME that matched, never the place's title. The
-# committed default is EMPTY (no effect) until the pattern list is approved; a
+# committed file holds the tiers approved on place#216 (2026-10-09); a
 # per-host override in .env.local points this at a different file. Loaded once
 # per process: restart the gateway after editing it. See gateway/placeholders.py.
 PLACEHOLDER_NAME_PATTERNS_FILE = Path(os.getenv(
