@@ -82,6 +82,7 @@ STORE = {
     "kain_par:7_0": _square(-1, 50, 0, 51),
     "wd:Q5_0": _square(20, 20, 21, 21),
     "nl:9_0": _square(30, 30, 31, 31),
+    "whg:42:7_0": _square(40, 40, 41, 41),
 }
 
 # What the index says. osm:r3 is point-only (has_geom False); osm:r4 promises
@@ -107,6 +108,14 @@ ES = {
     "og:6": {"place_id": "og:6", "namespace": "og", "geometries": [
         {"geometry_index": 0, "has_geom": True, "geom_class": "area",
          "geom_ref": "nl:9_0", "source": "nl"}]},
+    # Contributed dataset 42: its polygon IS in the store (the per-dataset
+    # tilesets are built from it) and the index says nothing about the
+    # dataset's visibility or licence.
+    "whg:42:7": {"place_id": "whg:42:7", "namespace": "whg", "geometries": [
+        {"geometry_index": 0, "has_geom": True, "geom_class": "area", "geom_ref": "whg:42:7_0"}]},
+    "og:8": {"place_id": "og:8", "namespace": "og", "geometries": [
+        {"geometry_index": 0, "has_geom": True, "geom_class": "area",
+         "geom_ref": "whg:42:7_0", "source": "whg"}]},
 }
 
 
@@ -316,6 +325,31 @@ class TestRefusalsArePairedWithSuccess(GeometryEndpointBase):
         self.assertIn("borrowed", exc.detail["detail"])
         self.assertNotIn("coordinates", json.dumps(exc.detail))
         # Same borrower namespace with a permitted lender: served.
+        self.assertEqual(self.get("og:5").geometry["type"], "Polygon")
+
+    def test_contributed_dataset_is_451_undetermined_before_the_index_is_asked(self):
+        # whg:<dataset>:<id> has no AUTHORITIES entry: the store holds its
+        # polygon but nothing here knows whether the dataset is private,
+        # embargoed or no-derivatives, so it is withheld — not served on an
+        # assumption, and not 404'd as if it did not exist.
+        self.assertNotIn("whg", geometry._authorities_by_namespace())
+        exc = self.refused("whg:42:7")
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["error"], "source licence not determined")
+        self.assertEqual(exc.detail["namespace"], "whg")
+        self.assertEqual(self.es.calls, [], "an undetermined source must not reach the index")
+        self.assertNotIn("coordinates", json.dumps(exc.detail))
+        # An unknown namespace of any kind is treated the same way.
+        self.assertEqual(self.refused("nonesuch:1").status_code, 451)
+        # Same fixture, registered authority: served.
+        self.assertEqual(self.get("ohm:r9").geometry["type"], "Polygon")
+
+    def test_undetermined_lender_is_451_through_a_permitted_borrower(self):
+        exc = self.refused("og:8")           # og is an authority; its polygon is whg:42's
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["error"], "source licence not determined")
+        self.assertEqual(exc.detail["namespace"], "whg")
+        self.assertNotIn("coordinates", json.dumps(exc.detail))
         self.assertEqual(self.get("og:5").geometry["type"], "Polygon")
 
     def test_store_unavailable_is_503_and_recovers(self):

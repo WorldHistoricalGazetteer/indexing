@@ -1319,12 +1319,13 @@ def build_places_filter(
     )
     # Fields the Python-side containment refine needs when a region is active:
     # h3_cover (fuzzy), repr_point (fast-path / fallback), bounds, and
-    # geometry_index (to build the geom-store key "{place_id}_{idx}" for the
-    # exact-mode polygon fetch). The full polygon is NOT in _source — exact mode
-    # reads it from the /vast geom-store instead.
+    # geom_ref / geometry_index (the geom-store key for the exact-mode polygon
+    # fetch — geom_ref where the index records one, else "{place_id}_{idx}").
+    # The full polygon is NOT in _source — exact mode reads it from the /vast
+    # geom-store instead.
     if region is not None:
         for f in ("geometries.h3_cover", "geometries.repr_point",
-                  "geometries.geometry_index"):
+                  "geometries.geometry_index", "geometries.geom_ref"):
             if f not in geom_fields:
                 geom_fields.append(f)
     source_fields = [

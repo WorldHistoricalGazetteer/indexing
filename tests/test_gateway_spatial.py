@@ -815,3 +815,40 @@ class TestEsH3TermsCap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestContainerKeysFollowGeomRef(unittest.TestCase):
+    """place#319: a container's exact polygon is read by its ``geom_ref``.
+
+    og places carry wd polygons under wd's key; the positional
+    ``"<pid>_<idx>"`` does not exist in the store, so exact containment
+    silently degraded to the fuzzy cover for them.
+    """
+
+    def test_geom_ref_wins_positional_falls_back(self):
+        cover = _cover_for(_square(0, 0, 1, 1))
+        hits = [{"_source": {"place_id": "og:1", "geometries": [
+            {"geometry_index": 0, "geom_class": "area", "h3_cover": cover,
+             "bounds": [0, 0, 1, 1], "geom_ref": "wd:Q1_0"},
+            {"geometry_index": 1, "geom_class": "area", "h3_cover": cover,
+             "bounds": [0, 0, 1, 1]},
+        ]}}]
+        found = spatial._collect_containers(hits)
+        self.assertEqual(found.geom_keys, ["wd:Q1_0", "og:1_1"])
+        self.assertIn("geometries.geom_ref", spatial._CONTAINER_SOURCE)
+
+    def test_candidate_geometry_reads_by_geom_ref(self):
+        class Reader:
+            def __init__(self):
+                self.asked = []
+
+            def get(self, key):
+                self.asked.append(key)
+                return _square(0, 0, 1, 1) if key == "wd:Q1_0" else None
+        reader = Reader()
+        src = {"place_id": "og:1", "geometries": [{"geometry_index": 0, "geom_ref": "wd:Q1_0"}]}
+        g = spatial._candidate_geometry(src, reader)
+        self.assertEqual(reader.asked, ["wd:Q1_0"])
+        self.assertIsNotNone(g)
+        self.assertAlmostEqual(g.area, 1.0)

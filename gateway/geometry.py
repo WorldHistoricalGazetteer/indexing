@@ -195,6 +195,24 @@ def non_redistributable_namespaces() -> frozenset[str]:
     )
 
 
+def _undetermined_detail(namespace: str, place_id: str, lender: Optional[str] = None) -> dict:
+    """451 for a namespace with no authority entry — contributed ``whg:<dataset>``
+    data above all. The store holds those polygons (generate_tiles.py builds
+    the per-dataset tilesets from it) and the index entry carries no licence,
+    visibility or embargo, so a private, embargoed or no-derivatives dataset
+    is indistinguishable here from a public CC0 one. Withheld, not guessed,
+    until a per-dataset lookup exists (place#319 follow-up)."""
+    what = f"geometry borrowed from {lender}" if lender else "geometry"
+    return {
+        "error": "source licence not determined",
+        "detail": (f"'{namespace}' is not a registered authority, so this endpoint cannot "
+                   f"determine the terms or visibility of its {what}; it is withheld rather "
+                   f"than served on an assumption. Contributed datasets are not yet served here."),
+        "id": place_id,
+        "namespace": namespace,
+    }
+
+
 def _withheld_detail(namespace: str, place_id: str, lender: Optional[str] = None) -> dict:
     a = _authorities_by_namespace().get(namespace, {})
     name = a.get("dataset_name") or namespace
@@ -533,10 +551,13 @@ async def place_geometry(
     # Licence first: cheaper than ES, and a withheld source leaks nothing — not
     # even whether the id exists.
     try:
+        authorities = _authorities_by_namespace()
         withheld = non_redistributable_namespaces()
     except Exception as exc:  # noqa: BLE001
         logger.error("licence determination unavailable: %s", exc)
         raise HTTPException(status_code=503, detail={"error": "licence determination unavailable"})
+    if namespace not in authorities:
+        raise HTTPException(status_code=451, detail=_undetermined_detail(namespace, pid))
     if namespace in withheld:
         raise HTTPException(status_code=451, detail=_withheld_detail(namespace, pid))
 
@@ -571,6 +592,8 @@ async def place_geometry(
         src = hits[0].get("_source", {})
         keyed = geom_keys_for(src)
         for key, lender in keyed:
+            if lender not in authorities:
+                raise HTTPException(status_code=451, detail=_undetermined_detail(lender, pid, lender=key))
             if lender in withheld:
                 raise HTTPException(status_code=451, detail=_withheld_detail(lender, pid, lender=key))
         deadline.check("index read")

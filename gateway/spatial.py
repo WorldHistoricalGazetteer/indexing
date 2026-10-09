@@ -692,11 +692,20 @@ _CONTAINER_SOURCE = [
     "geometries.h3_cover",
     "geometries.h3_centroid",
     "geometries.geometry_index",
+    "geometries.geom_ref",
     "geometries.bounds",
     "geometries.repr_point",
     "geometries.has_geom",
     "geometries.geom_class",
 ]
+
+
+def geom_store_key(pid: str, g: dict, idx: int) -> str:
+    """The store key for one geometry entry: its own ``geom_ref`` when the index
+    records one — the only thing that names a BORROWED geometry (og places
+    carry wd polygons under wd's key, processing/interlink_ottgaz.py) — else
+    the positional ``"<place_id>_<geometry_index>"`` (place#319)."""
+    return g.get("geom_ref") or f"{pid}_{g.get('geometry_index', idx)}"
 
 
 async def _fetch_containers(ids: list[str], client, auth) -> list[dict]:
@@ -746,7 +755,7 @@ def _collect_containers(hits: list[dict]) -> _ContainerGeoms:
                 if isinstance(b, list) and len(b) == 4:
                     out.bounds.append(b)
                 if pid is not None:
-                    out.geom_keys.append(f"{pid}_{g.get('geometry_index', idx)}")
+                    out.geom_keys.append(geom_store_key(pid, g, idx))
                     if pid not in out.area_ids:
                         out.area_ids.append(pid)
                 continue
@@ -980,7 +989,7 @@ def _candidate_geometry(src: dict, reader):
             if not isinstance(g, dict):
                 continue
             try:
-                gj = reader.get(f"{pid}_{g.get('geometry_index', idx)}")
+                gj = reader.get(geom_store_key(pid, g, idx))
             except Exception:
                 gj = None
             if gj:
