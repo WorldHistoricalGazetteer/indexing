@@ -826,10 +826,10 @@ AUTHORITIES = [
     {  # 24,000 place names
         'dataset_name': 'Index Villaris',
         'namespace': 'iv',
-        # place#288: [1680, 2023] = the publication year (1680, attested_at) joined to
-        # the digital edition's release year (2023, attested_at for the modern-name
-        # toponyms) -- two compilation years, not a span of history described.
-        'coverage_extent': [],
+        # place#288: published as [1680, 2023] = the 1680 snapshot joined to the digital
+        # edition's 2023 release year. The gazetteer describes England as at 1680, so the
+        # snapshot is kept as a point (SG decision 2026-10-09, option b); 2023 is dropped.
+        'coverage_extent': [1680, 1680],
         'redistributable': True,  # CC-BY-SA-4.0
         # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
@@ -1257,9 +1257,9 @@ AUTHORITIES = [
         'dataset_name': 'Alcedo',
         'namespace': 'alc',
         # place#288: [1786, 1789] is the dictionary's publication window, stamped on
-        # every entry by authorities/alcedo-places.py (attested_window; no entry is
-        # dated individually) -- the compilation date, not a stated coverage range.
-        'coverage_extent': [],
+        # every entry by authorities/alcedo-places.py (attested_window). It describes the
+        # Indies as at that window, so the snapshot stays as published (SG decision
+        # 2026-10-09, option b): no override.
         'redistributable': True,  # CC-BY-NC: non-commercial redistribution permitted
         'api_item': '',
         # Antonio de Alcedo, Diccionario geográfico-histórico de las Indias
