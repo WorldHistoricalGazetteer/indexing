@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import random
 import resource
 import time
@@ -104,6 +105,7 @@ STORE = {
     "wd:Q5_0": _square(20, 20, 21, 21),
     "nl:9_0": _square(30, 30, 31, 31),
     "whg:42:7_0": _square(40, 40, 41, 41),
+    "whg:43:1_0": _square(42, 42, 43, 43),
 }
 
 # What the index says. osm:r3 is point-only (has_geom False); osm:r4 promises
@@ -137,6 +139,10 @@ ES = {
     "og:8": {"place_id": "og:8", "namespace": "og", "geometries": [
         {"geometry_index": 0, "has_geom": True, "geom_class": "area",
          "geom_ref": "whg:42:7_0", "source": "whg"}]},
+    # Dataset 42 carrying a polygon lent by dataset 43: a grant for 42 must
+    # not launder it.
+    "whg:42:9": {"place_id": "whg:42:9", "namespace": "whg", "geometries": [
+        {"geometry_index": 0, "has_geom": True, "geom_class": "area", "geom_ref": "whg:43:1_0"}]},
 }
 
 
@@ -577,6 +583,136 @@ class TestKeyConstruction(unittest.TestCase):
         self.assertEqual(geometry.geom_keys_for({"geometries": [{"has_geom": True}]}), [])
 
 
+SECRET = "test-secret"
+# The fixed vector pinned on BOTH sides of the contract (whg3
+# search/tests_atlas_geometry.py pins the same string): if either signer
+# drifts, its own suite fails before the two are ever put together.
+GRANT_VECTOR = ("whg:42:7", 1800000000,
+                "v1.1800000000.2862a35f37860589367a6b118137c29040de8a8c985bafabd54ac1c02d9e3137")
+
+
+class TestContributedGrant(GeometryEndpointBase):
+    """``whg:`` places are served only under Django's signed grant (place#319).
+
+    Every refusal here is paired with a 200 through the same handler and the
+    same store, so a verifier that refused everything — or a gateway that lost
+    the header on the way in — fails rather than passes.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._env = mock.patch.dict(os.environ, {geometry.GRANT_SECRET_ENV: SECRET})
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        self.now = time.time()
+
+    def grant_for(self, pid, ttl=120, secret=SECRET):
+        return geometry.sign_grant(pid, int(self.now) + ttl, secret)
+
+    def get_granted(self, pid, grant, **params):
+        return run(place_geometry(pid, tolerance=params.get("tolerance"),
+                                  max_bytes=params.get("max_bytes", geometry.GEOMETRY_MAX_BYTES_DEFAULT),
+                                  grant=grant))
+
+    def refused_granted(self, pid, grant) -> HTTPException:
+        with self.assertRaises(HTTPException) as cm:
+            self.get_granted(pid, grant)
+        return cm.exception
+
+    def test_signature_matches_the_pinned_vector(self):
+        pid, expires, expected = GRANT_VECTOR
+        self.assertEqual(geometry.sign_grant(pid, expires, SECRET), expected)
+        # And the verifier accepts exactly that string at a time inside its window.
+        self.assertEqual(geometry.verify_grant(expected, pid, now=expires - 60), (True, "ok"))
+        self.assertEqual(geometry.verify_grant(expected, pid, now=expires + 1), (False, "expired"))
+
+    def test_valid_grant_serves_the_contributed_polygon(self):
+        resp = self.get_granted("whg:42:7", self.grant_for("whg:42:7"))
+        self.assertTrue(shape(resp.geometry).equals(STORE["whg:42:7_0"]))
+        self.assertEqual(resp.namespace, "whg")
+        self.assertEqual(resp.dataset, "whg:42")
+        self.assertEqual(len(self.es.calls), 1)
+        # The field survives the response model (reference_gateway_response_models).
+        self.assertEqual(GeometryResponse.model_validate(resp.model_dump()).dataset, "whg:42")
+
+    def test_entity_prefix_verifies_against_the_bare_id(self):
+        resp = self.get_granted("place:whg:42:7", self.grant_for("whg:42:7"))
+        self.assertEqual(resp.place_id, "whg:42:7")
+
+    def test_missing_grant_is_451_before_the_index_is_asked(self):
+        exc = self.refused_granted("whg:42:7", None)
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["error"], "source licence not determined")
+        self.assertEqual(exc.detail["grant"], "missing")
+        self.assertEqual(self.es.calls, [], "an ungranted request must not reach the index")
+        self.assertNotIn("coordinates", json.dumps(exc.detail))
+        self.assertEqual(self.get_granted("whg:42:7", self.grant_for("whg:42:7")).dataset, "whg:42")
+
+    def test_no_secret_on_this_host_refuses_a_well_formed_grant(self):
+        grant = self.grant_for("whg:42:7")
+        with mock.patch.dict(os.environ, {geometry.GRANT_SECRET_ENV: ""}):
+            exc = self.refused_granted("whg:42:7", grant)
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["grant"], "no secret configured")
+        self.assertEqual(self.es.calls, [])
+        # Same grant, secret present: served.
+        self.assertEqual(self.get_granted("whg:42:7", grant).dataset, "whg:42")
+
+    def test_grant_is_bound_to_the_place_id(self):
+        other = self.grant_for("whg:42:8")
+        exc = self.refused_granted("whg:42:7", other)
+        self.assertEqual((exc.status_code, exc.detail["grant"]), (451, "bad signature"))
+        self.assertEqual(self.es.calls, [])
+        # The same grant on the id it names gets past verification: the index
+        # is asked, and answers that whg:42:8 does not exist.
+        exc = self.refused_granted("whg:42:8", other)
+        self.assertEqual((exc.status_code, exc.detail["error"]), (404, "not found"))
+        self.assertEqual(len(self.es.calls), 1)
+
+    def test_wrong_secret_expired_overlong_and_malformed_grants_are_refused(self):
+        cases = [
+            ("bad signature", self.grant_for("whg:42:7", secret="not-the-secret")),
+            ("expired", self.grant_for("whg:42:7", ttl=-5)),
+            ("too long-lived", self.grant_for("whg:42:7", ttl=geometry.GRANT_MAX_TTL_S + 60)),
+            ("malformed", "v1.notanumber.abc"),
+            ("malformed", "v0." + self.grant_for("whg:42:7").split(".", 1)[1]),
+            ("missing", ""),
+        ]
+        for reason, grant in cases:
+            with self.subTest(reason=reason):
+                exc = self.refused_granted("whg:42:7", grant)
+                self.assertEqual(exc.status_code, 451)
+                self.assertEqual(exc.detail["grant"], reason)
+        self.assertEqual(self.es.calls, [])
+        self.assertEqual(self.get_granted("whg:42:7", self.grant_for("whg:42:7")).dataset, "whg:42")
+
+    def test_legacy_whg_pk_form_names_no_dataset_and_is_refused(self):
+        exc = self.refused_granted("whg:42", self.grant_for("whg:42"))
+        self.assertEqual(exc.status_code, 451)
+        self.assertIn("canonical", exc.detail["grant"])
+        self.assertEqual(self.es.calls, [])
+
+    def test_grant_does_not_launder_another_datasets_polygon(self):
+        # whg:42:9's only geometry is lent by dataset 43; a grant for 42 covers
+        # 42's own geometries and nothing else.
+        exc = self.refused_granted("whg:42:9", self.grant_for("whg:42:9"))
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["error"], "source licence not determined")
+        self.assertIn("whg:43:1_0", exc.detail["detail"])
+        self.assertNotIn("coordinates", json.dumps(exc.detail))
+        self.assertEqual(len(self.es.calls), 1, "the index was asked; the store was not read")
+        self.assertEqual(self.get_granted("whg:42:7", self.grant_for("whg:42:7")).dataset, "whg:42")
+
+    def test_authority_borrower_of_a_contributed_polygon_stays_refused(self):
+        # og:8 is an authority place whose polygon is whg:42's. Django never
+        # signs for an authority id, and a grant for one does not verify here.
+        exc = self.refused_granted("og:8", self.grant_for("og:8"))
+        self.assertEqual(exc.status_code, 451)
+        self.assertEqual(exc.detail["namespace"], "whg")
+        self.assertEqual(self.get_granted("og:5", None).geometry["type"], "Polygon")
+
+
+
 class TestRouteIsMounted(unittest.TestCase):
     def test_app_registers_the_route_before_the_catch_all(self):
         from gateway.app import app
@@ -584,6 +720,17 @@ class TestRouteIsMounted(unittest.TestCase):
         self.assertIn("/api/geometry/{place_id}", paths)
         # Routers registered first match first; the proxy catch-all must come after.
         self.assertLess(paths.index("/api/geometry/{place_id}"), paths.index("/{path:path}"))
+
+    def test_the_grant_header_is_declared_on_the_route(self):
+        # A grant that FastAPI never passes to the handler would make every
+        # contributed request 451 "missing" in production while the direct
+        # handler calls in TestContributedGrant pass: assert the parameter is
+        # on the route as an optional header.
+        from gateway.app import app
+        params = app.openapi()["paths"]["/api/geometry/{place_id}"]["get"]["parameters"]
+        headers = {p["name"]: p for p in params if p["in"] == "header"}
+        self.assertIn(geometry.GRANT_HEADER, headers)
+        self.assertFalse(headers[geometry.GRANT_HEADER].get("required", False))
 
 
 if __name__ == "__main__":
