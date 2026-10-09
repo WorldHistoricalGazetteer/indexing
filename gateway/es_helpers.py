@@ -23,6 +23,7 @@ from .config import (
     TOPONYMS_INDEX,
     get_elastic_password,
 )
+from .placeholders import PlaceholderRules, load_placeholder_rules
 
 logger = logging.getLogger("gateway.es_helpers")
 
@@ -552,6 +553,7 @@ def apply_lexical_boost(
     exclude_prefixes: tuple[str, ...] = (),
     include_prefixes: tuple[str, ...] = (),
     match_names: dict[str, str] | None = None,
+    placeholder_rules: PlaceholderRules | None = None,
 ) -> int:
     """Add a flat boost to every place attested by an exactly-matching toponym.
 
@@ -574,8 +576,13 @@ def apply_lexical_boost(
     rather than their sum — matching a primary AND a variant is not evidence
     twice over.
 
+    A placeholder name (place#216 — see ``gateway/placeholders.py``) earns
+    nothing when excluded and ``demote_weight`` × the boost when demoted. The
+    query "Unnamed" then no longer exact-matches 28 features called "Unnamed".
+
     Returns the number of places boosted.
     """
+    rules = placeholder_rules if placeholder_rules is not None else load_placeholder_rules()
     best: dict[str, float] = {}
     best_name: dict[str, str] = {}
     for hit in hits:
@@ -583,6 +590,9 @@ def apply_lexical_boost(
         name = source.get("name") or ""
         boost = form_boosts.get(name.strip().lower())
         if not boost:
+            continue
+        boost *= rules.weight(name)
+        if boost <= 0:
             continue
         for pid in source.get("attestations", []):
             if not pid:
@@ -695,6 +705,7 @@ def apply_lexical_near_miss(
     exclude_prefixes: tuple[str, ...] = (),
     include_prefixes: tuple[str, ...] = (),
     match_names: dict[str, str] | None = None,
+    placeholder_rules: PlaceholderRules | None = None,
 ) -> int:
     """Add a resemblance-scaled boost for places whose name nearly matches a form.
 
@@ -713,11 +724,15 @@ def apply_lexical_near_miss(
     ``match_names`` is updated only when this tier is the place's dominant
     evidence, so an exact or strong phonetic match keeps reporting its own name.
 
+    A placeholder name (place#216) contributes nothing when excluded and is
+    scaled by ``demote_weight`` when demoted, before it competes.
+
     Returns the number of places boosted.
     """
     forms = [(f, w) for f, w in form_weights.items() if f and f.strip()]
     if not forms or not hits:
         return 0
+    rules = placeholder_rules if placeholder_rules is not None else load_placeholder_rules()
     best: dict[str, float] = {}
     best_name: dict[str, str] = {}
     scored: dict[str, float] = {}   # name → contribution (names repeat across hits)
@@ -735,6 +750,7 @@ def apply_lexical_near_miss(
                     continue
                 contribution = max(
                     contribution, LEXICAL_FUZZY_BOOST * resemblance * weight)
+            contribution *= rules.weight(name)
             scored[name] = contribution
         if contribution <= 0:
             continue
@@ -926,6 +942,7 @@ def collect_place_ids(
     match_names: dict[str, str] | None = None,
     score_scale: float = 1.0,
     normalise: bool = False,
+    placeholder_rules: PlaceholderRules | None = None,
 ) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
@@ -957,12 +974,28 @@ def collect_place_ids(
             score in ``(0, 1]``, so the discounted variant tops out at
             ``score_scale`` and the primary's best match — the exact name the
             user supplied — can never be displaced by a variant's neighbour.
+        placeholder_rules: The place#216 rule set (defaults to the configured
+            file). An EXCLUDED name is dropped before anything else happens —
+            including before ``normalise`` picks the pass's top score, so a
+            placeholder that happened to be the KNN's nearest neighbour does not
+            set the scale for the genuine hits beneath it. A DEMOTED name's
+            score is multiplied by ``demote_weight``; it still enters the pool,
+            so it can still be returned when nothing better exists.
     """
+    rules = placeholder_rules if placeholder_rules is not None else load_placeholder_rules()
+    if rules.active:
+        weighted = []
+        for hit in hits:
+            w = rules.weight(hit.get("_source", {}).get("name", ""))
+            if w > 0:
+                weighted.append((hit, w))
+    else:
+        weighted = [(hit, 1.0) for hit in hits]
     if normalise:
-        top = max((hit.get("_score") or 0.0) for hit in hits) if hits else 0.0
+        top = max((hit.get("_score") or 0.0) for hit, _ in weighted) if weighted else 0.0
         score_scale = (score_scale / top) if top > 0 else 0.0
-    for hit in hits:
-        score = (hit.get("_score") or 0.0) * score_scale
+    for hit, name_weight in weighted:
+        score = (hit.get("_score") or 0.0) * score_scale * name_weight
         name = hit.get("_source", {}).get("name", "")
         for pid in hit.get("_source", {}).get("attestations", []):
             if not pid:

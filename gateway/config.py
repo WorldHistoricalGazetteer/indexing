@@ -77,6 +77,16 @@ PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 # NB: the legacy `clusters` index enrichment was retired 2026-07-12 (clustering
 # is client-side now — plan §1); CLUSTERS_INDEX is intentionally gone.
 
+# Placeholder toponyms in name-match discovery (place#216). A JSON file of
+# regular expressions — {"exclude": [...], "demote": [...], "demote_weight": w}
+# — matched against the toponym NAME that matched, never the place's title. The
+# committed default is EMPTY (no effect) until the pattern list is approved; a
+# per-host override in .env.local points this at a different file. Loaded once
+# per process: restart the gateway after editing it. See gateway/placeholders.py.
+PLACEHOLDER_NAME_PATTERNS_FILE = Path(os.getenv(
+    "PLACEHOLDER_NAME_PATTERNS_FILE",
+    str(_repo_root / "gateway" / "data" / "placeholder_names.json")))
+
 # Serving + observability
 # WORKERS: more than one uvicorn worker so a single wedged request cannot take the
 # whole gateway down — which is exactly what happened on 2026-08-18, when one hung
