@@ -396,6 +396,7 @@ def bound_geometry(geom, tolerance: Optional[float], max_bytes: int,
         # Won't fit by the byte estimate: coarse passes from a tolerance the
         # size ratio implies, each on the previous candidate.
         tol = max(tol or 0.0, perimeter / (_TOL_GAIN * _AIM_OVER_TARGET * target))
+        check("simplify")
         first = cand
         t0 = time.monotonic()
         cand = cand.simplify(tol, preserve_topology=False)
