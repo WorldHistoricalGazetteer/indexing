@@ -697,7 +697,14 @@ def _semaphore() -> asyncio.Semaphore:
 # Route
 # ---------------------------------------------------------------------------
 
-@router.get("/geometry/{place_id}", response_model=GeometryResponse)
+# ``:path`` so a contributed id whose src_id contains ``/`` — e.g.
+# ``whg:1760:https://sferaproject.org/toponyms/persia/`` — is one route
+# parameter rather than four path segments (place#319). The ASGI server
+# decodes ``%2F`` before routing, so Django's percent-encoded form and a raw
+# path both arrive here with their slashes; the single-segment form is a
+# subset and is unchanged. Without this the request fell through to the ES
+# catch-all and Django could only report 503.
+@router.get("/geometry/{place_id:path}", response_model=GeometryResponse)
 async def place_geometry(
     place_id: str,
     tolerance: Optional[float] = Query(
@@ -721,6 +728,8 @@ async def place_geometry(
       /api/geometry/ohm:r2660219?max_bytes=200000
       /api/geometry/clio:1234?tolerance=0.01
       /api/geometry/whg:1234:abc  (with ``X-WHG-Geometry-Grant`` from Django)
+      /api/geometry/whg:1760:https%3A%2F%2Fsferaproject.org%2Ftoponyms%2Fpersia%2F
+        (a src_id containing ``/``, percent-encoded; the raw form is accepted too)
 
     404 ``error: "not found"`` (unknown place) / ``"no geometry"`` (point-only)
     / ``"geometry incomplete"`` (store short of the index); 413 ``"geometry too
