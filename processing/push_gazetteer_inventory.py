@@ -352,6 +352,32 @@ def _read_temporal_extent(namespace: str) -> tuple[int | None, int | None]:
     return (extent[0], extent[1])
 
 
+def _published_temporal_extent(namespace: str) -> list[int | None]:
+    """The ``temporal_extent`` the registry should PUBLISH for ``namespace``.
+
+    The Batch 9 aggregate is ``[min(start), max(end)]`` over the records, which
+    is a coverage range for most sources but collapses to the COMPILATION year
+    for snapshot sources (place#288): ``kain_par`` — "pre-1850" in its own name
+    — aggregated to ``[1851, 1851]`` because its geometry is aligned to the 1851
+    census; ``un`` and ``nl`` to the year they were fetched. A consumer asking
+    "does this gazetteer cover the 1600s?" got "no".
+
+    An authority may therefore set ``coverage_extent`` in ``AUTHORITIES``:
+
+    * ``[start, end]`` (either may be ``None`` = open/unknown side) — published
+      instead of the aggregate;
+    * ``[]`` — no coverage range is known; publish none (consumers treat an
+      empty extent as "unknown", keeping the source visible under any period
+      filter) rather than a snapshot year masquerading as a span.
+    """
+    for auth in AUTHORITIES:
+        if auth.get("namespace") == namespace and "coverage_extent" in auth:
+            override = auth["coverage_extent"]
+            return list(override) if override else []
+    start, end = _read_temporal_extent(namespace)
+    return [start, end]
+
+
 def _read_record_count(namespace: str) -> int:
     """Pull record_count from the temporal_extent aggregate (recorded there).
 
@@ -545,7 +571,13 @@ def build_inventory_payload(
         h3 = _read_h3_coverage(ns)
 
         if ns == _WHG_NAMESPACE:
-            fanned = _expand_whg_dataset_entries(h3, [start, end])
+            # Each dataset row gets ITS OWN footprint (indexing#2). Without
+            # per_dataset_h3 every row silently took the shared whole-namespace
+            # aggregate — 48 identical 631,841-cell blobs, ~115 MB of the
+            # registry table, and a spatial filter that answered "yes" for
+            # every contributed dataset everywhere.
+            fanned = _expand_whg_dataset_entries(
+                h3, [start, end], per_dataset_h3=_whg_per_dataset_h3())
             if fanned:
                 entries.extend(fanned)
                 continue
@@ -562,7 +594,7 @@ def build_inventory_payload(
             "status": "published",
             "h3_coverage": h3,
             "h3_coverage_coarse": _coarsen_coverage(h3),
-            "temporal_extent": [start, end],
+            "temporal_extent": _published_temporal_extent(ns),
         }
         entry.update(_attribution_fields(meta))
         entry.update(_download_fields(meta, entry["record_count"]))
@@ -607,7 +639,7 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         "status": "published",
         "h3_coverage": _read_h3_coverage(namespace),
         "h3_coverage_coarse": _coarsen_coverage(_read_h3_coverage(namespace)),
-        "temporal_extent": list(_read_temporal_extent(namespace)),
+        "temporal_extent": _published_temporal_extent(namespace),
     }
     entry.update(_attribution_fields(meta))
     entry.update(_download_fields(meta, entry["record_count"]))
@@ -889,8 +921,10 @@ def main() -> None:
                 # (sidecar written by whg-places.py). Each row carries its own
                 # per-dataset h3 footprint (not the shared namespace aggregate)
                 # so the registry's spatial filter is accurate and the payload
-                # stays small. temporal_extent is shared. Mirrors the full-run
-                # path (build_inventory_payload).
+                # stays small. temporal_extent is shared. The full-run path
+                # (build_inventory_payload) does the same since indexing#2 —
+                # before that it omitted per_dataset_h3, the reverse of what
+                # this comment used to claim.
                 fanned = _expand_whg_dataset_entries(
                     bulk["h3_coverage"], bulk["temporal_extent"],
                     per_dataset_h3=_whg_per_dataset_h3(),

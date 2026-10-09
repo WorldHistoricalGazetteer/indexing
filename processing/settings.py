@@ -737,6 +737,10 @@ AUTHORITIES = [
     {
         'dataset_name': 'Native Land',
         'namespace': 'nl',
+        # place#288: a present-day compilation (aggregate = fetch year, 2026) of
+        # territories whose history has no stated range — publish no extent
+        # rather than a snapshot year posing as coverage.
+        'coverage_extent': [],
         'redistributable': False,  # Native Land data-sovereignty: redistribution by explicit permission
         # Verified 2026-06-06: Native Land Digital "Data Sovereignty Treaty" (OCAP®)
         # — bespoke terms, NOT CC0/SPDX: NON-COMMERCIAL only, redistribution by
@@ -844,6 +848,9 @@ AUTHORITIES = [
     {  # UN countries and territories
         'dataset_name': 'UN Countries',
         'namespace': 'un',  # United Nations countries and territories
+        # place#288: a current-boundaries snapshot (aggregate = 2025) — publish
+        # no coverage range rather than the snapshot year.
+        'coverage_extent': [],
         'redistributable': True,  # UN geodata — already committed as reference geometry
         # TWO-TIER SOURCE, adopted 2026-08-05 (place#173).
         #
@@ -1044,6 +1051,10 @@ AUTHORITIES = [
         # (safeguarded, not auto-fetchable).
         'dataset_name': 'Ancient Parishes & Places of England & Wales (pre-1850)',
         'namespace': 'kain_par',
+        # place#288: the staged aggregate is [1851, 1851] — the census the geometry
+        # is ALIGNED to, not the span described. The ancient parishes are
+        # centuries older, so publish an open start up to that snapshot.
+        'coverage_extent': [None, 1851],
         'description': ('Boundaries of the ancient parishes, townships and places '
                         'of England & Wales before 1850 (~23k polygons), aligned to '
                         'the 1851 census. Kain & Oliver, via the Cambridge Group '
