@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -43,14 +44,34 @@ def normalize_lst(name, lang="und"):
     return f"{name}@{lang}"
 
 
+_YEAR_RE = re.compile(r"^-?\d{1,4}$")
+_YEAR_MONTH_RE = re.compile(r"^(\d{4})-?(0[1-9]|1[0-2])$")
+_YEAR_MONTH_DAY_RE = re.compile(r"^(\d{4})-?(0[1-9]|1[0-2])-?(0[1-9]|[12]\d|3[01])$")
+
+
 def parse_year(year_str):
-    """Parse year string, handling empty, positive, and negative years."""
-    if not year_str or year_str.strip() == "":
+    """Parse a GeoNames alternate-name ``from``/``to`` value into a year.
+
+    The columns are free text. Most values are a bare year (``1950``, and
+    negative years), but dates also occur: ``YYYYMM`` (``196411``),
+    ``YYYYMMDD`` (``20260927``), and hyphenated ``YYYY-MM[-DD]``. A bare
+    ``int()`` read those as the years 196411 and 20260927 (place#288: 601
+    start years above 2027 and 245 end years, 241 above 100,000, in the live
+    ``gn`` toponyms). A date is reduced to its year; anything that is not a
+    year or a recognisable date is ``None`` rather than a number.
+    """
+    if not year_str:
         return None
-    try:
-        return int(year_str.strip())
-    except ValueError:
+    text = year_str.strip()
+    if not text:
         return None
+    if _YEAR_RE.match(text):
+        return int(text)
+    for rx in (_YEAR_MONTH_DAY_RE, _YEAR_MONTH_RE):
+        m = rx.match(text)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def parse_alternatename_line(line):
