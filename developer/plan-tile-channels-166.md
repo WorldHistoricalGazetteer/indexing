@@ -251,6 +251,26 @@ only across a rename, and `--inplace` does not rename, but the 7 August push rea
 is not a margin to reason about from memory. The config rewrite is a no-op for existing buckets
 (entry-level merge) and its restart is what releases anything held.
 
+**Large buckets: push under a temporary name, then rename (SG, 10 Oct 2026).** Measured on the
+10 Oct swap: `rsync --inplace` rewrites the live file, so the bucket's tiles are torn for the WHOLE
+transfer, not just the restart: 8–27 s for the small buckets, but `po` 169 s, `clio` 309 s and `wd`
+**2,387 s (≈ 40 min, 2.17 GB)**. For any bucket over ~200 MB, copy to a sibling name in the same
+directory and swap it in with a rename, which is atomic on one filesystem:
+
+```bash
+rsync -a --info=stats1 -e "ssh -i $TILESERVER_SSH_KEY -o BatchMode=yes" \
+    $OUT/<b>.mbtiles whgadmin@<tileserver>:/srv/tileserver/tiles/<b>.mbtiles.new
+ssh ... 'cd /srv/tileserver/tiles && mv <b>.mbtiles <b>.mbtiles.prev && mv <b>.mbtiles.new <b>.mbtiles'
+python -m processing.update_tileserver_config --bucket <b> --execute   # restart releases the old inode
+ssh ... 'rm /srv/tileserver/tiles/<b>.mbtiles.prev'                   # only after the check passes
+```
+
+Disk: the new file and the old one coexist until the restart (and `tiler.service` holds the old
+inode until then), so free space must exceed the new file's size: check `df -h` first; `wd` needs
+~2.2 GB against 6.9 GB free after the 10 Oct swap. `<b>.mbtiles.prev` is also the fastest rollback
+(rename it back and restart). Not yet wired into `generate_tiles --redeploy-only` or `tilech-swap.sbatch`;
+do that before the points-only pass (`gn`, `tgn`), whose files are the largest.
+
 Then SG at the map, Places → Gazetteers → Explore: `hgis` heat at z5; `pl` mottle at z4 and a
 label on a route at z9; `wd` mottle where it has polygons; `po` with one label per polygon, not
 one per fragment; a multipart `clio` polity without internal borders.
