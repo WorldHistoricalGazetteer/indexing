@@ -321,3 +321,137 @@ registry push runs from pitt, which has neither the tiles nor the ledgers.
    re-ingestion. Whether any re-ingestion of `wd`/`pl`/`tgn` is pending now is not known from
    this session; if one is, build after it or pay for `wd` twice.
 6. **Label-click selection** (`_label` in `SHAPE_SUFFIXES`) stays out until place#156 decides it.
+
+**SG, 9 Oct 2026:** recommendations accepted on all five (place#166 comment). whg3 `d3fe7f386`
+promoted as whg3 main `550300a4a`; prod `/api/sources/` serves `region_source` (28 entries; true
+for clio, nl, po, osm, ohm, osm_misc — measured 10 Oct).
+
+## 8. Execution record — 10 Oct 2026 (build and verification only; nothing pushed)
+
+Run-id **`tilech-20261010T065558Z`** (manifest copied from `h3ccode-20260805T120000Z` with the
+`tiles` stage reset to pending, so the August run's manifest is untouched). Code: this branch at
+`123df38`, cloned to **`/vast/ishi/elastic-tile-channels`** — a second checkout, so the gateway's
+`/vast/ishi/elastic` (`main`) was neither pulled nor restarted; `.env`/`.env.local` copied in.
+Output: **`/ix1/ishi/data/tiles-channels-20261010/`** (58 tilesets + 58 ledgers; the kept
+`*.geojsonl` intermediates are what the drop-rate experiment reads). **The tileserver was not
+written to, reloaded or reconfigured.**
+
+### 8.1 Backup of the live tilesets — verified, not inferred
+
+`/ix1/ishi/data/tiles-live-backup-20261010/` (Slurm 11868727, 7 min). Seeded from
+`/ix1/ishi/data/tiles-20260902-retile/`, then `rsync -a --checksum` *from the tileserver*:
+**0 of 13 per-namespace files transferred** (5,874,216,960 bytes, every checksum identical), so the
+2 Sep build on `/ix1` IS the live set byte for byte — §4.1's "the only copy is on the tileserver"
+was true of `/ix1/ishi/data/tiles/`, not of the 2 Sep directory. Of the 47 live `whg-*` files one
+(`whg-ne-basic`) was absent from the 2 Sep directory and was fetched (78.7 MB). `SHA256SUMS` (60
+lines) sits beside them. Tileserver disk at the time: 48 G, 41 G used, **7.4 G free, 85 %**.
+
+### 8.2 Build
+
+| array | buckets | elapsed | gates |
+|---|---|---|---|
+| 11868755 | `hgis` `pl` `ukhc` | 1:14 / 1:17 / 0:51 | 3/3 PASS |
+| 11868857 (57 tasks) | `un` `vob_*` `kain_par` `nl` `po` `clio` + 48 `whg-*` | `clio` 25:03, `po` 19:45, `un` 18:42, rest < 5 min | 55/55 PASS; `whg-1642`, `whg-1644` produced nothing (no geometry, as the code expects) |
+| 11868858 | `wd` (64 GB tier) | **1:32:27** (stream to 03:38, union ~1 min, passes to 03:54, `tile-join` 03:54–04:30) | PASS — 51,094 polygons / 6,346 lines / 11,401,945 points, 57,440 anchors, 1,734.4 MB (live 1,740.6) |
+
+Stream counts that corrected the issue's samples: `hgis` 892 polygons / 13,213 points (23 of the
+892 are GeometryCollections carrying lines or points, which tippecanoe splits — hence 29 line
+features at z8 against a ledger of 0 lines; harmless); `pl` **4,843 lines** / 13,407 points (the
+issue's 230 was a z9/z10 sample); `po` 7,815 polygons; `clio` 15,690; `un` 247. §7.1's timing
+probe: `un` 30:29 → **18:42** — pre-simplification helped, less than hoped; `wd`'s union took about
+a minute by file mtimes (`wd.shapes.geojsonl` 03:38, `wd.extent.geojsonl` 03:39), the cost is the
+`tile-join` of a 1.5 GB points mbtiles. New sizes: `po` 1,242.1 MB (live 1,242.8), `clio` 2,627.5
+(2,628.8), `hgis` 18.7 (20.7), `un` 17.9 (88.3), `nl` 116.7 (118.3) — the swap needs no headroom.
+
+### 8.3 Verification
+
+* `verify_tileset_channels` exit 0 for `hgis`, `pl`, `ukhc`: coverage at z0–7, no shape below z8,
+  shapes + `label:1` at z8–10, points below z8 where streamed. `verify_tileset_coverage --all`
+  "fails" `hgis` with 20 missing land tiles (Jakarta, Cairo…) because its bounds span −127°..121°
+  and the checker treats it as global; the z0–z4 tile sets are identical to the live build (1/3/4/
+  6/14 tiles), so the holes are inherited and not holes. `tsize.py`: no tile over 500,000 bytes in
+  any new tileset checked (max 43,649, `pl` z10).
+* `developer/tile-qa/chancmp.py` (new), full decode to z8 and a 300-tile sample above: at **z10
+  the sampled counts are identical** (`hgis` 494 = 494 points, 2,022 ≈ 2,021 polygons; `pl` 370 =
+  370, 405 = 405 lines; `ukhc` 533 = 533) — nothing is lost at max zoom. `ukhc` is identical at
+  every zoom bar the low-zoom anchors (51 = 51 labels at z8).
+* Headless Atlas (Playwright, bundled Chromium, scratch harness `atlas_newtiles.py`; LIVE run as
+  control, `--prove-it-fails` run first): the prod client at `/atlas/?gazetteer=<ns>` with the NEW
+  tileset route-intercepted renders, at z9, **exactly what it renders with LIVE** (`hgis` fill 86 /
+  line 86 / circle 219 / label 85; `pl` line 126 / circle 176; `po` fill 6,729; `clio` fill 7,888 /
+  line 8,218), picks up the new `coverage` field (mottle + the "zoom in" pill at z5 for `hgis` and
+  `pl`, which LIVE lacks), and labels `pl` by anchor (63 placed vs 75 fragment labels).
+
+* Waves 2/3/5 (Slurm 11871795, 49 min; 11871796, 1:38): **every tileset's channels match its
+  ledger** (`un` + `vob_*` + `kain_par` + `nl` + 45 `whg-*`; `po` with `--region-source`, `clio`),
+  `un` and one `whg-*` found by the scan fallback (after 25 of 29,105 and 2,239 of 4,894 z8 tiles).
+  `po` and `clio` are identical to LIVE in the sampled z8/z9 tiles (po polygons 9,771 = 9,771,
+  labels 10 = 10; clio 12,211 = 12,211, lines 114 = 114, labels 20 = 20); `po` is the one bucket
+  whose tile count differs by one (825,111 vs 825,112). `verify_tileset_coverage` flags `nl`,
+  `whg-12`, `whg-1165`, `whg-1360`, `whg-1381` as hgis above: z0–z4 tile counts identical to LIVE
+  in every case — inherited by the checker's global heuristic, not holes.
+* `wd` (11871891, 1:33): channels match the ledger (clusters and points at every zoom below z8,
+  coverage at z0–7, shapes + labels at z8+), all land tiles present, tile count 787,671 vs
+  787,663, z10 sample identical (573 = 573 points, 249 vs 246 polygons). **Two z8 tiles exceed
+  500,000 bytes** — gate 3 of §4.3 as written: `8/133/85` (Ruhr, 922,964 bytes stored, 525,497
+  gzipped; LIVE 164,992; 1,754 polygons + 1,161 multipolygons + 448 anchors + 550 clusters) and
+  `8/134/84` (Weser hills, 541,873 / 306,664; LIVE 134,658). The cause is the design: `wd`'s
+  shapes are now no-drop where the old point-dominant pass coalesce-dropped about 70 % of its z8
+  polygon fragments (chancmp: 872 vs 263 in 100 sampled tiles), and the German nature-reserve
+  polygons are the densest place on earth for `wd`. No tile was dropped (`-pk` on the join). SG
+  decides: accept two large tiles, or raise bytes-per-feature pressure on the shapes pass (the
+  rule stands — no feature may be dropped to fit).
+
+### 8.4 Two findings that need a rebuild (fixed on the branch in `c1cb2ee`, NOT rebuilt)
+
+1. **The "no-drop" labels pass was never no-drop.** tippecanoe's point drop rate (`-r`, 2.5 per
+   zoom below the base zoom) is untouched by `--no-feature-limit` / `--no-tile-size-limit`, and
+   anchors are Points. Full decode of `hgis`: 892 anchors → **399 distinct at z8, 701 at z9, 892 at
+   z10 — identical in the live build**. `po` at z8: 1,484 of 7,815. `preserve_all` now adds
+   `--drop-rate 1` (tested: 200 anchors, all 200 at z8).
+2. **Low-zoom heat is thinner on the hybrids, by construction.** The same rate removes points from
+   the clustered pass *uncounted*. The old single pass got its `point_count` mass by accident —
+   the polygons' bulk forced `coalesced_as_needed=871` at z0 — so with points in their own pass
+   `hgis` z0 holds 2 of 13,213 points and the Atlas heat weight in a z5 view fell 343 → 80 (`pl`
+   1,238 → 100). Measured remedy (`developer/sbatch-templates/tilech-exp-droprate.sbatch`,
+   11869180): `--drop-rate 1` on the points pass keeps every point as a cluster from z0 (24
+   clusters standing for all 13,213; z5 1,805 + 633), keeps all points at z9 (not ~40 %), max tile
+   42,628 bytes, wall unchanged at 13k points; **`wd` at 11.4 M points and `gn`/`tgn` unmeasured**,
+   and it changes every point bucket, so §7.3's "points-only buckets need no push" would no longer
+   hold. Opt-in: `WHG_POINTS_DROP_RATE=1`. **Decision for SG before the rebuild**, so `wd` is built
+   once more, not twice.
+3. (Verifier) a 64-tile sample cannot see one anchor per country-sized polygon (`po`: labels in
+   304 of 39,300 z8 tiles; `un` likewise) — it now scans the zoom before failing.
+
+### 8.5 Swap and rollback (NOT run; needs SG's go)
+
+From a CRC compute node (`srun -M htc --partition=htc --qos=htc-htc-s --mem=4G --time=2:00:00
+--pty bash`, then `source …/conda.sh && conda activate whg && cd /vast/ishi/elastic-tile-channels`;
+`TILESERVER_SSH_KEY` is set by `.env`), **one bucket at a time, smallest first**:
+
+```bash
+OUT=/ix1/ishi/data/tiles-channels-<rebuild date>
+python -m processing.generate_tiles --bucket <b> --output-dir $OUT --redeploy-only   # rsync --inplace, direct
+python -m processing.update_tileserver_config --bucket <b> --execute                # config merge (no-op for an existing bucket) + restart both services + /data/<b>.json check, self-rollback on failure
+curl -s -H "Origin: https://whgazetteer.org" https://tiles.whgazetteer.org/data/<b>.json | jq '.vector_layers[0].fields | keys'
+```
+
+After `po`, `clio`, `wd`: `ssh tileserver 'df -h /srv/tileserver/tiles'`. Rollback per bucket:
+
+```bash
+rsync -a --inplace --info=stats1 -e "ssh -i $TILESERVER_SSH_KEY -o BatchMode=yes" \
+  /ix1/ishi/data/tiles-live-backup-20261010/<b>.mbtiles whgadmin@134.209.177.234:/srv/tileserver/tiles/
+python -m processing.update_tileserver_config --bucket <b> --execute
+```
+
+Downtime (inference — the 2 Sep logs record only `total size` per push, not a rate): with
+`--inplace` a bucket serves torn tiles for the length of its own transfer (seconds for all but
+`po`/`clio`/`wd`, which at a few tens of MB/s is 1–3 minutes each), and each `--execute` restarts
+both services (the 2 Sep restart job ran 28 s end to end). Measure the first small push and
+scale from it rather than from this paragraph.
+
+### 8.6 Open
+
+* `wd`'s two oversize z8 tiles (§8.3) — SG.
+* SG: §8.4(2) points drop rate; then rebuild all 13 + `whg-*` under a new run-id (new bytes, new
+  stamp — never re-stamp), verify, and only then §8.5.
