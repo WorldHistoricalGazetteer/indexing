@@ -574,3 +574,144 @@ J2=$(sbatch -M htc --parsable --dependency=afterok:$J1 swap.sbatch "$WHG" whg | 
 * `wd`: SG to accept (or not) the six additional oversize z8/z9 tiles in §9.3 before its swap.
 * The swap itself, the harness run, and landing `feat/tile-channels` on `origin/main`
   (fast-forward by cherry-pick) — all after a human submits §9.4.
+
+## 10. Points-only pass — 10 Oct 2026, run `tilech-20261010T151451Z` (built and verified; NOT pushed)
+
+Lane I. Code `origin/main` **`6199c7b`** (every build-side fix, `c1cb2ee` and later) in the separate clone
+`/vast/ishi/elastic-tile-channels` (the gateway's `/vast/ishi/elastic` untouched); manifest copied from
+`tilech-20261010T102801Z` with every `tiles` stage reset to pending; `submit_tiles_slurm --no-deploy
+--points-drop-rate 1 --only-bucket …`; output **`/ix1/ishi/data/tiles-channels-20261010c/`**. Buckets: the
+eleven of §4.2's points-only row — `gn` `tgn` `gb` `chgis` `alc` `iv` `tm` `ofs` `og` `dgsd` `dp`
+(`gn_capitals` is a context overlay and was left alone). **The tileserver was read (`df`, `ls`, one
+`rsync --checksum` *from* it) and never written, reloaded or reconfigured.**
+
+### 10.1 The push tooling (Task 1) — branch `feat/tiles-atomic-push`, `dde1b78`, not on `origin/main`
+
+§4.4's rule is now code. `generate_tiles --redeploy-only --push-mode auto|inplace|rename`
+(`ATOMIC_PUSH_MIN_BYTES` = 200 MiB decides `auto`; `ATOMIC_PUSH_FREE_MARGIN_BYTES` = 1 GiB).
+`atomic_swap_tileset`: `df -B1` **on the tileserver** and refuse unless free ≥ new size + margin (the old inode
+is held by `tiler.service` until the restart, so both files must fit); `rsync --inplace` to `<b>.mbtiles.new`
+(the live file is untouched for the whole transfer); `mv <b>.mbtiles <b>.mbtiles.prev && mv <b>.mbtiles.new
+<b>.mbtiles` in one shell, then `stat` the live size against the local file; `update_tileserver_config
+--execute` (restart + `/data/<b>.json` 200) plus an independent TileJSON `vector_layers == [<b>]` check;
+`rm .prev` only after the check passes; on a failed check `.prev` is renamed back, the restart repeated and
+the rejected file discarded. `tilech-swap.sbatch` chooses the scheme per bucket with `push_mode_for`, keeps
+the 0.25 s poller, re-checks the TileJSON itself, and after a tool failure proves by sha256 whether the tool's
+own rollback restored the live file before rsyncing the `/ix1` backup; `NEW`/`BAK`/`REPO`/`PUSH_MODE` are
+`--export` parameters. `tests/test_tiles_atomic_push.py`: 15 tests with ssh/rsync faked (exact host
+sequence, rollback path, disk refusal with the numbers printed, unmeasurable `df` = refusal, no key =
+refusal, mode selection, CLI); 7 mutations (reversed `mv` order, disk check removed, wrong cleanup target,
+no rollback, threshold off by one, size check removed, push to the live name) each turn the suite red.
+Smoke from the CRC `whg` env against the real files: `gn`/`tgn` → `rename`, `gb`/`chgis` → `inplace`,
+`df` over ssh 7,384,477,696 B. `developer/tile-qa/oversize.py` names every tile over a limit at every zoom;
+`tilech-verify-points.sbatch` and `tilech-live-backup-points.sbatch` are the jobs below.
+
+### 10.2 Backup, disk, build
+
+* **Backup** (Slurm 11893267, 7 min): the eleven live files added to `/ix1/ishi/data/tiles-live-backup-20261010/`
+  — seeded from the 2 Sep `/ix1` build, then `rsync --checksum` *from the tileserver*: **0 bytes transferred
+  for 10 of 11**; `tgn`'s seed (446.9 MB, 2 Sep) was NOT live — live is the 21 Sep build (462,290,944 B,
+  job 11412177) and was fetched. `SHA256SUMS` now 71 lines, `sha256sum -c` clean.
+* **Disk, measured on the tileserver before anything**: 7,387,144,192 B free (6.9 G of 48 G, 86 %).
+* **Build**: 11893269 (8 small, 7–29 s each), 11893270 (`gb` 4:15, `tgn` 10:12 — tippecanoe 188 s),
+  11893271 (`gn`, 64 GB tier: **31:24**, tippecanoe **722 s**, MaxRSS 9.99 GB; 2 Sep: 52:48 / 1,061 s /
+  9.72 GB). 11/11 gates PASS. `gn` streams 13,454,817 points, `tgn` 2,972,719, `gb` 1,174,449.
+
+| bucket | live B | NEW B | growth | fits under §10.1's rule (NEW + 1 GiB ≤ 7,387,144,192)? |
+|---|---:|---:|---:|---|
+| `gn` | 1,611,468,800 | **2,167,218,176** | +34.5 % | **yes**: needs 3,240,960,000, spare 4,146,184,192 |
+| `tgn` | 462,290,944 | **682,446,848** | +47.6 % | **yes**: needs 1,756,188,672, spare 5,630,955,520 |
+| `gb` | 138,145,792 | 147,017,728 | +6.4 % | inplace (< 200 MiB) |
+| `chgis` | 19,750,912 | 32,395,264 | +64 % | inplace |
+| `tm` | 4,894,720 | 9,019,392 | +84 % | inplace |
+| `alc` | 4,235,264 | 7,020,544 | +66 % | inplace |
+| `iv` | 3,919,872 | 5,894,144 | +50 % | inplace |
+| `ofs` | 2,764,800 | 4,681,728 | +69 % | inplace |
+| `dp` | 2,428,928 | 3,317,760 | +37 % | inplace |
+| `dgsd` | 675,840 | 1,126,400 | +67 % | inplace |
+| `og` | 172,032 | 253,952 | +48 % | inplace |
+
+After the whole swap the volume holds **+834 MB** net (2,250,747,904 → 3,060,794,368 B for the eleven), so
+free space goes from 6.9 G to ≈ 6.1 G. If `tgn` is swapped first its +220 MB is already gone when `gn`'s `df`
+runs: 7,387,144,192 − 220,155,904 = 7,166,988,288 ≥ 3,240,960,000, still fits.
+
+### 10.3 Verification (Slurm 11893328 nine small, 11893391 `tgn`, 11893431 `gn`; §9's checks)
+
+* **Ledger match: 11/11** (`verify_tileset_channels` exit 0; every ledger `polygon 0 / line 0 / point N`,
+  one clustered points channel z0–10). **No tile over 500,000 B in any of the eleven** (`oversize.py` at
+  every zoom: `gn` 0 of 260,605 tiles, max z9 390,162 B vs live 403,258; `tgn` 0 of 153,324, max z9 403,006
+  vs 207,439; `gb` max z9 388,959 vs 388,986; the rest ≤ 107 KB). z0–z7 maxima: `gn` 57–90 KB (live
+  14–74), `tgn` 43–81 KB (live 7–55).
+* **Nothing lost at max zoom**: the z10 sample is identical point for point in all eleven (`gn` 17,346 =
+  17,346; `tgn` 7,279; `gb` 231,410; `chgis` 3,901; `alc` 1,006; `iv` 13,709; `ofs` 5,766; `tm` 827;
+  `dp` 243; `dgsd` 319; `og` 271), and z9 is no longer rate-dropped (`gn` 36,666 vs 17,382 in 200 tiles,
+  `tgn` 13,030 vs 6,525, `gb` 345,520 vs 256,462).
+* **Low-zoom mass restored** (z0 is one tile, so the figure is exact): `gn` 513 clusters + 21 points stand for
+  **13,454,513 of 13,454,817** (live: 1,411); `tgn` 347 + 38 for 2,972,716 of 2,972,719 (live 312); `gb`
+  4 clusters for 1,174,449 of 1,174,449 (live 123); `chgis` 81,292 of 81,292 (live 9); `alc` 17,997 of
+  17,997 (live 2); the other six likewise complete. The 304 / 3 points short at z0 for `gn` / `tgn` are
+  presumably outside the z0 tile's ±85.05° (inference, not measured). At z1–z7 `reprN` exceeds the input
+  because clusters in tile buffers are decoded in two tiles (inference from the shape: ≈ 1.05–1.08× for
+  `gn`); z0 has no neighbour and matches.
+* **Tile counts per zoom identical NEW vs OLD in all eleven**, so `verify_tileset_coverage`'s "missing land
+  tiles" on `alc` (23) and `chgis` (3) are inherited exactly as `hgis`/`nl` were in §8.3 (`alc` z0–z4
+  1/3/6/12/30 in both, `chgis` 1/4/7/13/26 in both) — the checker's global heuristic on regional data.
+* **Headless Atlas** (Playwright, bundled Chromium; `--prove-it-fails` first: every check failed on a page
+  with no map; LIVE control; NEW route-intercepted into the prod client; `gn` measured at its view from a
+  subset mbtiles of that view's tiles after the one-ssh-call-per-tile route twice ran out of idle budget):
+  every NEW tileset boots with 0 page errors; at z9 circles are drawn where LIVE draws them and more, nothing
+  rate-dropped (`gn` 10,808 vs 9,753, `tgn` 8,563 vs 4,349, `gb` 10,451 vs 9,900, `iv` 1,456 vs 583,
+  `alc` 680 vs 273, `dp` 12 vs 6, `tm` 327 vs 131, `ofs` 825 vs 330, `og` 15 vs 9, `dgsd` 36 vs 16);
+  at z5 the heat weight in view is `gn` 115,478 vs 6,213, `tgn` 32,183 vs 3,148, `gb` 22,147 vs 2,202,
+  `tm` 2,697 vs 88, `alc` 1,384 vs 51, `dp` 540 vs 17. `chgis` renders nothing at its auto-chosen view in
+  LIVE and NEW alike: that view is the centre of its largest z9 tile at **lng −0.35°, lat 0.35°** — the
+  biggest `chgis` tile is at null island, which looks like a bad-coordinate population and is a data
+  question for `chgis`, not a tiles one (observation, not investigated).
+
+### 10.4 Swap job (written, NOT submitted; needs SG's go) and rollback
+
+The job is `developer/sbatch-templates/tilech-swap.sbatch` on branch `feat/tiles-atomic-push`, checked out
+at `/vast/ishi/elastic-tile-channels` (`dde1b78`). Two submissions: the nine small buckets pushed in place
+with ONE restart at the end (the second positional argument, `whg`, means exactly that — nine restarts of
+both services for nine files of 0.25–147 MB would be nine global blinks for nothing), then `tgn` and `gn`
+by rename, chained `afterok`:
+
+```bash
+# on crc0, as stg135 — nothing below runs until SG says so
+cd /vast/ishi/elastic-tile-channels && git log --oneline -1          # dde1b78 feat/tiles-atomic-push
+NEW=/ix1/ishi/data/tiles-channels-20261010c
+BAK=/ix1/ishi/data/tiles-live-backup-20261010
+J1=$(sbatch -M htc --parsable --export=ALL,NEW=$NEW,BAK=$BAK developer/sbatch-templates/tilech-swap.sbatch "og dgsd dp ofs iv alc tm chgis gb" whg | cut -d";" -f1)
+J2=$(sbatch -M htc --parsable --dependency=afterok:$J1 --export=ALL,NEW=$NEW,BAK=$BAK developer/sbatch-templates/tilech-swap.sbatch "tgn gn" | cut -d";" -f1)
+# watch:  sacct -M htc -X -o JobID,State,Elapsed -j $J1,$J2 ; logs/tilech-swap-<id>.out carries per-bucket
+#         "monitor: samples=N bad=M (x0.25 s = unavailability)", the sha256 of what is live, any LEFTOVER
+#         <b>.mbtiles.{new,prev,rejected} on the host, and df after each bucket
+# then, locally:  /usr/bin/python3 ~/Documents/GitHub/whg3/scripts/atlas_smoke.py https://whgazetteer.org   (76/76)
+```
+
+Rollback, per bucket, from the verified backup (the job already does this itself on any failed check; these
+are for a later decision). For `gn`/`tgn` use the rename scheme so the rollback is not itself a 40-minute
+tear; for the small ones `--inplace` is seconds:
+
+```bash
+cd /vast/ishi/elastic-tile-channels; set -a; . ./.env.local; set +a        # TILESERVER_SSH_KEY
+BAK=/ix1/ishi/data/tiles-live-backup-20261010
+python -m processing.generate_tiles --bucket gn  --output-dir $BAK --redeploy-only --push-mode rename   # push + rename + restart + check; .prev removed
+python -m processing.generate_tiles --bucket tgn --output-dir $BAK --redeploy-only --push-mode rename
+python -m processing.generate_tiles --bucket <small> --output-dir $BAK --redeploy-only --push-mode inplace && \
+    python -m processing.update_tileserver_config --bucket <small> --execute
+ssh -i $TILESERVER_SSH_KEY whgadmin@134.209.177.234 'sha256sum /srv/tileserver/tiles/<b>.mbtiles'; grep " <b>.mbtiles$" $BAK/SHA256SUMS
+```
+
+**Unavailability under the rename scheme (inference, not yet measured):** the live file is untouched during
+the transfer, so a bucket is unavailable only for the restart; on 10 Oct the buckets whose push was ~1 s
+(`vob_*`, `ukhc`, `kain_par`) measured 8–27 s end to end, so expect ~10–30 s each for `gn` and `tgn` against
+`wd`'s 2,387 s under `--inplace`. The nine in-place pushes tear each small file for its own transfer (≤ 147 MB;
+`gb`-sized was 19–25 s on 10 Oct for `hgis`/`pl`) and share one restart. Every restart is global: all tilesets
+blink for it. The poller in the job will replace this paragraph with measurements.
+
+### 10.5 Open
+
+* SG's go for §10.4 (two `sbatch` lines), then the harness, then landing `feat/tiles-atomic-push` on
+  `origin/main` (it carries nothing but the push tooling, the two job templates, `oversize.py` and this §10).
+* `chgis`'s null-island tile (§10.3), for the `chgis` ingest, not for tiles.
