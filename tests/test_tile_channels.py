@@ -741,6 +741,12 @@ class SubmitterNoDeploy(unittest.TestCase):
     def test_no_deploy_reaches_generate_tiles(self):
         self.assertIn("--no-deploy", self._script(deploy=False))
 
+    def test_points_drop_rate_is_written_into_the_job_script(self):
+        self.assertNotIn("WHG_POINTS_DROP_RATE", self._script())
+        script = self._script(points_drop_rate="1")
+        self.assertIn("export WHG_POINTS_DROP_RATE=1\n", script)
+        self.assertLess(script.index("WHG_POINTS_DROP_RATE"), script.index("processing.generate_tiles"))
+
 
 if __name__ == "__main__":
     unittest.main()

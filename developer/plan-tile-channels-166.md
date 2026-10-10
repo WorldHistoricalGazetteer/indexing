@@ -225,8 +225,13 @@ Gates (all must hold):
    footprint` where shapes > 0, and `gate <b>: … → PASS`.
 2. `verify_tileset_channels` exits 0, and its per-zoom table shows a coverage feature below z8,
    shapes and labels at z8+, points below z8 where the ledger has points.
-3. `tsize.py`: no tile over 500,000 bytes that the old tileset did not also have; **arguments are
-   positional and its labels are hardcoded NEW/OLD — pass them in that order.**
+3. `tsize.py`: no tile over 500,000 bytes that the old tileset did not also have, **except named,
+   measured exceptions recorded here** (SG, 10 Oct 2026: `wd` `8/133/85` and `8/134/84`, §8.3 —
+   the shapes pass is no-drop and the old pass coalesce-dropped ~70 % of wd's z8 fragments). An
+   exception is a tile that is served whole; **never drop a feature to make a tile fit**. A new
+   oversize tile is a stop, not a note, until it is measured and named. Follow-up (not now):
+   simplification pressure in dense tiles. **Arguments are positional and its labels are
+   hardcoded NEW/OLD — pass them in that order.**
 4. For `region_source` buckets (`po`, `clio`, `nl` by the seed list; check the Django admin for
    any added since): `--region-source <b>` passes.
 
@@ -450,8 +455,20 @@ Downtime (inference — the 2 Sep logs record only `total size` per push, not a 
 both services (the 2 Sep restart job ran 28 s end to end). Measure the first small push and
 scale from it rather than from this paragraph.
 
-### 8.6 Open
+### 8.6 SG rulings, 10 Oct 2026 (relayed), and the rebuild
 
-* `wd`'s two oversize z8 tiles (§8.3) — SG.
-* SG: §8.4(2) points drop rate; then rebuild all 13 + `whg-*` under a new run-id (new bytes, new
-  stamp — never re-stamp), verify, and only then §8.5.
+1. Low-zoom heat: `--drop-rate 1` on the clustered points pass **ON for this rebuild**
+   (`submit_tiles_slurm --points-drop-rate 1`, exported into the job script). `wd` to be MEASURED
+   with it (z0–z7 tile sizes, cluster counts, build time): any tile > 500 KB at z0–z7, or a build
+   time more than double 1:32:27, stops `wd`'s swap (the others may proceed). **Points-only
+   buckets (`gn`, `tgn`, …) are not rebuilt or pushed in this swap** — separate pass after `wd`'s
+   numbers.
+2. `wd`'s two oversize z8 tiles **accepted** (gate 3 amended above).
+3. Then rebuild the 13 + `whg-*` under a new run-id with `c1cb2ee`, re-verify everything, swap
+   smallest first with the first small push timed, `/data/<b>.json` after each, `df -h` after
+   `po`/`clio`/`wd`, immediate per-bucket rollback on a failed check, then
+   `scripts/atlas_smoke.py https://whgazetteer.org` (76/76).
+
+### 8.7 Open
+
+* The rebuild, its measurements and the swap log: §9 when done.
