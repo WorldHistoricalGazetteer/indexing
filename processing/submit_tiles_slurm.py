@@ -268,6 +268,7 @@ def _build_sbatch_script(
     output_dir: Path | None,
     suffix: str,
     deploy: bool = True,
+    points_drop_rate: str | None = None,
 ) -> str:
     log_dir = Path(_REPO) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -319,6 +320,14 @@ def _build_sbatch_script(
         CONDA_LIB_PRELOAD,
         SQLITE_PROBE,
         f"cd {_REPO}",
+    ])
+    if points_drop_rate:
+        # Written into the job script rather than inherited from the
+        # submitting shell, so the setting is readable in the sbatch file
+        # beside the run (place#166 §8.4: SG 10 Oct — drop-rate 1 on the
+        # clustered points pass for this rebuild).
+        lines.append(f"export WHG_POINTS_DROP_RATE={points_drop_rate}")
+    lines.extend([
         "",
         f"BUCKET=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
         "echo \"Array task $SLURM_ARRAY_TASK_ID → bucket: $BUCKET\"",
@@ -409,6 +418,7 @@ def submit(
     with_restart: bool = True,
     only_buckets: list[str] | None = None,
     deploy: bool = True,
+    points_drop_rate: str | None = None,
 ) -> list[str]:
     manifest = load_run_manifest(manifest_path)
     if not deploy and with_restart:
@@ -468,6 +478,7 @@ def submit(
             output_dir=output_dir,
             suffix=suffix,
             deploy=deploy,
+            points_drop_rate=points_drop_rate,
         )
         sbatch_path = work_dir / f"tiles_array.{suffix}.sbatch"
         sbatch_path.write_text(sbatch_text, encoding="utf-8")
@@ -530,6 +541,12 @@ def main() -> None:
              "`generate_tiles --redeploy-only` (place#166 runbook).",
     )
     parser.add_argument(
+        "--points-drop-rate", default=None,
+        help="tippecanoe --drop-rate for the clustered points channel "
+             "(exported as WHG_POINTS_DROP_RATE in the job script; '1' = "
+             "never rate-drop, cluster instead). Default: tippecanoe's 2.5.",
+    )
+    parser.add_argument(
         "--no-restart", dest="with_restart", action="store_false", default=True,
         help="Skip the trailing tileserver-restart job (default: submit it "
              "with afterok dependency on every tile array)",
@@ -568,6 +585,7 @@ def main() -> None:
         with_restart=args.with_restart,
         only_buckets=args.only_buckets,
         deploy=args.deploy,
+        points_drop_rate=args.points_drop_rate,
     )
 
 
