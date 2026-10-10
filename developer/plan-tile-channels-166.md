@@ -472,3 +472,66 @@ scale from it rather than from this paragraph.
 ### 8.7 Open
 
 * The rebuild, its measurements and the swap log: §9 when done.
+
+## 9. Rebuild record — 10 Oct 2026, run `tilech-20261010T102801Z` (SG's rulings applied; swap NOT run)
+
+Code `c0550fe` (this branch); `--no-deploy --points-drop-rate 1` (exported in every job script);
+output **`/ix1/ishi/data/tiles-channels-20261010b/`** (58 tilesets + ledgers). `gn`, `tgn` and
+the other points-only buckets were not built (separate pass after `wd`'s numbers, per SG).
+
+### 9.1 Build
+
+| array | buckets | elapsed | gates |
+|---|---|---|---|
+| 11882787 (60 tasks) | 12 shape buckets + 48 `whg-*` | `clio` 30:49, `po` 24:32, `un` 22:21, rest < 5 min | 58/58 PASS (`whg-1642`/`-1644` empty) |
+| 11882788 | `wd` with `--drop-rate 1` on the points pass | **1:23:48** (first build 1:32:27 — inside SG's 2× limit) | PASS; **2,169.7 MB** (first build 1,734.4; live 1,740.6: +429 MB against 7.4 G free) |
+
+### 9.2 Verification (all of §8.3's checks, repeated on the rebuild)
+
+* Ledger match: **every tileset** (Slurm 11886202, 56 tilesets; 11886201 `po` + `clio` with
+  `--region-source`; `wd`: §9.3). No channel-verifier failure anywhere. No tile over 500,000 bytes
+  in any of the 57 non-`wd` tilesets. `verify_tileset_coverage` "missing land tiles" on the same
+  regional set as before plus `whg-892` (63 points, no polygons — the checker's land test cannot
+  apply) and `whg-1760`: z0–z4 tile counts identical to LIVE in every case, so inherited.
+* The two fixes are visible in the tiles: anchors no longer thinned (`hgis` z8 sampled labels 87
+  vs 43; `ukhc` 98 vs 51; `po` 57 vs 10; `clio` 68 vs 20) and `hgis` z0 holds 24 clusters standing
+  for all 13,213 points (was 2 bare points; live 890 of 13,213). `po`/`clio` polygons identical
+  to LIVE in every sampled z8/z9 tile; `pl` lines identical; `ukhc` identical.
+* Headless Atlas (prove-it-fails first; LIVE control; NEW route-intercepted): at z9 the shapes
+  render exactly as LIVE (`hgis` fill 86, `pl` lines 126, `ukhc` 14, `po` 6,729, `clio` 7,888 /
+  8,218, `wd` 2,263 vs 2,235) with the circles no longer rate-dropped (`hgis` 545 vs 219, `pl`
+  437 vs 176, `wd` 5,717 vs 3,489); at z5 the coverage mottle + pill appear for every hybrid and
+  the heat mass is restored (`hgis` 2,433 vs 343 LIVE, `pl` 4,323 vs 1,238, `wd` 192,912 vs
+  18,523 over the Ruhr).
+
+### 9.3 `wd` with `--drop-rate 1` — SG's measurement (filled in from Slurm job below)
+
+*(verification job armed when this was written; see §9.5 and place#166)*
+
+### 9.4 The swap was blocked
+
+With every check above green, the swap job (`developer/sbatch-templates/tilech-swap.sbatch`:
+one Slurm job, buckets smallest first, per bucket push → `update_tileserver_config --execute` →
+independent TileJSON field check → automatic rollback from the verified backup and STOP on any
+failure; a 0.25 s poller on the tileserver measuring each bucket's downtime; `whg-*` chained
+`afterok` with one restart) was submitted and **the permission classifier refused the submission
+as a production deploy**. Nothing reached the tileserver. The job script is written, on
+`/vast/ishi/staged/runs/tilech-adhoc/swap.sbatch`, and needs a human to submit it:
+
+```bash
+# on crc0, as stg135
+cd /vast/ishi/staged/runs/tilech-adhoc
+NEW=/ix1/ishi/data/tiles-channels-20261010b
+ORDER=$(for b in hgis pl ukhc un vob_rd vob_rc vob_cty vob_lgd kain_par nl po clio; do echo "$(stat -c %s $NEW/$b.mbtiles) $b"; done | sort -n | awk '{print $2}' | tr "\n" " ")
+WHG=$(ls $NEW/whg-*.mbtiles | xargs -n1 basename | sed 's/\.mbtiles//' | tr "\n" " ")
+J1=$(sbatch -M htc --parsable swap.sbatch "$ORDER" | cut -d";" -f1)
+J2=$(sbatch -M htc --parsable --dependency=afterok:$J1 swap.sbatch "$WHG" whg | cut -d";" -f1)
+# wd separately, once §9.3 is green:  sbatch -M htc swap.sbatch "wd"
+# then, locally:  /usr/bin/python3 ~/Documents/GitHub/whg3/scripts/atlas_smoke.py https://whgazetteer.org   (76/76)
+```
+
+### 9.5 Open
+
+* `wd` verification numbers (§9.3) and its swap decision under SG's two conditions.
+* The swap itself, the harness run, and landing `feat/tile-channels` on `origin/main`
+  (fast-forward by cherry-pick) — all after a human submits §9.4.
