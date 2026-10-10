@@ -736,8 +736,13 @@ def push_mbtiles_to_tileserver(
     remote_dir: str | None = None,
     proxy_rsync: str | None = None,
     timeout: int = 7200,
+    dest_name: str | None = None,
 ) -> bool:
     """Push a single ``.mbtiles`` file to the TileServer GL host.
+
+    ``dest_name`` names the file on the host; default is the source's own
+    name. ``atomic_swap_tileset`` pushes to ``<name>.new`` with it so the
+    LIVE file is untouched during the transfer (place#166 §4.4).
 
     The push is routed through ``proxy_host`` (default: the Pitt VM —
     ``settings.TILESERVER_PROXY``) because CRC compute nodes don't carry an
@@ -793,7 +798,7 @@ def push_mbtiles_to_tileserver(
         print(f"  ✗ source missing: {mbtiles_path}")
         return False
 
-    target = f"{remote_user}@{remote_host}:{remote_dir}/"
+    target = f"{remote_user}@{remote_host}:{remote_dir}/{dest_name or ''}"
     size_mb = mbtiles_path.stat().st_size / 1e6
     use_rsync = bool(proxy_rsync) if via_proxy else bool(shutil.which("rsync"))
     tool = "rsync" if use_rsync else "scp"
@@ -910,6 +915,245 @@ def deploy_tilesets(mbtiles_paths, **kwargs) -> dict[str, bool]:
         results[path.name] = push_mbtiles_to_tileserver(path, **kwargs)
     ok = sum(1 for v in results.values() if v)
     print(f"  Deploy summary: {ok}/{len(mbtiles_paths)} succeeded")
+    return results
+
+
+# --- Atomic push: temporary name + rename (place#166 §4.4) -------------------
+#
+# ``rsync --inplace`` rewrites the LIVE file, so a bucket serves torn tiles for
+# the whole transfer, not just the restart. Measured on the 10 Oct 2026 swap
+# (0.25 s poller on the tileserver): 8–27 s for buckets under 100 MB, but
+# ``po`` 169 s, ``clio`` 309 s and ``wd`` 2,387 s (2.17 GB). At or above
+# ``ATOMIC_PUSH_MIN_BYTES`` the file is therefore pushed to ``<b>.mbtiles.new``
+# beside the live one and swapped in with ``mv``, which is atomic on one
+# filesystem; the only unavailability is the service restart.
+#
+# The cost is disk: new and old coexist until the restart releases the old
+# inode (``tiler.service`` holds it), so the push refuses to start unless the
+# tiles filesystem has the new file's size plus ``ATOMIC_PUSH_FREE_MARGIN_BYTES``
+# free — measured with ``df`` ON the tileserver, not inferred.
+
+#: Files at least this large are pushed under a temporary name and renamed.
+ATOMIC_PUSH_MIN_BYTES = 200 * 1024 * 1024
+#: Free space the tiles filesystem must retain after the new file lands
+#: beside the old one.
+ATOMIC_PUSH_FREE_MARGIN_BYTES = 1024 * 1024 * 1024
+ATOMIC_PUSH_NEW_SUFFIX = ".new"
+ATOMIC_PUSH_PREV_SUFFIX = ".prev"
+ATOMIC_PUSH_REJECTED_SUFFIX = ".rejected"
+#: ``auto`` picks by size against ``ATOMIC_PUSH_MIN_BYTES``; the other two force
+#: a scheme (``inplace`` is the pre-10-Oct behaviour, kept for small buckets).
+PUSH_MODES = ("auto", "inplace", "rename")
+
+
+def push_mode_for(mbtiles_path: Path, requested: str = "auto") -> str:
+    """``"rename"`` or ``"inplace"`` for this file under the requested mode."""
+    if requested not in PUSH_MODES:
+        raise ValueError(f"push mode must be one of {PUSH_MODES}, not {requested!r}")
+    if requested != "auto":
+        return requested
+    return ("rename" if mbtiles_path.stat().st_size >= ATOMIC_PUSH_MIN_BYTES
+            else "inplace")
+
+
+def _tileserver_ssh(remote: str, *, timeout: int = 120) -> subprocess.CompletedProcess:
+    """One direct SSH session to the tileserver (``TILESERVER_SSH_KEY``).
+
+    Direct only: the rename scheme needs the host's shell, and the proxy
+    route (``ssh pitt 'ssh …'``) has neither rsync nor a reason to exist
+    once the key is configured — which it is on CRC compute nodes.
+    """
+    from processing.settings import TILESERVER_HOST, TILESERVER_USER, TILESERVER_SSH_KEY
+    if not TILESERVER_SSH_KEY:
+        raise RuntimeError("atomic push needs TILESERVER_SSH_KEY (direct mode)")
+    return subprocess.run(
+        [
+            "ssh", "-i", TILESERVER_SSH_KEY,
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ServerAliveInterval=30",
+            f"{TILESERVER_USER}@{TILESERVER_HOST}", remote,
+        ],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def tileserver_free_bytes(remote_dir: str | None = None) -> int | None:
+    """Bytes available on the filesystem holding ``remote_dir``, measured
+    ON the tileserver with ``df``. ``None`` when it could not be measured —
+    the caller must treat that as a refusal, never as "enough"."""
+    from processing.settings import TILESERVER_TILES_DIR
+    remote_dir = remote_dir or TILESERVER_TILES_DIR
+    try:
+        r = _tileserver_ssh(f"df -B1 --output=avail {remote_dir} | tail -1", timeout=60)
+    except (subprocess.TimeoutExpired, RuntimeError, OSError) as exc:
+        print(f"  ✗ df on the tileserver failed: {exc}")
+        return None
+    if r.returncode != 0:
+        print(f"  ✗ df on the tileserver failed (rc={r.returncode}): {r.stderr.strip()[:200]}")
+        return None
+    try:
+        return int(r.stdout.strip().split()[-1])
+    except (ValueError, IndexError):
+        print(f"  ✗ df on the tileserver returned no number: {r.stdout.strip()[:80]!r}")
+        return None
+
+
+def _default_swap_check(bucket: str) -> bool:
+    """Restart + confirm the bucket serves, then an independent TileJSON
+    check that the served tileset names exactly this one layer.
+
+    ``update_tileserver_config --execute`` is the existing restart-and-
+    verify step: config merge (a no-op for an existing bucket), restart of
+    both services, ``/data/<bucket>.json`` → 200 on the host's localhost,
+    self-rollback of the config on failure. The layer check is what a
+    torn or wrong file fails that a 200 does not.
+    """
+    from processing import update_tileserver_config as _utc
+    if not _utc.update_tileserver_config([bucket], execute=True):
+        return False
+    r = _tileserver_ssh(
+        f"curl -s --max-time 10 http://localhost:{_utc.HTTP_PORT}/data/{bucket}.json",
+        timeout=60,
+    )
+    try:
+        layers = [v.get("id") for v in (json.loads(r.stdout).get("vector_layers") or [])]
+    except (ValueError, AttributeError):
+        layers = None
+    ok = layers == [bucket]
+    print(f"  TileJSON {bucket}: vector_layers={layers} → {'OK' if ok else 'FAIL'}", flush=True)
+    return ok
+
+
+def atomic_swap_tileset(
+    mbtiles_path: Path,
+    *,
+    check=None,
+    remote_dir: str | None = None,
+    free_margin: int = ATOMIC_PUSH_FREE_MARGIN_BYTES,
+    timeout: int = 7200,
+) -> bool:
+    """Push ``<b>.mbtiles`` under a temporary name and swap it in by rename.
+
+    Sequence, each step a precondition of the next:
+
+    1. ``df`` on the tileserver: refuse unless free ≥ size + ``free_margin``;
+    2. rsync to ``<b>.mbtiles.new`` (the live file is not touched);
+    3. on the host, ``mv <b>.mbtiles <b>.mbtiles.prev && mv <b>.mbtiles.new
+       <b>.mbtiles`` in one shell, then ``stat`` the live file's size against
+       the local one;
+    4. ``check()`` — restart + serving check (default
+       ``_default_swap_check``); on success ``rm <b>.mbtiles.prev``;
+    5. on a failed check, rename ``.prev`` back, run ``check()`` again (its
+       restart releases the rejected inode), remove the rejected file.
+
+    Returns True only when steps 1–4 all passed. Never raises for a
+    remote failure; prints what it measured and what it did.
+    """
+    from processing.settings import TILESERVER_TILES_DIR, TILESERVER_SSH_KEY
+    remote_dir = remote_dir or TILESERVER_TILES_DIR
+    name = mbtiles_path.name
+    bucket = mbtiles_path.stem
+    new, prev, rejected = (name + ATOMIC_PUSH_NEW_SUFFIX,
+                           name + ATOMIC_PUSH_PREV_SUFFIX,
+                           name + ATOMIC_PUSH_REJECTED_SUFFIX)
+    if check is None:
+        check = lambda: _default_swap_check(bucket)  # noqa: E731
+
+    if not TILESERVER_SSH_KEY:
+        print(f"  ✗ {name}: atomic push needs TILESERVER_SSH_KEY (direct mode); "
+              f"use --push-mode inplace or configure the key")
+        return False
+    if not mbtiles_path.exists():
+        print(f"  ✗ source missing: {mbtiles_path}")
+        return False
+    size = mbtiles_path.stat().st_size
+
+    # 1. disk, measured on the host before anything is written.
+    free = tileserver_free_bytes(remote_dir)
+    if free is None:
+        print(f"  ✗ {name}: free space on {remote_dir} could not be measured — refusing")
+        return False
+    need = size + free_margin
+    print(f"  disk {remote_dir}: free {free:,} B; need {size:,} B (new file) "
+          f"+ {free_margin:,} B (margin) = {need:,} B", flush=True)
+    if free < need:
+        print(f"  ✗ {name}: REFUSED — {need - free:,} B short (the old inode is "
+              f"held until the restart, so both files must fit)")
+        return False
+
+    # 2. push under the temporary name.
+    if not push_mbtiles_to_tileserver(mbtiles_path, dest_name=new, timeout=timeout):
+        return False
+
+    # 3. rename, atomically on one filesystem, and prove the live file is the new one.
+    r = _tileserver_ssh(
+        f"set -e; cd {remote_dir}; test -f {new}; "
+        f"if [ -e {name} ]; then mv -f {name} {prev}; fi; "
+        f"mv -f {new} {name}; stat -c %s {name}",
+        timeout=60,
+    )
+    live_size = r.stdout.strip() if r.returncode == 0 else None
+    if live_size != str(size):
+        print(f"  ✗ {name}: rename failed or the live file is not the pushed one "
+              f"(rc={r.returncode}, stat={live_size!r}, expected {size}); "
+              f"stderr: {r.stderr.strip()[:200]}")
+        # Put the old file back if the first mv happened and the second did not.
+        _tileserver_ssh(f"cd {remote_dir}; if [ ! -e {name} ] && [ -e {prev} ]; "
+                        f"then mv -f {prev} {name}; fi", timeout=60)
+        return False
+    print(f"  ✓ {name}: renamed into place ({prev} holds the previous file)", flush=True)
+
+    # 4. restart + check; the old inode is released by the restart.
+    if check():
+        r = _tileserver_ssh(f"rm -f {remote_dir}/{prev}", timeout=60)
+        if r.returncode != 0:
+            print(f"  ⚠ {prev} could not be removed (rc={r.returncode}); "
+                  f"the swap is live but the disk still holds the old file")
+        else:
+            print(f"  ✓ {name}: check passed, {prev} removed", flush=True)
+        return True
+
+    # 5. rollback: the previous file back under its name, restart, discard the rejected one.
+    print(f"  ✗ {name}: check FAILED — renaming {prev} back", flush=True)
+    r = _tileserver_ssh(
+        f"set -e; cd {remote_dir}; test -f {prev}; mv -f {name} {rejected}; "
+        f"mv -f {prev} {name}; stat -c %s {name}",
+        timeout=60,
+    )
+    if r.returncode != 0:
+        print(f"  ✗ ROLLBACK FAILED (rc={r.returncode}): {r.stderr.strip()[:200]} — "
+              f"restore {name} by hand from the /ix1 backup", flush=True)
+        return False
+    restored_ok = check()
+    print(f"  rollback: previous file restored ({r.stdout.strip()} B); "
+          f"check after rollback: {'OK' if restored_ok else 'FAILED — restore from the /ix1 backup'}",
+          flush=True)
+    _tileserver_ssh(f"rm -f {remote_dir}/{rejected}", timeout=60)
+    return False
+
+
+def redeploy_tilesets(mbtiles_paths, *, mode: str = "auto") -> dict[str, bool]:
+    """``--redeploy-only``: push each tileset by the scheme ``mode`` selects.
+
+    ``rename`` (and ``auto`` at or above ``ATOMIC_PUSH_MIN_BYTES``) runs the
+    whole swap — push, rename, restart, check, cleanup or rollback — so a
+    caller must NOT restart again afterwards. ``inplace`` pushes only, as
+    before, and the restart stays the caller's step.
+    """
+    if mode not in PUSH_MODES:
+        raise ValueError(f"push mode must be one of {PUSH_MODES}, not {mode!r}")
+    results: dict[str, bool] = {}
+    for path in mbtiles_paths:
+        scheme = push_mode_for(path, mode)
+        print(f"\nPUSH MODE {path.stem}: {scheme}  ({path.stat().st_size:,} B; "
+              f"rename at ≥ {ATOMIC_PUSH_MIN_BYTES:,} B, requested {mode})", flush=True)
+        if scheme == "rename":
+            results[path.name] = atomic_swap_tileset(path)
+        else:
+            results[path.name] = push_mbtiles_to_tileserver(path)
+    ok = sum(1 for v in results.values() if v)
+    print(f"  Redeploy summary: {ok}/{len(results)} succeeded")
     return results
 
 
@@ -2835,6 +3079,12 @@ def main():
                         help='Run manifest path; if omitted derives from --run-id')
     parser.add_argument('--skip-tippecanoe', action='store_true',
                         help='Write only GeoJSONL files, do not invoke tippecanoe')
+    parser.add_argument('--push-mode', choices=PUSH_MODES, default='auto',
+                        help='With --redeploy-only: "rename" pushes to '
+                             '<b>.mbtiles.new, swaps it in by rename, restarts, '
+                             'checks and cleans up (or rolls back); "inplace" is '
+                             'the old rsync --inplace push with no restart; '
+                             f'"auto" (default) renames at >= {ATOMIC_PUSH_MIN_BYTES:,} B.')
     args = parser.parse_args()
 
     if args.redeploy_only:
@@ -2847,8 +3097,8 @@ def main():
         if not paths:
             print(f"No .mbtiles found in {out_dir} for selected buckets.")
             return
-        print(f"Redeploy-only: pushing {len(paths)} existing .mbtiles ...")
-        results = deploy_tilesets(paths)
+        print(f"Redeploy-only: pushing {len(paths)} existing .mbtiles (mode={args.push_mode}) ...")
+        results = redeploy_tilesets(paths, mode=args.push_mode)
         failed = [n for n, ok in results.items() if not ok]
         if failed:
             print(f"\n⚠ {len(failed)} push(es) failed: {failed}")
