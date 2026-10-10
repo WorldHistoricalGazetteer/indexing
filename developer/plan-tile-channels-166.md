@@ -506,7 +506,26 @@ the other points-only buckets were not built (separate pass after `wd`'s numbers
 
 ### 9.3 `wd` with `--drop-rate 1` — SG's measurement (filled in from Slurm job below)
 
-*(verification job armed when this was written; see §9.5 and place#166)*
+Slurm 11892282 (35 min): channels match the ledger, all land tiles present, tile count 787,671
+(live 787,663), z10 sample identical (573 = 573 points).
+
+| | first build (default rate) | **rebuild, `--drop-rate 1`** | live (2 Sep) |
+|---|---|---|---|
+| build time | 1:32:27 | **1:23:48** | — |
+| mbtiles | 1,734.4 MB | **2,169.7 MB** | 1,740.6 MB |
+| z0 tile | 22,480 B; 97 clusters standing for 1,196 points | **101,015 B; 604 clusters standing for 11,401,515 of 11,401,945** | 80,149 B; 161 clusters, 58,987 |
+| max tile z0–z7 | 90,208 B | **115,248 B (z2)** — z4–z7 maxima 108–111 KB, all *smaller* than live (118–163 KB) | 162,687 B |
+| z8 sample (100 tiles): points + clusters | 1,212 + 1,332 | **1,047 + 3,395** | 1,203 + 1,381 |
+| z9 sample: points | 2,360 | **4,446** (nothing rate-dropped) | 2,354 |
+| tiles > 500,000 B | 2 (z8) | **8** | 0 |
+
+**SG's two conditions are met** (no z0–z7 tile over 500 KB; build time down, not up). **But the
+un-dropped points at z8/z9 push six MORE tiles past 500 KB** than the two SG accepted — all in
+the Rhine/Ruhr: z8 `133/85` **1,050,596** (accepted; was 922,964), `134/84` 629,789 (accepted),
+and new `132/85` 559,776, `134/88` 537,664, `134/85` 529,534, `133/84` 516,067; z9 `266/171`
+529,470, `266/170` 507,074. All served whole (no tile dropped). Under gate 3 as amended that is a
+stop for `wd` until SG names them too — or asks for the dense-tile simplification follow-up
+first. The other 12 buckets and `whg-*` are unaffected.
 
 ### 9.4 The swap was blocked
 
@@ -532,6 +551,6 @@ J2=$(sbatch -M htc --parsable --dependency=afterok:$J1 swap.sbatch "$WHG" whg | 
 
 ### 9.5 Open
 
-* `wd` verification numbers (§9.3) and its swap decision under SG's two conditions.
+* `wd`: SG to accept (or not) the six additional oversize z8/z9 tiles in §9.3 before its swap.
 * The swap itself, the harness run, and landing `feat/tile-channels` on `origin/main`
   (fast-forward by cherry-pick) — all after a human submits §9.4.
