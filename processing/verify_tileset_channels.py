@@ -174,6 +174,31 @@ def count_classes(samples: dict[int, list[tuple[int, int, bytes]]], layer: str
     return per_zoom
 
 
+def first_label_scan(mbtiles: Path, layer: str, z: int) -> tuple[int, int, int]:
+    """Scan EVERY tile at zoom ``z`` in seeded random order until one holds a
+    ``label: 1`` feature. Returns ``(labels_in_that_tile, tiles_scanned,
+    tiles_total)``; ``(0, total, total)`` when no tile at that zoom has one."""
+    con = sqlite3.connect(f"file:{mbtiles}?mode=ro", uri=True, timeout=30)
+    try:
+        coords = con.execute(
+            "SELECT tile_column, tile_row FROM tiles WHERE zoom_level=?", (z,)).fetchall()
+        random.Random(_SEED).shuffle(coords)
+        for i, (x, y) in enumerate(coords, 1):
+            blob = con.execute(
+                "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                (z, x, y)).fetchone()[0]
+            try:
+                lyr = _decode(blob).get(layer) or {}
+            except Exception:  # noqa: BLE001 - counted by the sampled pass
+                continue
+            n = sum(1 for f in lyr.get("features") or [] if _classify(f) == "label")
+            if n:
+                return n, i, len(coords)
+        return 0, len(coords), len(coords)
+    finally:
+        con.close()
+
+
 def verify(mbtiles: Path, ledger: dict[str, Any], *,
            require_shapes: bool = False) -> tuple[list[str], list[str]]:
     """Return ``(failures, report_lines)``."""
@@ -251,8 +276,20 @@ def verify(mbtiles: Path, ledger: dict[str, Any], *,
                             f"in {sum(c['tiles'] for z, c in per_zoom.items() if z >= shapes_min)} "
                             f"sampled tiles at z>={shapes_min}")
         if n_labels and high["label"] == 0:
-            failures.append(f"{bucket}: ledger has {n_labels:,} label anchors but none in sampled "
-                            f"tiles at z>={shapes_min}")
+            # A sample cannot see one anchor per country-sized polygon: po
+            # (7,815 period extents) has label features in 304 of its 39,300
+            # z8 tiles, and a 64-tile sample found none (10 Oct 2026). Before
+            # failing, scan the whole zoom in seeded random order and stop at
+            # the first label; a tileset with no labels at all still scans
+            # every tile and still fails.
+            found, scanned, total = first_label_scan(mbtiles, bucket, shapes_min)
+            if found:
+                report.append(f"  z{shapes_min}: no label in the sample; full scan found "
+                              f"{found} label feature(s) after {scanned:,} of {total:,} tiles")
+            else:
+                failures.append(f"{bucket}: ledger has {n_labels:,} label anchors but none in "
+                                f"sampled tiles at z>={shapes_min}, nor in any of the "
+                                f"{total:,} tiles at z{shapes_min}")
         if has_extent:
             if low["coverage"] == 0:
                 failures.append(f"{bucket}: extent was tiled but no coverage feature in "

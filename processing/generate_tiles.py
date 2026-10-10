@@ -181,6 +181,11 @@ CHANNEL_LABELS = "labels"
 CHANNELS: tuple[str, ...] = (CHANNEL_POINTS, CHANNEL_SHAPES, CHANNEL_EXTENT,
                              CHANNEL_LABELS)
 
+# Opt-in tippecanoe ``--drop-rate`` for the clustered points channel (e.g.
+# "1" = never rate-drop, cluster instead). Empty = tippecanoe's default 2.5.
+# See the comment at the ``cluster_points`` flags in ``generate_tileset``.
+_POINTS_DROP_RATE: str = os.getenv("WHG_POINTS_DROP_RATE", "").strip()
+
 # Lines are buffered to this width (degrees) before joining the extent union,
 # so a route gazetteer reads at z0-7 as the same mottle a polygon gazetteer
 # does. Deliberately about the footprint's own simplify tolerance: a buffer
@@ -508,6 +513,15 @@ def generate_tileset(
             '--no-tiny-polygon-reduction',
             '--no-feature-limit',
             '--no-tile-size-limit',
+            # None of the three flags above touches tippecanoe's POINT drop
+            # rate (``-r``, default 2.5 per zoom below the base zoom), which
+            # applies to Point features only — so a no-drop pass of polygons
+            # was complete while the labels pass (one Point anchor per shape)
+            # was silently thinned: measured 10 Oct 2026 on hgis, 892 anchors
+            # → 399 distinct at z8, 701 at z9, all 892 only at z10, identical
+            # in the 2 Sep build. ``--drop-rate 1`` is what makes preserve_all
+            # true for anchors (place#166).
+            '--drop-rate', '1',
         ]
     else:
         # --coalesce-densest-as-needed MERGES features that can be combined.
@@ -534,6 +548,17 @@ def generate_tileset(
             '--cluster-maxzoom', '8',
             '--cluster-densest-as-needed',
         ]
+        # The default drop rate (2.5 per zoom below z10) removes points
+        # UNCOUNTED: a rate-dropped point is not folded into a cluster's
+        # ``point_count``, so the low-zoom heat weight is whatever survived the
+        # lottery. Measured 10 Oct 2026 (place#166): hgis z0 carried 2 of
+        # 13,213 points and no cluster; with ``--drop-rate 1`` the same pass
+        # carried 24 clusters standing for all 13,213 (max tile 42,628 bytes,
+        # no measurable extra wall time at 13k points; wd at 11.4M points is
+        # unmeasured). Opt-in via WHG_POINTS_DROP_RATE until that decision is
+        # taken — it changes every point bucket's tiles, gn and tgn included.
+        if _POINTS_DROP_RATE:
+            cmd += ['--drop-rate', _POINTS_DROP_RATE]
         # Carry the per-feature temporal range onto the surviving cluster point
         # (place#131) so low-zoom clusters date-filter too, not just individual
         # features. ``start:min``/``end:max`` widen to the union of members'

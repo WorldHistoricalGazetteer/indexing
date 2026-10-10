@@ -601,6 +601,127 @@ class EndToEndHybridBucket(unittest.TestCase):
 from processing import verify_tileset_channels as gt_verify  # noqa: E402
 
 
+class TippecanoeFlags(unittest.TestCase):
+    """The argv ``generate_tileset`` hands tippecanoe, captured without running it.
+
+    tippecanoe's point drop rate (``-r``, default 2.5 per zoom below the base
+    zoom) is untouched by ``--no-feature-limit`` and friends, so a "no-drop"
+    labels pass thinned its anchors below z10 (hgis: 399 of 892 at z8, 701 at
+    z9, all 892 at z10 — measured 10 Oct 2026, identical in the live build).
+    """
+
+    def _argv(self, **kw) -> list[str]:
+        seen = {}
+
+        def fake_run(cmd, **_):
+            seen["cmd"] = [str(c) for c in cmd]
+            return mock.Mock(returncode=1)
+
+        with TemporaryDirectory() as tmp, mock.patch.object(gt.subprocess, "run", fake_run):
+            src = Path(tmp) / "x.geojsonl"
+            src.write_text(json.dumps({"type": "Feature", "properties": {},
+                                       "geometry": {"type": "Point", "coordinates": [0, 0]}}) + "\n")
+            gt.generate_tileset(src, Path(tmp) / "x.mbtiles", "x", "x", **kw)
+        return seen["cmd"]
+
+    def _flag(self, argv, name):
+        return argv[argv.index(name) + 1] if name in argv else None
+
+    def test_preserve_all_passes_never_rate_drop_points(self):
+        argv = self._argv(preserve_all=True)
+        self.assertIn("--no-feature-limit", argv)
+        self.assertEqual(self._flag(argv, "--drop-rate"), "1", argv)
+
+    def test_clustered_points_keep_tippecanoes_default_rate_unless_opted_in(self):
+        with mock.patch.object(gt, "_POINTS_DROP_RATE", ""):
+            argv = self._argv(cluster_points=True)
+        self.assertIn("--cluster-distance", argv)
+        self.assertNotIn("--drop-rate", argv, argv)
+        with mock.patch.object(gt, "_POINTS_DROP_RATE", "1"):
+            argv = self._argv(cluster_points=True)
+        self.assertEqual(self._flag(argv, "--drop-rate"), "1", argv)
+
+    def test_extent_pass_has_neither(self):
+        argv = self._argv()
+        self.assertNotIn("--drop-rate", argv)
+        self.assertIn("--coalesce-densest-as-needed", argv)
+
+
+@unittest.skipUnless(_HAVE_TIPPECANOE and _HAVE_MVT,
+                     "needs tippecanoe + tile-join on PATH and mapbox_vector_tile")
+class LabelScanFallback(unittest.TestCase):
+    """A sample can miss one anchor per country-sized polygon (po: labels in
+    304 of 39,300 z8 tiles); the verifier then scans the zoom before failing,
+    and a tileset with no labels at all still fails after scanning it all."""
+
+    def setUp(self):
+        assert_sandboxed()
+        self._tmp = TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _points(self, name, feats, **kw) -> Path:
+        src = self.tmp / f"{name}.geojsonl"
+        with src.open("w") as fh:
+            for props, (lon, lat) in feats:
+                fh.write(json.dumps({"type": "Feature", "properties": props,
+                                     "geometry": {"type": "Point", "coordinates": [lon, lat]}}) + "\n")
+        out = self.tmp / f"{name}.mbtiles"
+        self.assertTrue(gt.generate_tileset(src, out, "t", "t", minzoom=8, maxzoom=8, **kw))
+        return out
+
+    @staticmethod
+    def _tiles_at(mb: Path, z: int) -> int:
+        con = sqlite3.connect(f"file:{mb}?mode=ro", uri=True)
+        try:
+            return con.execute("SELECT COUNT(*) FROM tiles WHERE zoom_level=?", (z,)).fetchone()[0]
+        finally:
+            con.close()
+
+    def test_scan_finds_a_lone_anchor_and_reports_the_denominator(self):
+        # 40 plain points spread over 40 z8 tiles and ONE anchor: a 64-tile
+        # sample is all of them here, so call the scan directly.
+        feats = [({"place_id": f"t:{i}"}, (i * 2.0, 10.0)) for i in range(40)]
+        feats.append(({"label": 1, "place_id": "t:anchor"}, (-120.0, -40.0)))
+        mb = self._points("sparse", feats, preserve_all=True)
+        found, scanned, total = gt_verify.first_label_scan(mb, "t", 8)
+        self.assertEqual(found, 1)
+        self.assertEqual(total, self._tiles_at(mb, 8))
+        self.assertGreater(total, 20)   # z8 tiles are 1.4 deg wide: 40 points 2 deg apart
+        self.assertTrue(1 <= scanned <= total, (scanned, total))
+
+    def test_scan_refuses_a_tileset_with_no_labels_after_scanning_every_tile(self):
+        feats = [({"place_id": f"t:{i}"}, (i * 2.0, 10.0)) for i in range(40)]
+        mb = self._points("nolabels", feats, preserve_all=True)
+        n = self._tiles_at(mb, 8)
+        self.assertGreater(n, 20)
+        self.assertEqual(gt_verify.first_label_scan(mb, "t", 8), (0, n, n))
+
+    def test_preserve_all_keeps_every_anchor_below_the_base_zoom(self):
+        """The hgis finding, reproduced: 200 anchors tiled z8-z10; every one
+        must be present at z8, which the default drop rate does not give."""
+        feats = [({"label": 1, "place_id": f"t:{i}"}, (-170 + i * 1.7, (i % 60) - 30.0))
+                 for i in range(200)]
+        src = self.tmp / "anchors.geojsonl"
+        with src.open("w") as fh:
+            for props, (lon, lat) in feats:
+                fh.write(json.dumps({"type": "Feature", "properties": props,
+                                     "geometry": {"type": "Point", "coordinates": [lon, lat]}}) + "\n")
+        out = self.tmp / "anchors.mbtiles"
+        self.assertTrue(gt.generate_tileset(src, out, "t", "t", minzoom=8, maxzoom=10, preserve_all=True))
+        con = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
+        try:
+            seen = set()
+            for (blob,) in con.execute("SELECT tile_data FROM tiles WHERE zoom_level=8"):
+                for f in (gt_verify._decode(blob).get("t") or {}).get("features") or []:
+                    seen.add(f["properties"]["place_id"])
+        finally:
+            con.close()
+        self.assertEqual(len(seen), 200, f"{len(seen)} of 200 anchors at z8")
+
+
 class SubmitterNoDeploy(unittest.TestCase):
     """``submit_tiles_slurm --no-deploy`` must reach the array task's command
     line, or the rolling retile pushes every bucket in parallel after all."""
