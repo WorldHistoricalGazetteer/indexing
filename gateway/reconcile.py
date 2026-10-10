@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -241,6 +242,24 @@ class ReconcileRequest(BaseModel):
                     "not upgraded in lockstep with the server, so the default is "
                     "distrust.",
     )
+    lang: Optional[str] = Field(
+        None,
+        description="ISO 639-1 language of the query (case-insensitive), used to "
+                    "language-condition the SERVER-SIDE Symphonym embedding (primary "
+                    "query, variants and derived forms that have no client vector). "
+                    "A valid current-model `query_vector` still wins for its own pass. "
+                    "Anything not matching ^[a-z]{2,3}$ once lowercased falls back to "
+                    "'und' — never an error (place#324).",
+    )
+    area_only: bool = Field(
+        default=False,
+        description="When True, return only candidates with at least one areal "
+                    "(polygon) geometry — the same test as `is_area` and containment "
+                    "(`spatial.is_areal`). Point-only and line-only places are "
+                    "excluded. A filter, not a re-rank: scores and `match` of the "
+                    "remaining candidates are unchanged. Lets a caller looking for a "
+                    "container ask only for things that can be one (place#323).",
+    )
     include_hard_links: bool = Field(
         default=False,
         description="When True, ship the co-reference hard-link edges "
@@ -367,6 +386,19 @@ class ReconcileResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Internal helpers (reconcile-specific)
 # ---------------------------------------------------------------------------
+
+
+_LANG_RE = re.compile(r"^[a-z]{2,3}$")
+
+
+def _normalise_lang(lang) -> str:
+    """Request ``lang`` → what ``symphonym.embed`` gets: a lowercased 2-3 letter
+    code, else ``"und"``. Never raises (place#324)."""
+    if isinstance(lang, str):
+        lang = lang.strip().lower()
+        if _LANG_RE.match(lang):
+            return lang
+    return "und"
 
 
 def _normalise_variants(
@@ -651,6 +683,7 @@ async def reconcile_search(req: ReconcileRequest):
                 # be tighter than the primary's returned higher raw scores, and
                 # its junk neighbours outranked — and, after the candidate-pool
                 # cut, evicted — the correct match (place#197).
+                knn_lang = _normalise_lang(req.lang)
                 passes: list[tuple[str, Optional[list[int]], float]] = [
                     (req.query, req.query_vector, 1.0)
                 ]
@@ -667,7 +700,8 @@ async def reconcile_search(req: ReconcileRequest):
                 passes += [(form, None, _derived_form_weight(req.query, form))
                            for form in derived_forms]
                 bodies = [
-                    (_build_phonetic_knn(form, k=200, similarity=KNN_SIMILARITY_FLOOR,
+                    (_build_phonetic_knn(form, lang=knn_lang,
+                                         k=200, similarity=KNN_SIMILARITY_FLOOR,
                                          query_vector=vec,
                                          query_vector_model=req.query_vector_model), weight)
                     for form, vec, weight in passes
@@ -823,6 +857,7 @@ async def reconcile_search(req: ReconcileRequest):
             types=_native_types(req.types),
             aat_types=_aat_types(req.types),
             clustering_fields=req.include_clustering_fields,
+            area_only=req.area_only,
             # place#273 — WITHOUT this, candidates carry no type at all, and
             # 16.6% of *confident* accepted matches were lakes, airfields and
             # war memorials. It is a RANKING failure, not a coverage one: in 5

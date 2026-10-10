@@ -1148,6 +1148,29 @@ def _temporal_filter(start_year: int | None, end_year: int | None,
     return {"bool": {"should": [match, no_timespans], "minimum_should_match": 1}}
 
 
+def area_only_clause() -> dict:
+    """ES filter: the place has at least one geometry that ``spatial.is_areal``
+    would accept (place#323). Evaluated per nested geometry, exactly as
+    ``is_areal`` is per geometry: ``geom_class == "area"``, or — for legacy
+    geometries with no ``geom_class`` at all — ``has_geom`` true. A line or a
+    point carries ``geom_class`` and so can never take the legacy branch."""
+    return {
+        "nested": {
+            "path": "geometries",
+            "query": {"bool": {
+                "should": [
+                    {"term": {"geometries.geom_class": "area"}},
+                    {"bool": {
+                        "filter": [{"term": {"geometries.has_geom": True}}],
+                        "must_not": [{"exists": {"field": "geometries.geom_class"}}],
+                    }},
+                ],
+                "minimum_should_match": 1,
+            }},
+        }
+    }
+
+
 def build_places_filter(
     place_ids: list[str] | None,
     ccodes: list[str] | None,
@@ -1166,6 +1189,7 @@ def build_places_filter(
     geom: str = "full",
     region=None,
     clustering_fields: bool = False,
+    area_only: bool = False,
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
@@ -1196,8 +1220,13 @@ def build_places_filter(
             ``h3_cover`` matching the region's cells — to pre-trim candidates
             before the precise Python-side containment refine. ``place_ids``
             may be ``None``/empty for a pure-spatial query.
+        area_only: When True, keep only places with at least one areal geometry
+            (place#323) — ``area_only_clause``, the ES mirror of
+            ``spatial.is_areal``. A filter, so it never changes a score.
     """
     filter_clauses: list[dict] = []
+    if area_only:
+        filter_clauses.append(area_only_clause())
     if place_ids:
         filter_clauses.append({"terms": {"place_id": place_ids}})
     must_not_clauses: list[dict] = []
