@@ -465,7 +465,8 @@ async def search(req: SearchRequest):
                 requests: list[tuple[str, float, dict]] = []
                 for form, weight in forms:
                     knn_body = build_phonetic_knn(
-                        form, k=200, similarity=KNN_SIMILARITY_FLOOR)
+                        form, k=200, similarity=KNN_SIMILARITY_FLOOR,
+                        namespaces=req.namespaces or None)
                     if knn_body:
                         requests.append(("knn", weight, knn_body))
                 if fz_body:

@@ -210,6 +210,12 @@ class ReconcileRequest(BaseModel):
         description="How start_year/end_year are matched: 'possibly' (default) "
                     "or 'definitely' — see /api/search.",
     )
+    undated: bool = Field(
+        False,
+        description="With start_year/end_year: also keep places that carry no "
+                    "temporal information at all, rather than dropping them. Same "
+                    "meaning as on /api/search. Ignored without a year window.",
+    )
     size: int = Field(50, ge=1, le=500, description="Max results to return")
     exclude_namespaces: list[str] = Field(
         default=["gb"],
@@ -703,7 +709,8 @@ async def reconcile_search(req: ReconcileRequest):
                     (_build_phonetic_knn(form, lang=knn_lang,
                                          k=200, similarity=KNN_SIMILARITY_FLOOR,
                                          query_vector=vec,
-                                         query_vector_model=req.query_vector_model), weight)
+                                         query_vector_model=req.query_vector_model,
+                                         namespaces=req.namespaces or None), weight)
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]
@@ -850,6 +857,10 @@ async def reconcile_search(req: ReconcileRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             temporal_mode=req.temporal_mode,
+            # Without this a year window dropped every place with no timespan,
+            # whatever the caller asked: Map your Data's "undated places
+            # included" tick reached only WHG's legacy index (2026-10-12).
+            undated=req.undated,
             size=pool_k,
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,

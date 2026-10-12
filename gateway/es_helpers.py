@@ -911,12 +911,19 @@ def build_phonetic_knn(
     similarity: float = 0.7,
     query_vector: list[int] | None = None,
     query_vector_model: str | None = None,
+    namespaces: list[str] | None = None,
 ) -> dict | None:
     """
     Build a KNN query body using Symphonym.
 
     When ``query_vector`` is supplied (a client-computed int8 embedding) the
     server-side embed is skipped. Returns None if Symphonym is unavailable.
+
+    ``namespaces`` PRE-filters the neighbour search (ES ``knn.filter``), the
+    same ``terms`` clause the lexical passes use. Without it the ``k`` nearest
+    toponyms came from every source and only then were cut to the caller's
+    scope, so a query scoped to a small source could lose all its neighbours
+    to bigger ones before the cut (PLATO tools Scope, 2026-10-12).
     """
     try:
         from . import symphonym
@@ -925,6 +932,8 @@ def build_phonetic_knn(
             num_candidates=max(k * 2, 400),
             query_vector=query_vector,
             query_vector_model=query_vector_model,
+            extra_filter=({"terms": {"namespaces": list(namespaces)}}
+                          if namespaces else None),
         )
         body["knn"]["similarity"] = similarity
         body["_source"] = ["name", "lang", "attestations"]
