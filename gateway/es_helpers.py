@@ -381,6 +381,72 @@ def derive_name_forms(query: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Namespace scope — whole namespaces and contributed datasets
+# ---------------------------------------------------------------------------
+
+def split_namespace_scope(namespaces) -> tuple[list[str], list[str]]:
+    """Split a ``namespaces`` scope into ``(namespace codes, dataset ids)``.
+
+    A scope entry is either a namespace code (``"gn"``, ``"clio"``) or a
+    contributed dataset's sub-namespace, ``"whg:<dataset_id>"`` — the id the
+    gazetteer registry and the Atlas use for one contributed dataset, and the
+    value every ``whg`` place doc carries in its ``dataset_id`` keyword
+    (authorities/whg-places.py; ``write_staged_place_doc`` refuses a ``whg``
+    doc without one). Such a doc's ``namespace`` is ``"whg"``, so a ``terms``
+    clause on ``namespace`` never matched ``"whg:1203"``: browsing or searching
+    one contributed dataset returned nothing (website place#332). An entry
+    with a colon is a dataset id; anything else is a namespace code.
+    """
+    plain: list[str] = []
+    datasets: list[str] = []
+    for ns in namespaces or ():
+        s = str(ns).strip()
+        if s:
+            (datasets if ":" in s else plain).append(s)
+    return plain, datasets
+
+
+def _any_of(clauses: list[dict]) -> dict:
+    return clauses[0] if len(clauses) == 1 else {
+        "bool": {"should": clauses, "minimum_should_match": 1}}
+
+
+def toponym_scope_filter(namespaces) -> dict | None:
+    """The toponyms-index filter for a ``namespaces`` scope, or None.
+
+    With namespace codes only this is the ``terms`` clause on the toponym
+    ``namespaces`` field, exactly as before. A dataset id matches toponyms
+    attesting a place of that dataset: ``prefix`` on ``attestations`` (the
+    place_ids, ``whg:<dataset_id>:<src_id>``) with the trailing colon, so
+    ``whg:12`` does not also take ``whg:123``. Filtering on the toponym's
+    ``whg`` code instead would draw the discovery window from every
+    contributed dataset and let a small one lose all its names to big ones.
+    """
+    plain, datasets = split_namespace_scope(namespaces)
+    if not datasets:
+        return {"terms": {"namespaces": list(namespaces)}} if namespaces else None
+    clauses: list[dict] = []
+    if plain:
+        clauses.append({"terms": {"namespaces": plain}})
+    clauses += [{"prefix": {"attestations": f"{d}:"}} for d in datasets]
+    return _any_of(clauses)
+
+
+def places_scope_filter(namespaces) -> dict | None:
+    """The places-index filter for a ``namespaces`` scope, or None: ``terms``
+    on ``namespace`` for namespace codes (exactly as before), ``terms`` on
+    ``dataset_id`` for contributed dataset ids, OR-ed when both are given."""
+    plain, datasets = split_namespace_scope(namespaces)
+    if not datasets:
+        return {"terms": {"namespace": namespaces}} if namespaces else None
+    clauses: list[dict] = []
+    if plain:
+        clauses.append({"terms": {"namespace": plain}})
+    clauses.append({"terms": {"dataset_id": datasets}})
+    return _any_of(clauses)
+
+
+# ---------------------------------------------------------------------------
 # Step 1 helpers — Toponym discovery
 # ---------------------------------------------------------------------------
 
@@ -481,7 +547,7 @@ def build_toponym_query(
         text_query = {
             "bool": {
                 "must": [text_query],
-                "filter": [{"terms": {"namespaces": namespaces}}],
+                "filter": [toponym_scope_filter(namespaces)],
             }
         }
 
@@ -538,7 +604,7 @@ def build_lexical_exact_query(
     query: dict = {"terms": {"name.raw": sorted(set(lowered))}}
     if namespaces:
         query = {"bool": {"must": [query],
-                          "filter": [{"terms": {"namespaces": namespaces}}]}}
+                          "filter": [toponym_scope_filter(namespaces)]}}
     return {
         "size": size,
         "query": query,
@@ -932,7 +998,7 @@ def build_phonetic_knn(
             num_candidates=max(k * 2, 400),
             query_vector=query_vector,
             query_vector_model=query_vector_model,
-            extra_filter=({"terms": {"namespaces": list(namespaces)}}
+            extra_filter=(toponym_scope_filter(list(namespaces))
                           if namespaces else None),
         )
         body["knn"]["similarity"] = similarity
@@ -1241,7 +1307,8 @@ def build_places_filter(
         exclude_namespaces: Namespaces to exclude (``must_not`` filter).
         namespaces: When set, **only** these namespaces are returned
             (positive ``filter`` clause).  Takes precedence over
-            ``exclude_namespaces`` for any overlap.
+            ``exclude_namespaces`` for any overlap.  A ``whg:<dataset_id>``
+            entry scopes to one contributed dataset (``places_scope_filter``).
         fclasses: GeoNames feature-class letters (e.g. ``["P", "A"]``).
             Translates to a nested ``types.label`` terms filter — GeoNames
             stores the feature class in the ``label`` field of its type entry.
@@ -1280,7 +1347,7 @@ def build_places_filter(
     must_not_clauses: list[dict] = []
 
     if namespaces:
-        filter_clauses.append({"terms": {"namespace": namespaces}})
+        filter_clauses.append(places_scope_filter(namespaces))
     elif exclude_namespaces:
         must_not_clauses.append({"terms": {"namespace": exclude_namespaces}})
 

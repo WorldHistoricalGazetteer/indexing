@@ -21,7 +21,7 @@ from typing import Literal, Optional
 
 import httpx
 from fastapi import APIRouter, Query, HTTPException
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, computed_field, model_serializer
 
 from . import aat_labels, spatial
 from .titles import display_title
@@ -60,6 +60,7 @@ from .es_helpers import (
     collect_namespaces,
     format_hit_links,
     MAX_HIT_LINKS,
+    split_namespace_scope,
 )
 
 logger = logging.getLogger("gateway.search")
@@ -158,7 +159,9 @@ class SearchRequest(BaseModel):
     namespaces: Optional[list[str]] = Field(
         None,
         description="When set, only return results from these namespaces "
-                    "(e.g. ['gn', 'tgn']). Overrides exclude_namespaces.",
+                    "(e.g. ['gn', 'tgn']). Overrides exclude_namespaces. "
+                    "An entry 'whg:<dataset_id>' scopes to one contributed "
+                    "dataset (its places' dataset_id); see datasets_searched.",
     )
     browse: bool = Field(
         False,
@@ -302,6 +305,16 @@ class SearchResponse(BaseModel):
     # Offline calibration fuel — populated when include_clustering_fields=True
     clustering_params: Optional[dict] = None
     toponym_stoplist: list[str] = []
+
+    # The entries of `namespaces_searched` applied as a contributed-dataset
+    # scope (`whg:<dataset_id>`, filtered on `dataset_id`; website place#332).
+    # Derived, so it is right on every return path. Its PRESENCE is how a
+    # client tells this gateway from one that filtered such an entry on
+    # `namespace` and so matched nothing at all.
+    @computed_field
+    @property
+    def datasets_searched(self) -> list[str]:
+        return split_namespace_scope(self.namespaces_searched)[1]
 
 
 class SuggestItem(BaseModel):
