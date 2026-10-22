@@ -576,6 +576,8 @@ Both endpoints share the same architecture via `es_helpers.py`:
 
 **Clustering fuel (opt-in, additive):** `include_hard_links` → result-set `edges[]`; `include_clustering_fields` → per-hit `h3`/`h3_cover`/`temporal_range`/`aat_ids`/`aat_paths`/`query_match` + top-level `clustering_params`/`toponym_stoplist`; `include_embeddings` → per-name int8 `phon_emb`. The browser (`clustering.js`) computes all pair signals + Union-Find. See `developer/plan-outstanding-2026-07.md` §1.
 
+**Links (opt-in, `/api/search` only):** `include_links` → per-hit `links[]` (`{type, identifier}`, Wikipedia first, capped at `MAX_HIT_LINKS`) + `links_total`. Off, the hit carries **neither key** (a wrap `model_serializer` on `SearchHit` drops them) and `build_places_filter(links=False)` keeps `links` out of `_source`. `/api/reconcile` always selects and returns `links` (the filter's default).
+
 **Source-attribution echo (place#157):** every multi-record response
 (`/api/search`, `/api/reconcile`, `/api/places`) carries `namespaces[]` — the
 distinct authorities represented in its results — so Django resolves per-source

@@ -1180,6 +1180,39 @@ def area_only_clause() -> dict:
     }
 
 
+# Per-hit bound on `links` when /api/search is asked for them (include_links).
+# A guard, not a budget: wd docs carry at most 20 Wikipedia URLs by
+# construction (WIKIPEDIA_SITELINK_LANGS in authorities/wikidata-places.py) and
+# the other authorities a handful of co-reference links each, so nothing the
+# ingest code writes comes near it. Contributed LPF (`whg`) is the one source
+# with no bound of its own.
+MAX_HIT_LINKS = 400
+
+
+def is_wikipedia_link(link: dict) -> bool:
+    """A Wikipedia article URL (the wd sitelinks, stored as ``seeAlso``)."""
+    return "wikipedia.org/" in (link.get("identifier") or "")
+
+
+def format_hit_links(raw, cap: int = MAX_HIT_LINKS) -> tuple[list[dict], int]:
+    """``_source.links`` → ``([{type, identifier}, ...], total)`` for a search hit.
+
+    Same entry shape as ``/api/places``' ``PlaceDetail.links``. Wikipedia
+    entries come first (stored order kept within each group) so that a cap,
+    should one ever bite, cuts authority links before article links. ``total``
+    is the count before the cap: ``total > len(links)`` is how a consumer can
+    tell a list was cut.
+    """
+    links = [
+        {"type": lnk.get("type") or "", "identifier": lnk.get("identifier") or ""}
+        for lnk in (raw or [])
+        if isinstance(lnk, dict)
+    ]
+    ordered = ([lnk for lnk in links if is_wikipedia_link(lnk)]
+               + [lnk for lnk in links if not is_wikipedia_link(lnk)])
+    return ordered[:cap], len(ordered)
+
+
 def build_places_filter(
     place_ids: list[str] | None,
     ccodes: list[str] | None,
@@ -1199,6 +1232,7 @@ def build_places_filter(
     region=None,
     clustering_fields: bool = False,
     area_only: bool = False,
+    links: bool = True,
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
@@ -1232,6 +1266,11 @@ def build_places_filter(
         area_only: When True, keep only places with at least one areal geometry
             (place#323) — ``area_only_clause``, the ES mirror of
             ``spatial.is_areal``. A filter, so it never changes a score.
+        links: Select ``links`` in ``_source`` (default True, which
+            /api/reconcile relies on: every candidate carries its links).
+            /api/search passes its opt-in ``include_links`` here: it never
+            reads ``links`` otherwise, and a wd place carries up to 20
+            Wikipedia URLs that would be fetched from ES only to be dropped.
     """
     filter_clauses: list[dict] = []
     if area_only:
@@ -1400,7 +1439,8 @@ def build_places_filter(
             if f not in geom_fields:
                 geom_fields.append(f)
     source_fields = [
-        "place_id", "namespace", "title", "ccodes", "links",
+        "place_id", "namespace", "title", "ccodes",
+        *(["links"] if links else []),
         *geom_fields,
     ]
     if extra_source:

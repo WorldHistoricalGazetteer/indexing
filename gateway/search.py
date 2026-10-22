@@ -21,7 +21,7 @@ from typing import Literal, Optional
 
 import httpx
 from fastapi import APIRouter, Query, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from . import aat_labels, spatial
 from .titles import display_title
@@ -58,6 +58,8 @@ from .es_helpers import (
     build_toponym_lookup,
     build_suggest_query,
     collect_namespaces,
+    format_hit_links,
+    MAX_HIT_LINKS,
 )
 
 logger = logging.getLogger("gateway.search")
@@ -197,6 +199,19 @@ class SearchRequest(BaseModel):
                     "browser's s.n name-cosine signal (no client model). Heavier "
                     "payload; off by default.",
     )
+    include_links: bool = Field(
+        default=False,
+        description="When True, each hit carries the place's own `links` "
+                    "({type, identifier}, the shape /api/places returns) — "
+                    "authority co-references plus, for wd places, Wikipedia "
+                    "article URLs from the Wikidata sitelinks (seeAlso, at most "
+                    "20 languages). Wikipedia entries come first; capped at "
+                    f"{MAX_HIT_LINKS} per hit, with `links_total` giving the "
+                    "uncapped count. Unlike /api/places, links inherited from a "
+                    "matched wd record are NOT merged in. Off by default: the "
+                    "hit then carries neither key and the response is "
+                    "byte-identical to before.",
+    )
 
 
 class SearchHit(BaseModel):
@@ -230,6 +245,21 @@ class SearchHit(BaseModel):
     aat_ids: list[int] = []                    # leaf AAT concept ids
     aat_paths: list[str] = []                  # materialised root→leaf AAT paths (ancestors + depth)
     query_match: Optional[dict] = None         # {"name": ..., "score": ...} — the matching toponym
+    # Opt-in (include_links). None means "not requested", and the serializer
+    # below then drops BOTH keys, so a default request's hit is byte-identical
+    # to the pre-links shape. An empty list means "requested; the place has
+    # none". Declared, because an undeclared field is silently dropped by the
+    # response model.
+    links: Optional[list[dict]] = None         # [{"type": ..., "identifier": ...}], Wikipedia first
+    links_total: Optional[int] = None          # count before the MAX_HIT_LINKS cap
+
+    @model_serializer(mode="wrap")
+    def _omit_unrequested_links(self, handler):
+        data = handler(self)
+        if self.links is None:
+            data.pop("links", None)
+            data.pop("links_total", None)
+        return data
 
 
 class Facets(BaseModel):
@@ -558,6 +588,8 @@ async def search(req: SearchRequest):
             extra_source=["types"],  # needed for type facets + hit data
             geom=req.geom,
             clustering_fields=req.include_clustering_fields,
+            # Only fetched when asked for: search reads `links` for nothing else.
+            links=req.include_links,
         )
 
         # Browse: there are no discovery scores to rank on, so page + order the
@@ -784,6 +816,11 @@ async def search(req: SearchRequest):
             hit_kwargs["query_match"] = (
                 {"name": matched, "score": normalised} if matched else None
             )
+
+        # The place's own links (opt-in) — Wikipedia first, bounded per hit.
+        if req.include_links:
+            hit_kwargs["links"], hit_kwargs["links_total"] = format_hit_links(
+                src.get("links"))
 
         results.append(SearchHit(**hit_kwargs))
 

@@ -271,6 +271,7 @@ The gateway endpoint `POST /api/search` accepts:
 | `size` | int | 100 | Max results (1–500) |
 | `exclude_namespaces` | string[] | `["gb"]` | Namespace prefixes to exclude |
 | `geom` | string | `"full"` | `"full"` (complete geometries + repr_point) or `"repr_point"` (centroids only) |
+| `include_links` | bool | false | Each hit gains `links` (`[{type, identifier}]`, the `/api/places` shape; Wikipedia `seeAlso` entries first) and `links_total` (count before the per-hit cap of `MAX_HIT_LINKS` = 400). Off: neither key is present and `links` is not selected from ES. Own links only: `/api/places`' inheritance of Wikipedia links from a matched wd record is not applied. |
 
 `POST /api/reconcile` accepts the same `contained_in` / `containment` / `relation` fields
 (its `query` was already optional).
