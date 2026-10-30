@@ -500,6 +500,7 @@ def _expand_whg_dataset_entries(
     h3_coverage: Any,
     temporal_extent: list[int | None],
     per_dataset_h3: dict[str, list[str]] | None = None,
+    datasets: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Read the Batch 4c Phase 4 sidecar (written by ``whg-places.py``) and
     fan out one inventory entry per WHG Dataset/Collection.
@@ -509,17 +510,23 @@ def _expand_whg_dataset_entries(
     sidecar. ``h3_coverage`` is the dataset's own footprint when
     ``per_dataset_h3`` supplies it (see :func:`_whg_per_dataset_h3`),
     otherwise the shared namespace aggregate; ``temporal_extent`` is shared.
+
+    ``datasets`` overrides the sidecar's list — the single-dataset push passes
+    the one entry it resolved (per-dataset sidecar first), so the shaping of a
+    row lives in exactly one place whichever path built it.
     """
-    sidecar = _whg_datasets_sidecar()
-    if not sidecar.exists():
-        return []
-    try:
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
+    if datasets is None:
+        sidecar = _whg_datasets_sidecar()
+        if not sidecar.exists():
+            return []
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        datasets = payload.get("datasets") or []
     per_ds = per_dataset_h3 or {}
     out: list[dict[str, Any]] = []
-    for ds in payload.get("datasets") or []:
+    for ds in datasets:
         if not isinstance(ds, dict) or "id" not in ds:
             continue
         if per_ds:
@@ -649,7 +656,53 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
     return entry
 
 
-def assert_tilesets_served(payload: list[dict[str, Any]], *, skip: bool = False) -> None:
+_WHG_TILE_BUCKET_PREFIX = "whg-"   # == generate_tiles._WHG_BUCKET_PREFIX
+
+
+def whg_dataset_tile_bucket(dataset_id: str) -> str:
+    """``whg-<id>`` — the per-dataset tileset bucket ``generate_tiles`` builds."""
+    return f"{_WHG_TILE_BUCKET_PREFIX}{dataset_id}"
+
+
+def build_single_dataset_entry(dataset_id: str) -> dict[str, Any]:
+    """One ``class='dataset'`` row for contributed dataset ``whg:<id>`` — the
+    per-dataset counterpart of :func:`build_single_authority_entry`.
+
+    Shares that function's gates (whg aggregates present and fresh) and the
+    fan-out's row shape. The dataset's metadata comes from the staged sidecar
+    via ``index_namespace.load_whg_dataset_meta`` (per-dataset tree first,
+    then ``_aggregates/whg.datasets.json``); its footprint from the staged h3
+    patch, as for the full fan-out. Refuses a dataset no sidecar knows: a row
+    cannot be invented for it, and ``record_count=0`` would be a lie the
+    registry publishes.
+    """
+    from processing.index_namespace import load_whg_dataset_meta, validate_dataset_id
+
+    ds = validate_dataset_id(dataset_id)
+    # Resolve through THIS module's STAGED_BASE_DIR so the sidecar read agrees
+    # with every other path this module builds (and with a test's patch of it).
+    meta = load_whg_dataset_meta(ds, STAGED_BASE_DIR)
+    if meta is None:
+        raise RuntimeError(
+            f"No staged sidecar entry for whg:{ds} — stage it first "
+            f"(`authorities/whg-places.py --dataset {ds}`); refusing to push a "
+            f"registry row with no measured record_count or status."
+        )
+    bulk = build_single_authority_entry(_WHG_NAMESPACE)
+    key = f"{_WHG_NAMESPACE}:{ds}"
+    entry = dict(meta)
+    entry["id"] = key
+    rows = _expand_whg_dataset_entries(
+        bulk["h3_coverage"], bulk["temporal_extent"],
+        per_dataset_h3=_whg_per_dataset_h3(), datasets=[entry],
+    )
+    if len(rows) != 1:
+        raise RuntimeError(f"expected exactly one row for {key}, built {len(rows)}")
+    return rows[0]
+
+
+def assert_tilesets_served(payload: list[dict[str, Any]], *, skip: bool = False,
+                           buckets: list[str] | None = None) -> None:
     """Hard ordering gate (the contract: confirm serving BEFORE the manifest push).
 
     For every ``class='authority'`` entry — each of which has a per-namespace
@@ -658,9 +711,14 @@ def assert_tilesets_served(payload: list[dict[str, Any]], *, skip: bool = False)
     final step (not Slurm-scheduled), so this runtime precondition is the
     enforceable form of "tilesets served before Django is told the gazetteer
     exists". Reuses the SSH localhost-curl verifier (works from CRC compute / pitt).
+
+    ``buckets`` names extra tilesets to confirm that are not derivable from the
+    payload — the single-dataset push passes its ``whg-<id>`` bucket, since a
+    ``class='dataset'`` row carries no namespace-level tileset of its own.
     """
     namespaces = list(dict.fromkeys(
-        e["namespace"] for e in payload if e.get("class") == "authority" and e.get("namespace")
+        [e["namespace"] for e in payload if e.get("class") == "authority" and e.get("namespace")]
+        + list(buckets or [])
     ))
     if not namespaces:
         return
@@ -879,6 +937,10 @@ def main() -> None:
                              "(no full-run inventory needed; builds the entry from "
                              "that namespace's aggregates). Mutually exclusive with a "
                              "full-run push.")
+    parser.add_argument("--dataset", metavar="ID",
+                        help="With --namespace whg: upsert ONE contributed dataset's "
+                             "registry row (whg:<ID>) instead of fanning out every "
+                             "dataset. Gated on the whg-<ID> tileset serving.")
     parser.add_argument("--skip-tileserver-check", action="store_true",
                         help="Override the preflight that refuses to push unless each "
                              "authority's tileset is served (not recommended)")
@@ -910,9 +972,19 @@ def main() -> None:
         print("ERROR: pass exactly one of --namespace (single incremental push) "
               "or --run-id (full-run push).", file=sys.stderr)
         sys.exit(1)
+    if args.dataset and args.namespace != _WHG_NAMESPACE:
+        print("ERROR: --dataset is only valid with --namespace whg.", file=sys.stderr)
+        sys.exit(1)
+
+    # Tilesets to confirm beyond those implied by class='authority' rows.
+    gate_buckets: list[str] = []
 
     try:
-        if args.namespace:
+        if args.dataset:
+            # One contributed dataset: cumulative upsert of that row alone.
+            payload = [build_single_dataset_entry(args.dataset)]
+            gate_buckets = [whg_dataset_tile_bucket(payload[0]["id"].split(":", 1)[1])]
+        elif args.namespace:
             # Incremental single-namespace push — build the entry from that
             # namespace's aggregates; no full-run inventory / barrier needed.
             bulk = build_single_authority_entry(args.namespace)
@@ -953,7 +1025,8 @@ def main() -> None:
     # Hard ordering gate: tilesets must be served before Django is told the
     # gazetteer exists.
     try:
-        assert_tilesets_served(payload, skip=args.skip_tileserver_check)
+        assert_tilesets_served(payload, skip=args.skip_tileserver_check,
+                               buckets=gate_buckets)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

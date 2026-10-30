@@ -158,6 +158,81 @@ class TestPublishedTemporalExtent(_StagedSandbox):
             self.assertNotIn("coverage_extent", by_ns[ns], ns)
 
 
+class TestSingleDatasetPush(_StagedSandbox):
+    """``--namespace whg --dataset <id>`` (place#341, item 6): ONE row, the
+    dataset's own footprint, gated on its ``whg-<id>`` tileset serving."""
+
+    def setUp(self):
+        super().setUp()
+        self.write_agg("whg", [-100, 2000], 3, coverage=sorted([LONDON, BEIJING]))
+        (self.agg / "whg.datasets.json").write_text(json.dumps({"namespace": "whg", "datasets": [
+            {"id": "whg:1", "name": "London set (aggregate)", "record_count": 2,
+             "dataset_status": "published"},
+            {"id": "whg:2", "name": "Beijing set", "record_count": 1, "dataset_status": "published"},
+        ]}))
+        h3dir = self.tmp / "whg" / "h3"
+        h3dir.mkdir(parents=True)
+        rows = [
+            {"place_id": "whg:1:a", "geometries": [{"h3_centroid": LONDON, "h3_cover": [LONDON]}]},
+            {"place_id": "whg:2:c", "geometries": [{"h3_centroid": BEIJING, "h3_cover": [BEIJING]}]},
+        ]
+        (h3dir / "places.h3.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        p = mock.patch.object(pgi, "_assert_aggregates_fresh", lambda ns: None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_one_row_with_its_own_footprint(self):
+        row = pgi.build_single_dataset_entry("1")
+        self.assertEqual(row["id"], "whg:1")
+        self.assertEqual(row["class"], "dataset")
+        self.assertEqual(row["status"], "published")
+        self.assertEqual(row["record_count"], 2)
+        self.assertEqual(row["h3_coverage"], [_h3.cell_to_parent(LONDON, 3)])
+        self.assertEqual(row["temporal_extent"], [-100, 2000])
+
+    def test_per_dataset_sidecar_is_preferred(self):
+        d = self.tmp / "whg" / "datasets" / "1"
+        d.mkdir(parents=True)
+        (d / "dataset.json").write_text(json.dumps(
+            {"id": "whg:1", "name": "London set (per-dataset)", "record_count": 7,
+             "dataset_status": "pending"}))
+        row = pgi.build_single_dataset_entry("1")
+        self.assertEqual(row["name"], "London set (per-dataset)")
+        self.assertEqual(row["record_count"], 7)
+        self.assertEqual(row["status"], "pending")
+
+    def test_unknown_dataset_refused(self):
+        with self.assertRaises(RuntimeError) as cm:
+            pgi.build_single_dataset_entry("99")
+        self.assertIn("No staged sidecar entry for whg:99", str(cm.exception))
+        with self.assertRaises(SystemExit):
+            pgi.build_single_dataset_entry("1;rm")
+
+    def test_tileset_gate_checks_the_dataset_bucket(self):
+        row = pgi.build_single_dataset_entry("1")
+        asked: list[list[str]] = []
+
+        def fake_verify(buckets, **kw):
+            asked.append(list(buckets))
+            return {b: False for b in buckets}
+
+        import processing.update_tileserver_config as utc
+        with mock.patch.object(utc, "verify_serving", fake_verify):
+            # Without the bucket a class='dataset' row is NOT gated — the
+            # namespace-wide whg push has always behaved this way.
+            pgi.assert_tilesets_served([row])
+            self.assertEqual(asked, [])
+            # The single-dataset path names its bucket and is refused when it
+            # does not serve.
+            with self.assertRaises(RuntimeError) as cm:
+                pgi.assert_tilesets_served([row], buckets=[pgi.whg_dataset_tile_bucket("1")])
+            self.assertEqual(asked, [["whg-1"]])
+            self.assertIn("whg-1", str(cm.exception))
+            # ...and passes when it does.
+            with mock.patch.object(utc, "verify_serving", lambda b, **kw: {x: True for x in b}):
+                pgi.assert_tilesets_served([row], buckets=["whg-1"])
+
+
 class TestEveryAuthorityHasAName(unittest.TestCase):
     def test_no_acronym_fallback(self):
         from processing.settings import AUTHORITIES

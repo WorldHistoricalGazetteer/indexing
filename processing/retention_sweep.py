@@ -58,6 +58,7 @@ from processing.settings import (
     WHG_HTTP_MAX_RETRIES,
     WHG_HTTP_TIMEOUT,
 )
+from processing.whg_selection import is_indexable
 
 
 _NOTIFY_ENDPOINT = os.environ.get(
@@ -197,13 +198,19 @@ def _fetch_dataset_status(dataset_ids: list[str]) -> dict[str, str]:
     ``private_permanent`` / ``published`` exclusions.
 
     Maps Django's ``Dataset`` model fields onto the rebuild's status
-    vocabulary:
+    vocabulary (see :func:`_map_dataset_status_row`):
 
-    * ``ds_status='accessioning'`` or ``'indexed'`` AND ``public=true``
+    * ``whg_selection.is_indexable`` says yes — v4 ``lifecycle_state=
+      'published'`` AND ``public``, or with no ``lifecycle_state`` column the
+      legacy ``ds_status in {accessioning, indexed} AND public``
       → ``"published"`` (exempt).
     * ``ds_status='reconciling'``  → ``"submitted"``  (timer paused).
     * ``ds_status='wd-complete'``  → ``"submitted"``  (timer paused).
     * Otherwise                    → ``"pending"``    (timer runs).
+
+    ``lifecycle_state`` is selected only when ``information_schema`` says the
+    column exists (place#341); otherwise the pre-migration query runs and the
+    behaviour is exactly as before.
 
     The ``private_permanent`` flag isn't in the current Django schema —
     once added, this query will surface it. Best-effort over PG; returns
@@ -234,25 +241,16 @@ def _fetch_dataset_status(dataset_ids: list[str]) -> dict[str, str]:
 
     async def _fetch() -> dict[str, str]:
         async with pg_connection() as conn:
+            has_lifecycle = await _has_lifecycle_state_column(conn)
             rows = await conn.fetch(
-                f"""
-                SELECT id, ds_status, public
-                FROM {_TABLE_DATASET}
-                WHERE id = ANY($1::int[])
-                """,
+                _DATASET_STATUS_QUERY_V4 if has_lifecycle
+                else _DATASET_STATUS_QUERY_LEGACY,
                 bare_ids,
             )
-            mapped: dict[str, str] = {}
-            for r in rows:
-                ds_status = r["ds_status"]
-                public = bool(r["public"])
-                if ds_status in ("accessioning", "indexed") and public:
-                    mapped[f"whg:{r['id']}"] = "published"
-                elif ds_status in ("reconciling", "wd-complete"):
-                    mapped[f"whg:{r['id']}"] = "submitted"
-                else:
-                    mapped[f"whg:{r['id']}"] = "pending"
-            return mapped
+            return {
+                f"whg:{r['id']}": _map_dataset_status_row(dict(r))
+                for r in rows
+            }
 
     try:
         return asyncio.run(_fetch())
@@ -260,6 +258,62 @@ def _fetch_dataset_status(dataset_ids: list[str]) -> dict[str, str]:
         print(f"WARNING: dataset status lookup failed ({exc}); "
               "all datasets treated as 'pending'", file=sys.stderr)
         return {}
+
+
+# The pre-place#341 query: no ``lifecycle_state``, no ``authority``. Kept
+# byte-for-byte so a whg3 that has not migrated yet gets exactly the old
+# behaviour.
+_DATASET_STATUS_QUERY_LEGACY = f"""
+    SELECT id, ds_status, public
+    FROM {_TABLE_DATASET}
+    WHERE id = ANY($1::int[])
+"""
+
+# Once the column exists, select everything ``is_indexable`` keys off.
+_DATASET_STATUS_QUERY_V4 = f"""
+    SELECT id, ds_status, public, authority, lifecycle_state
+    FROM {_TABLE_DATASET}
+    WHERE id = ANY($1::int[])
+"""
+
+
+async def _has_lifecycle_state_column(conn) -> bool:
+    """Probe ``information_schema`` for ``lifecycle_state`` on the dataset table,
+    so the sweep works against a whg3 before *and* after the place#341
+    migration rather than failing on an unknown column."""
+    row = await conn.fetchrow(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = $1 AND column_name = 'lifecycle_state'
+        LIMIT 1
+        """,
+        _TABLE_DATASET,
+    )
+    return row is not None
+
+
+def _map_dataset_status_row(row: dict[str, Any]) -> str:
+    """One Django ``Dataset`` row → the sweep's vocabulary.
+
+    ``published`` is decided by ``processing.whg_selection.is_indexable`` —
+    the one rule shared with the extract — so a dataset the sweep exempts is
+    exactly a dataset the extract would index. Without a ``lifecycle_state``
+    key the function reduces to the legacy rule, which is what the legacy
+    query feeds it; ``authority`` is assumed true there because the legacy
+    query never selected it and the old mapping never tested it.
+
+    The ``submitted`` (timer paused) / ``pending`` split below is unchanged.
+    """
+    ds = dict(row)
+    if "lifecycle_state" not in ds:
+        ds.setdefault("authority", True)
+    ok, _reason = is_indexable(ds)
+    if ok:
+        return "published"
+    if ds.get("ds_status") in ("reconciling", "wd-complete"):
+        return "submitted"
+    return "pending"
 
 
 def discover_pending(

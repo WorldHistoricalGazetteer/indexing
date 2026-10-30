@@ -309,7 +309,22 @@ HARD_LINK_RELATION_TYPES = (
     "distinct",
 )
 
-HARD_LINK_SOURCE_CATEGORIES = ("authority", "contributor")
+# ``imported`` (added 30 Oct 2026, place#342 ruling N1) is the WEAKER category
+# for legacy v3.2 ``close_matches`` rows whose ``basis = 'imported'`` — a bulk
+# pre-approved import, never an individual curator decision. They stay in the
+# overlay so the links are not lost, but under their own category and their own
+# ``source_id`` prefix so they can never share a UNIQUE key with — and so never
+# count as — a migrated contributor attestation of the same pair.
+# ⚠️ The CHECK below bakes the tuple into every overlay file at build time, so
+# the category only takes effect in an overlay REBUILT after this change. An
+# older file does NOT raise on an ``imported`` row: ``INSERT OR IGNORE`` skips a
+# CHECK violation exactly as it skips a UNIQUE one (measured 30 Oct 2026), so
+# the row would vanish with ``inserted`` one short and no error. That is why
+# ``clustering.sqlite_overlay.open_for_bulk`` refuses to open such a file
+# (``tests/test_contributor_replay.py::TestImportedCategoryInOverlay``). The
+# gateway live-delta (``gateway/links.py``) keeps its old two-category file and
+# is NOT checked: it writes ``contributor`` only, which that CHECK admits.
+HARD_LINK_SOURCE_CATEGORIES = ("authority", "contributor", "imported")
 
 HARD_LINK_SQLITE_SCHEMA = """
 CREATE TABLE hard_link_assertions (
@@ -323,7 +338,7 @@ CREATE TABLE hard_link_assertions (
     justification TEXT,
     CHECK (place_a < place_b),
     CHECK (relation_type IN ('sameAs', 'exactMatch', 'closeMatch', 'distinct')),
-    CHECK (source_category IN ('authority', 'contributor')),
+    CHECK (source_category IN ('authority', 'contributor', 'imported')),
     UNIQUE (place_a, place_b, relation_type, source_id)
 );
 CREATE INDEX ix_hla_place_a ON hard_link_assertions(place_a);
@@ -339,6 +354,19 @@ deduplicates assertions made by multiple sources covering the same relation.
     - Authority harvest:  ``'wikidata'``, ``'tgn'``, ``'osm'``, ``'ohm'``, ``'loc'``, ...
     - Contributor replay: ``'contributor:<user_id>'`` (legacy v3.2 rows append
       ``':legacy_v3_2'``, see Batch 13b).
+    - Imported replay:    ``'imported:<user_id>:legacy_v3_2'`` — legacy
+      ``close_matches`` with ``basis = 'imported'`` only (``source_category =
+      'imported'``). The distinct prefix is what keeps the UNIQUE key apart from
+      a ``contributor:<user_id>:legacy_v3_2`` row for the same pair.
+
+The categories in the ``CHECK`` are a property of the FILE, not of this module:
+changing ``HARD_LINK_SOURCE_CATEGORIES`` here changes nothing in an overlay that
+already exists, and harvesting into an old-DDL file does not upgrade it. Nor
+does it fail: under ``INSERT OR IGNORE`` a CHECK violation is skipped like a
+duplicate, so rows of the new category would simply not be there. The builder
+therefore refuses an existing file whose DDL lacks a declared category
+(``clustering.sqlite_overlay.OverlaySchemaMismatch``). Build a fresh run-scoped
+file (``hard_links_<run_id>.sqlite``) and publish it.
 
 ``place_a < place_b`` is enforced canonical ordering so we never store both
 directions of a symmetric relation.

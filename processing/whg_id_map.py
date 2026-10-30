@@ -60,8 +60,15 @@ class IdMapUnavailable(RuntimeError):
     """
 
 
-def default_id_map_path(staged_base: str | os.PathLike[str] | None = None) -> Path:
-    """``{STAGED_BASE_DIR}/whg/extract/id_map.jsonl``.
+def default_id_map_path(
+    staged_base: str | os.PathLike[str] | None = None,
+    dataset: int | str | None = None,
+) -> Path:
+    """``{STAGED_BASE_DIR}/whg/extract/id_map.jsonl`` — or, with ``dataset``,
+    the per-dataset map ``{STAGED_BASE_DIR}/whg/datasets/<id>/extract/id_map.jsonl``
+    that a ``--dataset`` run of the extract writes instead (place#341), so a
+    one-dataset re-run can replace its own map wholesale without touching the
+    full-run file the other datasets live in.
 
     Resolves ``STAGED_BASE_DIR`` the same way ``write_staged_place_doc`` does,
     from the environment, so a staged-mode run and an ad-hoc one agree.
@@ -71,7 +78,10 @@ def default_id_map_path(staged_base: str | os.PathLike[str] | None = None) -> Pa
             "STAGED_BASE_DIR",
             os.path.join(os.environ.get("IX3_BASE", "/vast/ishi"), "staged"),
         )
-    return Path(staged_base) / NAMESPACE / "extract" / ID_MAP_FILENAME
+    root = Path(staged_base) / NAMESPACE
+    if dataset is not None:
+        root = root / "datasets" / str(dataset)
+    return root / "extract" / ID_MAP_FILENAME
 
 
 def _key(dataset_key: Any, place_key: Any) -> tuple[str, str]:

@@ -9,6 +9,7 @@ report severely understated successful inserts. The fix uses
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 import unittest
@@ -16,6 +17,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from clustering.sqlite_overlay import _PRUNE_REMOTE_PY, builder, insert_rows
+from processing.staging_contract import HARD_LINK_SOURCE_CATEGORIES
 
 
 def _row(place_a: str, place_b: str, source_id: str = "authority:test:1") -> dict:
@@ -66,6 +68,79 @@ class TestInsertRowsCounter(unittest.TestCase):
         with builder(self.db_path) as conn:
             stats = insert_rows(conn, rows, batch_size=20)  # ~7 batches
         self.assertEqual(stats["inserted"], 123)
+
+
+class TestSourceCategoryContract(unittest.TestCase):
+    """The DDL CHECK, the Python tuple and the validator must agree on the
+    category set — ``imported`` was added 30 Oct 2026 (place#342, N1)."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.db_path = Path(self.tmp.name) / "overlay.sqlite"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_categories_are_the_three(self):
+        self.assertEqual(HARD_LINK_SOURCE_CATEGORIES,
+                         ("authority", "contributor", "imported"))
+
+    def test_ddl_accepts_every_declared_category(self):
+        rows = []
+        for i, cat in enumerate(HARD_LINK_SOURCE_CATEGORIES):
+            r = _row(f"a:{i}", f"b:{i}", source_id=f"{cat}:1")
+            r["source_category"] = cat
+            rows.append(r)
+        with builder(self.db_path) as conn:
+            stats = insert_rows(conn, rows)
+            stored = {r[0] for r in conn.execute(
+                "SELECT DISTINCT source_category FROM hard_link_assertions")}
+        self.assertEqual(stats, {"attempted": 3, "inserted": 3, "rejected": 0})
+        self.assertEqual(stored, set(HARD_LINK_SOURCE_CATEGORIES))
+
+    def test_undeclared_category_is_rejected_by_validator_not_by_ddl(self):
+        bad = _row("a:1", "b:1")
+        bad["source_category"] = "curator"
+        with builder(self.db_path) as conn:
+            # The validator catches it and says so...
+            self.assertEqual(insert_rows(conn, [bad]),
+                             {"attempted": 1, "inserted": 0, "rejected": 1})
+            # ...whereas the file's CHECK, reached with validation off, does
+            # NOT raise: INSERT OR IGNORE skips a CHECK violation exactly as it
+            # skips a duplicate (measured 30 Oct 2026). The row is simply not
+            # there and ``rejected`` stays 0. This is why ``validate`` defaults
+            # to True and why ``open_for_bulk`` checks an existing file's
+            # DDL against the contract before any insert.
+            self.assertEqual(insert_rows(conn, [bad], validate=False),
+                             {"attempted": 1, "inserted": 0, "rejected": 0})
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM hard_link_assertions").fetchone()[0], 0)
+
+    def test_old_ddl_file_is_refused_at_open(self):
+        from clustering.sqlite_overlay import OverlaySchemaMismatch
+        from processing.staging_contract import HARD_LINK_SQLITE_SCHEMA
+        old_ddl = HARD_LINK_SQLITE_SCHEMA.replace(", 'imported'", "")
+        self.assertNotIn("imported", old_ddl)
+        sqlite3.connect(str(self.db_path)).executescript(old_ddl)
+        with self.assertRaises(OverlaySchemaMismatch):
+            with builder(self.db_path):
+                pass
+
+    def test_initialise_schema_alone_tolerates_an_old_ddl_file(self):
+        # The gateway live-delta (``gateway/links.py::_connect``) calls
+        # ``initialise_schema`` on a file built under the two-category DDL at
+        # every request and writes ``contributor`` only. The guard must NOT sit
+        # there, or the next deploy breaks POST /api/links on Pitt.
+        from clustering.sqlite_overlay import initialise_schema
+        from processing.staging_contract import HARD_LINK_SQLITE_SCHEMA
+        old_ddl = HARD_LINK_SQLITE_SCHEMA.replace(", 'imported'", "")
+        conn = sqlite3.connect(str(self.db_path), isolation_level=None)
+        conn.executescript(old_ddl)
+        initialise_schema(conn)   # no raise
+        contrib = _row("a:1", "b:1", source_id="contributor:1")
+        contrib["source_category"] = "contributor"
+        self.assertEqual(insert_rows(conn, [contrib])["inserted"], 1)
+        conn.close()
 
 
 class TestLiveDeltaPruneSnippet(unittest.TestCase):

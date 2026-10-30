@@ -15,9 +15,19 @@ Implements the contract documented in
   state. Maps Slurm states onto the small vocabulary the contract
   defines (``queued`` / ``running`` / ``completed`` / ``failed``).
 
-**Auth**: none — the Pitt firewall whitelists the DO app server's IP for
-this endpoint. (Bearer auth would be redundant and is reserved for the
-inverse-direction inventory push at ``/api/registry/inventory``.)
+**Auth**: none for a plain authority namespace — the Pitt firewall
+whitelists the DO app server's IP for this endpoint. (Bearer auth would be
+redundant and is reserved for the inverse-direction inventory push at
+``/api/registry/inventory``.)
+
+**Contributed datasets (place#341)**: ``namespace`` may also be
+``whg:<id>`` (``^whg:\\d+$``), which re-stages and re-indexes ONE contributed
+dataset. That path alone requires ``Authorization: Bearer <token>`` with the
+token in ``REINGEST_DATASET_TOKEN``: 503 when the gateway has no token
+configured (fail closed), 401 when the presented one differs (constant-time
+compare). The job name is ``reingest-whg-<id>`` so the squeue guard works
+per dataset. The id is validated before any ssh argv is built. The
+plain-namespace path is unchanged and still unauthenticated.
 
 **Architecture**: the gateway runs on the Pitt VM. Both endpoints SSH to
 a CRC login node (``crc0`` by default) to invoke ``sbatch`` / ``sacct`` /
@@ -29,13 +39,14 @@ what a "re-ingest" actually does for each namespace.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("gateway.reingest")
@@ -74,6 +85,44 @@ VALID_NAMESPACES = frozenset({
     "chgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl", "ohm",
     "osm", "pl", "po", "tgn", "tm", "un", "wd",
 })
+
+# One contributed WHG dataset: ``whg:<numeric id>`` and nothing else. The
+# fullmatch is the injection guard — the id reaches an ssh argv, a Slurm job
+# name and a shell ``case`` branch, and this regex is the only thing between
+# the request body and all three.
+_DATASET_NS_RE = re.compile(r"^whg:(\d+)$")
+
+# Env var holding the shared secret Django presents for ``whg:<id>`` requests.
+REINGEST_DATASET_TOKEN_ENV = "REINGEST_DATASET_TOKEN"
+
+
+def parse_dataset_namespace(namespace: str) -> Optional[str]:
+    """``"whg:12"`` → ``"12"``; anything else → ``None``."""
+    m = _DATASET_NS_RE.fullmatch(namespace)
+    return m.group(1) if m else None
+
+
+def _require_dataset_token(authorization: Optional[str]) -> None:
+    """Bearer check for the ``whg:<id>`` path only.
+
+    * no token configured on the gateway → 503 (fail closed: the path is
+      disabled, not open);
+    * header missing, not ``Bearer``, or token differs → 401. The compare is
+      constant-time so a wrong token's length or prefix cannot be probed.
+    """
+    expected = os.environ.get(REINGEST_DATASET_TOKEN_ENV, "")
+    if not expected:
+        raise HTTPException(
+            503, f"dataset re-ingest is not enabled on this gateway "
+                 f"({REINGEST_DATASET_TOKEN_ENV} is unset)")
+    presented = ""
+    if authorization:
+        scheme, _, value = authorization.strip().partition(" ")
+        if scheme.lower() == "bearer":
+            presented = value.strip()
+    if not presented or not hmac.compare_digest(
+            presented.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(401, "invalid or missing bearer token")
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +196,12 @@ def _job_name_for(namespace: str) -> str:
     namespace (the concurrency guard required by the Django-side contract).
     Slurm permits multiple jobs sharing the same name; squeue without a
     state filter will surface any active one.
+
+    A contributed dataset ``whg:12`` becomes ``reingest-whg-12`` — the colon
+    is replaced so the name is one shell-safe token, and so the dataset guard
+    is independent of a whole-``whg`` job's (``reingest-whg``).
     """
-    return f"reingest-{namespace}"
+    return f"reingest-{namespace.replace(':', '-')}"
 
 
 _SBATCH_JOBID_RE = re.compile(r"Submitted batch job (\d+)")
@@ -321,13 +374,19 @@ async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
 
 @router.post("/reingest", status_code=202, response_model=ReingestResponse,
              responses={
-                 400: {"description": "Unknown namespace"},
+                 400: {"description": "Unknown namespace / malformed dataset id"},
+                 401: {"description": "whg:<id> only — bad or missing bearer token"},
                  409: {"description": "A re-ingest is already in flight"},
                  502: {"description": "Failed to submit Slurm job"},
+                 503: {"description": "whg:<id> only — dataset re-ingest not enabled"},
                  504: {"description": "SSH to CRC login node timed out"},
              })
-async def post_reingest(req: ReingestRequest) -> ReingestResponse:
-    """Enqueue a re-ingest for the given namespace.
+async def post_reingest(
+    req: ReingestRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> ReingestResponse:
+    """Enqueue a re-ingest for the given namespace, or for one contributed
+    dataset when ``namespace`` is ``whg:<id>``.
 
     Returns ``202 Accepted`` on success with the assigned ``job_id``.
     Returns ``409 Conflict`` (with the existing ``job_id`` in the body)
@@ -336,7 +395,14 @@ async def post_reingest(req: ReingestRequest) -> ReingestResponse:
     """
     ns = req.namespace.strip().lower()
     if ns not in VALID_NAMESPACES:
-        raise HTTPException(400, f"unknown namespace: {req.namespace!r}")
+        # Not a plain namespace: the only other acceptable shape is a
+        # contributed dataset, validated BEFORE anything else (so a malformed
+        # id is a 400 and never reaches the token check, squeue or sbatch).
+        dataset_id = parse_dataset_namespace(ns)
+        if dataset_id is None:
+            raise HTTPException(400, f"unknown namespace: {req.namespace!r}")
+        _require_dataset_token(authorization)
+        ns = f"whg:{dataset_id}"
 
     existing = await _existing_active_job(ns)
     if existing:

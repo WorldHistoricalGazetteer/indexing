@@ -21,12 +21,19 @@ Per Master Plan + plan §"Batch 4c Phase 4":
   See WorldHistoricalGazetteer/place#183, #172.
 * ``dataset_id = whg:<dataset_id>`` — a per-Dataset/Collection sub-namespace
   so per-dataset re-staging and dataset_status filters are tractable.
-* ``dataset_status = 'published'`` for everything returned by the
-  ``authority-datasets`` discovery endpoint (it filters on
-  ``Dataset.authority=True``, which is the eligibility flag for
-  accessioned/approved datasets). Pending submissions are out of scope for
-  this script — they are surfaced via a separate endpoint once Django adds
-  it.
+* ``dataset_status = 'published'`` only for datasets that are indexable by
+  ``processing.whg_selection.is_indexable`` (v4 ``lifecycle_state ==
+  'published'`` AND ``public``, or the legacy ``authority AND public AND
+  ds_status in {accessioning, indexed}`` when ``lifecycle_state`` is absent)
+  **and** that Django's ``authority-datasets`` endpoint itself reports as
+  ``published``. The client check only ever restricts what Django listed. A
+  dataset that fails it is skipped and reported with its reason, or staged as
+  ``dataset_status='pending'`` under ``--include-pending``; a ``--dataset``
+  that names one is refused with exit 2 (place#341).
+* ``--dataset <id>`` runs stage under ``staged/whg/datasets/<id>/extract/``
+  with their own ``id_map.jsonl``, truncated first, so a one-dataset re-run
+  replaces that dataset wholesale and never touches the full run's
+  ``whg/extract/``.
 
 Auth: token via the ``Authorization: Bearer <token>`` header, with
 ``?token=<token>`` URL fallback. Token sourced from
@@ -64,7 +71,8 @@ import requests
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.temporal import normalise_timespans
-from processing.whg_id_map import IdMapWriter, default_id_map_path
+from processing.whg_id_map import ID_MAP_FILENAME, IdMapWriter, default_id_map_path
+from processing.whg_selection import is_indexable, summarise
 from processing.settings import (
     GEOM_STORE_STAGING_DIR,
     WHG_API_BASE_URL,
@@ -84,6 +92,28 @@ except ImportError:
 WHG_NAMESPACE = "whg"
 DISCOVERY_PATH = "/reconcile/authority-datasets"
 LPF_PATH_TEMPLATE = "/entity/dataset:{dataset_id}/api?filetype=lpf"
+
+# Per-dataset staging (place#341). A ``--dataset`` run writes under
+# ``{STAGED_BASE_DIR}/whg/datasets/<id>/extract/`` instead of the shared
+# ``{STAGED_BASE_DIR}/whg/extract/``, so it can neither append to nor clobber
+# the other datasets' ``places.jsonl`` and ``id_map.jsonl``. The full run keeps
+# the shared paths exactly as before.
+PER_DATASET_SUBDIR = "datasets"
+
+
+def per_dataset_staged_namespace(dataset_sub_id: int | str) -> str:
+    """The ``namespace`` argument handed to ``write_staged_place_doc`` for a
+    per-dataset run. That helper resolves its output as
+    ``{STAGED_BASE_DIR}/{namespace}/extract/places.jsonl``, so a relative
+    path here lands the extract in the per-dataset directory while the docs
+    themselves still carry ``namespace='whg'``."""
+    return f"{WHG_NAMESPACE}/{PER_DATASET_SUBDIR}/{dataset_sub_id}"
+
+
+def per_dataset_extract_dir(dataset_sub_id: int | str) -> Path:
+    """``{STAGED_BASE_DIR}/whg/datasets/<id>/extract`` — the directory a
+    per-dataset run owns outright and may truncate before writing."""
+    return default_id_map_path(dataset=dataset_sub_id).parent
 
 
 # ----------------------------------------------------------------------------
@@ -439,12 +469,17 @@ def stage_dataset(
     dataset_status: str = "published",
     limit: int | None = None,
     id_map: IdMapWriter | None = None,
+    staged_namespace: str = WHG_NAMESPACE,
 ) -> dict[str, Any]:
-    """Stage one WHG dataset to ``staged/whg/extract/places.jsonl``.
+    """Stage one WHG dataset to ``staged/{staged_namespace}/extract/places.jsonl``.
 
     ``id_map``, when given, records the ``place_key → place_id`` decision for
     every doc written, so consumers can join rather than re-mint. Optional only
     so a one-off conversion can skip it; the driver always supplies one.
+
+    ``staged_namespace`` is where the docs land, not what they say: it is
+    ``whg`` for the full run and :func:`per_dataset_staged_namespace` for a
+    ``--dataset`` run; the docs carry ``namespace='whg'`` either way.
 
     Returns counts: ``{features_seen, docs_written, docs_skipped}``.
     """
@@ -477,7 +512,7 @@ def stage_dataset(
             if doc is None:
                 skipped += 1
                 continue
-            write_staged_place_doc(WHG_NAMESPACE, doc)
+            write_staged_place_doc(staged_namespace, doc)
             if id_map is not None:
                 # The WHG place key is the LPF feature id; that is what the
                 # contributor-link tables in DO Postgres hold.
@@ -504,6 +539,93 @@ def stage_dataset(
             **{k: v for k, v in id_stats.items()}}
 
 
+class DatasetNotIndexable(SystemExit):
+    """``--dataset`` named something this run will not stage as indexable.
+
+    A ``SystemExit`` with code 2 so the sbatch / reingest caller sees a
+    non-zero exit rather than a clean run that staged nothing.
+    """
+
+    def __init__(self, problems: list[str]):
+        self.problems = problems
+        super().__init__(2)
+
+    def __str__(self) -> str:
+        return "refusing to stage: " + "; ".join(self.problems)
+
+
+def select_datasets(
+    datasets: list[dict[str, Any]],
+    *,
+    include_pending: bool = False,
+) -> tuple[list[tuple[dict[str, Any], str]], list[dict[str, Any]]]:
+    """Decide, per discovered dataset, whether and with which
+    ``dataset_status`` it is staged.
+
+    Returns ``(to_stage, rejected)``: ``to_stage`` is ``[(dataset,
+    effective_status)]`` and ``rejected`` is a list of
+    ``{"id", "title", "reason", "django_dataset_status"}``.
+
+    The decision is ``processing.whg_selection.is_indexable`` on the record's
+    own ``lifecycle_state`` / ``public`` / ``authority`` / ``ds_status``,
+    **intersected** with Django's ``dataset_status``. The client check can only
+    further restrict what Django listed, never admit a dataset Django called
+    pending — and, equally, it must not reject a ``published`` non-authority
+    dataset Django lists, which is why :func:`is_indexable`'s published branch
+    does not require ``authority``.
+
+    * indexable here **and** ``published`` by Django → staged as ``published``;
+    * anything else → skipped with a reason, or, under ``include_pending``,
+      staged with ``dataset_status='pending'``.
+    """
+    to_stage: list[tuple[dict[str, Any], str]] = []
+    rejected: list[dict[str, Any]] = []
+    for ds in datasets:
+        if not isinstance(ds.get("id"), int):
+            continue
+        ok, reason = is_indexable(ds)
+        # Django's AuthorityDatasetsView derives this; default to 'pending'
+        # if the field is absent (older Django build).
+        django_status = str(ds.get("dataset_status") or "pending")
+        if ok and django_status != "published":
+            ok, reason = False, f"django_dataset_status: {django_status}"
+        if ok:
+            to_stage.append((ds, "published"))
+        elif include_pending:
+            to_stage.append((ds, "pending"))
+        else:
+            rejected.append({
+                "id": ds["id"],
+                "title": ds.get("title", ""),
+                "reason": reason,
+                "django_dataset_status": django_status,
+            })
+    return to_stage, rejected
+
+
+def _refuse_if_named_dataset_not_indexable(
+    dataset_filter: list[int],
+    discovered: list[dict[str, Any]],
+    to_stage: list[tuple[dict[str, Any], str]],
+    rejected: list[dict[str, Any]],
+) -> None:
+    """A ``--dataset`` run is a request to index *that* dataset, so a named id
+    that is not discovered, or is discovered but not indexable, is an error
+    (exit 2), not a quiet no-op. ``include_pending`` turns the second case into
+    a ``pending`` staging and so never reaches here with it."""
+    discovered_ids = {d.get("id") for d in discovered}
+    staged_ids = {d.get("id") for d, _ in to_stage}
+    reasons = {r["id"]: r["reason"] for r in rejected}
+    problems: list[str] = []
+    for ds_id in dataset_filter:
+        if ds_id not in discovered_ids:
+            problems.append(f"whg:{ds_id} not returned by {DISCOVERY_PATH}")
+        elif ds_id not in staged_ids:
+            problems.append(f"whg:{ds_id} not indexable ({reasons.get(ds_id, '?')})")
+    if problems:
+        raise DatasetNotIndexable(problems)
+
+
 def stage_all_authority_datasets(
     *,
     base_url: str = WHG_API_BASE_URL,
@@ -512,16 +634,26 @@ def stage_all_authority_datasets(
     dataset_filter: list[int] | None = None,
     include_pending: bool = False,
 ) -> dict[str, Any]:
-    """Discover + stage every authority-eligible dataset.
+    """Discover + stage every indexable dataset.
 
-    When ``include_pending=True`` the discovery call also returns datasets
-    whose ``ds_status`` is anything other than ``seed`` / ``format_error``;
-    each entry's ``dataset_status`` (set by Django from
-    ``(authority and public and ds_status in {accessioning, indexed})``)
-    is propagated onto every staged place doc.
+    Selection is :func:`select_datasets` — ``whg_selection.is_indexable``
+    re-checked client-side beside Django's ``dataset_status``. When
+    ``include_pending=True`` the discovery call also returns datasets whose
+    ``ds_status`` is anything other than ``seed`` / ``format_error``, and the
+    ones that are not indexable are staged with ``dataset_status='pending'``
+    instead of being skipped.
+
+    With ``dataset_filter`` the run is **per-dataset**: each named dataset is
+    staged under ``staged/whg/datasets/<id>/extract/`` with its own
+    ``id_map.jsonl``, both truncated first, so the run replaces that dataset
+    wholesale (a repeated-``src_id`` suffix depends on stream order, so a
+    partial patch could never be right) and leaves the shared full-run
+    ``extract/`` untouched. A named id that is not indexable raises
+    :class:`DatasetNotIndexable` before anything is written.
     """
     token = _resolve_token(token)
     session = _make_session(token)
+    per_dataset_mode = bool(dataset_filter)
 
     print("=" * 78)
     print("WHG-PLACES — STAGED EXTRACTION")
@@ -529,14 +661,26 @@ def stage_all_authority_datasets(
     print(f"WHG API: {base_url}")
     print(f"Auth:    {'bearer-token' if token else 'unauthenticated'}")
     print(f"Pending: {'included' if include_pending else 'excluded'}")
+    print(f"Layout:  {'per-dataset' if per_dataset_mode else 'full run'}")
 
-    datasets = discover_authority_datasets(
+    discovered = discover_authority_datasets(
         session, base_url=base_url, include_pending=include_pending,
     )
+    datasets = discovered
     if dataset_filter:
         keep = set(dataset_filter)
-        datasets = [d for d in datasets if d.get("id") in keep]
-    print(f"Discovered {len(datasets)} datasets.")
+        datasets = [d for d in discovered if d.get("id") in keep]
+    print(f"Discovered {len(discovered)} datasets"
+          + (f", {len(datasets)} after --dataset filter." if dataset_filter else "."))
+
+    selection = summarise(datasets)
+    to_stage, rejected = select_datasets(datasets, include_pending=include_pending)
+    print(f"Selection: {json.dumps(selection, sort_keys=True)}")
+    for r in rejected:
+        print(f"  - skipping whg:{r['id']} ({r['title']}): {r['reason']}")
+    if dataset_filter:
+        _refuse_if_named_dataset_not_indexable(
+            dataset_filter, discovered, to_stage, rejected)
 
     per_dataset: dict[str, dict[str, Any]] = {}
     totals = {"features_seen": 0, "docs_written": 0, "docs_skipped": 0}
@@ -547,43 +691,129 @@ def stage_all_authority_datasets(
     # that variable somewhere private before starting.
     from processing.geom_store import GeomStoreWriter, configure_module_writer
 
-    id_map_file = default_id_map_path()
     print(f"Geom staging: {GEOM_STORE_STAGING_DIR}")
-    print(f"Id map:       {id_map_file}")
+    id_map_file: Path | None = None
+    if per_dataset_mode:
+        print("Id map:       per dataset, "
+              f"{default_id_map_path(dataset='<id>')}")
+    else:
+        id_map_file = default_id_map_path()
+        print(f"Id map:       {id_map_file}")
 
-    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, WHG_NAMESPACE) as gsw, \
-            IdMapWriter(id_map_file) as id_map:
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, WHG_NAMESPACE) as gsw:
         configure_module_writer(gsw)
         try:
-            _stage_each(
-                datasets,
-                session=session,
-                base_url=base_url,
-                limit_features_per_dataset=limit_features_per_dataset,
-                id_map=id_map,
-                per_dataset=per_dataset,
-                totals=totals,
-            )
+            if per_dataset_mode:
+                _stage_each_per_dataset(
+                    to_stage,
+                    session=session,
+                    base_url=base_url,
+                    limit_features_per_dataset=limit_features_per_dataset,
+                    per_dataset=per_dataset,
+                    totals=totals,
+                )
+                id_map_entries = sum(
+                    int(m.get("id_map_entries") or 0) for m in per_dataset.values())
+            else:
+                assert id_map_file is not None
+                with IdMapWriter(id_map_file) as id_map:
+                    _stage_each(
+                        to_stage,
+                        session=session,
+                        base_url=base_url,
+                        limit_features_per_dataset=limit_features_per_dataset,
+                        id_map=id_map,
+                        per_dataset=per_dataset,
+                        totals=totals,
+                    )
+                id_map_entries = id_map.count
         finally:
             configure_module_writer(None)
 
     print(f"\nGeometries written to the VAST store: {gsw.count:,}")
-    print(f"Id-map entries written: {id_map.count:,} → {id_map_file}")
+    if per_dataset_mode:
+        print(f"Id-map entries written: {id_map_entries:,} across "
+              f"{len(per_dataset)} per-dataset maps")
+    else:
+        print(f"Id-map entries written: {id_map_entries:,} → {id_map_file}")
 
     summary = {
         "discovered": len(datasets),
+        "layout": "per-dataset" if per_dataset_mode else "full",
+        "selection": selection,
+        "rejected": rejected,
         "per_dataset": per_dataset,
         "totals": totals,
-        "id_map_path": str(id_map_file),
-        "id_map_entries": id_map.count,
+        "id_map_path": (
+            {ds_id: m.get("id_map_path") for ds_id, m in per_dataset.items()}
+            if per_dataset_mode else str(id_map_file)
+        ),
+        "id_map_entries": id_map_entries,
         "geom_store_entries": gsw.count,
     }
-    _write_datasets_sidecar(per_dataset, summary)
+    _write_datasets_sidecar(per_dataset, summary, merge=per_dataset_mode)
     return summary
 
 
+def _stage_one(
+    ds: dict[str, Any],
+    ds_status: str,
+    *,
+    session: requests.Session,
+    base_url: str,
+    limit_features_per_dataset: int | None,
+    id_map: IdMapWriter,
+    staged_namespace: str,
+) -> dict[str, Any] | None:
+    """Stage one selected dataset and return its metrics (``None`` on failure,
+    which is printed, not raised, so one bad feed does not abort the run)."""
+    ds_id = ds["id"]
+    title = ds.get("title", "")
+    place_count = ds.get("place_count") or 0
+    print(
+        f"\n{title} (whg:{ds_id}, place_count={place_count:,}, "
+        f"status={ds_status}):"
+    )
+    try:
+        metrics = stage_dataset(
+            session,
+            dataset_sub_id=ds_id,
+            base_url=base_url,
+            dataset_status=ds_status,
+            limit=limit_features_per_dataset,
+            id_map=id_map,
+            staged_namespace=staged_namespace,
+        )
+    except Exception as exc:
+        print(f"  ✗ {ds_id}: {exc}", file=sys.stderr)
+        return None
+    # Carry the discovery metadata onto the per-dataset metrics so the
+    # Batch 11 inventory push has dataset_id-keyed name / description /
+    # owner_user_id without a second discovery call.
+    metrics["title"] = title
+    metrics["description"] = ds.get("description")
+    metrics["dataset_status"] = ds_status
+    metrics["lifecycle_state"] = ds.get("lifecycle_state")
+    metrics["selection_reason"] = is_indexable(ds)[1]
+    metrics["owner_user_id"] = ds.get("owner_id")
+    # Owner-supplied per-place source-link template (place#121), carried
+    # through to the inventory push so the registry (and Atlas popups) get it.
+    metrics["web_item"] = ds.get("web_item")
+    return metrics
+
+
+def _accumulate(metrics: dict[str, Any], ds_id: int,
+                per_dataset: dict[str, dict[str, Any]],
+                totals: dict[str, int]) -> None:
+    per_dataset[str(ds_id)] = metrics
+    for k in ("features_seen", "docs_written", "docs_skipped",
+              "no_src_id", "duplicate_src_id"):
+        totals[k] = totals.get(k, 0) + int(metrics.get(k) or 0)
+    print(f"  ✓ {ds_id}: {metrics}")
+
+
 def _stage_each(
-    datasets: list[dict[str, Any]],
+    to_stage: list[tuple[dict[str, Any], str]],
     *,
     session: requests.Session,
     base_url: str,
@@ -592,81 +822,108 @@ def _stage_each(
     per_dataset: dict[str, dict[str, Any]],
     totals: dict[str, int],
 ) -> None:
-    """Stage every discovered dataset, accumulating metrics in place.
-
-    Split out of ``stage_all_authority_datasets`` only so the geom-store and
-    id-map writers can wrap the whole loop without burying it in indentation.
-    """
-    for ds in datasets:
-        ds_id = ds.get("id")
-        title = ds.get("title", "")
-        if not isinstance(ds_id, int):
-            continue
-        # Django's AuthorityDatasetsView derives this; default to 'pending'
-        # if the field is absent (older Django build).
-        ds_status = str(ds.get("dataset_status") or "pending")
-        place_count = ds.get("place_count") or 0
-        print(
-            f"\n{title} (whg:{ds_id}, place_count={place_count:,}, "
-            f"status={ds_status}):"
+    """Full-run loop: every selected dataset into the shared ``whg/extract/``
+    and the one shared id map, accumulating metrics in place."""
+    for ds, ds_status in to_stage:
+        metrics = _stage_one(
+            ds, ds_status, session=session, base_url=base_url,
+            limit_features_per_dataset=limit_features_per_dataset,
+            id_map=id_map, staged_namespace=WHG_NAMESPACE,
         )
+        if metrics is not None:
+            _accumulate(metrics, ds["id"], per_dataset, totals)
+
+
+def _truncate_per_dataset_extract(dataset_sub_id: int) -> Path:
+    """Remove the per-dataset ``places.jsonl`` and ``id_map.jsonl`` so the run
+    that follows replaces the dataset wholesale. Only this dataset's directory
+    is touched; the shared ``whg/extract/`` is never on this path."""
+    extract_dir = per_dataset_extract_dir(dataset_sub_id)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("places.jsonl", ID_MAP_FILENAME):
         try:
-            metrics = stage_dataset(
-                session,
-                dataset_sub_id=ds_id,
-                base_url=base_url,
-                dataset_status=ds_status,
-                limit=limit_features_per_dataset,
-                id_map=id_map,
+            (extract_dir / name).unlink()
+        except FileNotFoundError:
+            pass
+    return extract_dir
+
+
+def _stage_each_per_dataset(
+    to_stage: list[tuple[dict[str, Any], str]],
+    *,
+    session: requests.Session,
+    base_url: str,
+    limit_features_per_dataset: int | None,
+    per_dataset: dict[str, dict[str, Any]],
+    totals: dict[str, int],
+) -> None:
+    """``--dataset`` loop: each dataset into its own
+    ``whg/datasets/<id>/extract/`` with its own id map, opened fresh (truncated,
+    not appended) per dataset."""
+    for ds, ds_status in to_stage:
+        ds_id = ds["id"]
+        extract_dir = _truncate_per_dataset_extract(ds_id)
+        map_path = default_id_map_path(dataset=ds_id)
+        with IdMapWriter(map_path) as id_map:
+            metrics = _stage_one(
+                ds, ds_status, session=session, base_url=base_url,
+                limit_features_per_dataset=limit_features_per_dataset,
+                id_map=id_map, staged_namespace=per_dataset_staged_namespace(ds_id),
             )
-        except Exception as exc:
-            print(f"  ✗ {ds_id}: {exc}", file=sys.stderr)
+        if metrics is None:
             continue
-        # Carry the discovery metadata onto the per-dataset metrics so the
-        # Batch 11 inventory push has dataset_id-keyed name / description /
-        # owner_user_id without a second discovery call.
-        metrics["title"] = title
-        metrics["description"] = ds.get("description")
-        metrics["dataset_status"] = ds_status
-        metrics["owner_user_id"] = ds.get("owner_id")
-        # Owner-supplied per-place source-link template (place#121), carried
-        # through to the inventory push so the registry (and Atlas popups) get it.
-        metrics["web_item"] = ds.get("web_item")
-        per_dataset[str(ds_id)] = metrics
-        for k in ("features_seen", "docs_written", "docs_skipped",
-                  "no_src_id", "duplicate_src_id"):
-            totals[k] = totals.get(k, 0) + int(metrics.get(k) or 0)
-        print(f"  ✓ {ds_id}: {metrics}")
+        metrics["extract_dir"] = str(extract_dir)
+        metrics["id_map_path"] = str(map_path)
+        metrics["id_map_entries"] = id_map.count
+        _accumulate(metrics, ds_id, per_dataset, totals)
+
+
+def _sidecar_entry(ds_id: str, meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"{WHG_NAMESPACE}:{ds_id}",
+        "name": meta.get("title") or f"WHG dataset {ds_id}",
+        "description": meta.get("description"),
+        "dataset_status": meta.get("dataset_status") or "pending",
+        "owner_user_id": meta.get("owner_user_id"),
+        "record_count": int(meta.get("docs_written") or 0),
+        **({"web_item": meta["web_item"]} if meta.get("web_item") else {}),
+    }
 
 
 def _write_datasets_sidecar(
     per_dataset: dict[str, dict[str, Any]],
     summary: dict[str, Any],
+    *,
+    merge: bool = False,
 ) -> None:
     """Sidecar consumed by Batch 11 push_gazetteer_inventory: one inventory
     entry per WHG dataset (class='dataset', owner_user_id, status). Stable
-    contract: ``staged/_aggregates/whg.datasets.json``."""
+    contract: ``staged/_aggregates/whg.datasets.json``.
+
+    ``merge=True`` (per-dataset runs) upserts this run's entries into the
+    existing file and keeps every other dataset's entry — a one-dataset run
+    must not replace the 48-entry sidecar with a 1-entry one. The full run
+    rewrites the file, as it always has.
+    """
     try:
         from processing.settings import STAGED_BASE_DIR
         sidecar_path = (
             Path(STAGED_BASE_DIR) / "_aggregates" / "whg.datasets.json"
         )
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-        sidecar_payload = {
-            "namespace": WHG_NAMESPACE,
-            "datasets": [
-                {
-                    "id": f"{WHG_NAMESPACE}:{ds_id}",
-                    "name": meta.get("title") or f"WHG dataset {ds_id}",
-                    "description": meta.get("description"),
-                    "dataset_status": meta.get("dataset_status") or "pending",
-                    "owner_user_id": meta.get("owner_user_id"),
-                    "record_count": int(meta.get("docs_written") or 0),
-                    **({"web_item": meta["web_item"]} if meta.get("web_item") else {}),
-                }
-                for ds_id, meta in per_dataset.items()
-            ],
-        }
+        entries = {ds_id: _sidecar_entry(ds_id, meta)
+                   for ds_id, meta in per_dataset.items()}
+        if merge and sidecar_path.is_file():
+            existing = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            kept = [
+                e for e in (existing.get("datasets") or [])
+                if isinstance(e, dict)
+                and str(e.get("id", "")).split(":", 1)[-1] not in entries
+            ]
+            datasets_out = kept + list(entries.values())
+        else:
+            datasets_out = list(entries.values())
+        sidecar_payload = {"namespace": WHG_NAMESPACE, "datasets": datasets_out}
         sidecar_path.write_text(
             json.dumps(sidecar_payload, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -707,7 +964,19 @@ def main() -> None:
             _make_session(token), base_url=args.base_url,
             include_pending=args.include_pending,
         )
-        print(json.dumps({"discovered": datasets}, indent=2))
+        if args.dataset:
+            keep = set(args.dataset)
+            datasets = [d for d in datasets if d.get("id") in keep]
+        to_stage, rejected = select_datasets(
+            datasets, include_pending=args.include_pending)
+        print(json.dumps({
+            "discovered": datasets,
+            "selection": summarise(datasets),
+            "would_stage": [
+                {"id": d["id"], "dataset_status": status} for d, status in to_stage
+            ],
+            "rejected": rejected,
+        }, indent=2))
         return
 
     summary = stage_all_authority_datasets(

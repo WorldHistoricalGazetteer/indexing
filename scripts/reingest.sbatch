@@ -31,10 +31,29 @@
 # namespaces and nest dependency logic that's already first-class in
 # the per-stage submitters; the per-namespace re-ingest contract only
 # guarantees that fresh source data is restaged.
+#
+# ONE CONTRIBUTED DATASET (place#341): $1 may be ``whg:<id>`` (the gateway
+# validates ^whg:[0-9]+$ and names the job reingest-whg-<id>). That branch
+#
+#   1. stages that dataset alone:   authorities/whg-places.py --dataset <id>
+#      (no fetch_authorities — whg is pulled from the Django API, not a file)
+#   2. runs the per-dataset index step:
+#        python -m processing.index_namespace --namespace whg --dataset <id> --replace
+#      which is a DRY-RUN unless REINGEST_EXECUTE=1 is set in the job's
+#      environment (sbatch --export=ALL,REINGEST_EXECUTE=1, or the gateway's
+#      environment). The index step talks to Elasticsearch at
+#      ${REINGEST_ES_HOST:-http://localhost:9201}; htc compute nodes CANNOT
+#      reach prod ES (measured 21 Sep 2026), so when that host does not answer
+#      the step is skipped with the exact command to run from pitt printed
+#      instead, and the job still exits 0 because the staging half — the
+#      contract this job guarantees — has landed. The index step itself
+#      refuses a dataset whose staged sidecar is not dataset_status=published.
+#
+# Other namespaces' behaviour is unchanged.
 
 set -eo pipefail
 
-NAMESPACE=${1:?"usage: sbatch reingest.sbatch <namespace>"}
+NAMESPACE=${1:?"usage: sbatch reingest.sbatch <namespace|whg:<id>>"}
 
 source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
 conda activate whg
@@ -44,6 +63,53 @@ START_TS=$(date -u +%FT%TZ)
 echo "================================================================"
 echo "REINGEST namespace=$NAMESPACE  start=$START_TS  job=$SLURM_JOB_ID"
 echo "================================================================"
+
+# ---------------------------------------------------------------------------
+# Contributed-dataset branch: whg:<id>
+# ---------------------------------------------------------------------------
+case "$NAMESPACE" in
+    whg:*)
+        DATASET_ID=${NAMESPACE#whg:}
+        # Re-validate on this side too: the gateway is the only caller today,
+        # but this script is the thing that actually runs with the value.
+        if ! [[ "$DATASET_ID" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: malformed dataset id in '$NAMESPACE' (want whg:<digits>)" >&2
+            exit 2
+        fi
+        ES_HOST_FOR_INDEX=${REINGEST_ES_HOST:-http://localhost:9201}
+        INDEX_CMD=(python -m processing.index_namespace --namespace whg
+                   --dataset "$DATASET_ID" --replace --es-host "$ES_HOST_FOR_INDEX")
+        if [ "${REINGEST_EXECUTE:-0}" = "1" ]; then
+            INDEX_CMD+=(--execute)
+            INDEX_MODE="EXECUTE"
+        else
+            INDEX_MODE="DRY-RUN (set REINGEST_EXECUTE=1 to apply)"
+        fi
+
+        echo
+        echo "--- Step 1/2: stage dataset whg:$DATASET_ID ---"
+        PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}" \
+            WHG_STAGING_MODE=1 python authorities/whg-places.py --dataset "$DATASET_ID"
+
+        echo
+        echo "--- Step 2/2: index dataset whg:$DATASET_ID  [$INDEX_MODE] ---"
+        if curl -s -o /dev/null --max-time 10 "$ES_HOST_FOR_INDEX"; then
+            "${INDEX_CMD[@]}"
+        else
+            echo "NOTE: Elasticsearch at $ES_HOST_FOR_INDEX is not reachable from"
+            echo "      $(hostname) (htc compute nodes cannot reach prod ES)."
+            echo "      Staging is complete; run the index step from pitt:"
+            echo "        cd /vast/ishi/elastic && ${INDEX_CMD[*]}"
+        fi
+
+        END_TS=$(date -u +%FT%TZ)
+        echo
+        echo "================================================================"
+        echo "REINGEST namespace=$NAMESPACE  end=$END_TS  job=$SLURM_JOB_ID  OK"
+        echo "================================================================"
+        exit 0
+        ;;
+esac
 
 # Step 1 — refresh source. fetch_authorities is per-namespace and
 # returns non-zero only on hard failures; treat soft "nothing to fetch"

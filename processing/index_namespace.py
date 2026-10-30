@@ -33,12 +33,33 @@ Safe by default: prints a plan and changes nothing unless ``--execute`` is given
     # re-ingest: delete the namespace's places first and strip its stale
     # toponym attestations before re-adding
     python -m processing.index_namespace --namespace ukhc --es-host ... --replace --execute
+
+One contributed WHG dataset (place#341) — ``--dataset`` is valid only with
+``--namespace whg``. The source is the per-dataset staged tree
+``staged/whg/datasets/<id>/<stage>/places.*`` written by
+``authorities/whg-places.py --dataset <id>``; the place_id prefix is
+``whg:<id>:`` WITH the trailing colon, so ``whg:1`` can never match ``whg:12``:
+
+    # add / replace one dataset
+    python -m processing.index_namespace --namespace whg --dataset 1234 --es-host ... --replace --execute
+
+    # retract (unpublish / delete): delete + strip only, never re-add. Refuses
+    # while the staged sidecar still says the dataset is indexable.
+    python -m processing.index_namespace --namespace whg --dataset 1234 --es-host ... --retract --execute
+
+The write step REFUSES any dataset whose staged sidecar (per-dataset
+``staged/whg/datasets/<id>/dataset.json``, else the namespace-wide
+``staged/_aggregates/whg.datasets.json``) does not say ``dataset_status ==
+"published"`` — never-index-pending, enforced here as well as at selection —
+and, when ``processing.whg_selection.is_indexable`` is importable, that
+predicate must agree (it is handed the sidecar entry as-is).
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -109,8 +130,10 @@ def resolve_concrete_index(es: Elasticsearch, alias: str) -> str:
 # Source places
 # ---------------------------------------------------------------------------
 
-def _source_path(namespace: str, stage: str | None) -> tuple[Path, str]:
-    base = Path(STAGED_BASE_DIR) / namespace
+def _source_path(namespace: str, stage: str | None,
+                 dataset: str | None = None) -> tuple[Path, str]:
+    base = (dataset_staged_dir(dataset) if dataset
+            else Path(STAGED_BASE_DIR) / namespace)
     stages = (stage,) if stage else SOURCE_STAGES
     for st in stages:
         pq = base / st / "places.parquet"
@@ -123,6 +146,169 @@ def _source_path(namespace: str, stage: str | None) -> tuple[Path, str]:
         f"No staged places source for '{namespace}' under {base} "
         f"(looked in stages: {', '.join(stages)})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Contributed WHG datasets (place#341): per-dataset source, prefix, sidecar
+# ---------------------------------------------------------------------------
+
+WHG_NAMESPACE = "whg"
+_DATASET_ID_RE = re.compile(r"^\d+$")
+# Per-dataset sidecar filenames tried, in order, inside ``dataset_staged_dir``.
+# Either shape is accepted: a flat entry ``{"id": "whg:12", "dataset_status":
+# ...}`` or the namespace-wide shape ``{"datasets": [entry, ...]}``.
+DATASET_SIDECAR_CANDIDATES = ("dataset.json", "whg.datasets.json")
+_WHG_DATASETS_SIDECAR = "whg.datasets.json"
+
+
+def validate_dataset_id(dataset: str) -> str:
+    """A dataset id is a decimal integer and nothing else.
+
+    Checked before it is used in a path, a place_id prefix or a query, so a
+    stray ``;`` or ``..`` can never reach any of them."""
+    ds = str(dataset).strip()
+    if not _DATASET_ID_RE.fullmatch(ds):
+        raise SystemExit(f"--dataset must be a decimal integer id, got {dataset!r}")
+    return ds
+
+
+def dataset_place_prefix(dataset: str) -> str:
+    """``whg:<id>:`` — the TRAILING COLON is the point: ``whg:1:`` matches
+    ``whg:1:abc`` and not ``whg:12:abc``."""
+    return f"{WHG_NAMESPACE}:{validate_dataset_id(dataset)}:"
+
+
+def dataset_staged_dir(dataset: str, staged_base: str | os.PathLike | None = None) -> Path:
+    """``staged/whg/datasets/<id>/`` — the per-dataset staged tree."""
+    base = Path(staged_base) if staged_base is not None else Path(STAGED_BASE_DIR)
+    return base / WHG_NAMESPACE / "datasets" / validate_dataset_id(dataset)
+
+
+def _entry_for(payload: Any, wanted_id: str) -> dict | None:
+    """Pick the sidecar entry for ``whg:<id>`` out of either sidecar shape."""
+    if isinstance(payload, dict) and isinstance(payload.get("datasets"), list):
+        for ds in payload["datasets"]:
+            if isinstance(ds, dict) and str(ds.get("id")) == wanted_id:
+                return ds
+        return None
+    if isinstance(payload, dict) and ("dataset_status" in payload or "id" in payload):
+        ds_id = payload.get("id")
+        if ds_id is None or str(ds_id) in (wanted_id, wanted_id.split(":", 1)[1]):
+            return payload
+    return None
+
+
+def load_whg_dataset_meta(dataset: str,
+                          staged_base: str | os.PathLike | None = None) -> dict | None:
+    """The staged sidecar entry for one dataset, or ``None`` if no sidecar has it.
+
+    Looks in the per-dataset tree first (``DATASET_SIDECAR_CANDIDATES``), then
+    the namespace-wide ``staged/_aggregates/whg.datasets.json`` written by a
+    full ``whg-places.py`` run. An unreadable file counts as absent — the
+    callers fail closed on ``None``, which is the safe direction.
+    """
+    ds = validate_dataset_id(dataset)
+    base = Path(staged_base) if staged_base is not None else Path(STAGED_BASE_DIR)
+    wanted = f"{WHG_NAMESPACE}:{ds}"
+    candidates = [dataset_staged_dir(ds, base) / name for name in DATASET_SIDECAR_CANDIDATES]
+    candidates.append(base / "_aggregates" / _WHG_DATASETS_SIDECAR)
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        entry = _entry_for(payload, wanted)
+        if entry is not None:
+            return entry
+    return None
+
+
+def _import_is_indexable():
+    """``processing.whg_selection.is_indexable`` if it exists, else ``None``.
+
+    The selection module is being written alongside this one; its absence must
+    not stop the sidecar's own ``dataset_status`` rule from being enforced."""
+    try:
+        from processing.whg_selection import is_indexable  # type: ignore
+    except Exception:  # noqa: BLE001 — missing module or import-time error
+        return None
+    return is_indexable
+
+
+_SELECTION_FIELDS = ("authority", "public", "ds_status")
+
+
+def _carries_selection_fields(meta: dict) -> bool:
+    """Does this sidecar entry carry what ``whg_selection.is_indexable`` reads?
+
+    The sidecar ``whg-places.py`` writes today carries ``dataset_status`` —
+    the RESULT of that selection, made at staging time over the discovery
+    record — and none of the inputs (``lifecycle_state``, ``public``,
+    ``authority``, ``ds_status``). Running the predicate over that shape is a
+    second derivation of a stored field, and it answers "no" for every
+    dataset because the inputs are absent, not because the dataset is
+    ineligible. So the predicate is consulted only when the inputs are there.
+    """
+    return "lifecycle_state" in meta or all(k in meta for k in _SELECTION_FIELDS)
+
+
+def dataset_indexable(meta: dict | None, *, indexable_fn=None) -> tuple[bool, str]:
+    """Is this dataset currently selected for indexing? ``(bool, reason)``.
+
+    The sidecar's ``dataset_status`` must be ``published`` (never-index-
+    pending). When the entry also carries the selection inputs (see
+    :func:`_carries_selection_fields`), ``is_indexable`` — injected, or
+    imported from ``processing.whg_selection`` when present — must agree as
+    well, so a v4 ``lifecycle_state`` recorded on the entry outranks a stale
+    ``dataset_status``. A predicate that raises is treated as "no": the only
+    safe reading of an exception in a gate that decides whether contributed
+    data goes live.
+    """
+    if not isinstance(meta, dict):
+        return False, "no staged sidecar entry for this dataset"
+    status = str(meta.get("dataset_status") or "pending")
+    if status != "published":
+        return False, f"dataset_status={status!r}"
+    fn = indexable_fn if indexable_fn is not None else _import_is_indexable()
+    if fn is not None and _carries_selection_fields(meta):
+        try:
+            ok, reason = fn(meta)
+        except Exception as exc:  # noqa: BLE001
+            return False, f"is_indexable raised {exc!r}"
+        if not ok:
+            return False, f"whg_selection.is_indexable: {reason}"
+    return True, "dataset_status='published'"
+
+
+def assert_dataset_writable(dataset: str, meta: dict | None, *, indexable_fn=None) -> None:
+    """The write-step gate (plan item 7): refuse to index a dataset the
+    sidecar does not say is published."""
+    ok, reason = dataset_indexable(meta, indexable_fn=indexable_fn)
+    if not ok:
+        raise SystemExit(
+            f"REFUSING to index whg:{dataset}: {reason}. Only a dataset whose "
+            f"staged sidecar says dataset_status='published' may be written to "
+            f"the live index (never-index-pending)."
+        )
+
+
+def assert_dataset_retractable(dataset: str, meta: dict | None, *, indexable_fn=None) -> None:
+    """``--retract`` is for unpublish / delete: refuse while the sidecar still
+    selects the dataset for indexing, because a retraction of a live, published
+    dataset is a re-ingest's job (``--replace``), not a deletion."""
+    ok, reason = dataset_indexable(meta, indexable_fn=indexable_fn)
+    if ok:
+        raise SystemExit(
+            f"REFUSING to retract whg:{dataset}: it is currently indexable "
+            f"({reason}). Retraction is for a dataset that has been unpublished "
+            f"or deleted; re-stage it so the sidecar reflects that, or use "
+            f"--replace to re-ingest."
+        )
+    if meta is None:
+        print(f"[retract] whg:{dataset}: no staged sidecar entry — treating as "
+              f"not indexable (a deleted dataset has none)")
+    else:
+        print(f"[retract] whg:{dataset}: not indexable ({reason}) — retraction allowed")
 
 
 def iter_place_docs(path: Path) -> Iterator[dict[str, Any]]:
@@ -293,15 +479,108 @@ _AUGMENT_SCRIPT = (
     "ctx._source.indexed_at = params.indexed_at;"
 )
 
-# Replace-mode pre-pass: strip this namespace's stale attestations/namespace.
+# Replace/retract pre-pass: strip stale attestations under ``params.prefix``.
+#
+# Parametrised on TWO prefixes so one script serves both scopes. ``prefix`` is
+# what is stripped: the whole namespace (``ukhc:``) or one contributed dataset
+# (``whg:12:``). ``ns_prefix`` (``whg:``) decides whether the namespace entry
+# and ``primary_namespace`` go too — only when NO attestation under the
+# namespace survives the strip. For a namespace-wide strip the two prefixes
+# are equal, so nothing survives and the behaviour is exactly the old one; for
+# a dataset strip a toponym still attested by another whg dataset keeps ``whg``
+# in ``namespaces``, which is what a dataset-scoped removal must do.
 _STRIP_NS_SCRIPT = (
     "if (ctx._source.attestations != null) { "
     "ctx._source.attestations.removeIf(a -> a.startsWith(params.prefix)); } "
+    "boolean still = false; "
+    "if (ctx._source.attestations != null) { "
+    "for (a in ctx._source.attestations) { "
+    "if (a.startsWith(params.ns_prefix)) { still = true; break; } } } "
+    "if (!still) { "
     "if (ctx._source.namespaces != null) { ctx._source.namespaces.removeIf(n -> n == params.ns); } "
     "if (params.ns.equals(ctx._source.primary_namespace)) { "
     "ctx._source.primary_namespace = (ctx._source.namespaces != null && ctx._source.namespaces.length > 0) "
-    "? ctx._source.namespaces[0] : null; }"
+    "? ctx._source.namespaces[0] : null; } }"
 )
+
+
+def strip_script_params(namespace: str, place_prefix: str) -> dict[str, str]:
+    """The ``params`` for :data:`_STRIP_NS_SCRIPT` — one place to build them,
+    so the namespace-wide and dataset-scoped callers cannot drift."""
+    return {"prefix": place_prefix, "ns_prefix": f"{namespace}:", "ns": namespace}
+
+
+# ---------------------------------------------------------------------------
+# Prefix-scoped delete / strip, reporting counts WITH their denominators
+# ---------------------------------------------------------------------------
+
+def count_prefix(es, index: str, field: str, prefix: str) -> tuple[int, int]:
+    """``(matching, total)`` for a prefix query on ``field`` in ``index``.
+
+    Both numbers are returned because "0 matching" says nothing on its own: the
+    same figure comes from an empty index, a wrong index and a clean one."""
+    matching = es.count(index=index, body={"query": {"prefix": {field: prefix}}})["count"]
+    total = es.count(index=index)["count"]
+    return int(matching), int(total)
+
+
+def delete_places_by_prefix(es, index: str, place_prefix: str, *, execute: bool) -> int | None:
+    """delete_by_query on ``place_id`` prefix, counting before and after.
+
+    Returns the number deleted when executing, else ``None``. The prefix is
+    used verbatim — a dataset prefix must already carry its trailing colon."""
+    before, total = count_prefix(es, index, "place_id", place_prefix)
+    print(f"[places] place_id prefix {place_prefix!r}: {before:,} of {total:,} docs (before)")
+    if not execute:
+        print(f"[places] (dry-run) would delete_by_query those {before:,} docs")
+        return None
+    resp = es.options(request_timeout=3600).delete_by_query(
+        index=index,
+        body={"query": {"prefix": {"place_id": place_prefix}}},
+        conflicts="proceed", refresh=False, slices="auto",
+        wait_for_completion=True,
+    )
+    deleted = int(resp.get("deleted", 0))
+    es.indices.refresh(index=index)
+    after, total_after = count_prefix(es, index, "place_id", place_prefix)
+    print(f"[places]   deleted {deleted:,}; prefix now matches {after:,} of "
+          f"{total_after:,} docs (after)")
+    if after:
+        print(f"[places] ⚠ {after:,} doc(s) under {place_prefix!r} survived the "
+              f"delete — do not treat this run as complete", file=sys.stderr)
+    return deleted
+
+
+def strip_attestations_by_prefix(es, index: str, namespace: str, place_prefix: str,
+                                 *, execute: bool) -> int | None:
+    """update_by_query stripping attestations under ``place_prefix`` from the
+    toponyms index, counting the affected toponyms before and after."""
+    before, total = count_prefix(es, index, "attestations", place_prefix)
+    print(f"[toponyms] attestation prefix {place_prefix!r}: {before:,} of {total:,} "
+          f"toponyms (before)")
+    if not execute:
+        print(f"[toponyms] (dry-run) would strip {place_prefix!r} attestations from "
+              f"those {before:,} toponyms")
+        return None
+    resp = es.options(request_timeout=3600).update_by_query(
+        index=index,
+        body={
+            "query": {"prefix": {"attestations": place_prefix}},
+            "script": {"source": _STRIP_NS_SCRIPT, "lang": "painless",
+                       "params": strip_script_params(namespace, place_prefix)},
+        },
+        conflicts="proceed", refresh=False, slices="auto",
+        wait_for_completion=True,
+    )
+    updated = int(resp.get("updated", 0))
+    es.indices.refresh(index=index)
+    after, total_after = count_prefix(es, index, "attestations", place_prefix)
+    print(f"[toponyms]   stripped from {updated:,} toponyms; prefix now matches "
+          f"{after:,} of {total_after:,} (after)")
+    if after:
+        print(f"[toponyms] ⚠ {after:,} toponym(s) still attest {place_prefix!r} "
+              f"after the strip — do not treat this run as complete", file=sys.stderr)
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -325,14 +604,25 @@ def scan_places(doc_iter) -> tuple[int, int]:
 
 
 def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
-                          uncovered, replace, execute, allow_missing_h3):
+                          uncovered, replace, execute, allow_missing_h3,
+                          place_prefix=None, retract=False):
     """Index one namespace's places, streaming from ``doc_iter_factory()``.
 
     ``doc_iter_factory`` is a zero-argument callable returning a FRESH iterator
     over the staged docs — not a list, and not a single spent iterator. The
     counts come from :func:`scan_places`, which has already made one pass.
+
+    ``place_prefix`` scopes the replace/retract delete (default the whole
+    namespace, ``<ns>:``; a contributed dataset passes ``whg:<id>:``).
+    ``retract`` performs the delete only and never re-adds.
     """
+    place_prefix = place_prefix or f"{namespace}:"
     print(f"\n[places] target index: {index}")
+    if retract:
+        print(f"[places] RETRACT: delete_by_query place_id prefix {place_prefix!r} (no re-add)")
+        delete_places_by_prefix(es, index, place_prefix, execute=execute)
+        return
+
     print(f"[places] docs to index: {n_docs:,}")
     if uncovered:
         msg = (f"[places] WARNING: {uncovered:,} docs have geometries missing "
@@ -345,15 +635,8 @@ def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
         print(msg)
 
     if replace:
-        print(f"[places] REPLACE: delete_by_query place_id prefix '{namespace}:'")
-        if execute:
-            resp = es.options(request_timeout=3600).delete_by_query(
-                index=index,
-                body={"query": {"prefix": {"place_id": f"{namespace}:"}}},
-                conflicts="proceed", refresh=False, slices="auto",
-                wait_for_completion=True,
-            )
-            print(f"[places]   deleted {resp.get('deleted', 0):,}")
+        print(f"[places] REPLACE: delete_by_query place_id prefix {place_prefix!r}")
+        delete_places_by_prefix(es, index, place_prefix, execute=execute)
 
     if not execute:
         print("[places] (dry-run) would bulk-index the above docs (_id=place_id)")
@@ -406,10 +689,21 @@ def _existing_topids(es, index, ids: list[str]) -> set[str]:
 
 
 def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, execute,
-                            emit_new_toponyms=None):
+                            emit_new_toponyms=None, place_prefix=None, retract=False):
+    """Augment the toponyms index with one namespace's (or dataset's) attestations.
+
+    ``place_prefix`` scopes the replace/retract strip (default ``<ns>:``);
+    ``retract`` strips and never re-adds — ``attest_records`` is ignored.
+    """
+    place_prefix = place_prefix or f"{namespace}:"
     indexed_at = datetime.now(timezone.utc).isoformat()
-    topids = [r["toponym_id"] for r in attest_records]
     print(f"\n[toponyms] target index: {index}")
+    if retract:
+        print(f"[toponyms] RETRACT: strip {place_prefix!r} attestations (no re-add)")
+        strip_attestations_by_prefix(es, index, namespace, place_prefix, execute=execute)
+        return
+
+    topids = [r["toponym_id"] for r in attest_records]
     print(f"[toponyms] distinct toponyms attested by {namespace}: {len(topids):,}")
 
     existing = _existing_topids(es, index, topids) if topids else set()
@@ -439,20 +733,9 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
               f"(feed to backfill_embeddings compute)")
 
     if replace:
-        print(f"[toponyms] REPLACE: strip stale '{namespace}:' attestations first "
+        print(f"[toponyms] REPLACE: strip stale {place_prefix!r} attestations first "
               f"(update_by_query, prefix match)")
-        if execute:
-            resp = es.options(request_timeout=3600).update_by_query(
-                index=index,
-                body={
-                    "query": {"prefix": {"attestations": f"{namespace}:"}},
-                    "script": {"source": _STRIP_NS_SCRIPT, "lang": "painless",
-                               "params": {"prefix": f"{namespace}:", "ns": namespace}},
-                },
-                conflicts="proceed", refresh=False, slices="auto",
-                wait_for_completion=True,
-            )
-            print(f"[toponyms]   stripped from {resp.get('updated', 0):,} toponyms")
+        strip_attestations_by_prefix(es, index, namespace, place_prefix, execute=execute)
 
     if not execute:
         print("[toponyms] (dry-run) would augment/upsert the above toponyms "
@@ -531,16 +814,30 @@ def _refresh_registry_aggregates(namespace: str) -> None:
             )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -> None:
+    """CLI entry point.
+
+    ``es_factory`` (``(host) -> client``) and ``indexable_fn`` (the
+    ``processing.whg_selection.is_indexable`` predicate) are injection points
+    for tests; production uses :class:`Elasticsearch` and the imported module.
+    """
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--namespace", required=True, help="Authority namespace, e.g. ukhc")
+    ap.add_argument("--dataset", metavar="ID",
+                    help="One contributed WHG dataset (numeric id); only with "
+                         "--namespace whg. Source = staged/whg/datasets/<ID>/, "
+                         "scope = place_id prefix 'whg:<ID>:'")
     ap.add_argument("--es-host", required=True, help="Elasticsearch URL (prod: http://localhost:9201)")
     ap.add_argument("--source-stage", choices=SOURCE_STAGES,
                     help="Staged source stage (default: most-enriched available)")
     ap.add_argument("--replace", action="store_true",
-                    help="Re-ingest: delete the namespace's places and strip its stale "
-                         "toponym attestations before adding")
+                    help="Re-ingest: delete the namespace's (or dataset's) places and "
+                         "strip its stale toponym attestations before adding")
+    ap.add_argument("--retract", action="store_true",
+                    help="Delete + strip ONLY, never re-add (unpublish / delete). "
+                         "Requires --dataset; refuses while the staged sidecar still "
+                         "says the dataset is indexable")
     ap.add_argument("--places-only", action="store_true")
     ap.add_argument("--toponyms-only", action="store_true")
     ap.add_argument("--allow-missing-h3", action="store_true",
@@ -551,35 +848,81 @@ def main() -> None:
                     help="Write {toponym_id,name,lang} JSONL for the newly-created "
                          "(embedding-less) toponyms — the zero-rescan input for "
                          "phonetics.inference.backfill_embeddings compute")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
-    es = Elasticsearch(args.es_host, basic_auth=_es_basic_auth(), request_timeout=120)
+    # --- contributed-dataset scope (place#341) --------------------------------
+    dataset = place_prefix = None
+    if args.dataset is not None:
+        if args.namespace != WHG_NAMESPACE:
+            raise SystemExit("--dataset is only valid with --namespace whg")
+        dataset = validate_dataset_id(args.dataset)
+        place_prefix = dataset_place_prefix(dataset)
+    if args.retract:
+        if dataset is None:
+            raise SystemExit("--retract requires --dataset (it is a per-dataset "
+                             "unpublish / delete, not a namespace operation)")
+        if args.replace:
+            raise SystemExit("--retract and --replace are mutually exclusive")
+
+    es = (es_factory(args.es_host) if es_factory is not None
+          else Elasticsearch(args.es_host, basic_auth=_es_basic_auth(), request_timeout=120))
     info = es.info()
+    mode = "RETRACT" if args.retract else ("REPLACE" if args.replace else "ADD")
     print(f"ES {info['version']['number']} @ {args.es_host}  "
-          f"mode={'EXECUTE' if args.execute else 'DRY-RUN'}  "
-          f"{'REPLACE' if args.replace else 'ADD'}")
+          f"mode={'EXECUTE' if args.execute else 'DRY-RUN'}  {mode}"
+          + (f"  dataset=whg:{dataset} prefix={place_prefix!r}" if dataset else ""))
 
-    src_path, stage = _source_path(args.namespace, args.source_stage)
-    print(f"source: {src_path}  (stage={stage})")
+    # The sidecar gate. Consulted in BOTH modes so a dry-run shows the refusal
+    # the execute run would make; it only aborts before a write.
+    if dataset is not None:
+        meta = load_whg_dataset_meta(dataset)
+        if args.retract:
+            assert_dataset_retractable(dataset, meta, indexable_fn=indexable_fn)
+        else:
+            ok, reason = dataset_indexable(meta, indexable_fn=indexable_fn)
+            print(f"[gate] whg:{dataset} indexable={ok} ({reason})")
+            if not ok and not args.execute:
+                print(f"[gate] (dry-run) --execute would REFUSE: {reason}")
+
+    if args.retract:
+        # No staged source is read: a retracted dataset may have no tree at all.
+        src_path = None
+    else:
+        src_path, stage = _source_path(args.namespace, args.source_stage, dataset)
+        print(f"source: {src_path}  (stage={stage})")
 
     if not args.toponyms_only:
-        n_docs, uncovered = scan_places(iter_place_docs(src_path))
-        print(f"[places] scanned {n_docs:,} staged docs, {uncovered:,} with "
-              f"uncovered geometry")
+        if args.retract:
+            n_docs = uncovered = 0
+        else:
+            n_docs, uncovered = scan_places(iter_place_docs(src_path))
+            print(f"[places] scanned {n_docs:,} staged docs, {uncovered:,} with "
+                  f"uncovered geometry")
+        if dataset is not None and args.execute and not args.retract:
+            # THE WRITE STEP: nothing has been written yet, and nothing will be
+            # for a dataset the sidecar does not say is published.
+            assert_dataset_writable(dataset, meta, indexable_fn=indexable_fn)
         places_index = resolve_concrete_index(es, PLACES_ALIAS)
         plan_and_index_places(es, places_index, args.namespace,
-                              lambda: iter_place_docs(src_path),
+                              (lambda: iter_place_docs(src_path)) if src_path else (lambda: iter(())),
                               n_docs=n_docs, uncovered=uncovered,
                               replace=args.replace, execute=args.execute,
-                              allow_missing_h3=args.allow_missing_h3)
+                              allow_missing_h3=args.allow_missing_h3,
+                              place_prefix=place_prefix, retract=args.retract)
     if not args.places_only:
-        # Built only when toponyms are actually written — this aggregation is a
-        # whole-corpus group-by and is the remaining memory cost of the run.
-        attest_records, _ctx = collect_attestations(iter_place_docs(src_path))
+        if args.retract:
+            attest_records = []
+        else:
+            if dataset is not None and args.execute:
+                assert_dataset_writable(dataset, meta, indexable_fn=indexable_fn)
+            # Built only when toponyms are actually written — this aggregation is a
+            # whole-corpus group-by and is the remaining memory cost of the run.
+            attest_records, _ctx = collect_attestations(iter_place_docs(src_path))
         toponyms_index = resolve_concrete_index(es, TOPONYMS_ALIAS)
         plan_and_index_toponyms(es, toponyms_index, args.namespace, attest_records,
                                 replace=args.replace, execute=args.execute,
-                                emit_new_toponyms=args.emit_new_toponyms)
+                                emit_new_toponyms=args.emit_new_toponyms,
+                                place_prefix=place_prefix, retract=args.retract)
 
     if args.execute and not args.toponyms_only:
         es.indices.refresh(index=resolve_concrete_index(es, PLACES_ALIAS))

@@ -32,9 +32,18 @@ from typing import Any, Iterable, Iterator
 
 from processing.staging_contract import (
     HARD_LINK_REQUIRED_FIELDS,
+    HARD_LINK_SOURCE_CATEGORIES,
     HARD_LINK_SQLITE_SCHEMA,
     validate_hard_link_row,
 )
+
+
+class OverlaySchemaMismatch(RuntimeError):
+    """An existing overlay file's DDL does not admit every category the current
+    contract declares. Raised at open time rather than discovered at insert
+    time, because ``INSERT OR IGNORE`` treats a CHECK violation like a UNIQUE
+    collision — the row is skipped, no error — so an old-DDL file would absorb
+    a harvest of a new category and report nothing worse than a dedup."""
 
 
 # Pragmas applied at open time. WAL + large cache + relaxed sync gives the
@@ -63,7 +72,15 @@ _INSERT_SQL = (
 
 def initialise_schema(conn: sqlite3.Connection) -> None:
     """Apply ``HARD_LINK_SQLITE_SCHEMA`` (idempotent — ``CREATE … IF NOT EXISTS``
-    isn't used in the canonical DDL, so we wrap each statement)."""
+    isn't used in the canonical DDL, so we wrap each statement).
+
+    When the table already exists its DDL is the FILE's, not this module's, and
+    the ``source_category`` CHECK is baked into it. This function does NOT
+    check that DDL against the contract: ``gateway/links.py::_connect`` calls
+    it on the live-delta at every request, and that file (built under the
+    two-category DDL) only ever receives ``contributor`` rows, for which the
+    old CHECK is correct. The batch-build path, ``open_for_bulk``, is where a
+    stale CHECK would silently lose rows and is where the check lives."""
     for stmt in _split_statements(HARD_LINK_SQLITE_SCHEMA):
         # Tolerate "table already exists" when the schema has been applied
         # to this file before (resumes / partial runs).
@@ -72,6 +89,25 @@ def initialise_schema(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as exc:
             if "already exists" not in str(exc):
                 raise
+
+
+def assert_schema_admits_categories(conn: sqlite3.Connection) -> None:
+    """Raise :class:`OverlaySchemaMismatch` unless the file's own
+    ``hard_link_assertions`` DDL names every ``HARD_LINK_SOURCE_CATEGORIES``
+    entry in its ``source_category`` CHECK."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' "
+        "AND name='hard_link_assertions'").fetchone()
+    if row is None or not row[0]:
+        raise OverlaySchemaMismatch("overlay has no hard_link_assertions table")
+    ddl = row[0]
+    missing = [c for c in HARD_LINK_SOURCE_CATEGORIES if f"'{c}'" not in ddl]
+    if missing:
+        raise OverlaySchemaMismatch(
+            f"overlay DDL does not admit source_category {missing}: it was "
+            f"built under an older contract and INSERT OR IGNORE would drop "
+            f"those rows silently. Build a fresh run-scoped overlay instead "
+            f"of harvesting into this file.")
 
 
 def _split_statements(ddl: str) -> Iterator[str]:
@@ -86,12 +122,24 @@ def open_for_bulk(db_path: Path) -> sqlite3.Connection:
 
     Creates the file (and parent directory) if missing, applies the bulk
     pragmas, and ensures the schema exists. Caller owns the connection.
+
+    Refuses an EXISTING file whose ``source_category`` CHECK does not admit
+    every category in ``HARD_LINK_SOURCE_CATEGORIES``: ``INSERT OR IGNORE``
+    skips a CHECK violation silently (measured 30 Oct 2026 — no
+    ``IntegrityError``, just ``inserted`` one short, indistinguishable from a
+    dedup), so harvesting a new category into an old-DDL file would lose every
+    row of it and report success. Raises :class:`OverlaySchemaMismatch`.
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), isolation_level=None)
     for pragma in _BULK_PRAGMAS:
         conn.execute(pragma)
     initialise_schema(conn)
+    try:
+        assert_schema_admits_categories(conn)
+    except OverlaySchemaMismatch:
+        conn.close()
+        raise
     return conn
 
 

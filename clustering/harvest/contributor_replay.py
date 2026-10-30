@@ -58,6 +58,26 @@ Selection rules (per user, 2026-05-02):
   all included. The bulk ``imported`` rows in whgv3beta represent a
   pre-approved import from another table; the user confirmed they should
   be treated as previously contributor-approved.
+  ⚠️ **Amended 30 Oct 2026 (place#342, ruling N1):** ``imported`` rows are
+  still forwarded but under the WEAKER ``source_category = 'imported'`` with
+  ``source_id = imported:<user_id>:legacy_v3_2``; ``reviewed`` and ``authid``
+  stay ``contributor`` / ``contributor:<user_id>:legacy_v3_2``. The distinct
+  prefix means an imported row can never share the overlay's UNIQUE key with
+  a migrated attestation for the same pair, so it is never counted as one.
+  ``place_link`` rows are unchanged. This is a DDL change
+  (``processing.staging_contract.HARD_LINK_SQLITE_SCHEMA`` ``CHECK``): it
+  takes effect only in an overlay rebuilt after it, and the gateway
+  live-delta (``gateway/links.py``), which forces ``contributor``, is
+  untouched.
+* **Migrated attestations vs their legacy source row.** Once whg3's
+  ``migrate_reviewed_links`` creates an ``api_contributorattestation`` from a
+  ``reviewed`` close_match, this harvest reads BOTH: the legacy row (flow A)
+  and the attestation (flow B, ``legacy_v3_2 = true``). Both map to
+  ``contributor:<user_id>:legacy_v3_2``, so when the attestation keeps the
+  same user and ``relation_type = 'closeMatch'`` the overlay's UNIQUE key
+  collapses them to one row (``INSERT OR IGNORE``). If the migration changes
+  the relation type (say to ``sameAs``) the key differs and both rows land —
+  proven, not assumed, in ``tests/test_contributor_replay.py``.
 * **Dataset status**: only places belonging to "late-curation" datasets
   contribute (``ds_status`` ∈ ``indexed`` / ``accessioning`` /
   ``wd-complete`` — there are zero ``accessioned`` rows in whgv3beta;
@@ -149,8 +169,9 @@ _PLACE_LINK_QUERY = """
 
 # ``imported`` is included alongside ``reviewed`` / ``authid`` because the
 # bulk ``imported`` rows in whgv3beta come from a pre-approved import from
-# another table (per user, 2026-05-02). All three count as
-# contributor-approved equivalences for clustering purposes.
+# another table (per user, 2026-05-02). Since 30 Oct 2026 (N1) the three are
+# NOT one category: ``_close_match_to_hard_link`` files ``imported`` under the
+# weaker ``imported`` source category; the query is unchanged.
 _CLOSE_MATCH_QUERY = """
     SELECT
         da.id::text          AS dataset_key_a,
@@ -186,6 +207,14 @@ _CLOSE_MATCH_QUERY = """
 # correct id is never rewritten; only an unrecognised legacy one is translated.
 # ``legacy_v3_2`` is selected so ``source_id``
 # can carry the same suffix ``ContributorAttestation.source_id()`` would emit.
+#
+# whg3 (place#342, Phase 5) added columns to this table — ``certainty``,
+# ``evidence``, ``bundle``, ``place_a_pk``, ``place_b_pk`` — and the statuses
+# ``pending`` / ``withdrawn`` beside ``active`` / ``revoked``. The projection
+# below names NONE of the new columns on purpose, and ``status = 'active'`` is
+# the only status this harvest forwards: a pending or withdrawn attestation is
+# not evidence. ``tests/test_contributor_replay.py::TestActiveAttestationQuery``
+# locks both facts by executing this exact text against the new column set.
 _ACTIVE_ATTESTATION_QUERY = """
     SELECT
         ca.place_a       AS place_a,
@@ -209,10 +238,23 @@ def _canonical_pair(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a < b else (b, a)
 
 
-def _build_source_id(user_id: Any) -> str:
+def _build_source_id(user_id: Any, category: str = "contributor") -> str:
     """Every legacy v3 row carries the ``:legacy_v3_2`` suffix so the gateway
-    can filter or down-weight it once dynamic-cluster attestations land."""
-    return f"contributor:{user_id}:legacy_v3_2"
+    can filter or down-weight it once dynamic-cluster attestations land.
+
+    ``category`` is the ``source_category`` the row is filed under and doubles
+    as the ``source_id`` prefix, so ``contributor`` and ``imported`` rows for
+    the same pair and user never share the overlay's UNIQUE key."""
+    return f"{category}:{user_id}:legacy_v3_2"
+
+
+# ``close_matches.basis`` → overlay ``source_category`` (ruling N1). Anything
+# the query returns that is not listed here is a programming error, not data.
+_CLOSE_MATCH_BASIS_CATEGORY = {
+    "reviewed": "contributor",
+    "authid": "contributor",
+    "imported": "imported",
+}
 
 
 def _coerce_iso(value: Any) -> str | None:
@@ -357,15 +399,22 @@ def _close_match_to_hard_link(
         return None
     pa, pb = _canonical_pair(place_a, place_b)
     basis = record.get("basis") or ""
-    # Both PlaceLink and CloseMatch represent contributor-asserted equivalence.
-    # The legacy CloseMatch.basis is preserved in justification so
-    # auditors can distinguish curator-reviewed vs authid-derived links.
+    # ``reviewed`` / ``authid`` are contributor-asserted equivalence, like
+    # PlaceLink. ``imported`` is a bulk pre-approved import and is filed under
+    # the weaker ``imported`` category with its own source_id prefix (N1) so it
+    # is never merged with, or counted as, a contributor attestation. The basis
+    # is also preserved in justification for auditors.
+    category = _CLOSE_MATCH_BASIS_CATEGORY.get(basis)
+    if category is None:
+        # The query's ``basis IN (...)`` makes this unreachable from PG; guard
+        # so a widened query cannot quietly file an unknown basis as either.
+        return None
     return {
         "place_a": pa,
         "place_b": pb,
         "relation_type": "closeMatch",
-        "source_category": "contributor",
-        "source_id": _build_source_id(user_id),
+        "source_category": category,
+        "source_id": _build_source_id(user_id, category),
         "asserted_at": _coerce_iso(record.get("asserted_at")),
         "justification": f"close_match:{basis}",
     }
@@ -494,6 +543,10 @@ def iter_hard_link_rows(
         "place_link_converted": 0,
         "close_match_input": 0,
         "close_match_converted": 0,
+        # Of the converted close_matches, how many were filed under the weaker
+        # ``imported`` category (N1). Kept separate so a run summary never
+        # presents imported rows as contributor evidence.
+        "close_match_converted_imported": 0,
         "attestation_input": 0,
         "attestation_converted": 0,
     }
@@ -508,6 +561,8 @@ def iter_hard_link_rows(
         row = _close_match_to_hard_link(record, id_map, ledger)
         if row is not None:
             counts["close_match_converted"] += 1
+            if row["source_category"] == "imported":
+                counts["close_match_converted_imported"] += 1
             out.append(row)
     for record in attestation_rows:
         counts["attestation_input"] += 1

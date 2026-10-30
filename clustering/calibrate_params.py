@@ -328,6 +328,16 @@ def build_stoplist(es_host: str, *, top_k: int = 500, min_places: int = 50,
 # cross-coordinate positives the browser's broader task actually resembles. Their
 # reliability was the original deferral reason; run with ``contributor`` on the
 # assumption they are reliable (re-run for fine-tuning as more accumulate).
+#
+# ``imported`` (overlay category added 30 Oct 2026, place#342 ruling N1: legacy
+# ``close_matches`` with ``basis='imported'``, a bulk pre-approved import rather
+# than a curator decision) is deliberately in NONE of these classes. The
+# equality tests below exclude it without naming it; this comment is what makes
+# that exclusion a decision rather than an accident. Against an overlay built
+# before N1 the ``contributor`` class silently included those rows, so a
+# ``contributor`` or ``both`` sample from a rebuilt overlay is smaller — and
+# cleaner — than one from the old file. Add an explicit class here if imported
+# rows are ever wanted as (weaker) positives; do not widen ``both``.
 _POSITIVE_SQL = {
     "authority": ("relation_type IN ('sameAs','exactMatch') "
                   "AND source_category='authority'"),
