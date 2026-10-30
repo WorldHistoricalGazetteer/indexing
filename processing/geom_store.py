@@ -46,6 +46,7 @@ import re
 import shutil
 import sqlite3
 import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -74,6 +75,30 @@ DEFAULT_SHARD_SIZE_BYTES = 256 * 1024 * 1024  # 256 MB
 # ── Index file names ───────────────────────────────────────────────────────
 INDEX_JSON_NAME = "index.json"
 INDEX_SQLITE_NAME = "index.sqlite"
+
+# ── Overlay routing ────────────────────────────────────────────────────────
+# Contributed-dataset geometries (``whg:<dataset_id>:<src_id>_<idx>``) may be
+# served from a per-dataset OVERLAY (``processing.geom_overlay``) that a VM job
+# writes without touching the main store. Routing is by the STORE KEY prefix —
+# never by a place id the caller derived — and only keys of this exact shape
+# are ever looked up in an overlay. Every other key pays one ``startswith``.
+OVERLAY_KEY_PREFIX = "whg:"
+_OVERLAY_KEY_RE = re.compile(r"^whg:(\d+):")
+
+# Reader reload cadence: how often (at most) a reader lists the overlays
+# directory and stats the main index for a new generation. Driven from the
+# request path (``get``/``get_wkb``/``__contains__``), so an idle reader costs
+# nothing; a busy one pays one ``listdir`` + one ``stat`` per interval.
+RESCAN_ENV = "GEOM_OVERLAY_RESCAN_S"
+DEFAULT_RESCAN_S = 2.0
+# A superseded generation (main or overlay) stays open this long after the
+# swap so a request that resolved it just before the swap can finish its
+# reads on the fds it already holds. Closing an fd early would not merely
+# fail a late ``pread``: the number can be reused by a newer open, and the
+# read would then return bytes from the WRONG file.
+DEFAULT_GENERATION_GRACE_S = 60.0
+# Heartbeat cadence for readers that announce themselves (the gateway).
+DEFAULT_HEARTBEAT_INTERVAL_S = 30.0
 
 # Shard filenames are always ``geom_shard_NNNN.bin`` (written by
 # ``consolidate_geom_store``), which lets the SQLite index store the shard
@@ -426,12 +451,46 @@ def backup_sqlite_index(
 
 # ── Consolidation ──────────────────────────────────────────────────────────
 
+def _load_existing_index(output_dir: Path) -> dict[str, dict]:
+    """The existing store's ``{key: {file, offset, length}}`` for a merge.
+
+    Reads ``index.sqlite`` when it exists and falls back to ``index.json``
+    only when it does not. The two can diverge: ``processing.compact_overlays``
+    folds overlay rows into ``index.sqlite`` and deliberately leaves
+    ``index.json`` untouched (the reader never opens it when SQLite exists).
+    A merge seeded from the stale JSON would rebuild ``index.sqlite`` WITHOUT
+    those rows — a silent loss of exactly the geometries most recently added.
+    """
+    sqlite_path = output_dir / INDEX_SQLITE_NAME
+    json_path = output_dir / INDEX_JSON_NAME
+    if sqlite_path.exists():
+        existing: dict[str, dict] = {}
+        conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro&immutable=1", uri=True)
+        try:
+            cur = conn.execute("SELECT k, shard, off, len FROM geom")
+            while True:
+                rows = cur.fetchmany(100_000)
+                if not rows:
+                    break
+                for k, shard, off, ln in rows:
+                    existing[k] = {"file": shard_filename(shard), "offset": off,
+                                   "length": ln}
+        finally:
+            conn.close()
+        return existing
+    if json_path.exists():
+        with open(json_path) as f:
+            return json.load(f)
+    return {}
+
+
 def consolidate_geom_store(
     staging_dir: str | Path,
     output_dir: str | Path,
     shard_size_bytes: int = DEFAULT_SHARD_SIZE_BYTES,
     delete_staging: bool = True,
     merge_with_existing: bool = False,
+    backup: bool = True,
 ) -> int:
     """
     Read all per-authority staging files, sort by H3 centroid (r3), and write
@@ -444,13 +503,20 @@ def consolidate_geom_store(
         shard_size_bytes:  Target shard file size (default 256 MB).
         delete_staging:    If True, remove staging files after consolidation.
         merge_with_existing: If True and ``output_dir`` already holds shard
-                           files + ``index.json`` (from a prior consolidation),
+                           files + an index (from a prior consolidation),
                            keep them in place and append new entries into
                            freshly-numbered shards. Existing keys overwritten
                            by re-staged entries point to the new shard. Use
                            this after each round of additional staging (e.g.
                            boundary_stage shards) so the 10M-entry base index
-                           isn't rebuilt from scratch each time.
+                           isn't rebuilt from scratch each time. The existing
+                           entries are read from ``index.sqlite`` when it
+                           exists (see :func:`_load_existing_index`).
+        backup:            Copy the finished ``index.sqlite`` to the backup
+                           location (``backup_sqlite_index``). Pass ``False``
+                           for a throwaway store — an overlay generation —
+                           whose index must NOT rotate the main store's
+                           backups out.
 
     Returns:
         Total number of geometry entries written.
@@ -514,10 +580,8 @@ def consolidate_geom_store(
     final_index: dict[str, dict] = {}
     starting_shard_num = 1
     if merge_with_existing:
-        existing_index_path = output_dir / "index.json"
-        if existing_index_path.exists():
-            with open(existing_index_path) as f:
-                final_index = json.load(f)
+        final_index = _load_existing_index(output_dir)
+        if final_index:
             existing_shards = sorted(output_dir.glob("geom_shard_*.bin"))
             if existing_shards:
                 last_name = existing_shards[-1].name
@@ -602,7 +666,8 @@ def consolidate_geom_store(
         # Every namespace in this consolidation is now packed and indexed, so
         # this is the first (and only) moment the index is complete. Back it up
         # to separate storage before anything else can touch it.
-        backup_sqlite_index(output_dir)
+        if backup:
+            backup_sqlite_index(output_dir)
     except Exception as exc:
         # Do not fail the whole consolidation for this — index.json is
         # written and the reader falls back to it — but be loud, because a
@@ -624,6 +689,187 @@ def consolidate_geom_store(
         print(f"  Deleted staging files from {staging_dir}")
 
     return written
+
+
+# ── Generation: one immutable index snapshot ───────────────────────────────
+
+class Generation:
+    """One immutable snapshot of an ``index.sqlite`` and the shard directory
+    it addresses — the unit a reader swaps when the store changes.
+
+    The main store and every overlay are each one of these. A Generation owns
+    its own SQLite connections (per thread, per pid) and its own shard fd map,
+    and shares neither with any other Generation: after ``index.sqlite`` is
+    replaced (``os.replace`` by a consolidation or a compaction) the OLD
+    inode stays readable through the connection already open on it, so a
+    reader keeps answering consistently from the snapshot it resolved until
+    it has retired that snapshot — never from a half-swapped mixture.
+
+    ``stamp`` is ``"<st_ino>:<st_mtime_ns>"`` of the index file at open time:
+    the reader's generation id, reported in heartbeats and compared by the
+    compactor before it deletes a folded overlay.
+    """
+
+    def __init__(self, shard_dir: str | Path, sqlite_path: str | Path | None = None,
+                 *, label: str = ""):
+        self.dir = Path(shard_dir)
+        self.sqlite_path = Path(sqlite_path) if sqlite_path is not None \
+            else self.dir / INDEX_SQLITE_NAME
+        self.label = label or str(self.dir)
+        st = os.stat(self.sqlite_path)
+        self.ino = st.st_ino
+        self.mtime_ns = st.st_mtime_ns
+        self.stamp = f"{st.st_ino}:{st.st_mtime_ns}"
+        self._local = threading.local()
+        self._conns: list[tuple[int, sqlite3.Connection]] = []
+        self._conns_lock = threading.Lock()
+        self._fds: dict[int, int] = {}
+        self._fd_lock = threading.Lock()
+        self._closed = False
+        # Touch the connection now so a broken/incompatible index fails at
+        # construction, where the caller can log a degradation, rather than
+        # on the first request.
+        row = self._conn().execute("SELECT v FROM meta WHERE k='count'").fetchone()
+        self.count: int | None = int(row[0]) if row else None
+
+    # -- SQLite connection (per thread, per process) --------------------------
+
+    def _conn(self) -> sqlite3.Connection:
+        """This thread's read-only connection, reopened after a fork.
+
+        ``immutable=1`` skips all locking and change detection. That is
+        correct because an index is only ever replaced wholesale by an
+        ``os.replace``: an open connection keeps reading the old *inode*
+        consistently; the reader notices the new one on its next rescan.
+        """
+        if self._closed:
+            raise RuntimeError(f"geom-store generation {self.label} is closed")
+        pid = os.getpid()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None and getattr(self._local, "pid", None) == pid:
+            return conn
+        uri = f"file:{self.sqlite_path}?mode=ro&immutable=1"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        self._local.conn = conn
+        self._local.pid = pid
+        with self._conns_lock:
+            self._conns.append((pid, conn))
+        return conn
+
+    # -- shard reads ----------------------------------------------------------
+
+    def _fd(self, shard: int) -> int:
+        fd = self._fds.get(shard)
+        if fd is not None:
+            return fd
+        with self._fd_lock:
+            if self._closed:
+                raise RuntimeError(f"geom-store generation {self.label} is closed")
+            fd = self._fds.get(shard)
+            if fd is None:
+                fd = os.open(self.dir / shard_filename(shard), os.O_RDONLY)
+                self._fds[shard] = fd
+        return fd
+
+    def locate(self, geom_key: str) -> tuple[int, int, int] | None:
+        """``(shard_number, offset, length)`` for *geom_key*, or None."""
+        row = self._conn().execute(
+            "SELECT shard, off, len FROM geom WHERE k=?", (geom_key,)
+        ).fetchone()
+        return None if row is None else (row[0], row[1], row[2])
+
+    def read_wkb(self, geom_key: str) -> bytes | None:
+        """The stored bytes for *geom_key*, or None (absent OR unreadable —
+        the caller logs/falls back; a short read is reported, never returned)."""
+        located = self.locate(geom_key)
+        if located is None:
+            return None
+        shard, offset, length = located
+        try:
+            # os.pread takes the offset as an argument and so cannot race —
+            # unlike seek()+read() on a shared handle.
+            data = os.pread(self._fd(shard), length, offset)
+        except Exception as e:  # noqa: BLE001
+            print(f"GeomStoreReader.read_wkb({geom_key}) [{self.label}]: {e}")
+            return None
+        if len(data) != length:
+            print(
+                f"GeomStoreReader.read_wkb({geom_key}) [{self.label}]: short read "
+                f"({len(data)} of {length} bytes from {shard_filename(shard)}@{offset})"
+            )
+            return None
+        return data
+
+    def contains(self, geom_key: str) -> bool:
+        return self._conn().execute(
+            "SELECT 1 FROM geom WHERE k=? LIMIT 1", (geom_key,)
+        ).fetchone() is not None
+
+    def n_rows(self) -> int:
+        if self.count is None:
+            # Only for an index built without the meta row: a full B-tree scan
+            # of a WITHOUT ROWID table, hence cached.
+            self.count = self._conn().execute("SELECT count(*) FROM geom").fetchone()[0]
+        return self.count
+
+    def iter_rows(self, batch: int = 10_000):
+        """Yield ``(key, shard, offset, length)`` in shard order — a streaming
+        cursor, so a 50k-row overlay or an 11.5M-row main index costs one
+        batch of memory at a time."""
+        cur = self._conn().execute("SELECT k, shard, off, len FROM geom ORDER BY shard, off")
+        while True:
+            rows = cur.fetchmany(batch)
+            if not rows:
+                return
+            yield from rows
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self):
+        """Release fds and this process's connections. Idempotent."""
+        self._closed = True
+        with self._fd_lock:
+            for fd in self._fds.values():
+                try:
+                    os.close(fd)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._fds.clear()
+        pid = os.getpid()
+        with self._conns_lock:
+            keep = []
+            for cpid, conn in self._conns:
+                # Never close a connection inherited across fork(): it is the
+                # parent's, and sqlite's finaliser must run in the parent.
+                if cpid != pid:
+                    keep.append((cpid, conn))
+                    continue
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            self._conns = keep
+        if getattr(self._local, "pid", None) == pid:
+            self._local.conn = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def main_generation_stamp(store_dir: str | Path) -> str | None:
+    """``"<ino>:<mtime_ns>"`` of ``<store>/index.sqlite`` right now, or None
+    when there is no SQLite index. The same id a reader reports as
+    ``main_generation``; the compactor compares the two."""
+    try:
+        st = os.stat(Path(store_dir) / INDEX_SQLITE_NAME)
+    except OSError:
+        return None
+    return f"{st.st_ino}:{st.st_mtime_ns}"
 
 
 # ── Reader ─────────────────────────────────────────────────────────────────
@@ -652,6 +898,38 @@ class GeomStoreReader:
     which one is live, and construction emits a log line either way so this
     can never again be invisible.
 
+    Generations, overlays and reload
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    The SQLite backend is a :class:`Generation`, and the reader follows the
+    store WITHOUT a restart:
+
+    * **Overlays** — ``<store>/overlays/whg-<dataset_id>/CURRENT`` → one mini
+      store per contributed dataset, written by a VM job
+      (``processing.geom_overlay.write_overlay``). A key of the form
+      ``whg:<digits>:…`` is looked up in its dataset's overlay FIRST and in
+      the main store only if the overlay does not hold it; every other key
+      pays a single ``startswith`` and goes straight to the main store.
+    * **Main reload** — the rescan tick stats ``index.sqlite``; a new inode
+      or mtime (a consolidation or an overlay compaction ``os.replace``-d it)
+      opens a fresh Generation, with a fresh fd map so newly-added shards are
+      seen. The JSON backend is never reloaded.
+    * **Rescan** is throttled (``GEOM_OVERLAY_RESCAN_S``, default 2 s) and
+      runs from the request path — ``listdir`` + ``readlink`` per overlay and
+      one ``stat`` for the main index, never a stat per key. A superseded
+      Generation is swapped out by one assignment and closed only after a
+      grace period, so in-flight reads finish on the fds they hold. Any
+      change clears the WKB LRU (a cached ``None`` must not pin a key that
+      has just arrived) and increments ``overlay_epoch``, which
+      ``gateway.spatial`` keys its region cache on.
+    * A broken overlay (no ``CURRENT``, a ``.tmp`` directory, an unreadable
+      index) is skipped and logged once per overlay+reason, never raised,
+      and retried on the next rescan — it is never remembered as failed.
+    * ``heartbeat=True`` (the gateway) writes
+      ``<store>/.reader_heartbeat/<pid>.json`` at most every 30 s from the
+      same tick, naming the generations this process is serving, so the
+      compactor can tell when every live reader has moved past a folded
+      overlay and it is safe to delete.
+
     Concurrency
     ~~~~~~~~~~~
     Safe to share across threads and to inherit across ``fork()``:
@@ -676,32 +954,71 @@ class GeomStoreReader:
         store_dir: str | Path,
         lru_maxsize: int = 4096,
         prefer_sqlite: bool = True,
+        *,
+        index_path: str | Path | None = None,
+        overlays: bool = True,
+        rescan_s: float | None = None,
+        clock=None,
+        grace_s: float | None = None,
+        heartbeat: bool = False,
+        heartbeat_interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S,
     ):
+        """
+        Args:
+            store_dir:     the geom store (shards, ``index.sqlite``, ``overlays/``).
+            lru_maxsize:   in-process WKB LRU, by entry count.
+            prefer_sqlite: use ``index.sqlite`` when present (else ``index.json``).
+            index_path:    open THIS SQLite index instead of ``<store>/index.sqlite``
+                           — the compactor verifies its candidate index this way.
+                           Implies the shards are still read from ``store_dir``.
+            overlays:      consult ``<store>/overlays``. ``False`` makes every
+                           key resolve in the main store only — what a
+                           verification of main-store bytes needs.
+            rescan_s:      overlay/main rescan throttle (default ``$GEOM_OVERLAY_RESCAN_S``
+                           or 2 s). ``0`` rescans on every call.
+            clock:         monotonic time source (injectable for tests).
+            grace_s:       how long a superseded generation stays open.
+            heartbeat:     announce this process's generations under
+                           ``<store>/.reader_heartbeat/`` (the gateway only).
+        """
         self._dir = Path(store_dir)
-        sqlite_path = self._dir / INDEX_SQLITE_NAME
+        sqlite_path = Path(index_path) if index_path is not None else self._dir / INDEX_SQLITE_NAME
         json_path = self._dir / INDEX_JSON_NAME
 
         self._sqlite_path: Path | None = None
+        self._main: Generation | None = None
         self._index: dict[str, dict] | None = None
-        self._local = threading.local()
-        self._fds: dict[str, int] = {}
+        self._fds: dict[str, int] = {}          # JSON backend only
         self._fd_lock = threading.Lock()
         self._count: int | None = None
+
+        self._clock = clock or time.monotonic
+        if rescan_s is None:
+            try:
+                rescan_s = float(os.environ.get(RESCAN_ENV, DEFAULT_RESCAN_S))
+            except ValueError:
+                rescan_s = DEFAULT_RESCAN_S
+        self._rescan_s = max(0.0, float(rescan_s))
+        self._grace_s = DEFAULT_GENERATION_GRACE_S if grace_s is None else float(grace_s)
+        self._next_rescan = 0.0
+        self._tick_lock = threading.Lock()
+        self._retired: list[tuple[Generation, float]] = []
+        self._logged: set[str] = set()
+        self.overlay_epoch = 0
+        self._overlays = None
+        self._heartbeat = bool(heartbeat)
+        self._heartbeat_interval = float(heartbeat_interval_s)
+        self._next_heartbeat = 0.0
 
         if prefer_sqlite and sqlite_path.exists():
             self._sqlite_path = sqlite_path
             self.backend = "sqlite"
-            # Touch the connection now rather than on the first request, so a
-            # broken/incompatible index fails at construction where
-            # get_geom_reader() can catch it and log a degradation.
-            row = self._conn().execute(
-                "SELECT v FROM meta WHERE k='count'"
-            ).fetchone()
-            self._count = int(row[0]) if row else None
+            self._main = Generation(self._dir, sqlite_path, label="main")
+            self._count = self._main.count
             print(
                 f"geom-store: opened {sqlite_path} "
                 f"({self._count if self._count is not None else '?'} entries, "
-                f"sqlite backend)",
+                f"sqlite backend, generation {self._main.stamp})",
                 flush=True,
             )
         elif json_path.exists():
@@ -725,32 +1042,149 @@ class GeomStoreReader:
         # Wrap the internal read method with an LRU cache on the key
         self._cached_wkb = lru_cache(maxsize=lru_maxsize)(self._read_wkb)
 
-    # ── SQLite connection (per thread, per process) ───────────────────────
+        if overlays:
+            # Lazy import: geom_overlay imports this module, and the gateway
+            # only pays for it once it actually opens a reader.
+            from processing.geom_overlay import OverlayRegistry
+            self._overlays = OverlayRegistry(
+                self._dir, clock=self._clock, grace_s=self._grace_s,
+                log_once=self._log_once,
+            )
+        # First tick now: overlays present at startup are served from the
+        # first request, and a heartbeat-announcing reader is visible at once.
+        self.tick(force=True)
+
+    # ── Logging (once per condition, re-armed when it clears) ─────────────
+
+    def _log_once(self, key: str, message: str | None) -> None:
+        """Print *message* the first time *key* is seen; ``message=None``
+        clears *key* so the same condition is reported again if it recurs."""
+        if message is None:
+            self._logged.discard(key)
+            return
+        if key in self._logged:
+            return
+        self._logged.add(key)
+        print(f"geom-store: {message}", flush=True)
+
+    # ── Rescan tick ───────────────────────────────────────────────────────
+
+    def tick(self, force: bool = False) -> bool:
+        """Rescan the main index and the overlays if the throttle allows.
+
+        Returns True when a generation changed. Never raises: the store
+        changing under a live reader must degrade a request, not fail it.
+        Concurrent callers do not queue — a tick already in progress makes
+        the others return immediately.
+        """
+        now = self._clock()
+        if not force and now < self._next_rescan:
+            return False
+        if not self._tick_lock.acquire(blocking=False):
+            return False
+        try:
+            self._next_rescan = now + self._rescan_s
+            changed = False
+            try:
+                if self._main is not None:
+                    changed |= self._reload_main_if_changed(now)
+                if self._overlays is not None:
+                    changed |= self._overlays.rescan(now)
+            except Exception as exc:  # noqa: BLE001 — never fail a request
+                self._log_once("tick-error", f"rescan failed: {exc!r}")
+            if changed:
+                self._cached_wkb.cache_clear()
+                self.overlay_epoch += 1
+            self._close_retired(now)
+            if self._overlays is not None:
+                self._overlays.close_retired(now)
+            if self._heartbeat and now >= self._next_heartbeat:
+                self._next_heartbeat = now + self._heartbeat_interval
+                self._write_heartbeat()
+            return changed
+        finally:
+            self._tick_lock.release()
+
+    def _reload_main_if_changed(self, now: float) -> bool:
+        assert self._main is not None and self._sqlite_path is not None
+        try:
+            st = os.stat(self._sqlite_path)
+        except OSError as exc:
+            self._log_once("main-stat", f"cannot stat {self._sqlite_path}: {exc}")
+            return False
+        if (st.st_ino, st.st_mtime_ns) == (self._main.ino, self._main.mtime_ns):
+            self._log_once("main-stat", None)
+            self._log_once("main-open", None)
+            return False
+        try:
+            new = Generation(self._dir, self._sqlite_path, label="main")
+        except Exception as exc:  # noqa: BLE001
+            self._log_once(
+                "main-open",
+                f"{self._sqlite_path} changed ({self._main.stamp} → "
+                f"{st.st_ino}:{st.st_mtime_ns}) but could not be opened, keeping the "
+                f"previous generation: {exc!r}",
+            )
+            return False
+        old = self._main
+        self._main = new                     # single assignment = the swap
+        self._count = new.count
+        self._retired.append((old, now + self._grace_s))
+        print(
+            f"geom-store: main index reloaded {old.stamp} → {new.stamp} "
+            f"({new.count if new.count is not None else '?'} entries)",
+            flush=True,
+        )
+        return True
+
+    def _close_retired(self, now: float) -> None:
+        keep = []
+        for gen, close_at in self._retired:
+            if now >= close_at:
+                gen.close()
+            else:
+                keep.append((gen, close_at))
+        self._retired = keep
+
+    # ── Heartbeat (best effort) ───────────────────────────────────────────
+
+    def _write_heartbeat(self) -> None:
+        try:
+            from processing.geom_overlay import write_heartbeat
+            write_heartbeat(self._dir, main_generation=self.main_generation,
+                            overlays=self.overlay_generations)
+        except Exception as exc:  # noqa: BLE001 — never fail a request for this
+            self._log_once("heartbeat", f"heartbeat not written: {exc!r}")
+
+    # ── Generation reporting ──────────────────────────────────────────────
+
+    @property
+    def main_generation(self) -> str:
+        """``"<ino>:<mtime_ns>"`` of the main index this reader serves
+        (``"json"`` on the JSON backend, which is never reloaded)."""
+        return self._main.stamp if self._main is not None else "json"
+
+    @property
+    def overlay_generations(self) -> dict[str, str]:
+        """``{dataset_id: generation_name}`` of the overlays currently served."""
+        return self._overlays.generations() if self._overlays is not None else {}
+
+    @property
+    def overlays(self):
+        return self._overlays
+
+    # ── SQLite connection (compat) ────────────────────────────────────────
 
     def _conn(self) -> sqlite3.Connection:
-        """Return this thread's read-only connection, reopening after a fork.
-
-        ``immutable=1`` skips all locking and change detection. That is
-        correct here because the index is only ever replaced wholesale by an
-        ``os.replace`` (see :func:`write_sqlite_index`): an open reader keeps
-        reading the old inode consistently, exactly as the in-memory
-        ``index.json`` snapshot used to behave, until the process restarts.
-        The re-ingest runbook already ends with ``es gateway-restart``.
-        """
-        pid = os.getpid()
-        conn = getattr(self._local, "conn", None)
-        if conn is not None and getattr(self._local, "pid", None) == pid:
-            return conn
-        uri = f"file:{self._sqlite_path}?mode=ro&immutable=1"
-        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-        self._local.conn = conn
-        self._local.pid = pid
-        return conn
+        """The main generation's connection for this thread (SQLite backend)."""
+        if self._main is None:
+            raise RuntimeError("no sqlite backend open")
+        return self._main._conn()
 
     # ── Shard reads ───────────────────────────────────────────────────────
 
     def _fd(self, filename: str) -> int:
-        """Return a shared read-only fd for *filename*, opening it once."""
+        """JSON backend: a shared read-only fd for *filename*, opened once."""
         fd = self._fds.get(filename)
         if fd is not None:
             return fd
@@ -762,27 +1196,38 @@ class GeomStoreReader:
         return fd
 
     def _locate(self, geom_key: str) -> tuple[str, int, int] | None:
-        """Resolve *geom_key* → ``(shard_filename, offset, length)``."""
-        if self._sqlite_path is not None:
-            row = self._conn().execute(
-                "SELECT shard, off, len FROM geom WHERE k=?", (geom_key,)
-            ).fetchone()
-            if row is None:
+        """Resolve *geom_key* in the MAIN store → ``(shard_filename, offset, length)``."""
+        if self._main is not None:
+            located = self._main.locate(geom_key)
+            if located is None:
                 return None
-            return shard_filename(row[0]), row[1], row[2]
+            return shard_filename(located[0]), located[1], located[2]
         entry = self._index.get(geom_key) if self._index else None
         if entry is None:
             return None
         return entry["file"], entry["offset"], entry["length"]
 
-    def _read_wkb(self, geom_key: str) -> bytes | None:
+    def _overlay_for(self, geom_key: str):
+        """The overlay Generation a store key routes to, or None.
+
+        Keyed on the store key's own prefix — ``whg:<digits>:`` — never on a
+        place id the caller derived. Non-whg keys pay the one ``startswith``.
+        """
+        if self._overlays is None or not geom_key.startswith(OVERLAY_KEY_PREFIX):
+            return None
+        m = _OVERLAY_KEY_RE.match(geom_key)
+        if m is None:
+            return None
+        return self._overlays.get(m.group(1))
+
+    def _read_main_wkb(self, geom_key: str) -> bytes | None:
+        if self._main is not None:
+            return self._main.read_wkb(geom_key)
         located = self._locate(geom_key)
         if located is None:
             return None
         filename, offset, length = located
         try:
-            # os.pread is atomic w.r.t. the file offset — unlike seek()+read()
-            # on a shared handle, it is safe from multiple threads.
             data = os.pread(self._fd(filename), length, offset)
             if len(data) != length:
                 print(
@@ -791,12 +1236,24 @@ class GeomStoreReader:
                 )
                 return None
             return data
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"GeomStoreReader._read_wkb({geom_key}): {e}")
             return None
 
+    def _read_wkb(self, geom_key: str) -> bytes | None:
+        overlay = self._overlay_for(geom_key)
+        if overlay is not None:
+            data = overlay.read_wkb(geom_key)
+            if data is not None:
+                return data
+            # Not in the overlay (or its files vanished under us, which a
+            # just-deleted folded overlay can do for one rescan interval):
+            # the main store is the fallback either way.
+        return self._read_main_wkb(geom_key)
+
     def get(self, geom_key: str) -> dict | None:
         """Return the GeoJSON geometry dict for *geom_key*, or ``None``."""
+        self.tick()
         wkb = self._cached_wkb(geom_key)
         if wkb is None:
             return None
@@ -816,44 +1273,57 @@ class GeomStoreReader:
         of MB per entry for the life of the process; the containment path's
         many small candidate reads are what it is sized for.
         """
+        self.tick()
         if not cached:
             return self._read_wkb(geom_key)
         return self._cached_wkb(geom_key)
 
     def __contains__(self, geom_key: str) -> bool:
-        if self._sqlite_path is not None:
-            return self._conn().execute(
-                "SELECT 1 FROM geom WHERE k=? LIMIT 1", (geom_key,)
-            ).fetchone() is not None
+        self.tick()
+        overlay = self._overlay_for(geom_key)
+        if overlay is not None:
+            try:
+                if overlay.contains(geom_key):
+                    return True
+            except Exception:  # noqa: BLE001 — fall through to main
+                pass
+        if self._main is not None:
+            return self._main.contains(geom_key)
         return geom_key in (self._index or {})
 
     def __len__(self) -> int:
-        if self._count is None:
-            # Only reached for a SQLite index built without the meta row;
-            # a full B-tree scan of a WITHOUT ROWID table, hence cached.
-            self._count = self._conn().execute(
-                "SELECT count(*) FROM geom"
-            ).fetchone()[0]
-        return self._count
+        """Entries in the MAIN store (overlays are not counted)."""
+        if self._main is not None:
+            self._count = self._main.n_rows()
+        return self._count if self._count is not None else 0
 
     def close(self):
         with self._fd_lock:
             for fd in self._fds.values():
                 try:
                     os.close(fd)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             self._fds.clear()
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
+        if self._main is not None:
+            self._main.close()
+        for gen, _ in self._retired:
+            gen.close()
+        self._retired = []
+        if self._overlays is not None:
+            self._overlays.close()
+        if self._heartbeat:
             try:
-                conn.close()
-            except Exception:
+                from processing.geom_overlay import remove_heartbeat
+                remove_heartbeat(self._dir)
+            except Exception:  # noqa: BLE001
                 pass
-            self._local.conn = None
 
     def __del__(self):
-        self.close()
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ── CLI consolidation entry-point ──────────────────────────────────────────

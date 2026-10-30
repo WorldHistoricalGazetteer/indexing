@@ -63,10 +63,25 @@ def _stream_index_json(json_path: Path):
             yield key, entry["file"], int(entry["offset"]), int(entry["length"])
 
 
-def cmd_build(store_dir: Path) -> int:
+def cmd_build(store_dir: Path, force: bool = False) -> int:
     json_path = store_dir / INDEX_JSON_NAME
     if not json_path.exists():
         print(f"ERROR: {json_path} not found — nothing to convert.", file=sys.stderr)
+        return 2
+    # ``index.json`` stops being the truth the first time an overlay is folded
+    # (processing.compact_overlays writes ``index.sqlite`` only). Rebuilding
+    # from the JSON would then REGRESS the live index — every folded
+    # contributed-dataset geometry gone, silently, while the reader still
+    # opens a perfectly valid file. The fold ledger is the witness.
+    compacted = store_dir / "overlays" / ".compacted.json"
+    if compacted.exists() and not force:
+        print(
+            f"REFUSING TO BUILD: {compacted} exists, so {INDEX_SQLITE_NAME} holds "
+            f"rows folded from overlays that {INDEX_JSON_NAME} does not. Rebuilding "
+            f"from the JSON would drop them. Pass --force only if you have "
+            f"re-consolidated and know the JSON is complete.",
+            file=sys.stderr,
+        )
         return 2
 
     size_gb = json_path.stat().st_size / (1024 ** 3)
@@ -225,6 +240,11 @@ def main() -> int:
         "--seed", type=int, default=20260730,
         help="verify: RNG seed for reproducible sampling",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="build: proceed even though overlays/.compacted.json shows "
+             "index.sqlite holds folded rows index.json lacks",
+    )
     args = parser.parse_args()
 
     if not args.store_dir:
@@ -237,7 +257,7 @@ def main() -> int:
         return 2
 
     if args.command == "build":
-        return cmd_build(store_dir)
+        return cmd_build(store_dir, force=args.force)
     if args.command == "verify":
         return cmd_verify(store_dir, args.sample, args.seed)
     return cmd_stat(store_dir)

@@ -7,6 +7,7 @@ No live Elasticsearch — resolve_region is exercised against a stub client.
 
 import asyncio
 import unittest
+from unittest import mock
 
 try:
     import h3  # noqa: F401
@@ -852,3 +853,94 @@ class TestContainerKeysFollowGeomRef(unittest.TestCase):
         self.assertEqual(reader.asked, ["wd:Q1_0"])
         self.assertIsNotNone(g)
         self.assertAlmostEqual(g.area, 1.0)
+
+
+class TestRegionCacheFollowsStoreEpoch(unittest.TestCase):
+    """place#341: the geom store changes under a running gateway (an overlay
+    written by a dataset job, a compaction replacing index.sqlite). A region
+    cached under the previous generation must not keep serving its exact
+    geometry from the cache."""
+
+    def setUp(self):
+        self._saved = (spatial._reader, spatial._reader_init, spatial._reader_next_retry)
+        self._cache = dict(spatial._region_cache)
+        spatial._region_cache.clear()
+
+    def tearDown(self):
+        spatial._reader, spatial._reader_init, spatial._reader_next_retry = self._saved
+        spatial._region_cache.clear()
+        spatial._region_cache.update(self._cache)
+
+    def _region(self):
+        return spatial.region_from_geojson(_square(0, 0, 1, 1))
+
+    def test_entry_discarded_when_the_epoch_moves(self):
+        class _Reader:
+            overlay_epoch = 0
+        spatial._reader = _Reader()
+        region = spatial.ResolvedRegion(cover_by_res={}, resolutions=(), bbox_geojson={}, h3_terms=[])
+        spatial._cache_put("k", region)
+        self.assertIs(spatial._cache_get("k"), region)
+        self.assertEqual(region.store_epoch, 0)
+        _Reader.overlay_epoch = 1
+        self.assertIsNone(spatial._cache_get("k"), "stale generation served from cache")
+        self.assertNotIn("k", spatial._region_cache)
+        spatial._cache_put("k", region)
+        self.assertIs(spatial._cache_get("k"), region)
+        self.assertEqual(region.store_epoch, 1)
+
+    def test_no_reader_means_a_stable_epoch(self):
+        spatial._reader = None
+        region = spatial.ResolvedRegion(cover_by_res={}, resolutions=(), bbox_geojson={}, h3_terms=[])
+        spatial._cache_put("k", region)
+        self.assertIs(spatial._cache_get("k"), region)
+        self.assertEqual(region.store_epoch, -1)
+
+    def test_region_from_geojson_is_rebuilt_after_an_epoch_change(self):
+        class _Reader:
+            overlay_epoch = 5
+        spatial._reader = _Reader()
+        first = self._region()
+        self.assertIs(self._region(), first)
+        _Reader.overlay_epoch = 6
+        self.assertIsNot(self._region(), first)
+
+
+class TestGeomReaderRetry(unittest.TestCase):
+    """A failed open is retried after a backoff instead of pinning None for
+    the life of the process; a success is cached; a pinned None without a
+    scheduled retry (what the geometry tests set) is never retried."""
+
+    def setUp(self):
+        self._saved = (spatial._reader, spatial._reader_init, spatial._reader_next_retry)
+        spatial._reader, spatial._reader_init, spatial._reader_next_retry = None, False, 0.0
+
+    def tearDown(self):
+        spatial._reader, spatial._reader_init, spatial._reader_next_retry = self._saved
+
+    def test_retry_after_backoff_then_cached(self):
+        calls: list[dict] = []
+        sentinel = object()
+
+        def fake_reader(store_dir, **kw):
+            calls.append(kw)
+            if len(calls) == 1:
+                raise FileNotFoundError("index missing")
+            return sentinel
+        with mock.patch("processing.geom_store.GeomStoreReader", fake_reader):
+            self.assertIsNone(spatial.get_geom_reader(now=100.0))
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(spatial._reader_next_retry, 100.0 + spatial.READER_RETRY_S)
+            self.assertIsNone(spatial.get_geom_reader(now=110.0), "inside the backoff")
+            self.assertEqual(len(calls), 1, "no attempt inside the backoff")
+            self.assertIs(spatial.get_geom_reader(now=131.0), sentinel)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(calls[1].get("heartbeat"), "the gateway's reader announces itself")
+            self.assertIs(spatial.get_geom_reader(now=10_000.0), sentinel)
+            self.assertEqual(len(calls), 2, "a success is cached")
+
+    def test_pinned_none_is_not_retried(self):
+        spatial._reader, spatial._reader_init, spatial._reader_next_retry = None, True, 0.0
+        with mock.patch("processing.geom_store.GeomStoreReader",
+                        side_effect=AssertionError("must not be called")):
+            self.assertIsNone(spatial.get_geom_reader(now=1e9))

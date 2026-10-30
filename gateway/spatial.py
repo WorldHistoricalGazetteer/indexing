@@ -29,6 +29,7 @@ import json
 import logging
 import math
 import threading
+import time
 from functools import lru_cache
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -88,23 +89,62 @@ class RegionError(ValueError):
 # ---------------------------------------------------------------------------
 _reader: Any = None
 _reader_init = False
+# After a failed open, the next attempt is not before this monotonic time.
+# 0.0 means "no retry scheduled": a test that pins ``_reader_init=True`` with
+# ``_reader=None`` keeps the old never-retry behaviour.
+_reader_next_retry = 0.0
+_reader_lock = threading.Lock()
+READER_RETRY_S = 30.0
 
 
-def get_geom_reader():
+def get_geom_reader(now: float | None = None):
     """Return a cached ``GeomStoreReader`` for the exact path, or None if the
-    ``/vast`` geom-store is unavailable (exact then degrades to repr_point)."""
-    global _reader, _reader_init
-    if _reader_init:
+    ``/vast`` geom-store is unavailable (exact then degrades to repr_point).
+
+    A failed open is retried, at most once every ``READER_RETRY_S``, so a
+    store that was briefly unreadable at startup (an ``/ix1``/``/vast``
+    hiccup, an index mid-rebuild) does not leave exact containment degraded
+    for the life of the process. Between attempts the answer is None at no
+    cost. ⚠ The attempt itself opens SQLite on the store volume; a wedged
+    volume can hang it, exactly as the first open always could.
+
+    The reader announces itself (``heartbeat=True``): the overlay compactor
+    only deletes a folded overlay once every live gateway worker reports the
+    main-store generation that holds its rows.
+    """
+    global _reader, _reader_init, _reader_next_retry
+    if _reader is not None:
         return _reader
-    _reader_init = True
-    try:
-        from processing.geom_store import GeomStoreReader
-        from processing.settings import GEOM_STORE_DIR
-        _reader = GeomStoreReader(GEOM_STORE_DIR)
-    except Exception as exc:  # pragma: no cover
-        logger.warning("geom-store unavailable — exact containment degraded: %s", exc)
-        _reader = None
-    return _reader
+    now = time.monotonic() if now is None else now
+    if _reader_init and (_reader_next_retry == 0.0 or now < _reader_next_retry):
+        return None
+    with _reader_lock:
+        if _reader is not None:
+            return _reader
+        if _reader_init and (_reader_next_retry == 0.0 or now < _reader_next_retry):
+            return None
+        _reader_init = True
+        try:
+            from processing.geom_store import GeomStoreReader
+            from processing.settings import GEOM_STORE_DIR
+            _reader = GeomStoreReader(GEOM_STORE_DIR, heartbeat=True)
+            _reader_next_retry = 0.0
+        except Exception as exc:  # pragma: no cover
+            logger.warning("geom-store unavailable — exact containment degraded "
+                           "(retry in %.0fs): %s", READER_RETRY_S, exc)
+            _reader = None
+            _reader_next_retry = now + READER_RETRY_S
+        return _reader
+
+
+def _store_epoch() -> int:
+    """The open reader's generation epoch, or -1 when no reader is open.
+
+    Deliberately never OPENS the reader: the fuzzy path runs entirely off
+    ``_source`` and must not acquire a ``/vast`` dependency through the cache.
+    """
+    r = _reader
+    return getattr(r, "overlay_epoch", -1) if r is not None else -1
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +342,12 @@ class ResolvedRegion:
     linked_ids: tuple[str, ...] = ()       # co-referents whose polygon was borrowed
     point_ids: tuple[str, ...] = ()        # containers that contributed only a point
     unresolved_ids: tuple[str, ...] = ()   # requested ids with no usable geometry
+    # The geom-store generation epoch this region was cached under. The store
+    # can change under a running gateway (an overlay written by a dataset job,
+    # a compaction replacing index.sqlite); a region whose `union` was loaded
+    # from the previous generation would otherwise be served from the cache
+    # for as long as it stayed hot. _cache_get discards on mismatch.
+    store_epoch: int = -1
     _geom_loaded: bool = False
     # Region cells lifted to a COARSER resolution, memoised per resolution. Built
     # on demand by _region_ancestors_at so an overlap test against a candidate
@@ -461,12 +507,20 @@ _region_cache: "OrderedDict[str, ResolvedRegion]" = OrderedDict()
 
 def _cache_get(key: str) -> Optional[ResolvedRegion]:
     region = _region_cache.get(key)
-    if region is not None:
-        _region_cache.move_to_end(key)
+    if region is None:
+        return None
+    if region.store_epoch != _store_epoch():
+        # Cached under another generation of the geom store: its exact
+        # geometry (if loaded) may be stale, and a region built before the
+        # reader existed carries -1 and is rebuilt once. Cheap either way.
+        _region_cache.pop(key, None)
+        return None
+    _region_cache.move_to_end(key)
     return region
 
 
 def _cache_put(key: str, region: ResolvedRegion) -> None:
+    region.store_epoch = _store_epoch()
     _region_cache[key] = region
     _region_cache.move_to_end(key)
     while len(_region_cache) > _REGION_CACHE_MAX:

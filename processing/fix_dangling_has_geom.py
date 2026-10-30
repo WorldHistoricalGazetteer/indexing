@@ -53,10 +53,22 @@ from processing.recompute_h3_index import (  # same PIT/bulk plumbing
 from processing.settings import GEOM_STORE_DIR
 
 
-def _store_keys() -> set[str]:
-    """The geom store's key set (the 84 MB index.json, reduced to its keys)."""
-    with open(f"{GEOM_STORE_DIR}/index.json") as fh:
-        return set(json.load(fh))
+def _open_store():
+    """The geom store, read through ``GeomStoreReader`` (``index.sqlite``,
+    point lookups) rather than by loading ``index.json`` into a set.
+
+    ``index.json`` is no longer the truth: ``processing.compact_overlays``
+    folds contributed-dataset overlays into ``index.sqlite`` and leaves the
+    JSON alone, and per-dataset overlays under ``<store>/overlays`` hold keys
+    the main index has not yet absorbed. The reader consults both, so this
+    scan judges ``has_geom`` against what the gateway can actually fetch.
+    """
+    from processing.geom_store import GeomStoreReader
+    reader = GeomStoreReader(GEOM_STORE_DIR, lru_maxsize=0)
+    if reader.backend != "sqlite":
+        print(f"WARNING: geom store at {GEOM_STORE_DIR} has no index.sqlite — "
+              f"reading the JSON index (slow, ~5.4 GB RSS at full scale)", flush=True)
+    return reader
 
 
 # ---------------------------------------------------------------------------
@@ -64,14 +76,19 @@ def _store_keys() -> set[str]:
 # ---------------------------------------------------------------------------
 
 def scan(args) -> int:
-    keys = _store_keys()
-    print(f"geom-store keys: {len(keys):,}", flush=True)
+    store = _open_store()
+    print(f"geom-store entries: {len(store):,} (main index; overlays: "
+          f"{len(store.overlay_generations)})", flush=True)
     sess = _session()
 
     query = {"bool": {"filter": [
         {"nested": {"path": "geometries",
                     "query": {"term": {"geometries.has_geom": True}}}}]}}
-    source = ["place_id", "geometries.geometry_index", "geometries.has_geom"]
+    # geom_ref: a BORROWED geometry (og places carry wd polygons) is keyed by
+    # the lender's key, not the positional one — judging it positionally
+    # would report every borrower as dangling and clear a flag that is true.
+    source = ["place_id", "geometries.geometry_index", "geometries.has_geom",
+              "geometries.geom_ref"]
 
     cursor_path = f"{args.out}.cursor"
     after, mode = None, "w"
@@ -97,7 +114,7 @@ def scan(args) -> int:
                 if not isinstance(g, dict) or not g.get("has_geom"):
                     continue
                 gi = g.get("geometry_index", idx)
-                if f"{pid}_{gi}" in keys:
+                if (g.get("geom_ref") or f"{pid}_{gi}") in store:
                     intact += 1
                 else:
                     bad.append(gi)
