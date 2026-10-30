@@ -53,6 +53,19 @@ The write step REFUSES any dataset whose staged sidecar (per-dataset
 "published"`` — never-index-pending, enforced here as well as at selection —
 and, when ``processing.whg_selection.is_indexable`` is importable, that
 predicate must agree (it is handed the sidecar entry as-is).
+
+The ``indexed.json`` marker. A dataset ``--execute`` run (not ``--retract``)
+writes ``staged/whg/datasets/<id>/indexed.json`` as its LAST step, atomically,
+and ONLY after the places bulk reported zero errors and indexed exactly the
+pre-scan count (and, unless ``--places-only``, the toponyms bulk reported zero
+errors). ``GET /api/registry/reingest/<job_id>`` reads it to answer
+``indexed`` — a Slurm job that exits 0 is not evidence the dataset landed, so
+the job's own ``completed`` and this marker are deliberately two signals. Any
+marker already there is DELETED at the start of an execute run (and by a
+``--retract --execute``), so a previous job's success can never be read as this
+one's. ``--job-id`` (or ``REINGEST_JOB_ID`` in the environment) stamps the
+marker with the Slurm job that wrote it; the gateway only reports
+``indexed=true`` for the job the marker names.
 """
 from __future__ import annotations
 
@@ -290,6 +303,70 @@ def assert_dataset_writable(dataset: str, meta: dict | None, *, indexable_fn=Non
             f"staged sidecar says dataset_status='published' may be written to "
             f"the live index (never-index-pending)."
         )
+
+
+# ---------------------------------------------------------------------------
+# The indexed.json marker (read by gateway/reingest.py — keep the two in step)
+# ---------------------------------------------------------------------------
+
+INDEXED_MARKER_SCHEMA = "whg-dataset-indexed/1"
+INDEXED_MARKER_FILENAME = "indexed.json"
+# A Slurm job id: digits, optionally ``_<array index>``. Same shape the gateway
+# accepts on GET /api/registry/reingest/<job_id>.
+_JOB_ID_RE = re.compile(r"^\d+(?:_\d+)?$")
+JOB_ID_ENV = "REINGEST_JOB_ID"
+
+
+def validate_job_id(job_id: str | None) -> str | None:
+    """``"4242"`` / ``"4242_3"`` → itself; ``None``/blank → ``None``; else SystemExit."""
+    if job_id is None:
+        return None
+    jid = str(job_id).strip()
+    if not jid:
+        return None
+    if not _JOB_ID_RE.fullmatch(jid):
+        raise SystemExit(f"--job-id must be a Slurm job id (digits[_digits]), got {job_id!r}")
+    return jid
+
+
+def indexed_marker_path(dataset: str, staged_base: str | os.PathLike | None = None) -> Path:
+    """``staged/whg/datasets/<id>/indexed.json``."""
+    return dataset_staged_dir(dataset, staged_base) / INDEXED_MARKER_FILENAME
+
+
+def remove_indexed_marker(dataset: str, staged_base: str | os.PathLike | None = None) -> bool:
+    """Delete the marker if present. Returns whether one was there."""
+    path = indexed_marker_path(dataset, staged_base)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    print(f"[indexed] removed stale {path}")
+    return True
+
+
+def write_indexed_marker(dataset: str, *, job_id: str | None, indexed_count: int,
+                         staged_base: str | os.PathLike | None = None) -> Path:
+    """Write the marker atomically (tmp + ``os.replace``) and return its path.
+
+    The caller decides WHETHER to write; this only decides HOW. A reader can
+    therefore never see a half-written file — it is either the previous
+    marker, absent, or complete."""
+    path = indexed_marker_path(dataset, staged_base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": INDEXED_MARKER_SCHEMA,
+        "dataset_id": validate_dataset_id(dataset),
+        "job_id": validate_job_id(job_id),
+        "indexed_count": int(indexed_count),
+        "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    print(f"[indexed] wrote {path} (job_id={payload['job_id']}, "
+          f"indexed_count={indexed_count:,})")
+    return path
 
 
 def assert_dataset_retractable(dataset: str, meta: dict | None, *, indexable_fn=None) -> None:
@@ -605,7 +682,7 @@ def scan_places(doc_iter) -> tuple[int, int]:
 
 def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
                           uncovered, replace, execute, allow_missing_h3,
-                          place_prefix=None, retract=False):
+                          place_prefix=None, retract=False) -> tuple[int, int] | None:
     """Index one namespace's places, streaming from ``doc_iter_factory()``.
 
     ``doc_iter_factory`` is a zero-argument callable returning a FRESH iterator
@@ -615,13 +692,17 @@ def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
     ``place_prefix`` scopes the replace/retract delete (default the whole
     namespace, ``<ns>:``; a contributed dataset passes ``whg:<id>:``).
     ``retract`` performs the delete only and never re-adds.
+
+    Returns ``(ok, n_errors)`` from the bulk when one ran, else ``None``
+    (dry-run, retract). ``ok`` is to be compared with ``n_docs`` by the caller
+    as well as here: a short read is reported but is not an "error".
     """
     place_prefix = place_prefix or f"{namespace}:"
     print(f"\n[places] target index: {index}")
     if retract:
         print(f"[places] RETRACT: delete_by_query place_id prefix {place_prefix!r} (no re-add)")
         delete_places_by_prefix(es, index, place_prefix, execute=execute)
-        return
+        return None
 
     print(f"[places] docs to index: {n_docs:,}")
     if uncovered:
@@ -640,7 +721,7 @@ def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
 
     if not execute:
         print("[places] (dry-run) would bulk-index the above docs (_id=place_id)")
-        return
+        return None
 
     def actions():
         seen = skipped = 0
@@ -671,6 +752,7 @@ def plan_and_index_places(es, index, namespace, doc_iter_factory, *, n_docs,
     if errors:
         for e in (errors or [])[:5]:
             print("   ", json.dumps(e)[:200], file=sys.stderr)
+    return int(ok), int(n_err)
 
 
 # ---------------------------------------------------------------------------
@@ -689,11 +771,14 @@ def _existing_topids(es, index, ids: list[str]) -> set[str]:
 
 
 def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, execute,
-                            emit_new_toponyms=None, place_prefix=None, retract=False):
+                            emit_new_toponyms=None, place_prefix=None,
+                            retract=False) -> tuple[int, int] | None:
     """Augment the toponyms index with one namespace's (or dataset's) attestations.
 
     ``place_prefix`` scopes the replace/retract strip (default ``<ns>:``);
     ``retract`` strips and never re-adds — ``attest_records`` is ignored.
+
+    Returns ``(ok, n_errors)`` from the bulk when one ran, else ``None``.
     """
     place_prefix = place_prefix or f"{namespace}:"
     indexed_at = datetime.now(timezone.utc).isoformat()
@@ -701,7 +786,7 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
     if retract:
         print(f"[toponyms] RETRACT: strip {place_prefix!r} attestations (no re-add)")
         strip_attestations_by_prefix(es, index, namespace, place_prefix, execute=execute)
-        return
+        return None
 
     topids = [r["toponym_id"] for r in attest_records]
     print(f"[toponyms] distinct toponyms attested by {namespace}: {len(topids):,}")
@@ -740,7 +825,7 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
     if not execute:
         print("[toponyms] (dry-run) would augment/upsert the above toponyms "
               "(append attestations + namespace; never overwrite embedding/name)")
-        return
+        return None
 
     def actions():
         for r in attest_records:
@@ -760,13 +845,15 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
             }
 
     ok, errors = es_helpers.bulk(es, actions(), chunk_size=500, raise_on_error=False)
-    print(f"[toponyms] updated ok={ok:,} errors={len(errors) if isinstance(errors, list) else errors}")
+    n_err = len(errors) if isinstance(errors, list) else errors
+    print(f"[toponyms] updated ok={ok:,} errors={n_err}")
     if errors:
         for e in (errors or [])[:5]:
             print("   ", json.dumps(e)[:200], file=sys.stderr)
     if new_ids:
         print(f"\n[toponyms] NOTE: {len(new_ids):,} new toponyms were created without "
               f"embeddings. Run the Symphonym backfill so they become fuzzy-searchable.")
+    return int(ok), int(n_err)
 
 
 def _refresh_registry_aggregates(namespace: str) -> None:
@@ -848,6 +935,10 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
                     help="Write {toponym_id,name,lang} JSONL for the newly-created "
                          "(embedding-less) toponyms — the zero-rescan input for "
                          "phonetics.inference.backfill_embeddings compute")
+    ap.add_argument("--job-id", metavar="SLURM_JOB_ID",
+                    default=os.environ.get(JOB_ID_ENV) or None,
+                    help="Slurm job id stamped into the dataset's indexed.json marker "
+                         f"(default: ${JOB_ID_ENV}); digits or digits_digits")
     args = ap.parse_args(argv)
 
     # --- contributed-dataset scope (place#341) --------------------------------
@@ -863,6 +954,13 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
                              "unpublish / delete, not a namespace operation)")
         if args.replace:
             raise SystemExit("--retract and --replace are mutually exclusive")
+    job_id = validate_job_id(args.job_id)
+
+    # The marker of a PREVIOUS job must not outlive the start of this one: from
+    # here on, its presence means "this run finished clean", and nothing else.
+    # Retract removes it after its own gate (a refused retract changes nothing).
+    if dataset is not None and args.execute and not args.retract:
+        remove_indexed_marker(dataset)
 
     es = (es_factory(args.es_host) if es_factory is not None
           else Elasticsearch(args.es_host, basic_auth=_es_basic_auth(), request_timeout=120))
@@ -870,7 +968,8 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
     mode = "RETRACT" if args.retract else ("REPLACE" if args.replace else "ADD")
     print(f"ES {info['version']['number']} @ {args.es_host}  "
           f"mode={'EXECUTE' if args.execute else 'DRY-RUN'}  {mode}"
-          + (f"  dataset=whg:{dataset} prefix={place_prefix!r}" if dataset else ""))
+          + (f"  dataset=whg:{dataset} prefix={place_prefix!r}" if dataset else "")
+          + (f"  job_id={job_id}" if job_id else ""))
 
     # The sidecar gate. Consulted in BOTH modes so a dry-run shows the refusal
     # the execute run would make; it only aborts before a write.
@@ -878,6 +977,8 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
         meta = load_whg_dataset_meta(dataset)
         if args.retract:
             assert_dataset_retractable(dataset, meta, indexable_fn=indexable_fn)
+            if args.execute:
+                remove_indexed_marker(dataset)
         else:
             ok, reason = dataset_indexable(meta, indexable_fn=indexable_fn)
             print(f"[gate] whg:{dataset} indexable={ok} ({reason})")
@@ -891,6 +992,8 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
         src_path, stage = _source_path(args.namespace, args.source_stage, dataset)
         print(f"source: {src_path}  (stage={stage})")
 
+    n_docs = 0
+    places_result = toponyms_result = None
     if not args.toponyms_only:
         if args.retract:
             n_docs = uncovered = 0
@@ -903,12 +1006,13 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
             # for a dataset the sidecar does not say is published.
             assert_dataset_writable(dataset, meta, indexable_fn=indexable_fn)
         places_index = resolve_concrete_index(es, PLACES_ALIAS)
-        plan_and_index_places(es, places_index, args.namespace,
-                              (lambda: iter_place_docs(src_path)) if src_path else (lambda: iter(())),
-                              n_docs=n_docs, uncovered=uncovered,
-                              replace=args.replace, execute=args.execute,
-                              allow_missing_h3=args.allow_missing_h3,
-                              place_prefix=place_prefix, retract=args.retract)
+        places_result = plan_and_index_places(
+            es, places_index, args.namespace,
+            (lambda: iter_place_docs(src_path)) if src_path else (lambda: iter(())),
+            n_docs=n_docs, uncovered=uncovered,
+            replace=args.replace, execute=args.execute,
+            allow_missing_h3=args.allow_missing_h3,
+            place_prefix=place_prefix, retract=args.retract)
     if not args.places_only:
         if args.retract:
             attest_records = []
@@ -919,10 +1023,11 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
             # whole-corpus group-by and is the remaining memory cost of the run.
             attest_records, _ctx = collect_attestations(iter_place_docs(src_path))
         toponyms_index = resolve_concrete_index(es, TOPONYMS_ALIAS)
-        plan_and_index_toponyms(es, toponyms_index, args.namespace, attest_records,
-                                replace=args.replace, execute=args.execute,
-                                emit_new_toponyms=args.emit_new_toponyms,
-                                place_prefix=place_prefix, retract=args.retract)
+        toponyms_result = plan_and_index_toponyms(
+            es, toponyms_index, args.namespace, attest_records,
+            replace=args.replace, execute=args.execute,
+            emit_new_toponyms=args.emit_new_toponyms,
+            place_prefix=place_prefix, retract=args.retract)
 
     if args.execute and not args.toponyms_only:
         es.indices.refresh(index=resolve_concrete_index(es, PLACES_ALIAS))
@@ -931,7 +1036,45 @@ def main(argv: list[str] | None = None, *, es_factory=None, indexable_fn=None) -
     if args.execute and not args.toponyms_only:
         _refresh_registry_aggregates(args.namespace)
 
+    # LAST step: the indexed.json marker, and only for a run that can vouch for
+    # the whole dataset having landed. Anything short of that leaves no marker
+    # (the stale one went at the start), so the gateway keeps saying indexed=false.
+    if dataset is not None and not args.retract:
+        if not args.execute:
+            print(f"[indexed] (dry-run) would write {INDEXED_MARKER_FILENAME} "
+                  f"(job_id={job_id}) only after a zero-error bulk")
+        else:
+            why = _marker_blocker(places_result, toponyms_result, n_docs=n_docs,
+                                  places_only=args.places_only,
+                                  toponyms_only=args.toponyms_only)
+            if why:
+                print(f"[indexed] NOT writing {INDEXED_MARKER_FILENAME}: {why}",
+                      file=sys.stderr)
+            else:
+                write_indexed_marker(dataset, job_id=job_id, indexed_count=places_result[0])
+
     print("\nDone." + ("" if args.execute else "  (dry-run — no changes written)"))
+
+
+def _marker_blocker(places_result, toponyms_result, *, n_docs: int,
+                    places_only: bool, toponyms_only: bool) -> str | None:
+    """Why the marker must NOT be written, or ``None`` when every bulk vouched.
+
+    ``places_result`` / ``toponyms_result`` are the ``(ok, n_errors)`` pairs the
+    two index functions return (``None`` when that bulk did not run)."""
+    if toponyms_only or places_result is None:
+        return "the places bulk did not run (nothing to count)"
+    ok, n_err = places_result
+    if n_err:
+        return f"places bulk reported {n_err} error(s)"
+    if ok != n_docs:
+        return f"places bulk indexed {ok:,} but the pre-scan counted {n_docs:,}"
+    if not places_only:
+        if toponyms_result is None:
+            return "the toponyms bulk did not run"
+        if toponyms_result[1]:
+            return f"toponyms bulk reported {toponyms_result[1]} error(s)"
+    return None
 
 
 if __name__ == "__main__":

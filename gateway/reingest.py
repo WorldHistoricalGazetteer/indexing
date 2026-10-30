@@ -14,6 +14,16 @@ Implements the contract documented in
 * ``GET /api/registry/reingest/{job_id}`` — poll the job's current
   state. Maps Slurm states onto the small vocabulary the contract
   defines (``queued`` / ``running`` / ``completed`` / ``failed``).
+  For a dataset job (Slurm name ``reingest-whg-<id>``) the response also
+  carries ``indexed`` / ``indexed_count``, read from the marker
+  ``{STAGED_BASE_DIR}/whg/datasets/<id>/indexed.json`` that
+  ``processing.index_namespace`` writes as the last step of a zero-error
+  execute run. ``indexed`` is true only when that marker exists, parses,
+  carries the expected schema and dataset id, AND names this job_id; any
+  other state — missing, corrupt, another job's — is ``false`` with a null
+  count, never an error. ``status`` is never derived from the marker:
+  ``completed`` still means only "the job exited 0". Plain-namespace jobs
+  carry neither key, so existing consumers see nothing new.
 
 **Auth**: none for a plain authority namespace — the Pitt firewall
 whitelists the DO app server's IP for this endpoint. (Bearer auth would be
@@ -40,14 +50,16 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 logger = logging.getLogger("gateway.reingest")
 
@@ -95,11 +107,93 @@ _DATASET_NS_RE = re.compile(r"^whg:(\d+)$")
 # Env var holding the shared secret Django presents for ``whg:<id>`` requests.
 REINGEST_DATASET_TOKEN_ENV = "REINGEST_DATASET_TOKEN"
 
+# The Slurm job name a dataset job carries (see ``_job_name_for``). Fullmatch
+# only: it is the one path from a sacct field to a filesystem path below.
+_DATASET_JOB_NAME_RE = re.compile(r"^reingest-whg-(\d+)$")
+
+# The marker ``processing.index_namespace`` writes after a zero-error execute
+# run. Schema string and filename are duplicated here rather than imported so
+# the gateway never pulls in ``processing.settings`` (heavy, and it resolves
+# paths at import time). Keep in step with ``index_namespace.INDEXED_MARKER_*``.
+INDEXED_MARKER_SCHEMA = "whg-dataset-indexed/1"
+INDEXED_MARKER_FILENAME = "indexed.json"
+# A real marker is ~200 bytes; anything larger is not one, and is not read.
+INDEXED_MARKER_MAX_BYTES = 4096
+
 
 def parse_dataset_namespace(namespace: str) -> Optional[str]:
     """``"whg:12"`` → ``"12"``; anything else → ``None``."""
     m = _DATASET_NS_RE.fullmatch(namespace)
     return m.group(1) if m else None
+
+
+def dataset_id_from_job_name(job_name: str) -> Optional[str]:
+    """``"reingest-whg-12"`` → ``"12"``; any other job name → ``None``."""
+    m = _DATASET_JOB_NAME_RE.fullmatch((job_name or "").strip())
+    return m.group(1) if m else None
+
+
+def staged_base_dir() -> Path:
+    """The staged tree root, resolved exactly as
+    ``processing.whg_id_map.default_id_map_path`` does (``STAGED_BASE_DIR``,
+    else ``$IX3_BASE/staged``) — read per call so a test can repoint it."""
+    return Path(os.environ.get(
+        "STAGED_BASE_DIR",
+        os.path.join(os.environ.get("IX3_BASE", "/vast/ishi"), "staged"),
+    ))
+
+
+def indexed_marker_path(dataset_id: str) -> Path:
+    """``{staged}/whg/datasets/<id>/indexed.json``. ``dataset_id`` must already
+    be digits-only (it comes from ``dataset_id_from_job_name`` or
+    ``parse_dataset_namespace``); re-checked here so no other caller can route
+    an unvalidated string into a path."""
+    if not re.fullmatch(r"\d+", dataset_id or ""):
+        raise ValueError(f"dataset id is not digits: {dataset_id!r}")
+    return staged_base_dir() / "whg" / "datasets" / dataset_id / INDEXED_MARKER_FILENAME
+
+
+def _bare_job_id(job_id: Any) -> str:
+    """``"4242_3"`` → ``"4242"``: the array suffix plays no part in matching."""
+    return str(job_id).strip().split("_", 1)[0]
+
+
+def read_indexed_marker(dataset_id: str, job_id: str) -> tuple[bool, Optional[int]]:
+    """``(indexed, indexed_count)`` for one dataset as seen by ``job_id``.
+
+    True only when the marker is present, within the size cap, valid JSON of
+    the expected schema, names this dataset AND names this job. Every other
+    outcome is ``(False, None)`` — a missing or damaged marker is a fact about
+    the dataset's indexed state, not a failure of the status poll.
+    """
+    try:
+        path = indexed_marker_path(dataset_id)
+        size = path.stat().st_size
+        if size > INDEXED_MARKER_MAX_BYTES:
+            logger.warning("indexed marker %s is %d bytes (> %d); ignoring",
+                           path, size, INDEXED_MARKER_MAX_BYTES)
+            return False, None
+        with path.open("rb") as fh:
+            raw = fh.read(INDEXED_MARKER_MAX_BYTES + 1)
+        marker = json.loads(raw.decode("utf-8"))
+    except FileNotFoundError:
+        return False, None
+    except (OSError, ValueError) as exc:
+        logger.warning("indexed marker for whg:%s unreadable: %s", dataset_id, exc)
+        return False, None
+    if not isinstance(marker, dict):
+        return False, None
+    if marker.get("schema") != INDEXED_MARKER_SCHEMA:
+        return False, None
+    if str(marker.get("dataset_id")) != dataset_id:
+        return False, None
+    marker_job = marker.get("job_id")
+    if marker_job is None or _bare_job_id(marker_job) != _bare_job_id(job_id):
+        return False, None
+    count = marker.get("indexed_count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        return False, None
+    return True, count
 
 
 def _require_dataset_token(authorization: Optional[str]) -> None:
@@ -146,6 +240,19 @@ class ReingestStatusResponse(BaseModel):
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     message: Optional[str] = None
+    # Dataset jobs only. ``indexed`` is None for a plain-namespace job and the
+    # serializer drops BOTH keys then; for a dataset job it is always a bool
+    # and both keys are always present (``indexed_count`` null when false).
+    indexed: Optional[bool] = None
+    indexed_count: Optional[int] = None
+
+    @model_serializer(mode="wrap")
+    def _omit_indexed_for_plain_jobs(self, handler):
+        data = handler(self)
+        if self.indexed is None:
+            data.pop("indexed", None)
+            data.pop("indexed_count", None)
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -319,9 +426,29 @@ def _to_iso(slurm_time: str) -> Optional[str]:
     return dt.isoformat().replace("+00:00", "Z")
 
 
+# The sacct columns we ask for, in the order we ask for them. Parsing zips the
+# output against THIS tuple, so adding or reordering a column here is the
+# whole change — nothing below indexes a field by position.
+_SACCT_FIELDS = ("JobID", "JobName", "State", "Start", "End", "ExitCode", "Reason")
+
+
+def _parse_sacct_line(line: str) -> Optional[dict[str, str]]:
+    """One ``--parsable2`` row → ``{field: value}``; ``None`` if it has fewer
+    columns than ``State``. ``Reason`` is last and may itself contain ``|``, so
+    the split is capped at the column count."""
+    fields = line.split("|", len(_SACCT_FIELDS) - 1)
+    row = dict(zip(_SACCT_FIELDS, fields))
+    if "State" not in row:
+        return None
+    return row
+
+
 async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
     """Fetch a job's current state. Returns the response dict or ``None``
-    when the job_id isn't known to sacct (404 from the caller's POV)."""
+    when the job_id isn't known to sacct (404 from the caller's POV).
+
+    For a dataset job (JobName ``reingest-whg-<id>``) the dict also carries
+    ``indexed`` / ``indexed_count`` from the marker; ``status`` never does."""
     rc, out, err = await _ssh(
         [
             "sacct",
@@ -329,7 +456,7 @@ async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
             "-j", job_id,
             "-X", "-n",  # exclude job steps; no header
             "--parsable2",
-            "--format=JobID,State,Start,End,ExitCode,Reason",
+            "--format=" + ",".join(_SACCT_FIELDS),
         ],
         timeout=SSH_QUERY_TIMEOUT,
     )
@@ -341,29 +468,34 @@ async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
     line = out.strip().splitlines()
     if not line:
         return None
-    fields = line[0].split("|")
-    if len(fields) < 2:
+    row = _parse_sacct_line(line[0])
+    if row is None:
         return None
-    raw_state = fields[1]
     payload: dict[str, Any] = {
         "job_id": job_id,
-        "status": _map_state(raw_state),
+        "status": _map_state(row["State"]),
     }
-    if len(fields) >= 3:
-        if iso := _to_iso(fields[2]):
-            payload["started_at"] = iso
-    if len(fields) >= 4:
-        if iso := _to_iso(fields[3]):
-            payload["finished_at"] = iso
+    if iso := _to_iso(row.get("Start", "")):
+        payload["started_at"] = iso
+    if iso := _to_iso(row.get("End", "")):
+        payload["finished_at"] = iso
     # Surface a useful message when the job ended badly. ExitCode is
     # ``0:0`` on clean completion; Reason carries scheduler explanations.
     parts = []
-    if len(fields) >= 5 and fields[4] and fields[4] != "0:0":
-        parts.append(f"exit={fields[4]}")
-    if len(fields) >= 6 and fields[5] and fields[5] not in ("None", "Dependency"):
-        parts.append(fields[5])
+    exit_code = row.get("ExitCode", "")
+    if exit_code and exit_code != "0:0":
+        parts.append(f"exit={exit_code}")
+    reason = row.get("Reason", "")
+    if reason and reason not in ("None", "Dependency"):
+        parts.append(reason)
     if parts and payload["status"] == "failed":
         payload["message"] = " ".join(parts)
+    # Dataset jobs: the marker answers "did it land", independently of status.
+    dataset_id = dataset_id_from_job_name(row.get("JobName", ""))
+    if dataset_id is not None:
+        indexed, count = read_indexed_marker(dataset_id, job_id)
+        payload["indexed"] = indexed
+        payload["indexed_count"] = count
     return payload
 
 

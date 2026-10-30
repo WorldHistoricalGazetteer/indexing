@@ -48,6 +48,13 @@
 #      instead, and the job still exits 0 because the staging half — the
 #      contract this job guarantees — has landed. The index step itself
 #      refuses a dataset whose staged sidecar is not dataset_status=published.
+#   3. the index step is passed --job-id "$SLURM_JOB_ID" so that, after a
+#      ZERO-ERROR EXECUTE run, it writes staged/whg/datasets/<id>/indexed.json
+#      stamped with this job. GET /api/registry/reingest/<job_id> reports
+#      indexed=true only when that marker names the polled job; a dry run, a
+#      skipped index step, or a bulk with errors leaves no marker, and the
+#      gateway keeps reporting indexed=false — "job exited 0" and "dataset
+#      is indexed" are deliberately two different signals.
 #
 # Other namespaces' behaviour is unchanged.
 
@@ -77,8 +84,12 @@ case "$NAMESPACE" in
             exit 2
         fi
         ES_HOST_FOR_INDEX=${REINGEST_ES_HOST:-http://localhost:9201}
+        # --job-id travels with the command in BOTH paths (run here, or handed
+        # off to pitt) so the marker, whoever writes it, names THIS job — the
+        # id the gateway will be polled with.
         INDEX_CMD=(python -m processing.index_namespace --namespace whg
-                   --dataset "$DATASET_ID" --replace --es-host "$ES_HOST_FOR_INDEX")
+                   --dataset "$DATASET_ID" --replace --es-host "$ES_HOST_FOR_INDEX"
+                   --job-id "$SLURM_JOB_ID")
         if [ "${REINGEST_EXECUTE:-0}" = "1" ]; then
             INDEX_CMD+=(--execute)
             INDEX_MODE="EXECUTE"
@@ -93,6 +104,8 @@ case "$NAMESPACE" in
 
         echo
         echo "--- Step 2/2: index dataset whg:$DATASET_ID  [$INDEX_MODE] ---"
+        echo "indexed.json is written only after a zero-error execute run; until then"
+        echo "the gateway reports indexed=false  (job_id=$SLURM_JOB_ID)"
         if curl -s -o /dev/null --max-time 10 "$ES_HOST_FOR_INDEX"; then
             "${INDEX_CMD[@]}"
         else
@@ -100,6 +113,8 @@ case "$NAMESPACE" in
             echo "      $(hostname) (htc compute nodes cannot reach prod ES)."
             echo "      Staging is complete; run the index step from pitt:"
             echo "        cd /vast/ishi/elastic && ${INDEX_CMD[*]}"
+            echo "      indexed.json is written only after a zero-error execute run; until then"
+            echo "      the gateway reports indexed=false."
         fi
 
         END_TS=$(date -u +%FT%TZ)

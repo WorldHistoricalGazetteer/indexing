@@ -444,5 +444,155 @@ class TestWriteStepGate(_DatasetSandbox):
         self.assertIn("--execute would REFUSE", out)
 
 
+# ---------------------------------------------------------------------------
+# The indexed.json marker (read by the gateway's GET /api/registry/reingest)
+# ---------------------------------------------------------------------------
+
+def _bulk_with_errors(es, actions, **kw):
+    """Every action lands, and the bulk ALSO reports one error — the shape of
+    a run where a single doc was rejected by the mapping."""
+    n, _ = _fake_bulk(es, actions)
+    return n, [{"index": {"_id": "whg:1:zzz", "error": {"type": "mapper_parsing_exception"}}}]
+
+
+def _bulk_short(es, actions, **kw):
+    """Consumes everything but admits to one fewer: a short write that the
+    pre-scan count must catch."""
+    n, _ = _fake_bulk(es, actions)
+    return max(n - 1, 0), []
+
+
+class TestIndexedMarker(_DatasetSandbox):
+    def marker(self, dataset="1"):
+        return self.tmp / "whg" / "datasets" / dataset / "indexed.json"
+
+    def plant_stale(self, dataset="1", job_id="1111"):
+        p = self.marker(dataset)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"schema": ixn.INDEXED_MARKER_SCHEMA, "dataset_id": dataset,
+                                 "job_id": job_id, "indexed_count": 99,
+                                 "indexed_at": "2026-01-01T00:00:00Z"}))
+        return p
+
+    def test_clean_execute_run_writes_marker_with_job_id(self):
+        self.stage("1", [_place("whg:1:a", "Alpha"), _place("whg:1:c", "Gamma")])
+        self.assertFalse(self.marker().exists())        # absent before: presence is the signal
+        out, err = self.run_main("--namespace", "whg", "--dataset", "1", "--replace",
+                                 "--execute", "--job-id", "4242")
+        self.assertTrue(self.marker().exists(), f"marker not written\n{out}\n{err}")
+        m = json.loads(self.marker().read_text())
+        self.assertEqual(m["schema"], "whg-dataset-indexed/1")
+        self.assertEqual(m["dataset_id"], "1")
+        self.assertEqual(m["job_id"], "4242")
+        self.assertEqual(m["indexed_count"], 2)
+        self.assertTrue(m["indexed_at"].endswith("Z"))
+        self.assertIn("[indexed] wrote", out)
+        self.assertEqual([p for p in self.marker().parent.iterdir() if p.name.startswith(".")],
+                         [], "temp file left behind")
+
+    def test_job_id_defaults_from_env_and_is_validated(self):
+        self.stage("1", [_place("whg:1:a", "Alpha")])
+        with mock.patch.dict("os.environ", {ixn.JOB_ID_ENV: "777_2"}):
+            self.run_main("--namespace", "whg", "--dataset", "1", "--execute")
+        self.assertEqual(json.loads(self.marker().read_text())["job_id"], "777_2")
+        # No job id at all → marker still written, job_id null.
+        self.marker().unlink()
+        with mock.patch.dict("os.environ", {ixn.JOB_ID_ENV: ""}):
+            self.run_main("--namespace", "whg", "--dataset", "1", "--execute")
+        self.assertIsNone(json.loads(self.marker().read_text())["job_id"])
+        for bad in ("abc", "12;rm", "1_", "_1", "1_2_3", "../1"):
+            with self.subTest(bad=bad), self.assertRaises(SystemExit):
+                self.run_main("--namespace", "whg", "--dataset", "1", "--job-id", bad)
+
+    def test_not_written_when_bulk_reports_errors(self):
+        self.stage("1", [_place("whg:1:a", "Alpha")])
+        with mock.patch.object(ixn.es_helpers, "bulk", _bulk_with_errors):
+            out, err = self.run_main("--namespace", "whg", "--dataset", "1", "--execute",
+                                     "--job-id", "4242")
+        self.assertFalse(self.marker().exists())
+        self.assertIn("NOT writing indexed.json", err)
+        self.assertIn("error(s)", err)
+
+    def test_not_written_on_short_count(self):
+        self.stage("1", [_place("whg:1:a", "Alpha"), _place("whg:1:c", "Gamma")])
+        with mock.patch.object(ixn.es_helpers, "bulk", _bulk_short):
+            out, err = self.run_main("--namespace", "whg", "--dataset", "1", "--execute")
+        self.assertFalse(self.marker().exists())
+        self.assertIn("PRE-SCAN COUNTED", err)
+        self.assertIn("NOT writing indexed.json", err)
+
+    def test_stale_marker_is_deleted_at_the_start_of_a_failed_run(self):
+        self.stage("1", [_place("whg:1:a", "Alpha")])
+        self.plant_stale("1", job_id="1111")
+        with mock.patch.object(ixn.es_helpers, "bulk", _bulk_with_errors):
+            self.run_main("--namespace", "whg", "--dataset", "1", "--execute", "--job-id", "2222")
+        self.assertFalse(self.marker().exists(), "a previous job's marker survived a failed run")
+
+    def test_stale_marker_is_deleted_even_when_the_gate_refuses(self):
+        # Refused before any ES write: the old marker still must not stand.
+        self.stage("1", [_place("whg:1:a", "Alpha")], status="pending")
+        self.plant_stale("1")
+        with self.assertRaises(SystemExit):
+            self.run_main("--namespace", "whg", "--dataset", "1", "--execute")
+        self.assertFalse(self.marker().exists())
+
+    def test_retract_execute_deletes_marker(self):
+        self.sidecar("1", "pending")
+        self.plant_stale("1")
+        self.run_main("--namespace", "whg", "--dataset", "1", "--retract", "--execute")
+        self.assertFalse(self.marker().exists())
+        self.assertNotIn("whg:1:a", self.place_ids())
+
+    def test_refused_retract_leaves_marker(self):
+        # whg:12 is indexable, so the retract is refused and nothing changes —
+        # including the marker, which still truthfully says it is indexed.
+        self.sidecar("12", "published")
+        self.plant_stale("12")
+        with self.assertRaises(SystemExit):
+            self.run_main("--namespace", "whg", "--dataset", "12", "--retract", "--execute")
+        self.assertTrue(self.marker("12").exists())
+
+    def test_dry_run_writes_nothing_and_says_so(self):
+        self.stage("1", [_place("whg:1:a", "Alpha")])
+        self.plant_stale("1", job_id="1111")
+        out, _ = self.run_main("--namespace", "whg", "--dataset", "1", "--replace",
+                               "--job-id", "4242")
+        self.assertIn("would write indexed.json (job_id=4242) only after a zero-error bulk", out)
+        # A dry run neither writes a new marker nor removes the existing one.
+        self.assertEqual(json.loads(self.marker().read_text())["job_id"], "1111")
+
+    def test_toponyms_only_or_toponym_errors_block_the_marker(self):
+        self.stage("1", [_place("whg:1:a", "Alpha")])
+        _, err = self.run_main("--namespace", "whg", "--dataset", "1", "--execute",
+                               "--toponyms-only")
+        self.assertFalse(self.marker().exists())
+        self.assertIn("places bulk did not run", err)
+
+        calls = {"n": 0}
+
+        def toponym_bulk_fails(es, actions, **kw):
+            n, _ = _fake_bulk(es, actions)
+            calls["n"] += 1
+            return n, ([] if calls["n"] == 1 else [{"update": {"_id": "Alpha@en", "error": "x"}}])
+
+        with mock.patch.object(ixn.es_helpers, "bulk", toponym_bulk_fails):
+            _, err = self.run_main("--namespace", "whg", "--dataset", "1", "--execute")
+        self.assertFalse(self.marker().exists())
+        self.assertIn("toponyms bulk reported 1 error", err)
+        # ...and --places-only does not consult the toponyms bulk at all.
+        calls["n"] = 0
+        with mock.patch.object(ixn.es_helpers, "bulk", toponym_bulk_fails):
+            self.run_main("--namespace", "whg", "--dataset", "1", "--execute", "--places-only")
+        self.assertTrue(self.marker().exists())
+
+    def test_plain_namespace_run_never_touches_a_marker(self):
+        d = self.tmp / "ukhc" / "final"
+        d.mkdir(parents=True)
+        (d / "places.jsonl").write_text(json.dumps(_place("ukhc:1", "Kent")) + "\n")
+        self.run_main("--namespace", "ukhc", "--execute", "--job-id", "4242")
+        self.assertFalse((self.tmp / "whg").exists())
+        self.assertEqual(list(d.parent.glob("**/indexed.json")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
