@@ -5,17 +5,19 @@ Re-ingest endpoint for the WHG API gateway.
 Implements the contract documented in
 ``whg3/api/reingest.py`` (Django-side caller). Two endpoints:
 
-* ``POST /api/registry/reingest``  — enqueue a re-ingest for one
-  authority namespace. Submits a Slurm job on a CRC login node and
-  returns the job_id. Refuses with 409 if a re-ingest is already
-  pending/running for that namespace (Django can adopt the existing
+* ``POST /api/registry/reingest``  — enqueue a re-ingest. For ``whg:<id>``
+  this starts a VM-local job and returns its job_id (see **Architecture**);
+  for a plain authority namespace it is 501 unless the Slurm switch is on,
+  in which case it submits a Slurm job on a CRC login node. Refuses with
+  409 if a job is already pending/running (Django can adopt the existing
   job_id from the response body).
 
 * ``GET /api/registry/reingest/{job_id}`` — poll the job's current
-  state. Maps Slurm states onto the small vocabulary the contract
-  defines (``queued`` / ``running`` / ``completed`` / ``failed``).
-  For a dataset job (Slurm name ``reingest-whg-<id>``) the response also
-  carries ``indexed`` / ``indexed_count``, read from the marker
+  state in the small vocabulary the contract defines (``queued`` /
+  ``running`` / ``completed`` / ``failed``): from the local state file for
+  a local id, mapped from Slurm's states otherwise.
+  For a dataset job (local, or Slurm name ``reingest-whg-<id>``) the
+  response also carries ``indexed`` / ``indexed_count``, read from the marker
   ``{STAGED_BASE_DIR}/whg/datasets/<id>/indexed.json`` that
   ``processing.index_namespace`` writes as the last step of a zero-error
   execute run. ``indexed`` is true only when that marker exists, parses,
@@ -35,15 +37,25 @@ redundant and is reserved for the inverse-direction inventory push at
 dataset. That path alone requires ``Authorization: Bearer <token>`` with the
 token in ``REINGEST_DATASET_TOKEN``: 503 when the gateway has no token
 configured (fail closed), 401 when the presented one differs (constant-time
-compare). The job name is ``reingest-whg-<id>`` so the squeue guard works
-per dataset. The id is validated before any ssh argv is built. The
-plain-namespace path is unchanged and still unauthenticated.
+compare). The id is validated before the token is checked and before any
+argv is built. The plain-namespace path is still unauthenticated.
 
-**Architecture**: the gateway runs on the Pitt VM. Both endpoints SSH to
-a CRC login node (``crc0`` by default) to invoke ``sbatch`` / ``sacct`` /
-``squeue``. The CRC-side orchestrator script ``scripts/reingest.sbatch``
-takes the namespace as ``$1`` and is the single point of authority for
-what a "re-ingest" actually does for each namespace.
+**Architecture (since 30 Oct 2026)**: the gateway runs on the Pitt VM as
+``gazetteer`` — a host with production ES on localhost and NO Slurm and no
+route to CRC. So:
+
+* ``whg:<id>`` runs **on the VM** as a detached, low-priority local process
+  (``gateway.dataset_jobs`` → ``python -m processing.local_dataset_job``). The
+  job id is a millisecond timestamp (>= ``10**12``), the 409 detail also
+  carries ``namespace``, and the request body may carry ``action``:
+  ``"index"`` (default) or ``"retract"``; any other value is 400. The GET
+  for such an id reads the local state file (unknown → 404) and adds a
+  machine-readable ``reason`` code (null unless ``failed``) beside
+  ``message``; see ``dataset_jobs.REASONS``.
+* a plain authority namespace answers **501** — authority re-ingest runs on
+  Slurm and is not available from this VM. The former ssh → ``sbatch`` path
+  is intact behind ``REINGEST_PLAIN_VIA_SLURM=1`` (nothing was deleted), and
+  the ``sacct`` GET path still serves any job id below ``10**12``.
 """
 
 from __future__ import annotations
@@ -60,6 +72,8 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field, model_serializer
+
+from . import dataset_jobs
 
 logger = logging.getLogger("gateway.reingest")
 
@@ -106,6 +120,17 @@ _DATASET_NS_RE = re.compile(r"^whg:(\d+)$")
 
 # Env var holding the shared secret Django presents for ``whg:<id>`` requests.
 REINGEST_DATASET_TOKEN_ENV = "REINGEST_DATASET_TOKEN"
+
+# Set to ``1`` to re-enable the ssh → sbatch path for plain namespaces. Off by
+# default because the gateway VM cannot reach Slurm; read per request so a
+# test (or a redeploy) can flip it without a reimport.
+PLAIN_VIA_SLURM_ENV = "REINGEST_PLAIN_VIA_SLURM"
+PLAIN_NOT_AVAILABLE_DETAIL = (
+    "authority re-ingest runs on Slurm and is not available from the gateway VM")
+
+
+def plain_via_slurm_enabled() -> bool:
+    return os.environ.get(PLAIN_VIA_SLURM_ENV, "").strip().lower() in ("1", "true", "yes")
 
 # The Slurm job name a dataset job carries (see ``_job_name_for``). Fullmatch
 # only: it is the one path from a sacct field to a filesystem path below.
@@ -227,6 +252,10 @@ def _require_dataset_token(authorization: Optional[str]) -> None:
 class ReingestRequest(BaseModel):
     namespace: str = Field(..., min_length=1, max_length=16,
                            description="Registry id of the authority to re-ingest")
+    action: Optional[str] = Field(
+        default=None, max_length=16,
+        description="whg:<id> only — 'index' (default) re-stages and re-indexes "
+                    "the dataset; 'retract' deletes it from the live indices")
 
 
 class ReingestResponse(BaseModel):
@@ -245,6 +274,10 @@ class ReingestStatusResponse(BaseModel):
     # and both keys are always present (``indexed_count`` null when false).
     indexed: Optional[bool] = None
     indexed_count: Optional[int] = None
+    # Dataset jobs only: a stable code from ``dataset_jobs.REASONS`` when
+    # ``status == "failed"``, else null. Omitted (with the two above) for a
+    # plain-namespace job.
+    reason: Optional[str] = None
 
     @model_serializer(mode="wrap")
     def _omit_indexed_for_plain_jobs(self, handler):
@@ -252,6 +285,7 @@ class ReingestStatusResponse(BaseModel):
         if self.indexed is None:
             data.pop("indexed", None)
             data.pop("indexed_count", None)
+            data.pop("reason", None)
         return data
 
 
@@ -496,7 +530,52 @@ async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
         indexed, count = read_indexed_marker(dataset_id, job_id)
         payload["indexed"] = indexed
         payload["indexed_count"] = count
+        # A Slurm-run dataset job has no runner-assigned code; the key is
+        # present (dataset jobs always carry it) and null.
+        payload["reason"] = None
     return payload
+
+
+# ---------------------------------------------------------------------------
+# VM-local dataset jobs (whg:<id>)
+# ---------------------------------------------------------------------------
+
+
+def _local_job_payload(job_id: str) -> Optional[dict[str, Any]]:
+    """GET body for a local job id, or ``None`` when no state file exists.
+
+    ``status`` comes from the state file alone (``dataset_jobs.load_job``
+    already turns a dead runner into ``failed``/``runner_died``); ``indexed``
+    comes from the marker, matched on this job id — two signals, as before.
+    """
+    state = dataset_jobs.load_job(job_id)
+    if state is None:
+        return None
+    payload = dataset_jobs.status_payload(state)
+    payload["job_id"] = job_id
+    dataset_id = str(state.get("dataset_id") or "")
+    if re.fullmatch(r"\d+", dataset_id):
+        indexed, count = read_indexed_marker(dataset_id, job_id)
+    else:
+        indexed, count = False, None
+    payload["indexed"] = indexed
+    payload["indexed_count"] = count
+    return payload
+
+
+def _validate_action(raw: Optional[str], *, dataset: bool) -> str:
+    """``None``/``"index"`` for anything; ``"retract"`` only for ``whg:<id>``;
+    everything else 400. Checked before the token so a malformed request is
+    a 400 whatever it presents."""
+    if raw is None or not str(raw).strip():
+        return dataset_jobs.DEFAULT_ACTION
+    action = str(raw).strip().lower()
+    if action not in dataset_jobs.ACTIONS:
+        raise HTTPException(400, f"unknown action: {raw!r} (expected one of "
+                                 f"{', '.join(dataset_jobs.ACTIONS)})")
+    if action != dataset_jobs.DEFAULT_ACTION and not dataset:
+        raise HTTPException(400, f"action {action!r} is only valid for a whg:<id> namespace")
+    return action
 
 
 # ---------------------------------------------------------------------------
@@ -506,10 +585,11 @@ async def _job_status(job_id: str) -> Optional[dict[str, Any]]:
 
 @router.post("/reingest", status_code=202, response_model=ReingestResponse,
              responses={
-                 400: {"description": "Unknown namespace / malformed dataset id"},
+                 400: {"description": "Unknown namespace / malformed dataset id / bad action"},
                  401: {"description": "whg:<id> only — bad or missing bearer token"},
                  409: {"description": "A re-ingest is already in flight"},
-                 502: {"description": "Failed to submit Slurm job"},
+                 501: {"description": "plain namespace — Slurm re-ingest unavailable from this VM"},
+                 502: {"description": "Failed to start the job"},
                  503: {"description": "whg:<id> only — dataset re-ingest not enabled"},
                  504: {"description": "SSH to CRC login node timed out"},
              })
@@ -529,12 +609,18 @@ async def post_reingest(
     if ns not in VALID_NAMESPACES:
         # Not a plain namespace: the only other acceptable shape is a
         # contributed dataset, validated BEFORE anything else (so a malformed
-        # id is a 400 and never reaches the token check, squeue or sbatch).
+        # id is a 400 and never reaches the token check or the launcher).
         dataset_id = parse_dataset_namespace(ns)
         if dataset_id is None:
             raise HTTPException(400, f"unknown namespace: {req.namespace!r}")
+        action = _validate_action(req.action, dataset=True)
         _require_dataset_token(authorization)
         ns = f"whg:{dataset_id}"
+        return await _start_local_dataset_job(ns, dataset_id, action)
+
+    _validate_action(req.action, dataset=False)
+    if not plain_via_slurm_enabled():
+        raise HTTPException(501, PLAIN_NOT_AVAILABLE_DETAIL)
 
     existing = await _existing_active_job(ns)
     if existing:
@@ -553,6 +639,30 @@ async def post_reingest(
     job_id = await _submit_reingest(ns)
     logger.info("reingest %s submitted as job %s", ns, job_id)
     return ReingestResponse(job_id=job_id, status="queued")
+
+
+async def _start_local_dataset_job(ns: str, dataset_id: str, action: str) -> ReingestResponse:
+    """Lock + state + detached spawn, off the event loop. 409 carries the
+    active job's id AND namespace (it may be a different dataset's — the lock
+    is global); a launch failure is 502."""
+    try:
+        state = await asyncio.to_thread(dataset_jobs.start_job, dataset_id, action)
+    except dataset_jobs.JobActive as active:
+        raise HTTPException(
+            409,
+            detail={
+                "error": f"a dataset job is already in flight ({active.namespace!r}, "
+                         f"job {active.job_id}); {ns!r} not started",
+                "job_id": active.job_id,
+                "namespace": active.namespace,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — surfaced, never a bare 500
+        logger.exception("could not start local job for %s", ns)
+        raise HTTPException(502, f"could not start local dataset job: {exc!r}"[:300])
+    logger.info("reingest %s (%s) started as local job %s (pid %s)",
+                ns, action, state["job_id"], state.get("pid"))
+    return ReingestResponse(job_id=state["job_id"], status=state["status"])
 
 
 @router.get("/reingest/{job_id}", response_model=ReingestStatusResponse,
@@ -575,7 +685,10 @@ async def get_reingest_status(job_id: str) -> ReingestStatusResponse:
     if not re.fullmatch(r"\d+(?:_\d+)?", job_id):
         raise HTTPException(400, f"malformed job_id: {job_id!r}")
 
-    payload = await _job_status(job_id)
+    if dataset_jobs.is_local_job_id(job_id):
+        payload = await asyncio.to_thread(_local_job_payload, _bare_job_id(job_id))
+    else:
+        payload = await _job_status(job_id)
     if payload is None:
         raise HTTPException(404, f"job not found: {job_id}")
     return ReingestStatusResponse(**payload)

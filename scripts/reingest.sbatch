@@ -32,6 +32,17 @@
 # the per-stage submitters; the per-namespace re-ingest contract only
 # guarantees that fresh source data is restaged.
 #
+# ⚠ DEPRECATED (30 Oct 2026): the ``whg:<id>`` branch below is NO LONGER what
+# the gateway runs. ``POST /api/registry/reingest`` with ``whg:<id>`` now
+# launches ``python -m processing.local_dataset_job`` ON THE GATEWAY VM
+# (``gateway/dataset_jobs.py``), because the VM has no Slurm access and the
+# htc compute nodes cannot reach prod ES — this branch could only ever stage
+# and then print the index command for an operator to run from pitt. It is
+# kept, unchanged, for a manual ``sbatch`` by an operator; nothing submits it
+# with a ``whg:<id>`` argument any more. The plain-namespace path below it is
+# also no longer reachable from the gateway (501) unless
+# ``REINGEST_PLAIN_VIA_SLURM=1`` is set in the gateway's environment.
+#
 # ONE CONTRIBUTED DATASET (place#341): $1 may be ``whg:<id>`` (the gateway
 # validates ^whg:[0-9]+$ and names the job reingest-whg-<id>). That branch
 #

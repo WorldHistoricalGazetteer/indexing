@@ -4,6 +4,11 @@ __pycache__/
 *.pyc
 .idea/
 
+# VM-local dataset jobs (gateway/dataset_jobs.py): per-job state + lock, and
+# the runner logs they point at. Runtime artefacts, never source.
+.reingest_jobs/
+logs/
+
 # Per-host secret overrides — loaded by clustering/config.py after the
 # tracked .env, so values here take precedence. Never commit credentials.
 .env.local

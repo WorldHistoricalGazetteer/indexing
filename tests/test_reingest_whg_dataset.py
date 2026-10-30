@@ -1,13 +1,18 @@
 """``POST /api/registry/reingest`` with ``namespace = "whg:<id>"`` (place#341, item 5).
 
-``gateway.reingest._ssh`` is replaced by an async fake that records every argv
-and plays the Slurm side: ``squeue`` answers from a settable queue state and
-``sbatch`` returns a fixed job id. Every assertion about "no ssh happened" is
-therefore an assertion about that list being empty — which a request that
-reached squeue or sbatch would break.
+Since 30 Oct 2026 a ``whg:<id>`` request launches a VM-local job
+(``gateway.dataset_jobs``) rather than an sbatch; here ``dataset_jobs.spawn``
+is replaced by a recorder, and ``gateway.reingest._ssh`` by an async fake that
+records every argv and plays the Slurm side (``squeue`` from a settable queue
+state, ``sbatch`` returning a fixed id, ``sacct`` from a table). Every
+assertion about "no ssh happened" / "nothing was spawned" is an assertion
+about those lists being empty — which a request that reached them would break.
 
-The plain-namespace path is exercised in the same file so a change to the
-dataset path that leaked into it (a token demand, a renamed job) fails here.
+The plain-namespace path is exercised in the same file: by default it is 501
+(this VM has no Slurm), and with ``REINGEST_PLAIN_VIA_SLURM=1`` the former
+ssh → sbatch behaviour is shown to be intact. The ``sacct`` GET path still
+serves Slurm-sized job ids (below ``10**12``); local ids are covered in
+``tests/test_dataset_jobs_gateway.py``.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from unittest import mock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from gateway import dataset_jobs
 from gateway import reingest
 
 TOKEN = "s3cret-token"
@@ -71,18 +77,39 @@ class _Base(unittest.TestCase):
         p = mock.patch.object(reingest, "_ssh", self.slurm.ssh)
         p.start()
         self.addCleanup(p.stop)
+        # Local dataset jobs: per-test state/log dirs, and a spawn recorder.
+        self.jobs_dir = Path(tempfile.mkdtemp(prefix="reingest-jobs-"))
+        p = mock.patch.dict(os.environ, {
+            dataset_jobs.STATE_DIR_ENV: str(self.jobs_dir / "state"),
+            dataset_jobs.LOG_DIR_ENV: str(self.jobs_dir / "logs"),
+        })
+        p.start()
+        self.addCleanup(p.stop)
+        os.environ.pop(reingest.PLAIN_VIA_SLURM_ENV, None)
+        self.spawned: list[tuple[str, str, str]] = []
+
+        def fake_spawn(job_id, dataset_id, action):
+            self.spawned.append((job_id, dataset_id, action))
+            return {"pid": os.getpid(), "pgid": os.getpid(),
+                    "log": str(dataset_jobs.log_path_for(job_id)), "argv": ["fake"]}
+
+        p = mock.patch.object(dataset_jobs, "spawn", fake_spawn)
+        p.start()
+        self.addCleanup(p.stop)
         app = FastAPI()
         app.include_router(reingest.router)
         self.client = TestClient(app)
 
-    def post(self, namespace, token=None, raw_header=None):
+    def post(self, namespace, token=None, raw_header=None, action=None):
         headers = {}
         if token is not None:
             headers["Authorization"] = f"Bearer {token}"
         if raw_header is not None:
             headers["Authorization"] = raw_header
-        return self.client.post("/api/registry/reingest",
-                                json={"namespace": namespace}, headers=headers)
+        body = {"namespace": namespace}
+        if action is not None:
+            body["action"] = action
+        return self.client.post("/api/registry/reingest", json=body, headers=headers)
 
 
 class TestDatasetTrigger(_Base):
@@ -92,53 +119,72 @@ class TestDatasetTrigger(_Base):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_whg_12_submits_once_then_409_with_the_live_job_id(self):
+    def test_whg_12_starts_a_local_job_once_then_409_with_the_live_job_id(self):
         r = self.post("whg:12", token=TOKEN)
         self.assertEqual(r.status_code, 202, r.text)
-        self.assertEqual(r.json(), {"job_id": "4242", "status": "queued"})
-        (sbatch,) = self.slurm.sbatch_calls()
-        self.assertIn("--job-name=reingest-whg-12", sbatch)
-        self.assertEqual(sbatch[-1], "whg:12")          # the sbatch script's $1
-        self.assertEqual(sbatch[-2], reingest.CRC_SBATCH_SCRIPT)
+        body = r.json()
+        self.assertEqual(set(body), {"job_id", "status"})
+        self.assertEqual(body["status"], "queued")
+        job_id = body["job_id"]
+        self.assertTrue(dataset_jobs.is_local_job_id(job_id), job_id)
+        self.assertEqual(self.spawned, [(job_id, "12", "index")])
+        self.assertEqual(self.slurm.argvs, [], "a dataset job reached ssh/sbatch")
+        self.assertEqual(dataset_jobs.read_state(job_id)["namespace"], "whg:12")
 
         # Second trigger while the job is queued: 409, Django adopts the id.
         r2 = self.post("whg:12", token=TOKEN)
         self.assertEqual(r2.status_code, 409, r2.text)
-        self.assertEqual(r2.json()["detail"]["job_id"], "4242")
-        self.assertEqual(len(self.slurm.sbatch_calls()), 1, "submitted twice")
-        # The guard asked squeue for THIS dataset's job name.
-        squeues = [a for a in self.slurm.argvs if a[0] == "squeue"]
-        self.assertTrue(all("reingest-whg-12" in a for a in squeues))
+        detail = r2.json()["detail"]
+        self.assertEqual(detail["job_id"], job_id)
+        self.assertEqual(detail["namespace"], "whg:12")
+        self.assertIn("error", detail)
+        self.assertEqual(len(self.spawned), 1, "spawned twice")
 
-    def test_whg_1_and_whg_12_are_separate_guards(self):
-        self.post("whg:12", token=TOKEN)
+    def test_the_dataset_lock_is_global_across_datasets(self):
+        # One VM-local job at a time: whg:1 is refused while whg:12 runs, and
+        # the 409 names the job that IS running, not the one asked for.
+        first = self.post("whg:12", token=TOKEN).json()["job_id"]
         r = self.post("whg:1", token=TOKEN)
-        self.assertEqual(r.status_code, 202, r.text)
-        self.assertEqual(len(self.slurm.sbatch_calls()), 2)
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertEqual(r.json()["detail"], {"error": mock.ANY, "job_id": first,
+                                              "namespace": "whg:12"})
+        self.assertEqual(len(self.spawned), 1)
 
-    def test_bad_token_is_401_and_touches_no_ssh(self):
+    def test_action_retract_is_accepted_and_anything_else_is_400(self):
+        r = self.post("whg:12", token=TOKEN, action="retract")
+        self.assertEqual(r.status_code, 202, r.text)
+        self.assertEqual(self.spawned[-1][2], "retract")
+        self.assertEqual(self.post("whg:12", token=TOKEN, action="purge").status_code, 400)
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_bad_token_is_401_and_touches_nothing(self):
         r = self.post("whg:12", token="wrong")
         self.assertEqual(r.status_code, 401)
         self.assertEqual(self.slurm.argvs, [])
+        self.assertEqual(self.spawned, [])
 
     def test_missing_or_non_bearer_header_is_401(self):
         self.assertEqual(self.post("whg:12").status_code, 401)
         self.assertEqual(self.post("whg:12", raw_header=f"Basic {TOKEN}").status_code, 401)
         self.assertEqual(self.post("whg:12", raw_header="Bearer").status_code, 401)
         self.assertEqual(self.slurm.argvs, [])
+        self.assertEqual(self.spawned, [])
 
     def test_unset_token_is_503_fail_closed(self):
         with mock.patch.dict(os.environ, {reingest.REINGEST_DATASET_TOKEN_ENV: ""}):
             r = self.post("whg:12", token=TOKEN)
         self.assertEqual(r.status_code, 503)
         self.assertEqual(self.slurm.argvs, [])
+        self.assertEqual(self.spawned, [])
 
-    def test_malformed_dataset_id_is_400_before_auth_and_ssh(self):
+    def test_malformed_dataset_id_is_400_before_auth_and_launch(self):
         for bad in ("whg:12;rm", "whg:12 rm", "whg:", "whg:-1", "whg:1.2", "whg:12/..", "whg:abc"):
             with self.subTest(bad=bad):
                 r = self.post(bad, token=TOKEN)
                 self.assertEqual(r.status_code, 400, r.text)
         self.assertEqual(self.slurm.argvs, [], "a malformed id reached ssh")
+        self.assertEqual(self.spawned, [], "a malformed id was launched")
+        self.assertEqual(dataset_jobs.list_job_ids(), [])
 
     def test_job_name(self):
         self.assertEqual(reingest._job_name_for("whg:12"), "reingest-whg-12")
@@ -148,26 +194,22 @@ class TestDatasetTrigger(_Base):
         self.assertIsNone(reingest.parse_dataset_namespace("whg"))
 
 
-class TestPlainNamespaceUnchanged(_Base):
-    def test_plain_namespace_needs_no_token(self):
-        # No REINGEST_DATASET_TOKEN in the environment at all.
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop(reingest.REINGEST_DATASET_TOKEN_ENV, None)
-            r = self.post("gn")
-        self.assertEqual(r.status_code, 202, r.text)
-        (sbatch,) = self.slurm.sbatch_calls()
-        self.assertIn("--job-name=reingest-gn", sbatch)
-        self.assertEqual(sbatch[-1], "gn")
+class TestPlainNamespaceDefault(_Base):
+    """Without ``REINGEST_PLAIN_VIA_SLURM`` a plain namespace is 501: the
+    gateway VM cannot reach Slurm, and saying so beats a 504 after a 30 s
+    ssh timeout."""
 
-    def test_plain_namespace_ignores_a_bogus_header(self):
-        r = self.post("gn", raw_header="Bearer definitely-wrong")
-        self.assertEqual(r.status_code, 202, r.text)
+    def test_plain_namespace_is_501_and_touches_nothing(self):
+        for ns in ("gn", "osm", "un"):
+            with self.subTest(ns=ns):
+                r = self.post(ns)
+                self.assertEqual(r.status_code, 501, r.text)
+                self.assertEqual(r.json()["detail"], reingest.PLAIN_NOT_AVAILABLE_DETAIL)
+        self.assertEqual(self.slurm.argvs, [])
+        self.assertEqual(self.spawned, [])
 
-    def test_plain_namespace_409(self):
-        self.post("gn")
-        r = self.post("gn")
-        self.assertEqual(r.status_code, 409)
-        self.assertEqual(r.json()["detail"]["job_id"], "4242")
+    def test_plain_namespace_retract_is_400_before_501(self):
+        self.assertEqual(self.post("gn", action="retract").status_code, 400)
 
     def test_unknown_namespace_still_400(self):
         r = self.post("nope")
@@ -178,6 +220,50 @@ class TestPlainNamespaceUnchanged(_Base):
         # Was never in VALID_NAMESPACES; must not become valid via the dataset path.
         r = self.post("whg")
         self.assertEqual(r.status_code, 400)
+
+
+class TestPlainNamespaceViaSlurm(_Base):
+    """``REINGEST_PLAIN_VIA_SLURM=1``: the former ssh → sbatch path, unchanged."""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.dict(os.environ, {reingest.PLAIN_VIA_SLURM_ENV: "1"})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_plain_namespace_needs_no_token(self):
+        # No REINGEST_DATASET_TOKEN in the environment at all.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(reingest.REINGEST_DATASET_TOKEN_ENV, None)
+            r = self.post("gn")
+        self.assertEqual(r.status_code, 202, r.text)
+        self.assertEqual(r.json(), {"job_id": "4242", "status": "queued"})
+        (sbatch,) = self.slurm.sbatch_calls()
+        self.assertIn("--job-name=reingest-gn", sbatch)
+        self.assertEqual(sbatch[-1], "gn")
+        self.assertEqual(sbatch[-2], reingest.CRC_SBATCH_SCRIPT)
+        self.assertEqual(self.spawned, [])
+
+    def test_plain_namespace_ignores_a_bogus_header(self):
+        r = self.post("gn", raw_header="Bearer definitely-wrong")
+        self.assertEqual(r.status_code, 202, r.text)
+
+    def test_plain_namespace_409(self):
+        self.post("gn")
+        r = self.post("gn")
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json()["detail"]["job_id"], "4242")
+        # Plain 409s are unchanged: no ``namespace`` key was added to them.
+        self.assertNotIn("namespace", r.json()["detail"])
+        squeues = [a for a in self.slurm.argvs if a[0] == "squeue"]
+        self.assertTrue(all("reingest-gn" in a for a in squeues))
+
+    def test_whg_dataset_still_runs_locally_with_the_switch_on(self):
+        with mock.patch.dict(os.environ, {reingest.REINGEST_DATASET_TOKEN_ENV: TOKEN}):
+            r = self.post("whg:12", token=TOKEN)
+        self.assertEqual(r.status_code, 202, r.text)
+        self.assertEqual(self.slurm.sbatch_calls(), [])
+        self.assertEqual(len(self.spawned), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +312,10 @@ class TestIndexedSignal(_Base):
         self.assertEqual(body["started_at"], "2026-10-30T10:00:00Z")
         self.assertIn("message", body)                 # unchanged: null, not omitted
         self.assertIsNone(body["message"])
+        # A Slurm-run dataset job carries the ``reason`` key (dataset jobs
+        # always do) with no code behind it.
+        self.assertIn("reason", body)
+        self.assertIsNone(body["reason"])
         (sacct,) = [a for a in self.slurm.argvs if a[0] == "sacct"]
         self.assertIn("JobName", next(a for a in sacct if a.startswith("--format=")))
 
@@ -299,6 +389,7 @@ class TestIndexedSignal(_Base):
         self.assertEqual(body["status"], "completed")
         self.assertNotIn("indexed", body)
         self.assertNotIn("indexed_count", body)
+        self.assertNotIn("reason", body)
         self.assertEqual(set(body), {"job_id", "status", "started_at", "finished_at", "message"})
         # ...even when a dataset marker happens to name this job id.
         self.write_marker("12", job_id="4242")

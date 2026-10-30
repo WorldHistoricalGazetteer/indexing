@@ -633,8 +633,14 @@ def stage_all_authority_datasets(
     limit_features_per_dataset: int | None = None,
     dataset_filter: list[int] | None = None,
     include_pending: bool = False,
+    geom_staging_dir: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Discover + stage every indexable dataset.
+
+    ``geom_staging_dir`` overrides ``GEOM_STORE_STAGING_DIR`` for this run — the
+    VM-local dataset runner (``processing.local_dataset_job``) points it at a
+    private per-run directory it discards, so nothing it stages can be swept
+    into the main geom store by a later consolidation.
 
     Selection is :func:`select_datasets` — ``whg_selection.is_indexable``
     re-checked client-side beside Django's ``dataset_status``. When
@@ -691,7 +697,9 @@ def stage_all_authority_datasets(
     # that variable somewhere private before starting.
     from processing.geom_store import GeomStoreWriter, configure_module_writer
 
-    print(f"Geom staging: {GEOM_STORE_STAGING_DIR}")
+    geom_staging = (Path(geom_staging_dir) if geom_staging_dir is not None
+                    else GEOM_STORE_STAGING_DIR)
+    print(f"Geom staging: {geom_staging}")
     id_map_file: Path | None = None
     if per_dataset_mode:
         print("Id map:       per dataset, "
@@ -700,7 +708,7 @@ def stage_all_authority_datasets(
         id_map_file = default_id_map_path()
         print(f"Id map:       {id_map_file}")
 
-    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, WHG_NAMESPACE) as gsw:
+    with GeomStoreWriter(geom_staging, WHG_NAMESPACE) as gsw:
         configure_module_writer(gsw)
         try:
             if per_dataset_mode:
