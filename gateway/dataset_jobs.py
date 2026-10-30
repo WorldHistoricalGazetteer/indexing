@@ -72,7 +72,13 @@ ACTIVE_STATUSES = ("queued", "running")
 TERMINAL_STATUSES = ("completed", "failed")
 
 # -- machine-readable failure reasons ------------------------------------------
+#: LEGACY — no longer produced. Until the per-dataset geom OVERLAY
+#: (``processing.geom_overlay``) the runner refused areal data with this code;
+#: it is kept only because state files written before that change carry it.
 REASON_AREAL_GEOMETRY = "areal_geometry"
+#: The dataset's geometries exceed an overlay cap (``GEOM_OVERLAY_MAX_*``):
+#: nothing was written to the store or to ES.
+REASON_OVERLAY_BUDGET = "overlay_budget"
 REASON_NOT_INDEXABLE = "not_indexable"
 REASON_STILL_PUBLISHED = "still_published"
 REASON_NO_DOCS_STAGED = "no_docs_staged"
@@ -91,7 +97,7 @@ REASON_INDEX_ERROR = "index_error"
 REASON_LOCK_CONFLICT = "lock_conflict"
 
 REASONS = frozenset({
-    REASON_AREAL_GEOMETRY, REASON_NOT_INDEXABLE, REASON_STILL_PUBLISHED,
+    REASON_AREAL_GEOMETRY, REASON_OVERLAY_BUDGET, REASON_NOT_INDEXABLE, REASON_STILL_PUBLISHED,
     REASON_NO_DOCS_STAGED, REASON_DRY_RUN_UNCLEAN, REASON_TIMEOUT, REASON_KILLED,
     REASON_RUNNER_DIED, REASON_DISCOVERY_UNREACHABLE, REASON_STAGE_ERROR,
     REASON_INDEX_ERROR, REASON_LOCK_CONFLICT,

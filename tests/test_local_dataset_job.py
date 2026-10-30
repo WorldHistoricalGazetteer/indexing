@@ -15,7 +15,10 @@ through :class:`local_dataset_job.Steps`:
 * **killpg / setrlimit / alarm / _exit** are recorders.
 
 Paths are per-test tempdirs through the same environment variables the code
-reads; ``assert_sandboxed`` refuses to run against real storage.
+reads; ``assert_sandboxed`` refuses to run against real storage. ``GEOM_STORE_DIR``
+here is a directory that does NOT exist: a point dataset must need no geom
+store and write no overlay, and this is what proves it (opening a reader on it
+would raise). The polygon / overlay path is ``tests.test_local_dataset_job_overlay``.
 """
 
 from __future__ import annotations
@@ -90,9 +93,12 @@ class _RunnerSandbox(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="local-job-"))
         self.staged = self.tmp / "staged"
         self.geom_staging = self.tmp / "geom-staging"
+        self.geom_store = self.tmp / "geom"          # NOT created here (see module doc)
+        self.job = JOB
         env = {
             "STAGED_BASE_DIR": str(self.staged),
             "GEOM_STORE_STAGING_DIR": str(self.geom_staging),
+            "GEOM_STORE_DIR": str(self.geom_store),
             dj.STATE_DIR_ENV: str(self.tmp / "state"),
             dj.LOG_DIR_ENV: str(self.tmp / "logs"),
         }
@@ -163,7 +169,7 @@ class _RunnerSandbox(unittest.TestCase):
                 "geom_store_entries": gsw.count}
 
     def _run_index(self, argv):
-        state = dj.read_state(JOB)
+        state = dj.read_state(self.job)
         self.calls.append(("index", list(argv), self.marker().exists(), state["status"]))
         out, err = io.StringIO(), io.StringIO()
         rc = 0
@@ -184,8 +190,10 @@ class _RunnerSandbox(unittest.TestCase):
             return None
         return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
 
-    def run_job(self, action="index", **kw):
-        runner = ldj.Runner(JOB, DS, action, es_host="http://fake:1", steps=self.steps, **kw)
+    def run_job(self, action="index", job=None, **kw):
+        self.job = job or JOB
+        runner = ldj.Runner(self.job, DS, action, es_host="http://fake:1", steps=self.steps,
+                            **kw)
         # The runner logs through ``ldj.logger`` (a NullHandler keeps the
         # last-resort stderr handler quiet) and the snapshot writer prints;
         # both are kept on ``self.stdout`` for a failing test to show.
@@ -196,8 +204,8 @@ class _RunnerSandbox(unittest.TestCase):
     def index_calls(self):
         return [c for c in self.calls if c[0] == "index"]
 
-    def assert_failed(self, reason, message_part=None):
-        st = dj.read_state(JOB)
+    def assert_failed(self, reason, message_part=None, job=None):
+        st = dj.read_state(job or self.job)
         self.assertEqual(st["status"], "failed", st)
         self.assertEqual(st["reason"], reason, st)
         if message_part:
@@ -217,7 +225,7 @@ class TestIndex(_RunnerSandbox):
         self.features[DS] = [
             _lpf(1, "a", "A", _point(-0.1, 51.5)),                        # no ccodes → BNDA fill
             _lpf(2, "b", "B", _point(2.35, 48.85), ccodes=["FR"]),         # contributor ccodes kept
-            _lpf(3, "c", "C", _multipoint((-3.0, 55.0), (-3.001, 55.001))),  # sub-cell, has_geom
+            _lpf(3, "c", "C", _point(-3.0, 55.0)),                        # no ccodes → BNDA fill
         ]
         es_before = json.dumps(self.es.docs, sort_keys=True)
         runner, rc = self.run_job()
@@ -227,10 +235,15 @@ class TestIndex(_RunnerSandbox):
         self.assertEqual(st["status"], "completed")
         self.assertIsNone(st["reason"])
         self.assertIn("indexed 3 docs", st["message"])
+        self.assertIn("no overlay", st["message"])
+        self.assertIsNone(st["overlay"], "a point dataset recorded an overlay")
         self.assertIsNotNone(st["started_at"])
         self.assertIsNotNone(st["finished_at"])
         self.assertEqual((st["pid"], st["pgid"]), (os.getpid(), os.getpgid(0)))
         self.assertIsNone(dj.read_lock())
+        # No geom store was needed (the directory never came into being) and
+        # no overlay was written anywhere.
+        self.assertFalse(self.geom_store.exists(), "a point dataset touched the geom store")
 
         # final/places.jsonl: every geometry carries h3_centroid + h3_cover.
         docs = self.final_docs()
@@ -291,26 +304,6 @@ class TestIndex(_RunnerSandbox):
         self.setrlimit.assert_called_once_with(4 * (1 << 30))
         self.assertEqual([c.args[0] for c in self.alarm.call_args_list], [dj.DEFAULT_TIMEOUT_S, 0])
         self.killpg.assert_not_called()
-
-    def test_areal_geometry_fails_closed_before_any_es_call(self):
-        self.records[DS] = dict(PUBLISHED)
-        self.features[DS] = [
-            _lpf(1, "a", "A", _point(-0.1, 51.5)),
-            _lpf(2, "b", "B", _polygon(-1.0, 51.0, -0.9, 51.1)),   # 0.1° — needs the store
-        ]
-        es_before = json.dumps(self.es.docs, sort_keys=True)
-        _, rc = self.run_job()
-        self.assertEqual(rc, 1)
-        self.assert_failed("areal_geometry", ldj.AREAL_MESSAGE)
-        self.assertEqual(self.index_calls(), [], "index_namespace ran")
-        self.assertEqual(json.dumps(self.es.docs, sort_keys=True), es_before)
-        self.assertIsNone(self.final_docs(), "a half final/ was published")
-        self.assertFalse(self.marker().exists())
-        # Boundary: a MultiPoint spanning exactly 0.01° is areal too.
-        self.features[DS] = [_lpf(3, "c", "C", _multipoint((0.0, 0.0), (0.01, 0.0)))]
-        dj.update_state(JOB, status="queued")
-        self.run_job()
-        self.assert_failed("areal_geometry")
 
     def test_not_indexable_and_absent_fail_closed_before_staging(self):
         self.records[DS] = dict(PUBLISHED, lifecycle_state="in_review")
@@ -587,16 +580,22 @@ class TestHelpers(unittest.TestCase):
                 self.assertFalse(clean)
                 self.assertIn(detail, why)
 
-    def test_areal_geometries(self):
-        doc = {"geometries": [
-            {"has_geom": True, "bounds": [0, 0, 0.005, 0.005]},            # sub-cell
-            {"has_geom": True, "bounds": [0, 0, 0.01, 0.0], "geometry_index": 7},
-            {"has_geom": False, "bounds": [0, 0, 5, 5]},                   # a point-class hull
-            {"has_geom": True, "bounds": [179.9, 0, -179.9, 1]},           # antimeridian → unknown
-            {"has_geom": True},                                           # no bounds → unknown
+    def test_stored_geometry_keys_and_is_stored_geometry(self):
+        doc = {"place_id": "whg:12:x", "geometries": [
+            {"has_geom": True, "geom_ref": "whg:12:x_0"},                  # as staged
+            {"has_geom": True, "geometry_index": 7},                       # no geom_ref → derived
+            {"has_geom": False, "geom_ref": "whg:12:x_2"},                 # not promised
+            {"has_geom": True},                                            # positional index
+            "junk",
         ]}
-        self.assertEqual(ldj.areal_geometries(doc), [(7, 0.01), (3, None), (4, None)])
-        self.assertEqual(ldj.areal_geometries({"geometries": None}), [])
+        self.assertEqual(ldj.stored_geometry_keys(doc), ["whg:12:x_0", "whg:12:x_7", "whg:12:x_3"])
+        self.assertEqual(ldj.stored_geometry_keys({"geometries": None}), [])
+        self.assertTrue(ldj.is_stored_geometry({"type": "Polygon", "coordinates": [[[0, 0]]]}))
+        self.assertTrue(ldj.is_stored_geometry({"type": "GeometryCollection",
+                                               "geometries": [{"type": "Point"}]}))
+        for bad in (None, {}, {"type": "Polygon"}, {"type": "Polygon", "coordinates": []},
+                    {"coordinates": [[1, 2]]}, "whg:12:x_0"):
+            self.assertFalse(ldj.is_stored_geometry(bad), bad)
 
     def test_index_argv_never_allows_missing_h3(self):
         dry = ldj.index_argv("12", "http://es", execute=False)

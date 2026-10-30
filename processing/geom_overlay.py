@@ -449,15 +449,21 @@ def _generation_name(job_id: str) -> str:
     return f"{stamp}-j{job_id}"
 
 
-def _staging_totals(staging_dir: Path) -> tuple[int, int]:
-    """``(entries, bytes)`` promised by the staging indexes, before packing."""
+def staging_totals(staging_dir: str | Path) -> tuple[int, int]:
+    """``(entries, bytes)`` promised by a ``GeomStoreWriter`` staging directory's
+    ``*.index.json`` files, before packing. A missing directory counts as empty.
+    The VM dataset runner uses this to decide whether an overlay is needed at
+    all (a point-only dataset stages nothing)."""
     n = total = 0
-    for idx in sorted(staging_dir.glob("*.index.json")):
+    for idx in sorted(Path(staging_dir).glob("*.index.json")):
         with idx.open() as fh:
             entries = json.load(fh)
         n += len(entries)
         total += sum(int(e.get("length") or 0) for e in entries)
     return n, total
+
+
+_staging_totals = staging_totals
 
 
 def write_overlay(

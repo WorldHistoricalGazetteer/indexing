@@ -190,7 +190,14 @@ def _iter_extract_docs(namespace: str) -> Iterable[dict[str, Any]]:
     raise FileNotFoundError(f"No staged extract found for namespace '{namespace}'")
 
 
-def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, int]:
+def _build_h3_patch(doc: dict[str, Any], *, reader=None) -> tuple[dict[str, Any] | None, int, int]:
+    """``(patch, geometries_seen, geometries_with_h3)`` for one staged doc.
+
+    ``reader`` is the ``GeomStoreReader`` that resolves ``has_geom`` polygons;
+    ``None`` (the Slurm stage) means the module's lazily-opened reader on
+    ``GEOM_STORE_DIR``. The VM dataset runner passes its own, opened AFTER it
+    wrote the dataset's overlay, so the cover is built from the polygon it
+    just stored and not from whatever an earlier reader had cached."""
     place_id = doc.get("place_id")
     geometries = doc.get("geometries") or []
     if not place_id or not isinstance(geometries, list):
@@ -199,7 +206,8 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
     updates: list[dict[str, Any]] = []
     geom_seen = 0
     geom_with_h3 = 0
-    reader = get_geom_reader()
+    if reader is None:
+        reader = get_geom_reader()
     for idx, geom in enumerate(geometries):
         if not isinstance(geom, dict):
             continue
