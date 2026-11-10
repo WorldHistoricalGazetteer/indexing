@@ -31,14 +31,19 @@
 set -o pipefail
 NEW=${NEW:?set NEW=<dir holding <b>.mbtiles + <b>.channels.json>}
 BAK=${BAK:?set BAK=<verified live backup dir with SHA256SUMS>}
-REPO=${REPO:-/vast/ishi/elastic-tile-channels}
 PUSH_MODE=${PUSH_MODE:-auto}
 K=/vast/ishi/secrets/tileserver_id_ed25519
-# Host = settings.TILESERVER_USER@TILESERVER_HOST (NYC1 since 2026-11-10; London 134.209.177.234 is STALE -- never push there)
-H=${TILESERVER_USER:-whgadmin}@${TILESERVER_HOST:-168.144.13.214}
+# Host = processing.settings.TILESERVER_USER@TILESERVER_HOST -- the ONE source of truth (an explicit
+# TILESERVER_USER / TILESERVER_HOST env var still wins, because settings reads them). NYC1 since
+# 2026-11-10; the London droplet is STALE. Fails loudly: there is deliberately no hardcoded fallback.
+REPO=${REPO:-/vast/ishi/elastic-tile-channels}
+source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh && conda activate whg || { echo "FATAL: cannot activate conda env whg"; exit 2; }
+HOSTINFO=$(cd "$REPO" && python -c "from processing.settings import TILESERVER_USER as u, TILESERVER_HOST as h; assert u and h; print(u + '@' + h)") \
+  || { echo "FATAL: could not read TILESERVER_USER/TILESERVER_HOST from processing.settings in $REPO"; exit 2; }
+H=$HOSTINFO
+echo "tile host: $H"
 T=/srv/tileserver/tiles
 SSH="ssh -i $K -o BatchMode=yes -o ConnectTimeout=20 $H"
-source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh && conda activate whg
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 cd $REPO || exit 2
 MODE="${2:-each}"
