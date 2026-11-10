@@ -830,13 +830,16 @@ AUTHORITIES = [
         # edition's 2023 release year. The gazetteer describes England as at 1680, so the
         # snapshot is kept as a point (SG decision 2026-10-09, option b); 2023 is dropped.
         'coverage_extent': [1680, 1680],
-        'redistributable': True,  # CC-BY-SA-4.0
-        # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
+        'redistributable': True,  # CC-BY-4.0
+        # CC BY 4.0, corrected 2026-11-01 (SG): the Zenodo record (concept DOI
+        # 10.5281/zenodo.4748653), .zenodo.json and CITATION.cff all say CC BY 4.0. The GitHub
+        # repo's LICENSE file said CC BY-SA 4.0 from 2021 (verified 2026-06-06 via the GitHub
+        # licence API), which is what this entry first recorded; v2.1.0 replaces that file.
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
-        # licensed layer. Share-alike + attribution to the digital editors required.
+        # licensed layer. Attribution to the digital editors required.
         'citation_text': 'Index Villaris (1680, John Adams; public domain); digital GIS edition by Stephen Gadd and Alexis Litvine (DOI 10.5281/zenodo.4748653).',
-        'license_spdx': 'CC-BY-SA-4.0',
-        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
         'rights_holder': 'Stephen Gadd & Alexis Litvine (digital edition); original 1680 work by John Adams (public domain)',
         'source_url': 'https://github.com/docuracy/IndexVillaris1680',
         'contributors': [],
