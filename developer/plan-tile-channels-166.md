@@ -1,5 +1,12 @@
 # Plan — per-geometry tile channels for the gazetteer tilesets (place#166)
 
+> **Note, 10 Nov 2026 (place#335):** the tile server moved from the London droplet to **NYC1**
+> (`168.144.13.214`; `tiles.whgazetteer.org` follows). Host addresses below were updated; the
+> London droplet `134.209.177.234` is stale (rollback only, until ~17 Nov) — never push to it.
+> NYC1 has **no sudo, no systemd units and no tiler**; `tiler.service` references below are
+> historical. Restart is `cd /srv && bash restart_services.sh` (exit status = health; it blocks
+> until `/styles/whg-context/style.json` serves layers).
+
 **Status, 9 October 2026:** implemented on `indexing` branch `feat/tile-channels` and `whg3`
 branch `feat/tile-channels`, tested locally against a real `tippecanoe` 2.78.0, **not retiled,
 not deployed**. The retile below needs the Technical Director's go on the decisions in §7.
@@ -166,7 +173,7 @@ lies). Everything below is **proposed** and nothing has been submitted.
    ```bash
    mkdir -p /ix1/ishi/data/tiles-live-backup-$(date +%Y%m%d)
    rsync -a --info=stats1 -e "ssh -i $TILESERVER_SSH_KEY -o BatchMode=yes" \
-     whgadmin@134.209.177.234:/srv/tileserver/tiles/{hgis,pl,ukhc,un,vob_rd,vob_rc,vob_cty,vob_lgd,kain_par,nl,po,clio,wd}.mbtiles \
+     whgadmin@168.144.13.214:/srv/tileserver/tiles/{hgis,pl,ukhc,un,vob_rd,vob_rc,vob_cty,vob_lgd,kain_par,nl,po,clio,wd}.mbtiles \
      /ix1/ishi/data/tiles-live-backup-$(date +%Y%m%d)/
    ```
    That is ~7.8 GB against 2.1 TB free on `/ix1` (`shutil.disk_usage("/ix1/ishi")`, 9 Oct).
@@ -281,7 +288,7 @@ Per bucket, from the same compute node, the backup taken in §4.1:
 
 ```bash
 rsync -a --inplace --info=stats1 -e "ssh -i $TILESERVER_SSH_KEY -o BatchMode=yes" \
-  /ix1/ishi/data/tiles-live-backup-<date>/<b>.mbtiles whgadmin@134.209.177.234:/srv/tileserver/tiles/
+  /ix1/ishi/data/tiles-live-backup-<date>/<b>.mbtiles whgadmin@168.144.13.214:/srv/tileserver/tiles/
 python -m processing.update_tileserver_config --bucket <b> --execute     # restart + verify serving
 ```
 
@@ -465,7 +472,7 @@ After `po`, `clio`, `wd`: `ssh tileserver 'df -h /srv/tileserver/tiles'`. Rollba
 
 ```bash
 rsync -a --inplace --info=stats1 -e "ssh -i $TILESERVER_SSH_KEY -o BatchMode=yes" \
-  /ix1/ishi/data/tiles-live-backup-20261010/<b>.mbtiles whgadmin@134.209.177.234:/srv/tileserver/tiles/
+  /ix1/ishi/data/tiles-live-backup-20261010/<b>.mbtiles whgadmin@168.144.13.214:/srv/tileserver/tiles/
 python -m processing.update_tileserver_config --bucket <b> --execute
 ```
 
@@ -700,7 +707,7 @@ python -m processing.generate_tiles --bucket gn  --output-dir $BAK --redeploy-on
 python -m processing.generate_tiles --bucket tgn --output-dir $BAK --redeploy-only --push-mode rename
 python -m processing.generate_tiles --bucket <small> --output-dir $BAK --redeploy-only --push-mode inplace && \
     python -m processing.update_tileserver_config --bucket <small> --execute
-ssh -i $TILESERVER_SSH_KEY whgadmin@134.209.177.234 'sha256sum /srv/tileserver/tiles/<b>.mbtiles'; grep " <b>.mbtiles$" $BAK/SHA256SUMS
+ssh -i $TILESERVER_SSH_KEY whgadmin@168.144.13.214 'sha256sum /srv/tileserver/tiles/<b>.mbtiles'; grep " <b>.mbtiles$" $BAK/SHA256SUMS
 ```
 
 **Unavailability under the rename scheme (inference, not yet measured):** the live file is untouched during

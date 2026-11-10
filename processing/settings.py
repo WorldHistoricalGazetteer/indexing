@@ -328,7 +328,12 @@ SYMPHONYM_EMBEDDINGS_DIR = os.getenv(
 # automatic; it's gated on ALL tilesets being deployed and verified.
 # ---------------------------------------------------------------------------
 TILESERVER_PROXY        = os.getenv("TILESERVER_PROXY",        "pitt")
-TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "134.209.177.234")
+# NYC1 droplet (reserved IP; tiles.whgazetteer.org resolves here since 2026-11-10, place#335).
+# The old London droplet 134.209.177.234 is STALE (kept only as a rollback until ~17 Nov
+# 2026) -- never push to it. Host contract: no sudo, no systemd units, no tiler; the
+# tileserver is a Docker container on localhost:8080 restarted by `cd /srv && bash
+# restart_services.sh` (non-zero exit unless /styles/whg-context/style.json serves layers).
+TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "168.144.13.214")
 TILESERVER_USER         = os.getenv("TILESERVER_USER",         "whgadmin")
 TILESERVER_TILES_DIR    = os.getenv("TILESERVER_TILES_DIR",    "/srv/tileserver/tiles")
 # Optional direct-mode SSH key. When set, ``push_mbtiles_to_tileserver``
@@ -346,13 +351,8 @@ TILESERVER_PROXY_RSYNC  = os.getenv(
     "TILESERVER_PROXY_RSYNC",
     "/home/gazetteer/miniconda/envs/whg/bin/rsync",
 )
-# systemctl unit names (space-separated for env-var convenience). Both
-# ``tiler.service`` and ``tileserver-gl-light.service`` need restarting
-# after a fresh batch of mbtiles arrives.
-TILESERVER_SERVICES     = os.getenv(
-    "TILESERVER_SERVICES",
-    "tiler.service tileserver-gl-light.service",
-).split()
+# (TILESERVER_SERVICES removed 2026-11-10: the NYC1 host has no systemd units / tiler;
+# restart is the single on-host script, see above.)
 
 
 # ── Authority download / redistribution gating ─────────────────────────────

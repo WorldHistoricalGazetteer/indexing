@@ -13,7 +13,8 @@ set -eo pipefail
 B=/ix1/ishi/data/tiles-live-backup-20261010
 SRC=/ix1/ishi/data/tiles-20260902-retile
 K=/vast/ishi/secrets/tileserver_id_ed25519
-H=whgadmin@134.209.177.234
+# Host = settings.TILESERVER_USER@TILESERVER_HOST (NYC1 since 2026-11-10; London 134.209.177.234 is STALE -- never push there)
+H=${TILESERVER_USER:-whgadmin}@${TILESERVER_HOST:-168.144.13.214}
 T=/srv/tileserver/tiles
 NS="hgis pl ukhc un vob_rd vob_rc vob_cty vob_lgd kain_par nl po clio wd"
 mkdir -p "$B"

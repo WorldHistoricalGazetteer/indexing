@@ -15,7 +15,8 @@
 set -eo pipefail
 B=/ix1/ishi/data/tiles-live-backup-20261010
 K=/vast/ishi/secrets/tileserver_id_ed25519
-H=whgadmin@134.209.177.234
+# Host = settings.TILESERVER_USER@TILESERVER_HOST (NYC1 since 2026-11-10; London 134.209.177.234 is STALE -- never push there)
+H=${TILESERVER_USER:-whgadmin}@${TILESERVER_HOST:-168.144.13.214}
 T=/srv/tileserver/tiles
 NS="gn tgn gb chgis alc iv tm ofs og dgsd dp"
 [ -f "$B/SHA256SUMS" ] || { echo "no $B/SHA256SUMS — wrong directory"; exit 2; }

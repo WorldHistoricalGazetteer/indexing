@@ -10,8 +10,8 @@ to Django (so the Atlas never advertises a gazetteer whose tiles 404).
 Done here as a single, safe rewrite:
 
 * read the LIVE ``config.json`` and **preserve every existing entry** — basemaps,
-  styles, ``datasets-*`` / ``collections-*`` (managed by the tileboss ``tiler.js``
-  POST API), other gazetteer buckets, and all top-level options;
+  styles, ``datasets-*`` / ``collections-*`` (legacy: the tileboss ``tiler.js`` POST API
+  that managed them is NOT present on the NYC1 host since 2026-11-10), other gazetteer buckets, and all top-level options;
 * merge in ``<bucket>: {"mbtiles": "<bucket>.mbtiles"}`` for each requested bucket
   whose mbtiles is actually present on the host — an **entry-level** merge, so any
   existing per-tileset fields (e.g. ``tilejson`` attribution) are kept;
@@ -228,16 +228,20 @@ def rollback_config(backup: str) -> bool:
 
 
 def restart_tileserver() -> bool:
-    """Run the on-host restart script. Restart + verify in SEPARATE ssh sessions
-    (the script runs `sudo pkill -f`; a combined session would self-kill)."""
+    """Run the on-host restart script (``cd /srv && bash restart_services.sh``).
+
+    NYC1 contract (place#335): runs as the deploy user, no sudo, restarts the Docker
+    container and does not return until ``/styles/whg-context/style.json`` serves a style
+    with layers -- exit non-zero otherwise. So the exit status IS the health check; the
+    caller still confirms each tileset with ``verify_serving``. (The old ``pgrep -cf``
+    process count was vacuous -- pgrep matched the ssh command line carrying its own
+    pattern -- and is gone.)"""
     r = _ssh(RESTART_SCRIPT, timeout=180)
     if r.returncode != 0:
         print(f"  restart_services.sh rc={r.returncode}: {r.stderr.strip()}", file=sys.stderr)
         return False
-    # Separate session for the verify (argv must not carry pkill's patterns).
-    v = _ssh("echo gl:$(pgrep -cf tileserver-gl-light) tiler:$(pgrep -cf /srv/tiler/tiler.js)")
-    print(f"  services after restart: {v.stdout.strip()}")
-    return "gl:0" not in v.stdout
+    print("  restart_services.sh returned 0 (style.json serving)")
+    return True
 
 
 def verify_serving(buckets: list[str], *, attempts: int = 10, delay: float = 3.0) -> dict[str, bool]:

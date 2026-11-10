@@ -34,7 +34,8 @@ BAK=${BAK:?set BAK=<verified live backup dir with SHA256SUMS>}
 REPO=${REPO:-/vast/ishi/elastic-tile-channels}
 PUSH_MODE=${PUSH_MODE:-auto}
 K=/vast/ishi/secrets/tileserver_id_ed25519
-H=whgadmin@134.209.177.234
+# Host = settings.TILESERVER_USER@TILESERVER_HOST (NYC1 since 2026-11-10; London 134.209.177.234 is STALE -- never push there)
+H=${TILESERVER_USER:-whgadmin}@${TILESERVER_HOST:-168.144.13.214}
 T=/srv/tileserver/tiles
 SSH="ssh -i $K -o BatchMode=yes -o ConnectTimeout=20 $H"
 source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh && conda activate whg
