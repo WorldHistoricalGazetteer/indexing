@@ -49,6 +49,7 @@ CONFIG_PATH = "/srv/tileserver/configs/config.json"
 #: tileboss ``tileserver/nginx/README.md``.
 SNAPSHOT_PATH = "/srv/tileserver/configs/config.snapshot.json"
 REPO_DIR = "/srv"
+NOT_A_CLONE = "__NOT_A_GIT_CLONE__"
 TILES_DIR = "/srv/tileserver/tiles"
 HTTP_PORT = 8080
 RESTART_SCRIPT = "cd /srv && bash restart_services.sh"
@@ -188,9 +189,15 @@ def snapshot_config_to_repo(merged: dict) -> bool:
         print(f"  config snapshot written: {SNAPSHOT_PATH}")
 
         # Drift report — the thing whose absence let /srv fall 3 months behind.
-        g = _ssh(f'cd {REPO_DIR} && git status --porcelain 2>/dev/null | head -20; '
-                 f'echo "---"; git rev-list --count HEAD..origin/production 2>/dev/null')
-        if g.returncode == 0 and g.stdout:
+        # Only meaningful where REPO_DIR is a tileboss clone (London droplet). On the NYC1
+        # host /srv is NOT a clone, so skip with one informational line — never a warning.
+        g = _ssh(f'if [ -e {REPO_DIR}/.git ]; then cd {REPO_DIR} && '
+                 f'git status --porcelain 2>/dev/null | head -20; '
+                 f'echo "---"; git rev-list --count HEAD..origin/production 2>/dev/null; '
+                 f'else echo {NOT_A_CLONE}; fi')
+        if g.returncode == 0 and NOT_A_CLONE in g.stdout:
+            print(f"  (drift report skipped: {REPO_DIR} is not a git clone on this host)")
+        elif g.returncode == 0 and g.stdout:
             dirty, _, behind = g.stdout.partition("---")
             behind = behind.strip()
             changed = [l for l in dirty.splitlines() if l.strip()]
