@@ -50,8 +50,13 @@ to merge with legacy results.
 from __future__ import annotations
 
 import asyncio
+import inspect
+import itertools
+import json
 import logging
+import os
 import re
+import time
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -94,6 +99,104 @@ from .es_helpers import (
 )
 
 logger = logging.getLogger("gateway.reconcile")
+
+# ---------------------------------------------------------------------------
+# Per-stage timing (opt-in, off by default)
+# ---------------------------------------------------------------------------
+# Set GATEWAY_STAGE_TIMING_SAMPLE=N to log one JSON line for every Nth
+# /api/reconcile request (1 = every request, 0/unset = off). Each line says
+# where that request's wall time went — in this process (embedding, scoring,
+# formatting) versus waiting on Elasticsearch — and carries Elasticsearch's own
+# server-side ``took`` for each search, so queueing and ES work can be told
+# apart. It changes no behaviour and no response. Lines go to stderr, which the
+# gateway control script appends to gateway.log. Read them with:
+#     grep reconcile_timing /vast/ishi/elastic/logs/gateway.log
+# The log is only rotated on restart, so use a sample rate (e.g. 10) for long runs.
+try:
+    _STAGE_SAMPLE = int(os.getenv("GATEWAY_STAGE_TIMING_SAMPLE", "0") or 0)
+except ValueError:
+    _STAGE_SAMPLE = 0
+_stage_counter = itertools.count(1)
+
+timing_logger = logging.getLogger("gateway.reconcile.timing")
+if not timing_logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    timing_logger.addHandler(_h)
+    timing_logger.setLevel(logging.INFO)
+    timing_logger.propagate = False
+
+
+class _NullStages:
+    """No-op stand-in used when timing is off, so call sites need no guard."""
+    __slots__ = ()
+
+    def mark(self, name: str) -> None: ...
+    def n(self, key: str, value) -> None: ...
+    def took(self, stage: str, es_json) -> None: ...
+    def emit(self, error: str | None = None) -> None: ...
+
+
+_NULL_STAGES = _NullStages()
+
+
+class _Stages:
+    """Wall-clock split of one reconcile request.
+
+    ``mark(name)`` attributes the time since the previous mark to ``name``
+    (repeat marks accumulate). Whatever is not marked shows up as
+    ``unmarked_ms`` — notably the response serialisation FastAPI does after the
+    handler returns is NOT included in ``total_ms``.
+    """
+    __slots__ = ("t0", "last", "ms", "counts", "took_ms", "req")
+
+    def __init__(self, req) -> None:
+        self.t0 = self.last = time.perf_counter()
+        self.ms: dict[str, float] = {}
+        self.counts: dict[str, int] = {}
+        self.took_ms: dict[str, int] = {}
+        self.req = req
+
+    def mark(self, name: str) -> None:
+        now = time.perf_counter()
+        self.ms[name] = self.ms.get(name, 0.0) + (now - self.last) * 1000.0
+        self.last = now
+
+    def n(self, key: str, value) -> None:
+        self.counts[key] = int(value)
+
+    def took(self, stage: str, es_json) -> None:
+        """Record Elasticsearch's server-side ``took`` (ms). Parallel searches in
+        one stage keep the MAX, since that is what the stage waited on."""
+        try:
+            t = int(es_json.get("took"))
+        except (AttributeError, TypeError, ValueError):
+            return
+        self.took_ms[stage] = max(self.took_ms.get(stage, 0), t)
+
+    def emit(self, error: str | None = None) -> None:
+        try:
+            total = (time.perf_counter() - self.t0) * 1000.0
+            r = self.req
+            rec = {
+                "total_ms": round(total),
+                "stages_ms": {k: round(v) for k, v in self.ms.items()},
+                "unmarked_ms": round(total - sum(self.ms.values())),
+                "es_took_ms": self.took_ms,
+                "n": self.counts,
+                "mode": getattr(r, "mode", None),
+                "size": getattr(r, "size", None),
+                "qlen": len((getattr(r, "query", None) or "")),
+                "variants": len(getattr(r, "variants", None) or []),
+                "client_vector": bool(getattr(r, "query_vector", None)),
+                "scoped": bool(getattr(r, "ccodes", None) or getattr(r, "contained_in", None)
+                               or getattr(r, "bounds", None) or getattr(r, "radius", None)),
+            }
+            if error:
+                rec["error"] = error
+            timing_logger.info("reconcile_timing %s", json.dumps(rec, separators=(",", ":")))
+        except Exception:  # instrumentation must never break a request
+            logger.debug("reconcile_timing emit failed", exc_info=True)
 
 router = APIRouter(prefix="/api", tags=["Reconciliation"])
 
@@ -532,8 +635,7 @@ def _format_candidate(
 # Endpoint
 # ---------------------------------------------------------------------------
 
-@router.post("/reconcile", response_model=ReconcileResponse)
-async def reconcile_search(req: ReconcileRequest):
+async def _reconcile_search(req: ReconcileRequest, st):
     """
     Reconciliation-style search across the CRC places + toponyms indexes.
 
@@ -629,6 +731,7 @@ async def reconcile_search(req: ReconcileRequest):
     match_names: dict[str, str] = {} if req.include_clustering_fields else None
 
     async with httpx.AsyncClient(timeout=30) as client:
+        st.mark("prep")
         # ------------------------------------------------------------------
         # Step 0: Resolve containment region (contained_in place_ids or bounds)
         # ------------------------------------------------------------------
@@ -652,6 +755,7 @@ async def reconcile_search(req: ReconcileRequest):
             region = spatial.region_from_geojson(req.bounds)
 
         scope = _build_scope_info(req, region)
+        st.mark("region")
 
         if scope is not None and not scope.applied:
             # FAIL CLOSED. A scope was explicitly requested but no spatial
@@ -714,6 +818,7 @@ async def reconcile_search(req: ReconcileRequest):
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]
+                st.mark("embed_build")
 
                 # ...plus ONE lexical pass over every form. KNN alone does not
                 # reliably retrieve a toponym spelled exactly as asked, so an
@@ -762,6 +867,7 @@ async def reconcile_search(req: ReconcileRequest):
                 if lex_body:
                     requests.append(("exact", 1.0, lex_body))
 
+                st.mark("build_queries")
                 if requests:
                     responses = await asyncio.gather(*[
                         client.post(
@@ -772,9 +878,12 @@ async def reconcile_search(req: ReconcileRequest):
                         )
                         for _, _, body in requests
                     ])
+                    st.mark("es_discovery")
                     for (kind, weight, _), resp in zip(requests, responses):
                         resp.raise_for_status()
-                        hits = resp.json().get("hits", {}).get("hits", [])
+                        _dj = resp.json()
+                        st.took("discovery", _dj)
+                        hits = _dj.get("hits", {}).get("hits", [])
                         if kind == "knn":
                             # Scale the whole pass by how good its best hit
                             # actually is, so a pass that found only noise no
@@ -816,10 +925,15 @@ async def reconcile_search(req: ReconcileRequest):
                     headers=ES_HEADERS,
                 )
                 text_resp.raise_for_status()
-                text_hits = text_resp.json().get("hits", {}).get("hits", [])
+                _dj = text_resp.json()
+                st.took("discovery", _dj)
+                st.mark("es_discovery")
+                text_hits = _dj.get("hits", {}).get("hits", [])
                 _collect_place_ids(text_hits, place_scores, exclude_prefixes,
                                    include_prefixes, match_names)
 
+            st.mark("discovery_score")
+            st.n("discovery_places", len(place_scores))
             if not place_scores:
                 return ReconcileResponse(
                 scope=scope, variants_used=variants,
@@ -893,6 +1007,8 @@ async def reconcile_search(req: ReconcileRequest):
         )
         places_resp.raise_for_status()
         places_result = places_resp.json()
+        st.took("places", places_result)
+        st.mark("es_places")
 
         raw_hits = places_result.get("hits", {}).get("hits", [])
 
@@ -915,9 +1031,11 @@ async def reconcile_search(req: ReconcileRequest):
                 spatial.mark_scope_degraded(scope)
             raw_hits = raw_hits[: req.size * 4]
 
+        st.mark("containment")
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
         ]
+        st.n("surviving", len(surviving_pids))
         surviving_set = set(surviving_pids)
 
         # ------------------------------------------------------------------
@@ -941,7 +1059,11 @@ async def reconcile_search(req: ReconcileRequest):
                     headers=ES_HEADERS,
                 )
                 topo_resp.raise_for_status()
-                topo_hits = topo_resp.json().get("hits", {}).get("hits", [])
+                _tj = topo_resp.json()
+                st.took("enrich", _tj)
+                st.mark("es_enrich")
+                topo_hits = _tj.get("hits", {}).get("hits", [])
+                st.n("enrich_hits", len(topo_hits))
                 for th in topo_hits:
                     src = th.get("_source", {})
                     label = src.get("name", "")
@@ -955,6 +1077,8 @@ async def reconcile_search(req: ReconcileRequest):
             except Exception as e:
                 # Non-fatal: candidates will fall back to nested place data
                 logger.warning(f"Toponym enrichment failed (non-fatal): {e}")
+
+    st.mark("enrich_loop")
 
     # ------------------------------------------------------------------
     # Step 4: Format response, ranking by toponym-match score
@@ -994,6 +1118,8 @@ async def reconcile_search(req: ReconcileRequest):
     # Sort by score descending (ES returned them in filter order, not ranked)
     candidates.sort(key=lambda c: c.score, reverse=True)
     candidates = candidates[:req.size]
+    st.mark("format")
+    st.n("hits", len(candidates))
 
     # ------------------------------------------------------------------
     # Step 5 (optional): Hard-link expansion — ship co-reference edges
@@ -1009,6 +1135,7 @@ async def reconcile_search(req: ReconcileRequest):
         except Exception as e:  # best-effort enrichment — never fail the query
             logger.warning("Hard-link expansion failed (non-fatal): %s", e)
 
+    st.mark("hardlinks")
     return ReconcileResponse(
         hits=candidates,
         namespaces=_collect_namespaces(candidates),
@@ -1023,3 +1150,19 @@ async def reconcile_search(req: ReconcileRequest):
         total=places_result.get("hits", {}).get("total", {}).get("value", len(candidates)),
     )
 
+
+@router.post("/reconcile", response_model=ReconcileResponse,
+             description=inspect.cleandoc(_reconcile_search.__doc__ or ""))
+async def reconcile_search(req: ReconcileRequest):
+    """Thin wrapper: times ``_reconcile_search`` when sampled (see top of module)."""
+    if _STAGE_SAMPLE > 0 and next(_stage_counter) % _STAGE_SAMPLE == 0:
+        st = _Stages(req)
+    else:
+        st = _NULL_STAGES
+    try:
+        res = await _reconcile_search(req, st)
+    except BaseException as exc:
+        st.emit(error=type(exc).__name__)
+        raise
+    st.emit()
+    return res
