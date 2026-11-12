@@ -110,7 +110,8 @@ logger = logging.getLogger("gateway.reconcile")
 # where that request's wall time went — in this process (embedding, scoring,
 # formatting) versus waiting on Elasticsearch — and carries Elasticsearch's own
 # server-side ``took`` for each search, so queueing and ES work can be told
-# apart. It changes no behaviour and no response. Lines go to stderr, which the
+# apart. GATEWAY_STAGE_TIMING_UNTIL=YYYY-MM-DD makes it switch itself off at that
+# date (UTC). It changes no behaviour and no response. Lines go to stderr, which the
 # gateway control script appends to gateway.log. Read them with:
 #     grep reconcile_timing /vast/ishi/elastic/logs/gateway.log
 # The log is only rotated on restart, so use a sample rate (e.g. 10) for long runs.
@@ -119,6 +120,31 @@ try:
 except ValueError:
     _STAGE_SAMPLE = 0
 _stage_counter = itertools.count(1)
+
+
+def _parse_until(value: str | None) -> float | None:
+    """GATEWAY_STAGE_TIMING_UNTIL as an epoch time (ISO date or datetime, UTC when no
+    zone is given); sampling stops at that instant. None = no expiry. An unparseable
+    value returns 0.0 (already expired): a typo must never mean "log forever"."""
+    if not value or not value.strip():
+        return None
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(value.strip())
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except ValueError:
+        return 0.0
+
+
+# Lets a per-host setting say "diagnostics until <date>" and then switch itself off,
+# so a temporary measure in .env.local cannot become permanent by being forgotten.
+_STAGE_UNTIL = _parse_until(os.getenv("GATEWAY_STAGE_TIMING_UNTIL"))
+
+
+def _stage_timing_active() -> bool:
+    return _STAGE_SAMPLE > 0 and (_STAGE_UNTIL is None or time.time() < _STAGE_UNTIL)
 
 timing_logger = logging.getLogger("gateway.reconcile.timing")
 if not timing_logger.handlers:
@@ -1230,7 +1256,7 @@ def _cacheable(res: ReconcileResponse, st) -> bool:
              description=inspect.cleandoc(_reconcile_search.__doc__ or ""))
 async def reconcile_search(req: ReconcileRequest):
     """Thin wrapper: result cache + timing around ``_reconcile_search``."""
-    if _STAGE_SAMPLE > 0 and next(_stage_counter) % _STAGE_SAMPLE == 0:
+    if _stage_timing_active() and next(_stage_counter) % _STAGE_SAMPLE == 0:
         st = _Stages(req)
     else:
         st = _NullStages()

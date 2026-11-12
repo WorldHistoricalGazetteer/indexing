@@ -197,3 +197,42 @@ class PerSearchTimingEndToEnd(unittest.TestCase):
         for stage in ("prep", "embed_build", "es_discovery", "discovery_score",
                       "es_places", "es_enrich", "enrich_loop", "format"):
             self.assertIn(stage, rec["stages_ms"], f"stage {stage} never fired")
+
+
+class TimingExpiry(unittest.TestCase):
+    """GATEWAY_STAGE_TIMING_UNTIL lets a temporary per-host setting switch itself off."""
+
+    def test_parse_until(self):
+        self.assertIsNone(rc._parse_until(None))
+        self.assertIsNone(rc._parse_until("   "))
+        self.assertEqual(rc._parse_until("2026-11-27"), 1795737600.0)        # midnight UTC
+        self.assertEqual(rc._parse_until("2026-11-27T00:00:00+00:00"), 1795737600.0)
+
+    def test_an_unparseable_value_means_off_not_forever(self):
+        self.assertEqual(rc._parse_until("next fortnight"), 0.0)
+        with mock.patch.object(rc, "_STAGE_SAMPLE", 1), mock.patch.object(rc, "_STAGE_UNTIL", 0.0):
+            self.assertFalse(rc._stage_timing_active())
+
+    def test_active_before_and_inactive_after_the_deadline(self):
+        until = 1795737600.0
+        with mock.patch.object(rc, "_STAGE_SAMPLE", 50), mock.patch.object(rc, "_STAGE_UNTIL", until):
+            with mock.patch.object(rc.time, "time", return_value=until - 1):
+                self.assertTrue(rc._stage_timing_active())
+            with mock.patch.object(rc.time, "time", return_value=until):
+                self.assertFalse(rc._stage_timing_active())
+
+    def test_no_deadline_means_active_whenever_sampling_is_on(self):
+        with mock.patch.object(rc, "_STAGE_SAMPLE", 50), mock.patch.object(rc, "_STAGE_UNTIL", None):
+            self.assertTrue(rc._stage_timing_active())
+        with mock.patch.object(rc, "_STAGE_SAMPLE", 0), mock.patch.object(rc, "_STAGE_UNTIL", None):
+            self.assertFalse(rc._stage_timing_active())
+
+    def test_the_wrapper_stops_logging_after_the_deadline(self):
+        async def stub(req, st):
+            return "R"
+        req = rc.ReconcileRequest(query="Sarum")
+        until = 1795737600.0
+        with mock.patch.object(rc, "_reconcile_search", stub), mock.patch.object(rc, "_STAGE_SAMPLE", 1), \
+                mock.patch.object(rc, "_STAGE_UNTIL", until), mock.patch.object(rc.time, "time", return_value=until + 5):
+            with self.assertNoLogs("gateway.reconcile.timing", "INFO"):
+                asyncio.run(rc.reconcile_search(req))

@@ -29,6 +29,11 @@ import time
 from collections import OrderedDict
 from typing import Any, Callable, Optional
 
+# Importing config loads .env then .env.local, so GATEWAY_RESULT_CACHE_* set there are
+# visible below. Without this the order of imports in reconcile.py decided whether a
+# per-host override took effect.
+from . import config  # noqa: F401
+
 
 def _env_number(name: str, default: float) -> float:
     try:
