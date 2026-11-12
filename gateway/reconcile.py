@@ -639,6 +639,25 @@ def _format_candidate(
 # Endpoint
 # ---------------------------------------------------------------------------
 
+def _top_hits_by_score(raw_hits: list[dict], place_scores: dict[str, float], size: int) -> list[dict]:
+    """The ``size`` hits Step 4 will keep, in the order it will keep them.
+
+    Step 4 builds a candidate per hit with ``score = raw / max * 100`` (0 when max
+    is not positive), sorts descending (``list.sort`` is stable, ``reverse=True``
+    preserves the order of equal elements) and slices to ``size``. This applies the
+    SAME key, sort and slice to the raw hits, so the survivors — and their order —
+    are exactly the ones that sort-and-slice would have kept. It exists so the
+    expensive enrichment fetch can be limited to hits that can reach the response.
+    """
+    top = max(place_scores.values()) if place_scores else 1.0
+
+    def key(hit: dict) -> float:
+        raw = place_scores.get(hit.get("_source", {}).get("place_id", ""), 0.0)
+        return (raw / top * 100) if top > 0 else 0
+
+    return sorted(raw_hits, key=key, reverse=True)[:size]
+
+
 async def _reconcile_search(req: ReconcileRequest, st):
     """
     Reconciliation-style search across the CRC places + toponyms indexes.
@@ -1040,10 +1059,18 @@ async def _reconcile_search(req: ReconcileRequest, st):
             raw_hits = raw_hits[: req.size * 4]
 
         st.mark("containment")
+        # Only the top `size` survivors can reach the response — Step 4 sorts by
+        # discovery score and slices to req.size — yet enrichment used to fetch the
+        # names of ALL of them: up to 200 places (~1,200 toponym documents at the
+        # median) per unscoped query, ~36% of its request time. Rank first, enrich
+        # only what will be returned. Output is identical (see _top_hits_by_score).
+        n_before_trim = len(raw_hits)
+        st.n("surviving", n_before_trim)
+        raw_hits = _top_hits_by_score(raw_hits, place_scores, req.size)
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
         ]
-        st.n("surviving", len(surviving_pids))
+        st.n("enriched", len(surviving_pids))
         surviving_set = set(surviving_pids)
 
         # ------------------------------------------------------------------
@@ -1056,7 +1083,9 @@ async def _reconcile_search(req: ReconcileRequest, st):
         if surviving_pids:
             topo_body = _build_toponym_lookup(
                 surviving_pids,
-                size=max(len(surviving_pids) * 30, 500),
+                # Sized from the UNTRIMMED count, as before: a smaller cap could
+                # only truncate a large place's names sooner, never help.
+                size=max(n_before_trim * 30, 500),
                 with_embeddings=req.include_embeddings,
             )
             try:
