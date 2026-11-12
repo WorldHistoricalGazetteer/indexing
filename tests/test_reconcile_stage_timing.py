@@ -162,3 +162,32 @@ class EveryStageIsMarked(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerSearchTimingEndToEnd(unittest.TestCase):
+    """Drive the REAL endpoint against a stubbed ES and read what it logs."""
+
+    def _run(self, **req_kw):
+        from tests._es_stub import FakeES
+        fake = FakeES(n_places=30)
+        req = rc.ReconcileRequest(query="Sarum", mode="fuzzy", size=10, **req_kw)
+        with fake.installed(), \
+                mock.patch.object(rc, "_build_phonetic_knn", lambda *a, **k: {"knn": {"stub": 1}, "size": 10}), \
+                mock.patch.object(rc, "_STAGE_SAMPLE", 1):
+            with self.assertLogs("gateway.reconcile.timing", "INFO") as cm:
+                res = asyncio.run(rc.reconcile_search(req))
+        return fake, res, _lines(cm)[0]
+
+    def test_each_discovery_search_reports_its_own_server_time_and_yield(self):
+        fake, res, rec = self._run()
+        for kind in ("knn", "near", "exact"):
+            self.assertIn("discovery_" + kind, rec["es_took_ms"], f"no took for {kind}")
+            self.assertGreater(rec["n"].get("hits_" + kind, 0), 0, f"no hit count for {kind}")
+        self.assertEqual(rec["es_took_ms"]["discovery"], 11)   # the max across them, as before
+        self.assertEqual(len(res.hits), 10)
+
+    def test_all_stages_fire_on_the_real_fuzzy_path(self):
+        _, _, rec = self._run()
+        for stage in ("prep", "embed_build", "es_discovery", "discovery_score",
+                      "es_places", "es_enrich", "enrich_loop", "format"):
+            self.assertIn(stage, rec["stages_ms"], f"stage {stage} never fired")

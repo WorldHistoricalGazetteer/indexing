@@ -133,6 +133,7 @@ class _NullStages:
 
     def mark(self, name: str) -> None: ...
     def n(self, key: str, value) -> None: ...
+    def add(self, key: str, value) -> None: ...
     def took(self, stage: str, es_json) -> None: ...
     def emit(self, error: str | None = None) -> None: ...
 
@@ -164,6 +165,9 @@ class _Stages:
 
     def n(self, key: str, value) -> None:
         self.counts[key] = int(value)
+
+    def add(self, key: str, value) -> None:
+        self.counts[key] = self.counts.get(key, 0) + int(value)
 
     def took(self, stage: str, es_json) -> None:
         """Record Elasticsearch's server-side ``took`` (ms). Parallel searches in
@@ -883,7 +887,11 @@ async def _reconcile_search(req: ReconcileRequest, st):
                         resp.raise_for_status()
                         _dj = resp.json()
                         st.took("discovery", _dj)
+                        # Per-search server time and yield: which of the 3 parallel
+                        # discovery searches (knn / near-miss / exact) costs what.
+                        st.took("discovery_" + kind, _dj)
                         hits = _dj.get("hits", {}).get("hits", [])
+                        st.add("hits_" + kind, len(hits))
                         if kind == "knn":
                             # Scale the whole pass by how good its best hit
                             # actually is, so a pass that found only noise no
