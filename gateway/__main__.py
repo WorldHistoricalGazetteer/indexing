@@ -1,8 +1,14 @@
 # gateway/__main__.py
 """Run the gateway: python -m gateway"""
 
-import uvicorn
-from .config import GATEWAY_HOST, GATEWAY_PORT, GATEWAY_WORKERS
+from .threads import cap_cpu_threads
+
+# FIRST, before anything can import torch: the workers spawned below inherit this
+# environment. See gateway/threads.py for the measurements behind the cap.
+cap_cpu_threads()
+
+import uvicorn  # noqa: E402  (deliberately after the thread cap)
+from .config import GATEWAY_HOST, GATEWAY_PORT, GATEWAY_WORKERS  # noqa: E402
 
 # More than one worker so a single wedged request cannot take the service down. On
 # 2026-08-18 one hung request left the (single-worker) gateway alive, spinning, and
