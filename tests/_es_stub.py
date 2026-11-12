@@ -40,10 +40,11 @@ def _find_lists(obj, key):
 
 
 class FakeES:
-    def __init__(self, n_places: int = 60, took: dict | None = None, ccode: str = "GB"):
+    def __init__(self, n_places: int = 60, took: dict | None = None, ccode: str = "GB", fail: set | None = None):
         self.n_places = n_places
         self.took = took or {"discovery": 11, "places": 5, "enrich": 7}
         self.ccode = ccode
+        self.fail = fail or set()            # kinds answered with HTTP 500, e.g. {"enrich"}
         self.calls: list[dict] = []          # {"kind", "path", "body"}
 
     def pid(self, i: int) -> str:
@@ -62,6 +63,8 @@ class FakeES:
             ids = [i for l in _find_lists(body, "attestations") for i in l]
             if ids and body.get("size", 0) >= 500 and "knn" not in body:
                 self.calls.append({"kind": "enrich", "path": path, "body": body, "ids": ids})
+                if "enrich" in self.fail:
+                    return httpx.Response(500, json={"error": "stub"})
                 hits = [{"_score": 1, "_source": {"name": f"{pid}-a", "lang": "en", "attestations": [pid]}}
                         for pid in ids]
                 hits += [{"_score": 1, "_source": {"name": f"{pid}-b", "lang": "fr", "attestations": [pid]}}

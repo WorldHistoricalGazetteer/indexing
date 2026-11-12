@@ -69,6 +69,12 @@ class Selector(unittest.TestCase):
 
 
 class Endpoint(unittest.TestCase):
+    def setUp(self):
+        from gateway.result_cache import TTLCache
+        p = mock.patch.object(rc, "_result_cache", TTLCache(0, 0))   # cache off: assert on ES traffic
+        p.start()
+        self.addCleanup(p.stop)
+
     def _run(self, fake, trim=True, **kw):
         req = rc.ReconcileRequest(query="Sarum", mode="fuzzy", size=10, **kw)
         patches = [mock.patch.object(rc, "_build_phonetic_knn", lambda *a, **k: {"knn": {"stub": 1}, "size": 10})]

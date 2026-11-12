@@ -81,7 +81,7 @@ class StagesUnit(unittest.TestCase):
             st.emit()   # must not raise
 
     def test_null_stages_accepts_every_call(self):
-        n = rc._NULL_STAGES
+        n = rc._NullStages()
         n.mark("x"); n.n("k", 1); n.took("s", {"took": 1}); n.emit(); n.emit("E")
 
 
@@ -93,7 +93,7 @@ class WrapperBehaviour(unittest.TestCase):
 
     def test_off_by_default_logs_nothing_and_returns_the_result(self):
         async def stub(req, st):
-            self.assertIs(st, rc._NULL_STAGES)
+            self.assertIsInstance(st, rc._NullStages)
             return "RESULT"
         with mock.patch.object(rc, "_STAGE_SAMPLE", 0):
             with self.assertNoLogs("gateway.reconcile.timing", "INFO"):
@@ -166,6 +166,12 @@ if __name__ == "__main__":
 
 class PerSearchTimingEndToEnd(unittest.TestCase):
     """Drive the REAL endpoint against a stubbed ES and read what it logs."""
+    def setUp(self):
+        from gateway.result_cache import TTLCache
+        p = mock.patch.object(rc, "_result_cache", TTLCache(0, 0))   # cache off: assert on ES traffic
+        p.start()
+        self.addCleanup(p.stop)
+
 
     def _run(self, **req_kw):
         from tests._es_stub import FakeES

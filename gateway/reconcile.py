@@ -50,6 +50,7 @@ to merge with legacy results.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import itertools
 import json
@@ -63,6 +64,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from . import spatial
+from .result_cache import RESULT_CACHE_SIZE, RESULT_CACHE_TTL, TTLCache
 from .titles import display_title
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .clustering_payload import (
@@ -128,8 +130,18 @@ if not timing_logger.handlers:
 
 
 class _NullStages:
-    """No-op stand-in used when timing is off, so call sites need no guard."""
-    __slots__ = ()
+    """No-op stand-in used when timing is off, so call sites need no guard.
+
+    One per REQUEST (not a shared singleton): it still carries the ``degraded``
+    flag the result cache depends on, and that must never leak between requests.
+    """
+    __slots__ = ("is_degraded",)
+
+    def __init__(self) -> None:
+        self.is_degraded = False
+
+    def degraded(self) -> None:
+        self.is_degraded = True
 
     def mark(self, name: str) -> None: ...
     def n(self, key: str, value) -> None: ...
@@ -137,8 +149,6 @@ class _NullStages:
     def took(self, stage: str, es_json) -> None: ...
     def emit(self, error: str | None = None) -> None: ...
 
-
-_NULL_STAGES = _NullStages()
 
 
 class _Stages:
@@ -149,7 +159,7 @@ class _Stages:
     ``unmarked_ms`` — notably the response serialisation FastAPI does after the
     handler returns is NOT included in ``total_ms``.
     """
-    __slots__ = ("t0", "last", "ms", "counts", "took_ms", "req")
+    __slots__ = ("t0", "last", "ms", "counts", "took_ms", "req", "is_degraded")
 
     def __init__(self, req) -> None:
         self.t0 = self.last = time.perf_counter()
@@ -157,6 +167,11 @@ class _Stages:
         self.counts: dict[str, int] = {}
         self.took_ms: dict[str, int] = {}
         self.req = req
+        self.is_degraded = False
+
+    def degraded(self) -> None:
+        """The answer was produced on a fallback path: do not cache it."""
+        self.is_degraded = True
 
     def mark(self, name: str) -> None:
         now = time.perf_counter()
@@ -786,6 +801,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
             # unconstrained result set would silently ignore it (place#144).
             # Return nothing plus the reason, and let the client warn the user.
             logger.info("reconcile: scope requested but not applied — %s", scope.message)
+            st.degraded()
             return ReconcileResponse(
                 scope=scope, variants_used=variants,
                 namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
@@ -841,6 +857,8 @@ async def _reconcile_search(req: ReconcileRequest, st):
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]
+                if len(bodies) < len(passes):
+                    st.degraded()   # a form could not be embedded: phonetic pass missing
                 st.mark("embed_build")
 
                 # ...plus ONE lexical pass over every form. KNN alone does not
@@ -1114,6 +1132,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
             except Exception as e:
                 # Non-fatal: candidates will fall back to nested place data
                 logger.warning(f"Toponym enrichment failed (non-fatal): {e}")
+                st.degraded()
 
     st.mark("enrich_loop")
 
@@ -1171,6 +1190,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
                 expand_hard_links, [c.place_id for c in candidates])
         except Exception as e:  # best-effort enrichment — never fail the query
             logger.warning("Hard-link expansion failed (non-fatal): %s", e)
+            st.degraded()
 
     st.mark("hardlinks")
     return ReconcileResponse(
@@ -1188,18 +1208,49 @@ async def _reconcile_search(req: ReconcileRequest, st):
     )
 
 
+# Per-process reconcile result cache (see gateway/result_cache.py for the trade-offs).
+_result_cache = TTLCache(RESULT_CACHE_SIZE, RESULT_CACHE_TTL)
+
+
+def _cache_key(req: ReconcileRequest) -> str:
+    """Every field of the request: the response is a pure function of it."""
+    return hashlib.sha1(req.model_dump_json().encode("utf-8")).hexdigest()
+
+
+def _cacheable(res: ReconcileResponse, st) -> bool:
+    """Never store an answer produced on a fallback path, or a transient fault
+    (ES hiccup, Symphonym down, a container that failed to resolve) would be
+    served for the whole TTL."""
+    if st.is_degraded:
+        return False
+    return not (res.scope is not None and not res.scope.applied)
+
+
 @router.post("/reconcile", response_model=ReconcileResponse,
              description=inspect.cleandoc(_reconcile_search.__doc__ or ""))
 async def reconcile_search(req: ReconcileRequest):
-    """Thin wrapper: times ``_reconcile_search`` when sampled (see top of module)."""
+    """Thin wrapper: result cache + timing around ``_reconcile_search``."""
     if _STAGE_SAMPLE > 0 and next(_stage_counter) % _STAGE_SAMPLE == 0:
         st = _Stages(req)
     else:
-        st = _NULL_STAGES
+        st = _NullStages()
+    cache = _result_cache
+    key = None
+    # Embeddings / clustering fuel make responses large and are rare: not cached.
+    if cache.enabled and not req.include_embeddings and not req.include_clustering_fields:
+        key = _cache_key(req)
+        cached = cache.get(key)
+        if cached is not None:
+            st.n("cache_hit", 1)
+            st.emit()
+            return cached
+        st.n("cache_hit", 0)
     try:
         res = await _reconcile_search(req, st)
     except BaseException as exc:
         st.emit(error=type(exc).__name__)
         raise
+    if key is not None and _cacheable(res, st):
+        cache.put(key, res)
     st.emit()
     return res

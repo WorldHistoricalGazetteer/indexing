@@ -23,6 +23,15 @@ to shared storage. See ``tests/_sandbox.py`` for the full account.
 
 from __future__ import annotations
 
+import os
+
 from ._sandbox import install
 
 install()
+
+# The reconcile endpoint now has a per-process result cache (gateway/result_cache.py).
+# Many tests call it repeatedly with identical requests and expect each call to reach
+# the (stubbed) Elasticsearch, so a shared module-level cache would make them
+# order-dependent. Off for the suite; tests/test_reconcile_result_cache.py installs
+# its own cache explicitly.
+os.environ.setdefault("GATEWAY_RESULT_CACHE_SIZE", "0")
