@@ -48,10 +48,14 @@ PROFILES: dict[str, Profile] = {p.name: p for p in (
             "TreeAlive ingests GEDCOM files, so GEDCOM PLAC rules apply."),
     Profile("familysearch", ",", SMALL_TO_LARGE, "assumed",
             "Assumed: standardised places read 'City, County, State, Country'."),
-    Profile("ancestry", ",", SMALL_TO_LARGE, "assumed",
-            "Assumed: comma-delimited, smallest first. Verify against a real export."),
-    Profile("myheritage", ",", SMALL_TO_LARGE, "assumed",
-            "Assumed GEDCOM-style export. Verify against a real export."),
+    Profile("ancestry", ",", SMALL_TO_LARGE, "observed",
+            "Observed in public Ancestry GEDCOM samples (not vendor documentation): no PLAC.FORM; smallest "
+            "first; a missing level is a BLANK slot ('Lauderdale, , Alabama, USA', ', , Texas, USA'); the "
+            "country is often absent ('Cloverdale, Lauderdale, Alabama'); user-typed places vary."),
+    Profile("myheritage", ",", SMALL_TO_LARGE, "observed",
+            "Observed in public MyHeritage GEDCOM samples (not vendor documentation): free-form, smallest "
+            "first; may begin with a street address ('57, Caledon Road, East Ham, Essex, England'); "
+            "single-token places are common."),
     Profile("findmypast", ",", SMALL_TO_LARGE, "assumed",
             "Assumed: comma-delimited, smallest first. Verify against a real export."),
     Profile("wikitree", ",", SMALL_TO_LARGE, "assumed",
@@ -183,6 +187,26 @@ def parse_form(form: str | None, separator: str = ",") -> list[str] | None:
     return out
 
 
+# --------------------------------------------------------------------------- street addresses
+
+_STREET_WORDS = ("road", "rd", "street", "st", "avenue", "ave", "lane", "ln", "drive", "dr", "close",
+                 "crescent", "terrace", "boulevard", "blvd", "highway", "hwy", "square", "gardens", "grove")
+_STREET_RE = re.compile(r"\b(?:" + "|".join(_STREET_WORDS) + r")\.?$", re.IGNORECASE)
+_HOUSE_NO = re.compile(r"^\d+[a-zA-Z]?$")
+
+
+def is_address_part(text: str) -> bool:
+    """A house number ("57"), a numbered street ("12 High Street") or a street name ("Caledon Road").
+    Real exports (MyHeritage, user-typed Ancestry) put these FIRST: "57, Caledon Road, East Ham, Essex,
+    England". The gazetteer holds places, not addresses, so searching for "57" is certain noise."""
+    t = clean(text)
+    if not t:
+        return False
+    if _HOUSE_NO.match(t):
+        return True
+    return bool(_STREET_RE.search(t)) and len(t.split()) >= 2
+
+
 # --------------------------------------------------------------------------- parsing
 
 
@@ -208,7 +232,8 @@ class ParsedPlace:
 
     @property
     def filled(self) -> list[Component]:
-        return [c for c in self.components if not c.blank]
+        """Components that name a PLACE: not blank slots, not street-address parts."""
+        return [c for c in self.components if not c.blank and c.level != "address"]
 
 
 def split_place(text: str, separator: str = ",") -> list[str]:
@@ -268,6 +293,16 @@ def parse_place(text: str, *, profile: Profile, separator: str | None = None, or
 
     # NARROWEST first, regardless of input order
     narrow_first = comps if want == SMALL_TO_LARGE else list(reversed(comps))
+    # Leading street-address parts are skipped (never the last remaining component, never mid-string).
+    for i, c in enumerate(narrow_first):
+        if c.blank:
+            continue
+        rest_filled = [x for x in narrow_first[i + 1:] if not x.blank]
+        if rest_filled and c.level is None and is_address_part(c.norm):
+            c.level = "address"
+            notes.append(f"street-address part {c.norm!r} ignored: the gazetteer holds places, not addresses")
+        else:
+            break
     if not labels:
         # Position-based labelling: only the country end is reliable.
         last_filled = next((c for c in reversed(narrow_first) if not c.blank), None)

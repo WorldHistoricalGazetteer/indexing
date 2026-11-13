@@ -213,7 +213,8 @@ class Validation(Base):
         out = asyncio.run(g.services())["services"]
         basis = {s["name"]: s["basis"] for s in out}
         self.assertEqual(basis["gedcom"], "gedcom-spec")
-        self.assertEqual(basis["ancestry"], "assumed")
+        self.assertEqual(basis["ancestry"], "observed")
+        self.assertEqual(basis["wikitree"], "assumed")
 
 
 if __name__ == "__main__":

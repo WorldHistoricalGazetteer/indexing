@@ -95,8 +95,31 @@ class Parse(unittest.TestCase):
     def test_service_profiles_say_what_is_documented_and_what_is_assumed(self):
         self.assertEqual(pc.PROFILES["gedcom"].basis, "gedcom-spec")
         self.assertEqual(pc.PROFILES["treealive"].basis, "gedcom-spec")
-        for name in ("ancestry", "familysearch", "myheritage", "findmypast", "wikitree", "generic"):
+        for name in ("familysearch", "findmypast", "wikitree", "generic"):
             self.assertEqual(pc.PROFILES[name].basis, "assumed", name)
+        for name in ("ancestry", "myheritage"):      # seen in public sample exports, not vendor docs
+            self.assertEqual(pc.PROFILES[name].basis, "observed", name)
+
+    # --- strings taken from public Ancestry / MyHeritage sample GEDCOMs --------------------------
+    def _names(self, text, service="ancestry"):
+        return [c.norm for c in pc.parse_place(text, profile=pc.PROFILES[service]).filled]
+
+    def test_ancestry_blank_slots_are_skipped(self):
+        self.assertEqual(self._names("Lauderdale, , Alabama, USA"), ["Lauderdale", "Alabama", "USA"])
+        self.assertEqual(self._names(", , Texas, USA"), ["Texas", "USA"])
+        self.assertEqual(self._names(",Wayne,New York,USA"), ["Wayne", "New York", "USA"])
+
+    def test_street_address_prefix_is_skipped(self):
+        self.assertEqual(self._names("57, Caledon Road, East Ham, Essex, England", "myheritage"),
+                         ["East Ham", "Essex", "England"])
+        self.assertEqual(self._names("12 High Street, Leeds, England"), ["Leeds", "England"])
+
+    def test_address_skipping_does_not_eat_real_places(self):
+        """Controls: a numeral or a saint in a place NAME, or a lone street, stays a place."""
+        self.assertEqual(self._names("3 Rivers, Michigan, USA"), ["3 Rivers", "Michigan", "USA"])
+        self.assertEqual(self._names("St Louis, Missouri, USA"), ["St Louis", "Missouri", "USA"])
+        self.assertEqual(self._names("Park Lane"), ["Park Lane"])
+        self.assertEqual(self._names("Leeds, 57, England"), ["Leeds", "57", "England"])   # only LEADING parts
 
 
 if __name__ == "__main__":
