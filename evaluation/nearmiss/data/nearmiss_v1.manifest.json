@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "built": "2026-11-13T08:32:05Z",
+  "seed": 20261113,
+  "toponyms_index": "toponyms",
+  "places_index": "places",
+  "concrete_indexes": {
+    "toponyms": [
+      "toponyms_v8-20260914t120000z"
+    ],
+    "places": [
+      "places_h3ccode-20260805t120000z"
+    ]
+  },
+  "toponyms_docs": 73544149,
+  "places_docs": 51187900,
+  "quotas": {
+    "US": 0.2,
+    "GB": 0.12,
+    "DE": 0.08,
+    "IE": 0.06,
+    "FR": 0.06,
+    "IT": 0.05,
+    "CA": 0.04,
+    "AU": 0.03,
+    "NL": 0.03,
+    "PL": 0.03,
+    "SE": 0.02,
+    "NO": 0.02,
+    "DK": 0.02
+  },
+  "other_share": 0.24,
+  "counts": {
+    "misspelling_main": 1200,
+    "targeted": 80,
+    "misspelling_colliding": 100,
+    "nonsense": 117,
+    "dev": 758,
+    "test": 739
+  },
+  "seconds": 13
+}
