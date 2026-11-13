@@ -223,6 +223,8 @@ def _iter_patch(patterns: list[str]) -> Iterable[dict]:
 
 def apply(args) -> int:
     sess = _session()
+    from processing.heap_guard import require_rebuild_heap
+    require_rebuild_heap(sess, ES_URL)
     r = sess.get(f"{ES_URL}/_alias/{PLACES_ALIAS}")
     r.raise_for_status()
     index = next(iter(r.json().keys()))

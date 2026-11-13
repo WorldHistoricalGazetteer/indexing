@@ -480,6 +480,8 @@ def apply_patch(patch_globs, es_host="http://localhost:9201",
     sess = requests.Session()
     sess.auth = auth
     sess.headers.update({"Content-Type": "application/x-ndjson"})
+    from processing.heap_guard import require_rebuild_heap
+    require_rebuild_heap(sess, es_host)
     idx = next(iter(sess.get(f"{es_host}/_alias/{places_index}").json().keys()))
     print(f"apply target: {idx}  (rps≈{rps})", flush=True)
 

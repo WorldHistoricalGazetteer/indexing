@@ -24,6 +24,12 @@ HEAP_MAX=80                       # abort if ES heap % exceeds this after a batc
 PENDING_MAX=50
 AUTH() { echo -n "elastic:$(cat "$PW")"; }
 
+# HEAP GUARD: bulk rewrites of the live index need the large (rebuild) heap, not the ~20 GB serving heap.
+HEAP_GB=$(curl -s -u "$(AUTH)" "$ES/_nodes/jvm" | python3 -c 'import json,sys;print(int(min(n["jvm"]["mem"]["heap_max_in_bytes"] for n in json.load(sys.stdin)["nodes"].values())/2**30))')
+if [ "${HEAP_GB:-0}" -lt "${ES_REBUILD_HEAP_MIN_GB:-26}" ] && [ "${ES_ALLOW_SMALL_HEAP:-0}" != 1 ]; then
+  echo "ABORT: ES heap is ${HEAP_GB:-?} GB (< ${ES_REBUILD_HEAP_MIN_GB:-26}). Run 'es -heap rebuild' + es-restart first; afterwards 'es -heap serving' + es-restart." >&2
+  exit 2
+fi
 IDX=$(curl -s -u "$(AUTH)" "$ES/_alias/places" | python3 -c 'import json,sys;print(next(iter(json.load(sys.stdin))))')
 echo "target index: $IDX | patch: $PATCH | batches: $BATCHES | rps: $RPS"
 rm -f "$WORK"/batch_*; mkdir -p "$WORK"

@@ -431,6 +431,8 @@ start_prod_es() {
     # the OS page cache / off-heap mmapped vectors. A larger heap avoids the OOM /
     # G1 Full-GC death spiral seen during HNSW dense_vector segment merges of the
     # ~67M-doc toponyms index after heavy indexing (see memory / plan 2026-07-13).
+    # NORMAL OPERATION NOW USES A SMALLER SERVING HEAP (20g, 2026-11-13; swap was full at 28g). Use
+    # `es -heap rebuild` / `es -heap serving` to switch; bulk-apply scripts refuse to run below 26 GB.
     export ES_JAVA_OPTS="-Xms${ES_HEAP_SIZE:-15g} -Xmx${ES_HEAP_SIZE:-15g}"
     export ES_TMPDIR="/tmp"
 
@@ -932,6 +934,40 @@ staging_logs() {
 # FORCE MERGE (purge deleted docs, reduce segment count)
 # ==============================================================================
 
+do_heap() {
+    # Usage: es -heap status|serving|rebuild
+    #
+    # The production node runs a SERVING heap (default 20g: more page cache, faster search) normally,
+    # and the larger REBUILD heap (default 28g) only while bulk-rewriting the live index, because HNSW
+    # merges on the ~73M-doc toponyms index have run out of memory on a small heap. This command only
+    # edits ES_HEAP_SIZE in .env.local (backup kept); the change takes effect at the next
+    # `es es-restart`, which is a short production search outage. The bulk-apply scripts refuse to run
+    # below ES_REBUILD_HEAP_MIN_GB (processing/heap_guard.py, scripts/batch_apply_geom_patch.sh).
+    local mode="${1:-status}" serving="${ES_SERVING_HEAP:-20g}" rebuild="${ES_REBUILD_HEAP:-28g}"
+    local envf="${SCRIPT_DIR}/../.env.local" want running
+    running=$(es_curl "$PROD_ES_URL/_nodes/jvm" 2>/dev/null | python3 -c 'import json,sys
+try: print(round(min(n["jvm"]["mem"]["heap_max_in_bytes"] for n in json.load(sys.stdin)["nodes"].values())/2**30))
+except Exception: print("?")')
+    case "$mode" in
+        status)
+            echo "running heap: ${running} GB;  .env.local ES_HEAP_SIZE=$(grep -m1 '^ES_HEAP_SIZE=' "$envf" 2>/dev/null | cut -d= -f2)"
+            echo "serving=${serving} rebuild=${rebuild}"
+            return 0 ;;
+        serving) want="$serving" ;;
+        rebuild) want="$rebuild" ;;
+        *) echo "Usage: es -heap status|serving|rebuild"; return 1 ;;
+    esac
+    touch "$envf"
+    cp -p "$envf" "$envf.bak-heap-$(date +%Y%m%d-%H%M%S)"
+    if grep -q '^ES_HEAP_SIZE=' "$envf"; then
+        sed -i "s/^ES_HEAP_SIZE=.*/ES_HEAP_SIZE=${want}/" "$envf"
+    else
+        echo "ES_HEAP_SIZE=${want}" >> "$envf"
+    fi
+    echo "ES_HEAP_SIZE=${want} written to ${envf} (running heap is still ${running} GB)."
+    echo "Takes effect at the next 'es es-restart' (short search outage)."
+}
+
 do_forcemerge() {
     # Usage: es -forcemerge [INDEX] [--max-segments N] [--no-iterative] [--step-factor N]
     #
@@ -1168,6 +1204,12 @@ case "$1" in
     # post-index clustering with the SQLite hard-link overlay built by
     # processing/submit_hardlinks_slurm.py and queried at search-time.
 
+    # --- Serving / rebuild heap ---
+    -heap)
+        shift
+        do_heap "$@"
+        ;;
+
     # --- Force Merge (purge deleted docs) ---
     -forcemerge)
         shift
@@ -1353,6 +1395,7 @@ case "$1" in
         echo "HEALTH CHECKS:"
         echo "  -health             Production cluster health and stats"
         echo "  -staging-health     Staging cluster health and stats"
+        echo "  -heap status|serving|rebuild  Set prod ES heap in .env.local (20g serving / 28g rebuild); needs es-restart"
         echo "  -forcemerge [INDEX] Purge deleted docs, merge segments (default index: places)"
         echo "              --max-segments N   Target segments per shard (default: 1)"
         echo "              --step-factor N    Divisor per iterative pass (default: 2 = halve)"

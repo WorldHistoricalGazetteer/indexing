@@ -261,6 +261,8 @@ def _iter_patch(patterns: list[str]) -> Iterable[dict]:
 
 def apply(args) -> int:
     sess = _session()
+    from processing.heap_guard import require_rebuild_heap
+    require_rebuild_heap(sess, ES_URL)
     # Resolve the concrete index behind the alias so the update is unambiguous.
     r = sess.get(f"{ES_URL}/_alias/{PLACES_ALIAS}")
     r.raise_for_status()
