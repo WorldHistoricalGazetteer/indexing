@@ -46,12 +46,34 @@ def _walk(obj):
 
 
 class Clause(unittest.TestCase):
+    def test_prefix_length_and_boost_defaults_and_overrides(self):
+        """The tuned defaults, and that the rollback env vars really change them."""
+        import importlib, os
+        self.assertEqual(eh.LEXICAL_FUZZY_BOOST, 1.15)
+        self.assertLess(eh.LEXICAL_FUZZY_BOOST + 1.0, eh.LEXICAL_EXACT_BOOST * eh.VARIANT_SCORE_WEIGHT,
+                        "the tier order: an exact variant match must still beat near-miss + best phonetic")
+        old = {k: os.environ.get(k) for k in ("GATEWAY_NEAR_MISS_PREFIX_LENGTH", "GATEWAY_LEXICAL_FUZZY_BOOST")}
+        try:
+            os.environ["GATEWAY_NEAR_MISS_PREFIX_LENGTH"] = "2"
+            os.environ["GATEWAY_LEXICAL_FUZZY_BOOST"] = "0.75"
+            importlib.reload(eh)
+            self.assertEqual((eh.NEAR_MISS_PREFIX_LENGTH, eh.LEXICAL_FUZZY_BOOST), (2, 0.75))
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            importlib.reload(eh)
+        self.assertEqual((eh.NEAR_MISS_PREFIX_LENGTH, eh.LEXICAL_FUZZY_BOOST), (1, 1.15))
+
     def test_fuzziness_stays_on_the_whole_name_fields_and_leaves_the_ngram_field_exact(self):
         c = eh.build_near_miss_clause("Broxbourn")
         should = c["bool"]["should"]
         (mm,) = [s["multi_match"] for s in should if "multi_match" in s]
         self.assertEqual(mm["fields"], ["name^3", "name_romanized^2"])
-        self.assertEqual((mm["fuzziness"], mm["prefix_length"]), ("AUTO", 2))
+        self.assertEqual((mm["fuzziness"], mm["prefix_length"]), ("AUTO", eh.NEAR_MISS_PREFIX_LENGTH))
+        self.assertEqual(eh.NEAR_MISS_PREFIX_LENGTH, 1, "tuned 2026-11-13: first-letter slips must be findable")
         self.assertNotIn("name.prefix", json.dumps(mm), "no fuzzy expansion over the n-gram field")
         (prefix,) = [s["match"] for s in should if "match" in s]
         self.assertEqual(prefix, {"name.prefix": {"query": "Broxbourn"}})

@@ -29,25 +29,70 @@ from evaluation.nearmiss import metrics as M            # noqa: E402
 DATA = Path(__file__).parent / "data" / "nearmiss_v1.jsonl"
 
 
-def load(split: str, path: Path = DATA) -> list[dict]:
+def load(split: str, path: Path = DATA, controls: int = 0) -> list[dict]:
     rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
-    return [r for r in rows if split == "all" or r["split"] == split]
+    rows = [r for r in rows if split == "all" or r["split"] == split]
+    if controls:
+        # REGRESSION GUARD: the same places with their CORRECT spelling. A change that helps mis-spellings
+        # must not cost exact queries. Generated, not stored, so the frozen set is unchanged.
+        base = [r for r in rows if r["kind"] == "misspelling" and not r["targeted"] and not r["collides"]][:controls]
+        rows = rows + [{**r, "id": "c" + r["id"][1:], "kind": "control", "query": r["original"], "classes": ["none"],
+                        "edit_distance": 0} for r in base]
+    return rows
 
 
-# -- variants of the near-miss clause. Production is the baseline; add a variant here to compare it. ------
-def _variants():
+# -- variants. Production is the baseline; every variant is a reversible in-process patch, nothing is deployed. ----
+def _clause(prefix_length=2, fuzziness="AUTO"):
+    """The production near-miss text clause with its two fuzzy parameters exposed."""
+    def build(query: str, mode: str = "fuzzy") -> dict:
+        from gateway import es_helpers as eh
+        if mode != "fuzzy":
+            return eh.build_toponym_text_clause(query, mode)
+        return {"bool": {"should": [
+            {"multi_match": {"query": query, "fields": ["name^3", "name_romanized^2"], "type": "best_fields",
+                             "fuzziness": fuzziness, "prefix_length": prefix_length}},
+            {"match": {"name.prefix": {"query": query}}},
+            {"term": {"name.raw": {"value": query.lower(), "boost": 5}}}]}}
+    return build
+
+
+VARIANT_SPECS = {
+    "prod": {},
+    "ngram_fuzzy_old": {"ngram_old": True},
+    "boost100": {"boost": 1.0},
+    "boost125": {"boost": 1.25},
+    "boost140": {"boost": 1.4},
+    "boost125_floor60": {"boost": 1.25, "floor": 0.6},
+    "p1": {"prefix_length": 1},
+    "p0": {"prefix_length": 0},
+    "p1_boost125": {"prefix_length": 1, "boost": 1.25},
+    "p0_boost125": {"prefix_length": 0, "boost": 1.25},
+    "p1_boost125_floor60": {"prefix_length": 1, "boost": 1.25, "floor": 0.6},
+    "p1_boost115": {"prefix_length": 1, "boost": 1.15},
+    "boost110": {"boost": 1.1}, "boost115": {"boost": 1.15}, "boost135": {"boost": 1.35},
+    "boost125_floor40": {"boost": 1.25, "floor": 0.4},
+    "boost125_floor70": {"boost": 1.25, "floor": 0.7},
+}
+
+
+def apply_variant(name: str):
+    """Patch the live module for ``name``; return an undo function."""
     from gateway import es_helpers as eh
-    prod = eh.build_near_miss_clause
-
-    def ngram_fuzzy_old():                     # the clause before 2026-11-12 (rollback switch)
+    spec = VARIANT_SPECS[name]
+    saved = {k: getattr(eh, k) for k in ("LEXICAL_FUZZY_BOOST", "LEXICAL_FUZZY_FLOOR", "NEAR_MISS_FUZZY_NGRAM", "build_near_miss_clause")}
+    if "boost" in spec:
+        eh.LEXICAL_FUZZY_BOOST = spec["boost"]
+    if "floor" in spec:
+        eh.LEXICAL_FUZZY_FLOOR = spec["floor"]
+    if spec.get("ngram_old"):
         eh.NEAR_MISS_FUZZY_NGRAM = True
-        return lambda: setattr(eh, "NEAR_MISS_FUZZY_NGRAM", False)
+    if "prefix_length" in spec or "fuzziness" in spec:
+        eh.build_near_miss_clause = _clause(spec.get("prefix_length", 2), spec.get("fuzziness", "AUTO"))
 
-    def restore_prod():
-        eh.build_near_miss_clause = prod
-        eh.NEAR_MISS_FUZZY_NGRAM = False
-
-    return {"prod": lambda: (restore_prod(), (lambda: None))[1], "ngram_fuzzy_old": ngram_fuzzy_old}
+    def undo():
+        for k, v in saved.items():
+            setattr(eh, k, v)
+    return undo
 
 
 async def run(items: list[dict], concurrency: int) -> tuple[list[dict], list[dict], list[float], int]:
@@ -84,7 +129,8 @@ async def run(items: list[dict], concurrency: int) -> tuple[list[dict], list[dic
 
 def report(items, unscoped, scoped) -> dict:
     out = {}
-    blocks = {"main": lambda i: i["kind"] == "nonsense" or (not i["targeted"] and not i["collides"]),
+    blocks = {"main": lambda i: i["kind"] != "control" and (i["kind"] == "nonsense" or (not i["targeted"] and not i["collides"])),
+              "control": lambda i: i["kind"] == "control",
               "targeted": lambda i: i["targeted"], "colliding": lambda i: i["collides"] and i["kind"] != "nonsense"}
     for cond, results in (("unscoped", unscoped), ("scoped", scoped)):
         out[cond] = {}
@@ -109,13 +155,14 @@ def main():
     ap.add_argument("--variant", default="prod")
     ap.add_argument("--concurrency", type=int, default=3)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--controls", type=int, default=0, help="also run N correctly-spelt controls (regression guard)")
     ap.add_argument("--data", default=str(DATA))
     ap.add_argument("--out", default="")
     ap.add_argument("--rescore", default="", help="recompute the report from a saved --out file; no Elasticsearch")
     a = ap.parse_args()
     if a.rescore:
         saved = json.loads(Path(a.rescore).read_text())
-        items = load(saved["meta"]["split"], Path(a.data))[: saved["meta"]["items"]]
+        items = load(saved["meta"]["split"], Path(a.data), controls=saved["meta"].get("controls", 0))[: saved["meta"]["items"]]
         by_id = {s["id"]: s for s in saved["items"]}
         unsc = [[tuple(h) for h in by_id[i["id"]]["unscoped"]] if by_id[i["id"]]["unscoped"] is not None else None for i in items]
         scop = [[tuple(h) for h in by_id[i["id"]]["scoped"]] if by_id[i["id"]]["scoped"] is not None else None for i in items]
@@ -125,21 +172,22 @@ def main():
         return
     from gateway.threads import cap_cpu_threads
     cap_cpu_threads()
-    items = load(a.split, Path(a.data))
+    items = load(a.split, Path(a.data), controls=a.controls)
     if a.limit:
         items = items[: a.limit]
-    undo = _variants()[a.variant]()
+    undo = apply_variant(a.variant)
     t0 = time.time()
     unscoped, scoped, lat, errors = asyncio.run(run(items, a.concurrency))
     undo()
     rep = report(items, unscoped, scoped)
     lat.sort()
-    meta = {"variant": a.variant, "split": a.split, "items": len(items), "errors": errors, "seconds": round(time.time() - t0),
+    meta = {"variant": a.variant, "split": a.split, "controls": a.controls, "items": len(items), "errors": errors, "seconds": round(time.time() - t0),
             "latency_ms": {"median": round(statistics.median(lat)), "p95": round(lat[int(.95 * len(lat)) - 1])} if lat else {}}
     print(json.dumps(meta))
     for cond in ("unscoped", "scoped"):
-        if "main" in rep[cond]:
-            print(summary_line(f"{cond}/main", rep[cond]["main"]["ALL"]))
+        for blk in ("main", "control"):
+            if blk in rep[cond]:
+                print(summary_line(f"{cond}/{blk}", rep[cond][blk]["ALL"]))
     if a.out:
         per_item = [{"id": it["id"], "unscoped": u, "scoped": s} for it, u, s in zip(items, unscoped, scoped)]
         Path(a.out).write_text(json.dumps({"meta": meta, "report": rep, "items": per_item}))

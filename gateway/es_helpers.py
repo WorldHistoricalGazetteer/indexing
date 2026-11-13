@@ -721,7 +721,15 @@ def apply_lexical_boost(
 #: An exact match therefore still outranks every inexact candidate — the
 #: invariant place#197 was fixed to establish — while an inexact form that
 #: genuinely resembles an indexed name can now outrank pure phonetic noise.
-LEXICAL_FUZZY_BOOST = 0.75
+#:
+#: 2026-11-13: 0.75 -> 1.15 (override: ``GATEWAY_LEXICAL_FUZZY_BOOST``). At 0.75 a place found ONLY by
+#: this tier (a near-exact spelling the phonetic pass did not retrieve) scored at most 0.75 x resemblance,
+#: while the best phonetic neighbour of ANY query scores ~1.0 (the embedding space is saturated, see
+#: ``knn_pass_quality``): a junk neighbour beat the right answer. On the near-miss evaluation set
+#: (``evaluation/nearmiss``, dev n=611) raising it lifted unscoped hit@10 0.661 -> 0.746 and OCR/keyboard
+#: errors from 0.28/0.22 to ~0.6, with correctly spelt queries unchanged; 1.1-1.35 is a plateau. The tier
+#: order still holds: exact (2.5, >= 2.25 for a variant) > near-miss + phonetic (<= 1.15 + 1.0) > phonetic.
+LEXICAL_FUZZY_BOOST = float(os.getenv("GATEWAY_LEXICAL_FUZZY_BOOST", "1.15"))
 
 #: Minimum resemblance a retrieved name must have to a queried form before it
 #: earns anything at all. The near-miss ES clause is OR-over-terms, so a long
@@ -754,6 +762,13 @@ def name_resemblance(a: str, b: str) -> float:
 #: ``name.prefix`` field too). Off by default; the switch exists for rollback only.
 NEAR_MISS_FUZZY_NGRAM = os.getenv("GATEWAY_NEAR_MISS_FUZZY_NGRAM", "0").strip() == "1"
 
+#: Letters at the START of a name that must match exactly before fuzziness applies. Was 2. A first-letter
+#: slip ("Seddam" for Zeddam, "Jordo" for Gordo) cannot be found when the first two letters must match; 1
+#: found far more of them (with the boost above, near-miss evaluation dev hit@10 0.661 -> 0.822 unscoped,
+#: held-out test 0.657 -> 0.811) for ~5% more near-miss latency; 0 found ~3 points more but cost ~38%.
+#: Override: ``GATEWAY_NEAR_MISS_PREFIX_LENGTH`` (set 2 to restore the old behaviour).
+NEAR_MISS_PREFIX_LENGTH = int(os.getenv("GATEWAY_NEAR_MISS_PREFIX_LENGTH", "1"))
+
 
 def build_near_miss_clause(query: str, mode: str = "fuzzy") -> dict:
     """The text clause for the near-miss tier ONLY (``/api/search`` keeps its own).
@@ -785,7 +800,7 @@ def build_near_miss_clause(query: str, mode: str = "fuzzy") -> dict:
                     "fields": ["name^3", "name_romanized^2"],
                     "type": "best_fields",
                     "fuzziness": "AUTO",
-                    "prefix_length": 2,
+                    "prefix_length": NEAR_MISS_PREFIX_LENGTH,
                 }},
                 # Exact (un-fuzzed) prefix retrieval on the edge-n-gram field.
                 {"match": {"name.prefix": {"query": query}}},

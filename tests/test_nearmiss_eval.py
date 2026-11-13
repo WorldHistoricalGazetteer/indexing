@@ -122,3 +122,20 @@ class MetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompareTests(unittest.TestCase):
+    def test_sign_test(self):
+        from evaluation.nearmiss.compare import sign_test_p
+        self.assertEqual(sign_test_p(0, 0), 1.0)
+        self.assertAlmostEqual(sign_test_p(10, 0), 2 / 1024, places=6)
+        self.assertEqual(sign_test_p(5, 5), 1.0)
+        self.assertLess(sign_test_p(30, 10), 0.01)
+
+    def test_flips_counted_per_item(self):
+        from evaluation.nearmiss.compare import compare
+        items = [dict(_item(pid=f"p{i}", truth=(f"p{i}",)), id=f"m{i}", query="Pxris", collides=False, targeted=False) for i in range(3)]
+        a = {"items": [{"id": "m0", "unscoped": [("p0", 50)]}, {"id": "m1", "unscoped": [("x", 50)]}, {"id": "m2", "unscoped": [("p2", 50)]}]}
+        b = {"items": [{"id": "m0", "unscoped": [("p0", 50)]}, {"id": "m1", "unscoped": [("p1", 50)]}, {"id": "m2", "unscoped": [("x", 50)]}]}
+        r = compare(a, b, items, "unscoped")["ALL"]
+        self.assertEqual((r["gained"], r["lost"], r["n"]), (1, 1, 3))
