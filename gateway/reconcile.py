@@ -365,6 +365,7 @@ class ReconcileRequest(BaseModel):
                     "meaning as on /api/search. Ignored without a year window.",
     )
     size: int = Field(50, ge=1, le=500, description="Max results to return")
+    offset: int = Field(0, ge=0, le=2000, description="Skip this many ranked results (pagination; FamilySearch `start`). The candidate pool is bounded, so deep offsets run out.")
     exclude_namespaces: list[str] = Field(
         default=["gb"],
         description="Namespace prefixes to exclude from results (e.g. ['gb'] "
@@ -535,6 +536,9 @@ class ReconcileResponse(BaseModel):
     toponym_stoplist: list[str] = []
     max_score: float = 0
     total: int = 0
+    # Only for `mode: "familysearch"`: how the FamilySearch q string was parsed and mapped, what was
+    # resolved, and every parameter that could not be honoured (nothing is dropped silently).
+    familysearch: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1025,8 +1029,9 @@ async def _reconcile_search(req: ReconcileRequest, st):
         # NOT on the pure-spatial path. There are no discovery scores to protect
         # there, and every extra candidate is another Python-side containment
         # test against the region — the most expensive thing this endpoint does.
-        pool_k = (min(req.size * 8, 10000) if pure_spatial
-                  else min(max(req.size * 4, 200), 10000))
+        want = req.size + req.offset      # results needed from the top of the ranking (offset = pagination)
+        pool_k = (min(want * 8, 10000) if pure_spatial
+                  else min(max(want * 4, 200), 10000))
 
         # Take the top-K place_ids BY DISCOVERY SCORE, as /api/search does —
         # reconcile sent the whole set and let ES's doc-order `size` cut choose,
@@ -1100,7 +1105,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
             # and the hit count looks plausible either way.
             if spatial.exact_degraded(region, req.containment):
                 spatial.mark_scope_degraded(scope)
-            raw_hits = raw_hits[: req.size * 4]
+            raw_hits = raw_hits[: want * 4]
 
         st.mark("containment")
         # Only the top `size` survivors can reach the response — Step 4 sorts by
@@ -1110,7 +1115,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
         # only what will be returned. Output is identical (see _top_hits_by_score).
         n_before_trim = len(raw_hits)
         st.n("surviving", n_before_trim)
-        raw_hits = _top_hits_by_score(raw_hits, place_scores, req.size)
+        raw_hits = _top_hits_by_score(raw_hits, place_scores, want)
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
         ]
@@ -1199,7 +1204,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
 
     # Sort by score descending (ES returned them in filter order, not ranked)
     candidates.sort(key=lambda c: c.score, reverse=True)
-    candidates = candidates[:req.size]
+    candidates = candidates[req.offset:req.offset + req.size]
     st.mark("format")
     st.n("hits", len(candidates))
 
@@ -1260,6 +1265,12 @@ async def reconcile_search(req: ReconcileRequest):
         st = _Stages(req)
     else:
         st = _NullStages()
+    fs_info = None
+    if req.mode == "familysearch":
+        # Translate FIRST: the cache key and everything downstream see ordinary gateway parameters,
+        # and no phonetic pass can run (the translation yields lexical-only modes).
+        from . import familysearch as _fs
+        req, fs_info = await _fs.translate_request(req)
     cache = _result_cache
     key = None
     # Embeddings / clustering fuel make responses large and are rare: not cached.
@@ -1269,7 +1280,7 @@ async def reconcile_search(req: ReconcileRequest):
         if cached is not None:
             st.n("cache_hit", 1)
             st.emit()
-            return cached
+            return cached if fs_info is None else cached.model_copy(update={"familysearch": fs_info})
         st.n("cache_hit", 0)
     try:
         res = await _reconcile_search(req, st)
@@ -1279,4 +1290,4 @@ async def reconcile_search(req: ReconcileRequest):
     if key is not None and _cacheable(res, st):
         cache.put(key, res)
     st.emit()
-    return res
+    return res if fs_info is None else res.model_copy(update={"familysearch": fs_info})

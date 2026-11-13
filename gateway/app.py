@@ -39,6 +39,7 @@ from .config import (
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
 from .extend import router as extend_router
+from .genealogy import router as genealogy_router
 from .geometry import router as geometry_router
 from .links import router as links_router
 from .places import router as places_router
@@ -176,6 +177,8 @@ async def track_request_duration(request: Request, call_next):
 
 # Mount reconciliation search router (must be before catch-all proxy routes)
 app.include_router(reconcile_router)
+# Genealogy place-string resolver (parse service export strings -> scoped reconcile)
+app.include_router(genealogy_router)
 # Mount search + suggest router
 app.include_router(search_router)
 # Mount places data endpoint

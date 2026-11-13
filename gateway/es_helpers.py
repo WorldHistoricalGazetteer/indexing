@@ -485,6 +485,17 @@ def build_toponym_text_clause(query: str, mode: str) -> dict:
                 "minimum_should_match": 1,
             }
         }
+    elif mode == "exactci":
+        # Case-insensitive exact name (``name.raw`` is a keyword under lowercase_normalizer).
+        # What ``mode: familysearch`` means by ``name:X``. Lexical only: no KNN is ever involved.
+        text_query = {"terms": {"name.raw": [query.strip().lower()]}}
+    elif mode == "wildcard":
+        # ``*`` / ``?`` with ``\\`` as the escape (the same syntax FamilySearch uses). The caller
+        # forbids a leading wildcard, which would walk the whole term dictionary.
+        text_query = {"wildcard": {"name.raw": {"value": query.strip().lower(), "case_insensitive": True}}}
+    elif mode == "lexfuzzy":
+        # Edit-distance fuzzy WITHOUT phonetics: the near-miss clause on its own.
+        text_query = build_near_miss_clause(query, "fuzzy")
     else:
         # "fuzzy" (default) — best-fields multi-match with fuzziness
         text_query = {
