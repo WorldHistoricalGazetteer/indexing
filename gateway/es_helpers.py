@@ -9,6 +9,7 @@ Extracted from ``reconcile.py`` to avoid duplication.
 from __future__ import annotations
 
 import json
+import os
 import logging
 import re
 import unicodedata
@@ -510,6 +511,7 @@ def build_toponym_text_clause(query: str, mode: str) -> dict:
 def build_toponym_query(
     query: str, mode: str, size: int = 200, namespaces: list[str] | None = None,
     variants: list[str] | None = None, variant_weight: float = 0.9,
+    clause_builder=None,
 ) -> dict:
     """
     Build an ES query for the toponyms index based on mode.
@@ -530,13 +532,14 @@ def build_toponym_query(
     best score per place" accumulation in ``collect_place_ids``. Variant clauses
     carry ``variant_weight`` (< 1) so an equally good primary match still wins.
     """
-    text_query = build_toponym_text_clause(query, mode)
+    make_clause = clause_builder or build_toponym_text_clause
+    text_query = make_clause(query, mode)
 
     if variants:
         clauses = [text_query]
         for variant in variants:
             clauses.append({"bool": {
-                "must": [build_toponym_text_clause(variant, mode)],
+                "must": [make_clause(variant, mode)],
                 "boost": variant_weight,
             }})
         text_query = {"dis_max": {"queries": clauses, "tie_breaker": 0.0}}
@@ -736,6 +739,52 @@ def name_resemblance(a: str, b: str) -> float:
     return SequenceMatcher(None, left, right, autojunk=False).ratio()
 
 
+#: Restore the pre-2026-11-13 near-miss clause (fuzzy expansion over the edge-n-gram
+#: ``name.prefix`` field too). Off by default; the switch exists for rollback only.
+NEAR_MISS_FUZZY_NGRAM = os.getenv("GATEWAY_NEAR_MISS_FUZZY_NGRAM", "0").strip() == "1"
+
+
+def build_near_miss_clause(query: str, mode: str = "fuzzy") -> dict:
+    """The text clause for the near-miss tier ONLY (``/api/search`` keeps its own).
+
+    The previous clause ran ``fuzziness: AUTO`` across ``name.prefix`` as well. That
+    field is edge-n-grammed, so every prefix of every name is a term: fuzzy expansion
+    over it walks an enormous dictionary in every segment of every shard, and it was
+    the dominant cost of the whole near-miss search (median 75 ms of Elasticsearch
+    time against 11 ms without it, on the live index, idle).
+
+    What the n-gram field is FOR here — a truncated form such as ``Broxbourn``
+    reaching ``Broxbourne`` — needs no fuzziness at all: the query term is itself an
+    indexed prefix gram, so a plain ``match`` finds it. Typo tolerance stays on the
+    whole-name fields, where it belongs.
+
+    Measured on 242 real toponyms corrupted with 1-2 transcription errors, through the
+    full reconcile pipeline: unscoped hit@10 0.405 -> 0.405 and MRR 0.342 -> 0.342;
+    country-scoped hit@10 0.572 -> 0.568 (one query in 236); reconcile median 178 ->
+    92 ms. Tighter variants (fixed ``AUTO:4,8``, size 100, fewer expansions) saved a
+    few ms more and cost 0.4-1.3 points of recall, so they were not adopted.
+    """
+    if NEAR_MISS_FUZZY_NGRAM or mode != "fuzzy":
+        return build_toponym_text_clause(query, mode)
+    return {
+        "bool": {
+            "should": [
+                {"multi_match": {
+                    "query": query,
+                    "fields": ["name^3", "name_romanized^2"],
+                    "type": "best_fields",
+                    "fuzziness": "AUTO",
+                    "prefix_length": 2,
+                }},
+                # Exact (un-fuzzed) prefix retrieval on the edge-n-gram field.
+                {"match": {"name.prefix": {"query": query}}},
+                # Exact keyword boost, unchanged.
+                {"term": {"name.raw": {"value": query.lower(), "boost": 5}}},
+            ]
+        }
+    }
+
+
 def build_lexical_fuzzy_query(
     forms: list[str], namespaces: list[str] | None = None, size: int = 200,
     variant_weight: float = 0.9,
@@ -761,6 +810,7 @@ def build_lexical_fuzzy_query(
     return build_toponym_query(
         cleaned[0], "fuzzy", size=size, namespaces=namespaces,
         variants=cleaned[1:] or None, variant_weight=variant_weight,
+        clause_builder=build_near_miss_clause,
     )
 
 
