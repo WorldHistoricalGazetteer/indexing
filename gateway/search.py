@@ -24,6 +24,7 @@ from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field, computed_field, model_serializer
 
 from . import aat_labels, spatial
+from . import wildcard as wc
 from .titles import display_title
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .clustering_payload import (
@@ -65,6 +66,9 @@ from .es_helpers import (
 
 logger = logging.getLogger("gateway.search")
 
+#: Discovery window for `mode: "wildcard"`: toponym documents fetched (constant-score, then re-scored here).
+WILDCARD_WINDOW = 2000
+
 router = APIRouter(prefix="/api", tags=["Search"])
 
 # The AAT hierarchy index (alias). Holds one doc per AAT concept with `aat_id`
@@ -95,7 +99,11 @@ class SearchRequest(BaseModel):
         description="Search text. Optional — omit for a pure-spatial query "
                     "(must then supply contained_in or bounds).",
     )
-    mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic")
+    mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic | wildcard. "
+                                           "`wildcard`: `*` = any run of characters, `?` = one character, `\\` escapes "
+                                           "either; case-insensitive; at least 3 letters before the first wildcard "
+                                           "(422 otherwise). Results are ranked by how much of the name the pattern's "
+                                           "own letters account for.")
     ccodes: Optional[list[str]] = Field(None, description="ISO-3166 country code filter")
     contained_in: Optional[list[str]] = Field(
         None,
@@ -391,6 +399,11 @@ async def search(req: SearchRequest):
       places (optionally with per-name embeddings).
     """
     has_query = bool(req.query and req.query.strip())
+    wildcard_mode = has_query and req.mode == "wildcard"
+    if wildcard_mode:
+        refusal = wc.check(req.query)
+        if refusal:
+            raise HTTPException(status_code=422, detail=refusal)
     # The explicit namespace scope, echoed on EVERY return path — including the
     # empty ones, where "we searched chgis and it matched nothing" is precisely
     # the fact a consumer cannot recover from an empty hit list (place#157).
@@ -551,14 +564,26 @@ async def search(req: SearchRequest):
                                 exclude_prefixes, include_prefixes, match_names)
             else:
                 text_body = build_toponym_query(
-                    req.query, req.mode, size=200, namespaces=req.namespaces or None
+                    req.query, req.mode, size=(WILDCARD_WINDOW if wildcard_mode else 200),
+                    namespaces=req.namespaces or None
                 )
+                if wildcard_mode:
+                    # A wide match set is cut at WILDCARD_WINDOW documents; cut it deterministically,
+                    # closest (shortest) names first, rather than in arbitrary document order.
+                    text_body["sort"] = [{"_script": {"type": "number", "order": "asc", "script": {
+                        "lang": "painless", "source": "doc['name.raw'].value.length()"}}}, {"_doc": "asc"}]
                 text_resp = await client.post(
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                     json=text_body, auth=auth, headers=ES_HEADERS,
                 )
                 text_resp.raise_for_status()
                 text_hits = text_resp.json().get("hits", {}).get("hits", [])
+                if wildcard_mode:
+                    # Every wildcard hit scores the same constant, so the window would be an arbitrary
+                    # slice. Score each by how much of its name the pattern accounts for (wildcard.score),
+                    # so the closest, shortest names lead, and a wide window is cut by relevance.
+                    for h in text_hits:
+                        h["_score"] = wc.score(req.query, (h.get("_source") or {}).get("name") or "")
                 collect_place_ids(text_hits, place_scores, exclude_prefixes,
                                   include_prefixes, match_names)
 
@@ -574,6 +599,45 @@ async def search(req: SearchRequest):
         # filter-attrition buffer, capped at ES's 10k.
         pool_k = min((req.offset + req.size) * (8 if pure_spatial else 4), 10000)
 
+        if wildcard_mode and place_scores:
+            # RANK WILDCARD MATCHES BY IMPORTANCE. Every match is equally "a match", and the pattern
+            # score only separates names by length, so for `par*` the top of the list would be an
+            # arbitrary four-letter village. Ask the places index, over the WHOLE discovery window and
+            # with every filter applied (so filtering cannot starve the pool either), for each
+            # place's population, then score = pattern closeness x (1 + log10(1 + population)).
+            # Light query: ids and population only, no geometry. If it fails, keep the pattern scores.
+            try:
+                window_ids = rank_candidate_ids(place_scores, WILDCARD_WINDOW)
+                light = build_places_filter(
+                    place_ids=window_ids, ccodes=req.ccodes,
+                    bounds=(req.bounds if region is None else None), region=region,
+                    start_year=req.start_year, end_year=req.end_year, undated=req.undated,
+                    temporal_mode=req.temporal_mode, size=len(window_ids),
+                    exclude_namespaces=req.exclude_namespaces or None, namespaces=req.namespaces,
+                    fclasses=req.fclasses, types=req.types, aat_types=req.aat_types,
+                    extra_source=["population"], geom="none")      # title is in the default fields
+                lresp = await client.post(f"{ES_BACKEND}/{PLACES_INDEX}/_search", json=light,
+                                          auth=auth, headers=ES_HEADERS)
+                lresp.raise_for_status()
+                kept = {}
+                title_re = wc.to_regex(req.query)
+                for lh in lresp.json().get("hits", {}).get("hits", []):
+                    ls = lh.get("_source") or {}
+                    pid = ls.get("place_id")
+                    if pid in place_scores:
+                        # x2 when the pattern fits the place's own TITLE: a match on an alternative name
+                        # in another language ("South Africa" has one starting "Par") should not outrank
+                        # places that are actually called what the pattern describes.
+                        fit = wc.TITLE_FIT_BONUS if title_re.match((ls.get("title") or "").strip()) else 1.0
+                        kept[pid] = place_scores[pid] * wc.importance_factor(ls.get("population")) * fit
+                place_scores = kept
+                if not place_scores:
+                    return SearchResponse(namespaces_searched=ns_searched, namespaces_excluded=ns_excluded,
+                                          derived_forms=derived_forms, scope=scope)
+            except HTTPException:
+                raise
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Wildcard importance ranking failed (non-fatal): {e}")
         # Deterministic candidate pool for STABLE pagination + correct ranking:
         # take the top-K place_ids BY DISCOVERY SCORE (tiebreak place_id), not an
         # arbitrary doc-order page. This makes a larger offset fetch a consistent
