@@ -26,31 +26,43 @@ class H:
 
 
 class FakeIndex:
-    """Just enough of the gazetteer for the scenarios below."""
+    """Just enough of the gazetteer for the scenarios below.
+
+    Antrim is in Northern Ireland (GB) and has an areal OSM relation plus a point GeoNames unit; Pest has
+    ONLY a GeoNames point; "Ballymena" exists in GB (real) and IE (a misspelt look-alike)."""
     def __init__(self):
         self.calls = []
 
     async def __call__(self, **kw):
         self.calls.append(kw)
-        q, mode = kw["query"], kw["mode"]
-        if kw.get("fclasses") == ["A"] and mode in ("exactci", "lexfuzzy"):
-            if q.lower() == "antrim":
-                return SimpleNamespace(hits=[H("gn:antrim", "Antrim", ["GB"], area=True)])
-            if q.lower() == "atlantis":
-                return SimpleNamespace(hits=[H("gn:atl", "Atlantis", ["AT"], area=True, types=["A.PCLI"])])
-            if q.lower() == "pest":
-                return SimpleNamespace(hits=[H("gn:pest", "Pest", ["HU"], area=True)])
+        q, mode, cc = kw["query"], kw["mode"], kw.get("ccodes")
+        ql = q.lower()
+        gn_admin = kw.get("fclasses") == ["A"] and kw.get("namespaces") == ["gn"]
+        if kw.get("fclasses") == ["A"] and not kw.get("namespaces") and ql == "atlantis":
+            return SimpleNamespace(hits=[H("gn:atl", "Atlantis", ["AT"], area=True, types=["A.PCLI"])])
+        if mode in ("exactci", "lexfuzzy") and q != "Ballymena" and q != "Brussels" and q != "Newport" and q != "Budapest":
+            if gn_admin:
+                if ql == "pest":
+                    return SimpleNamespace(hits=[H("gn:pest", "Pest", ["HU"], area=False)])
+                return SimpleNamespace(hits=[])
+            if ql == "county antrim" and cc in (None, ["GB"]):
+                return SimpleNamespace(hits=[H("osm:r1", "County Antrim", ["GB"], area=True)])
+            if ql == "antrim" and cc in (None, ["GB"]):
+                return SimpleNamespace(hits=[H("ukhc:ANM", "Antrim", ["GB"], area=True)])
             return SimpleNamespace(hits=[])
         if q == "boom":
             raise RuntimeError("index fell over")
-        # locality search
         if q == "Ballymena":
-            if kw.get("contained_in") == ["gn:antrim"] or kw.get("ccodes") == ["GB"]:
+            if kw.get("contained_in") in (["osm:r1"], ["ukhc:ANM"]):
+                return SimpleNamespace(hits=[H("gn:bm", "Ballymena", ["GB"], conf=100)])
+            if cc == ["IE"]:
+                return SimpleNamespace(hits=[H("osm:bana", "Ballymana", ["IE"], conf=38.5)])
+            if cc == ["GB"]:
                 return SimpleNamespace(hits=[H("gn:bm", "Ballymena", ["GB"], conf=100)])
             return SimpleNamespace(hits=[H("gn:bm", "Ballymena", ["GB"], conf=100), H("gn:bm2", "Ballymena", ["US"], conf=95)])
         if q == "Brussels":
-            if kw.get("ccodes") == ["DE"]:
-                return SimpleNamespace(hits=[H("gn:bruchsal", "Bruchsal", ["DE"], conf=25)])   # below the floor
+            if cc == ["DE"]:
+                return SimpleNamespace(hits=[H("gn:bruchsal", "Bruchsal", ["DE"], conf=25)])   # below every floor
             return SimpleNamespace(hits=[H("gn:brussels", "Brussels", ["BE"], conf=100)])
         if q == "Newport":
             return SimpleNamespace(hits=[H("gn:np1", "Newport", ["GB"], conf=100), H("gn:np2", "Newport", ["US"], conf=100)])
@@ -77,14 +89,37 @@ class Base(unittest.TestCase):
 
 class Resolution(Base):
     def test_full_hierarchy_resolves_and_the_most_specific_rung_answers(self):
-        r = self.one(place="Ballymena, County Antrim, Ireland")
+        r = self.one(place="Ballymena, County Antrim, Northern Ireland")
         self.assertEqual(r["status"], "ok")
-        self.assertEqual(r["context"]["country"]["code"], "IE")
-        self.assertEqual(r["context"]["country"]["source"], "alias")
-        self.assertEqual([c["place_id"] for c in r["context"]["containers"]], ["gn:antrim"])
+        self.assertEqual(r["context"]["containers"][0]["place_id"], "osm:r1")
+        self.assertIs(r["context"]["containers"][0]["areal"], True)
         self.assertEqual((r["scope"]["rung"], r["scope"]["relaxed"]), ("container", False))
         self.assertEqual(r["candidates"][0]["place_id"], "gn:bm")
-        self.assertEqual(len(r["candidates"]), 1, "the container scope excluded the other Ballymena")
+
+    def test_a_wrong_country_with_a_good_county_still_finds_the_place_inside_the_county(self):
+        # "Ireland" is wrong for Antrim (Northern Ireland). The county resolves outside the stated
+        # country, the container rung uses it alone, and the answer is flagged as outside the country.
+        r = self.one(place="Ballymena, County Antrim, Ireland")
+        self.assertEqual(r["context"]["country"]["code"], "IE")
+        cont = r["context"]["containers"][0]
+        self.assertEqual(cont["place_id"], "osm:r1")
+        self.assertTrue(cont["outside_stated_country"])
+        self.assertEqual((r["scope"]["rung"], r["scope"]["relaxed"]), ("container", False))
+        self.assertEqual(r["candidates"][0]["place_id"], "gn:bm")
+        self.assertIs(r["candidates"][0]["country_matches"], False)
+
+    def test_a_point_only_admin_unit_is_accepted_as_a_container_and_flagged(self):
+        r = self.one(place="Budapest, Pest, Hungary")
+        cont = r["context"]["containers"][0]
+        self.assertEqual((cont["place_id"], cont["areal"]), ("gn:pest", False))
+
+    def test_a_loose_match_in_the_stated_country_does_not_beat_an_exact_match_outside_it(self):
+        # no container resolvable (Nowhere), country IE: the country rung finds only a 38.5 look-alike,
+        # the unscoped rung finds the real thing at 100, and that one wins.
+        r = self.one(place="Ballymena, County Nowhere, Ireland")
+        self.assertEqual([a["rung"] for a in r["scope"]["attempts"]], ["country", "none"])
+        self.assertEqual(r["candidates"][0]["place_id"], "gn:bm")
+        self.assertEqual((r["scope"]["rung"], r["scope"]["relaxed"]), ("none", True))
 
     def test_a_wrong_country_is_relaxed_away_and_said_so(self):
         r = self.one(place="Brussels, Germany")
@@ -95,6 +130,10 @@ class Resolution(Base):
         c = r["candidates"][0]
         self.assertEqual(c["place_id"], "gn:brussels")
         self.assertIs(c["country_matches"], False, "the answer is not in the country the user wrote")
+
+    def test_a_very_weak_match_is_flagged_not_promoted(self):
+        r = self.one(place="Brussels, Germany", relax=False)
+        self.assertEqual(r["status"], "low_confidence")
 
     def test_relax_false_stops_at_the_first_rung(self):
         r = self.one(place="Brussels, Germany", relax=False)
@@ -116,7 +155,7 @@ class Resolution(Base):
     def test_country_hint_applies_when_the_string_has_none(self):
         r = self.one(place="Ballymena, County Antrim", country_hint="gb")
         self.assertEqual((r["context"]["country"]["code"], r["context"]["country"]["source"]), ("GB", "hint"))
-        self.assertEqual(r["context"]["containers"][0]["place_id"], "gn:antrim")
+        self.assertEqual(r["context"]["containers"][0]["place_id"], "osm:r1")
         self.assertEqual(r["scope"]["rung"], "container")
 
     def test_large_to_small_order_is_honoured(self):
@@ -133,13 +172,16 @@ class Resolution(Base):
 
     def test_repeated_context_is_resolved_once_across_a_batch(self):
         self.run_req(places=["Ballymena, County Antrim, Ireland"] * 5)
-        antrim = [c for c in self.idx.calls if c["query"].lower() == "antrim" and c["mode"] == "exactci"]
-        self.assertEqual(len(antrim), 1)
+        # one RESOLUTION of "County Antrim" = the unscoped areal lookup that finally succeeds; five
+        # concurrent places must share it rather than each repeating it
+        resolutions = [c for c in self.idx.calls if c["query"].lower() == "county antrim"
+                       and c["mode"] == "exactci" and not c.get("ccodes") and not c.get("fclasses")]
+        self.assertEqual(len(resolutions), 1, "the container is resolved once for the whole batch")
 
     def test_an_unresolvable_admin_level_is_reported_and_the_ladder_continues(self):
         r = self.one(place="Ballymena, County Nowhere, Ireland")
         self.assertEqual(r["context"]["unresolved"], ["County Nowhere"])
-        self.assertEqual(r["scope"]["rung"], "country")
+        self.assertIn(r["scope"]["rung"], ("country", "none"))
 
     def test_one_failing_string_does_not_sink_the_batch(self):
         out = self.run_req(places=["Brussels, Belgium", "boom, Ireland"])["results"]

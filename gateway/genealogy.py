@@ -38,12 +38,33 @@ logger = logging.getLogger("gateway.genealogy")
 router = APIRouter(prefix="/api/genealogy", tags=["genealogy"])
 
 MAX_PLACES = 25            # each place costs ~3-6 index lookups; keep a request bounded
+STRONG_CONFIDENCE = 85.0   # an exact or head-word name match: stop climbing the ladder here
 ACCEPT_CONFIDENCE = 30.0   # the documented name-quality floor (see /reconcile `confidence`)
 CONCURRENCY = 4
 
 # Resolutions of a (kind, text, scope) are stable for a long time and repeat massively across
 # a family tree ("Antrim" appears on thousands of lines). One hour, per worker.
 _resolved = TTLCache(4096, 3600.0)
+_inflight: dict = {}
+
+
+async def _once(key, work):
+    """Cache + SINGLE-FLIGHT: concurrent identical lookups (a batch runs several places at once, and a
+    family tree repeats "County Antrim" on every line) share one in-flight request instead of racing
+    the cache and each asking the index."""
+    cached = _resolved.get(key)
+    if cached is not None:
+        return cached
+    fut = _inflight.get(key)
+    if fut is None:
+        async def run():
+            value = await work()
+            _resolved.put(key, value)
+            return value
+        fut = asyncio.ensure_future(run())
+        _inflight[key] = fut
+        fut.add_done_callback(lambda _f, k=key: _inflight.pop(k, None))
+    return await fut
 
 
 class GenealogyRequest(BaseModel):
@@ -89,47 +110,74 @@ async def resolve_country(comp: pc.Component, *, hint: str | None) -> dict:
     if comp is not None and comp.country:
         return {"code": comp.country, "source": "alias", "component": comp.norm}
     if comp is not None and comp.norm:
-        key = ("country", pc.fold(comp.norm))
-        cached = _resolved.get(key)
-        if cached is None:
+        async def work():
             res = await _lookup(query=comp.norm, mode="exactci", fclasses=["A"], size=10)
             hit = next((h for h in res.hits if _is_country_type(h) and h.ccodes), None)
-            cached = ({"code": hit.ccodes[0], "source": "index", "place_id": hit.place_id,
-                       "name": hit.title, "component": comp.norm} if hit else {"code": None})
-            _resolved.put(key, cached)
-        if cached.get("code"):
-            return dict(cached)
+            return ({"code": hit.ccodes[0], "source": "index", "place_id": hit.place_id,
+                     "name": hit.title, "component": comp.norm} if hit else {"code": None})
+        got = await _once(("country", pc.fold(comp.norm)), work)
+        if got.get("code"):
+            return dict(got)
     if hint:
         return {"code": hint.upper(), "source": "hint"}
     return {"code": None, "source": "none"}
 
 
 async def resolve_container(comp: pc.Component, *, country: str | None, parent_id: str | None) -> dict | None:
-    """Resolve one admin-level component to an AREAL place, inside the parent container if known."""
-    texts = list(dict.fromkeys(t for t in (pc.strip_admin_words(comp.norm), comp.norm) if t))
+    """Resolve one admin-level component to a place usable as ``contained_in``.
+
+    AREAL places are preferred (osm / ukhc / ohm carry polygons). GeoNames carries admin units as
+    POINTS, which the gateway can still use (it borrows a co-referent's boundary, or fails closed),
+    so a GeoNames admin place is accepted as a fallback and flagged ``areal: false``. Nothing here
+    filters on feature class in the first pass: that filter exists only on GeoNames records.
+    """
+    raw, stripped = comp.norm, pc.strip_admin_words(comp.norm)
+    texts = list(dict.fromkeys(t for t in (raw, stripped) if t))
     key = ("container", tuple(pc.fold(t) for t in texts), country, parent_id)
-    cached = _resolved.get(key)
-    if cached is not None:
-        return cached or None
-    found = None
-    for text in texts:
-        for mode in ("exactci", "lexfuzzy"):
-            kw: dict[str, Any] = dict(query=text, mode=mode, fclasses=["A"], size=10)
-            if country:
-                kw["ccodes"] = [country]
+    async def work():
+
+        def base(text: str, mode: str, under: str | None, **extra) -> dict:
+            kw: dict[str, Any] = dict(query=text, mode=mode, size=20, **extra)
+            if under:
+                kw["ccodes"] = [under]
             if parent_id:
                 kw["contained_in"] = [parent_id]
-            res = await _lookup(**kw)
-            for h in res.hits:
-                if _is_area(h) and name_resemblance(text, h.title) >= (1.0 if mode == "exactci" else 0.85):
-                    found = {"place_id": h.place_id, "name": h.title, "component": comp.norm, "via": mode}
+            return kw
+
+        found = None
+        # Under the stated country first; then anywhere: the user's country can be the mistake
+        # ("County Antrim, Ireland": Antrim is in Northern Ireland), and the container then still resolves.
+        for under in ([country, None] if country else [None]):
+            for text in texts:                               # 1. an areal place, exact name
+                res = await _lookup(**base(text, "exactci", under))
+                hit = next((h for h in res.hits if _is_area(h) and name_resemblance(text, h.title) >= 1.0), None)
+                if hit:
+                    found = {"place_id": hit.place_id, "name": hit.title, "component": comp.norm,
+                             "via": "exactci", "areal": True, "outside_stated_country": under is None and bool(country)}
                     break
+            if not found:                                    # 2. a GeoNames admin place (a point)
+                for text in texts:
+                    res = await _lookup(**base(text, "exactci", under, fclasses=["A"], namespaces=["gn"]))
+                    hit = next((h for h in res.hits if name_resemblance(text, h.title) >= 1.0), None)
+                    if hit:
+                        found = {"place_id": hit.place_id, "name": hit.title, "component": comp.norm,
+                                 "via": "exactci-gn", "areal": False,
+                                 "outside_stated_country": under is None and bool(country)}
+                        break
             if found:
                 break
-        if found:
-            break
-    _resolved.put(key, found or {})
-    return found
+        if not found:                                        # 3. spelling slack, areal only, stated country
+            for text in texts:
+                res = await _lookup(**base(text, "lexfuzzy", country))
+                hit = next((h for h in res.hits if _is_area(h) and name_resemblance(text, h.title) >= 0.85), None)
+                if hit:
+                    found = {"place_id": hit.place_id, "name": hit.title, "component": comp.norm,
+                             "via": "lexfuzzy", "areal": True, "outside_stated_country": False}
+                    break
+        return found or {}
+
+    got = await _once(key, work)
+    return got or None
 
 
 # ----------------------------------------------------------------------------- one place
@@ -199,9 +247,9 @@ async def resolve_place(text: str, req: GenealogyRequest, profile: pc.Profile) -
         base["end_year"] = req.end_year
     if req.namespaces:
         base["namespaces"] = req.namespaces
-    if containers and country.get("code"):
-        rungs.append(("container", {"contained_in": [containers[-1]["place_id"]], "ccodes": [country["code"]]}))
-    elif containers:
+    if containers:
+        # A resolved container implies its own country, so it is NOT combined with the stated one:
+        # the stated country may be the user's mistake, and the two would then exclude everything.
         rungs.append(("container", {"contained_in": [containers[-1]["place_id"]]}))
     if country.get("code"):
         rungs.append(("country", {"ccodes": [country["code"]]}))
@@ -212,26 +260,30 @@ async def resolve_place(text: str, req: GenealogyRequest, profile: pc.Profile) -
         return out
 
     attempts: list[dict] = []
+    tried: list[tuple[str, Any, float]] = []     # (rung, response, top confidence or 100 when unmeasured)
     chosen = None
-    last_with_hits = None
-    for i, (name, scope) in enumerate(rungs):
+    for name, scope in rungs:
         res = await _lookup(query=locality.norm, mode=req.mode, size=req.size, **base, **scope)
         top = res.hits[0] if res.hits else None
         conf = getattr(top, "confidence", None) if top else None
-        accepted = bool(top) and (conf is None or conf >= ACCEPT_CONFIDENCE)
+        strong = bool(top) and (conf is None or conf >= STRONG_CONFIDENCE)
         attempts.append({"rung": name, "applied": scope, "hits": len(res.hits),
-                         "top_confidence": conf, "accepted": accepted})
-        if res.hits:
-            last_with_hits = (name, res)
-        if accepted:
+                         "top_confidence": conf, "accepted": strong})
+        if top:
+            tried.append((name, res, 100.0 if conf is None else conf))
+        if strong:
             chosen = (name, res)
             break
         if not req.relax:
-            chosen = (name, res) if res.hits else None
             break
     status = "ok"
-    if chosen is None and last_with_hits is not None:
-        chosen, status = last_with_hits, "low_confidence"
+    if chosen is None and tried:
+        # No rung gave a STRONG name match. Take the best-scoring rung (ties go to the more specific
+        # one, which came first): a loose match inside the user's stated place must not beat an exact
+        # match just outside it, and equally a weak match anywhere is flagged, not promoted.
+        best = max(tried, key=lambda t: (round(t[2], 1), -[r[0] for r in rungs].index(t[0])))
+        chosen = (best[0], best[1])
+        status = "ok" if best[2] >= ACCEPT_CONFIDENCE else "low_confidence"
     elif chosen is None:
         status = "no_match"
 

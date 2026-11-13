@@ -684,6 +684,21 @@ def _format_candidate(
 # Endpoint
 # ---------------------------------------------------------------------------
 
+#: The lexical modes added for FamilySearch compatibility. Discovery ranks their matches identically
+#: (an exact-name match has one score), so a name shared by thousands of places fills the usual
+#: 200-candidate window with an ARBITRARY 200 and any filter applied afterwards then finds nothing
+#: ("Paris" + feature class P returned zero hits). When a filter is present the window is widened.
+_WIDE_MODES = ("exactci", "wildcard", "lexfuzzy")
+_WIDE_WINDOW = 2000
+
+
+def _is_wide(req: "ReconcileRequest") -> bool:
+    filtered = bool(req.ccodes or req.fclasses or req.types or req.contained_in or req.bounds
+                    or req.start_year is not None or req.end_year is not None
+                    or (req.lat is not None and req.lng is not None and req.radius))
+    return req.mode in _WIDE_MODES and filtered
+
+
 def _top_hits_by_score(raw_hits: list[dict], place_scores: dict[str, float], size: int) -> list[dict]:
     """The ``size`` hits Step 4 will keep, in the order it will keep them.
 
@@ -989,7 +1004,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
                     req.query, req.mode,
                     # Widen the discovery window so the extra forms don't squeeze
                     # each other out of a fixed top-200 (cf. the #127 symptom).
-                    size=min(200 * (1 + len(variants)), 800),
+                    size=_WIDE_WINDOW if _is_wide(req) else min(200 * (1 + len(variants)), 800),
                     namespaces=req.namespaces or None,
                     variants=variants or None, variant_weight=VARIANT_SCORE_WEIGHT,
                 )
@@ -1031,7 +1046,7 @@ async def _reconcile_search(req: ReconcileRequest, st):
         # test against the region — the most expensive thing this endpoint does.
         want = req.size + req.offset      # results needed from the top of the ranking (offset = pagination)
         pool_k = (min(want * 8, 10000) if pure_spatial
-                  else min(max(want * 4, 200), 10000))
+                  else min(max(want * 4, _WIDE_WINDOW if _is_wide(req) else 200), 10000))
 
         # Take the top-K place_ids BY DISCOVERY SCORE, as /api/search does —
         # reconcile sent the whole set and let ES's doc-order `size` cut choose,

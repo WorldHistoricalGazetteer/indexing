@@ -117,3 +117,36 @@ class Endpoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WideWindowForLexicalModes(unittest.TestCase):
+    """exactci/wildcard/lexfuzzy rank every match identically, so with a filter the usual 200-candidate
+    window returns an ARBITRARY 200 and the filter then finds nothing ("Paris" + feature class P)."""
+
+    def test_wide_only_for_the_new_lexical_modes_and_only_with_a_filter(self):
+        R = rc.ReconcileRequest
+        self.assertTrue(rc._is_wide(R(query="x", mode="exactci", ccodes=["FR"])))
+        self.assertTrue(rc._is_wide(R(query="x", mode="wildcard", fclasses=["P"])))
+        self.assertTrue(rc._is_wide(R(query="x", mode="lexfuzzy", start_year=1800)))
+        self.assertFalse(rc._is_wide(R(query="x", mode="exactci")), "no filter: unchanged")
+        self.assertFalse(rc._is_wide(R(query="x", mode="exact", ccodes=["FR"])), "existing modes unchanged")
+        self.assertFalse(rc._is_wide(R(query="x", mode="fuzzy", ccodes=["FR"])))
+
+    def test_the_discovery_and_places_windows_are_widened(self):
+        from gateway.result_cache import TTLCache
+        fake = FakeES(n_places=30)
+        req = rc.ReconcileRequest(query="Paris", mode="exactci", ccodes=["FR"], size=5)
+        with fake.installed(), mock.patch.object(rc, "_result_cache", TTLCache(0, 0)):
+            asyncio.run(rc.reconcile_search(req))
+        disc = [c for c in fake.calls if c["kind"] == "discovery_other"][0]["body"]
+        places = [c for c in fake.calls if c["kind"] == "places"][0]["body"]
+        self.assertEqual(disc["size"], rc._WIDE_WINDOW)
+        self.assertEqual(places["size"], rc._WIDE_WINDOW)
+
+    def test_unfiltered_lexical_requests_keep_the_normal_window(self):
+        from gateway.result_cache import TTLCache
+        fake = FakeES(n_places=30)
+        req = rc.ReconcileRequest(query="Paris", mode="exactci", size=5)
+        with fake.installed(), mock.patch.object(rc, "_result_cache", TTLCache(0, 0)):
+            asyncio.run(rc.reconcile_search(req))
+        self.assertEqual([c for c in fake.calls if c["kind"] == "discovery_other"][0]["body"]["size"], 200)
