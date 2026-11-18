@@ -63,6 +63,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Iterator
@@ -451,9 +452,34 @@ def lpf_feature_to_staged_doc(
                 geom_key=f"{place_id}_0",
             )
             if geom_entry:
+                lender = adopted_lender(geometry)
+                if lender:
+                    geom_entry["source"] = lender
                 doc["geometries"] = [geom_entry]
 
     return doc
+
+
+# place#350: a contributed record may carry a location its dataset OWNER adopted from a
+# matched authority place (Django ``datasets/location_adoption.py``). The LPF export marks
+# it with ``geometry.provenance = {"kind": "adopted", "source": "<namespace>", ...}``. Its
+# namespace is recorded as the geometry's ``source``, the field the index already uses for a
+# geometry lent by another source (alcedo <- hgis; ``gateway.geometry.geom_keys_for``), so
+# the attribution travels with the point. Nothing else of the provenance is indexed: who
+# adopted it and when are Django's to show, from the live row. A point placed by hand is the
+# owner's own data and gets no ``source``.
+_LENDER_RE = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
+
+
+def adopted_lender(geometry: Any) -> str | None:
+    """The namespace an adopted geometry was taken from, or ``None``."""
+    prov = geometry.get("provenance") if isinstance(geometry, dict) else None
+    if not isinstance(prov, dict) or prov.get("kind") != "adopted":
+        return None
+    src = prov.get("source")
+    if isinstance(src, str) and _LENDER_RE.fullmatch(src) and src != WHG_NAMESPACE:
+        return src
+    return None
 
 
 # ----------------------------------------------------------------------------
