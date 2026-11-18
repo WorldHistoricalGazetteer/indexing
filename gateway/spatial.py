@@ -580,6 +580,20 @@ _H3_EDGE_KM = {4: 22.6, 5: 8.54, 6: 3.23, 7: 1.22, 8: 0.46}
 _DISC_MAX_CELLS = 2000
 
 
+def _local_centre_spacing_km(cell: str) -> Optional[float]:
+    """Distance from ``cell``'s centre to its nearest neighbour's centre, in km —
+    the length of ONE grid ring here. Measured, because H3 cells vary in size
+    across the globe and the tabled edge lengths are averages."""
+    try:
+        here = _h3.cell_to_latlng(cell)
+        return min(
+            _h3.great_circle_distance(here, _h3.cell_to_latlng(n), unit="km")
+            for n in _h3.grid_ring(cell, 1)
+        ) or None
+    except Exception:
+        return None
+
+
 def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[ResolvedRegion]:
     """Build a containment region for "within `radius_km` of this point", as an H3
     disc rather than a polygon.
@@ -594,9 +608,20 @@ def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[Res
 
     The resolution is chosen from the radius so the disc stays a few hundred cells:
     fine enough to be a real filter, coarse enough that the ES terms clause stays
-    small. Cells are not equal-area, so the ring count is rounded up and grown by
-    one — a radial filter that is slightly generous is a filter; one that clips
-    inside the radius silently loses valid matches.
+    small. A radial filter that is slightly generous is a filter; one that clips
+    inside the radius silently loses valid matches — so the disc must cover the
+    whole circle, and should not cover much more.
+
+    The ring count used to be ``ceil(radius / EDGE) + 1``. One grid ring is a step
+    between neighbouring cell CENTRES (≈ √3 × edge), not an edge, so the disc
+    reached 1.4–2.6× the requested radius: a 5 km circle at London reached ~11.5 km
+    and returned Wimbledon (10.6 km) to ``intersects``. Rings are now counted from
+    the measured local centre spacing (cells are not equal-area), and the
+    hexagonal k-ring is then trimmed to the cells whose centre lies within
+    ``radius + spacing`` — any point within the radius lies in a cell whose centre
+    is closer than that, so trimming never loses coverage. Measured over 11 sites
+    pole-to-equator and radii 0.5–400 km: the disc always covers the full radius
+    (min inner reach 1.02 × r) and reaches at most 1.31 × r for r ≥ 5 km.
     """
     if not _H3_AVAILABLE or lat is None or lng is None or not radius_km or radius_km <= 0:
         return None
@@ -606,12 +631,19 @@ def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[Res
         return cached
 
     # Finest resolution whose disc stays under the cell budget.
-    res, rings = None, 0
+    res, rings, spacing = None, 0, 0.0
     for r in sorted(_H3_EDGE_KM):                        # coarse → fine
-        k = max(1, int(math.ceil(float(radius_km) / _H3_EDGE_KM[r])) + 1)
+        try:
+            s = _local_centre_spacing_km(_h3.latlng_to_cell(float(lat), float(lng), r))
+        except Exception:
+            s = None
+        s = s or math.sqrt(3) * _H3_EDGE_KM[r]
+        # The k-ring is a hexagon of hexagons: its shortest reach (towards a
+        # corner of the big hexagon) is k × spacing × √3/2.
+        k = max(1, int(math.ceil(float(radius_km) / (s * math.sqrt(3) / 2))) + 1)
         n_cells = 1 + 3 * k * (k + 1)                     # cells in a k-ring disc
         if n_cells <= _DISC_MAX_CELLS:
-            res, rings = r, k
+            res, rings, spacing = r, k, s
         else:
             break
     if res is None:
@@ -619,7 +651,12 @@ def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[Res
 
     try:
         centre = _h3.latlng_to_cell(float(lat), float(lng), res)
-        cells = set(_h3.grid_disk(centre, rings))
+        reach = float(radius_km) + spacing
+        cells = {
+            c for c in _h3.grid_disk(centre, rings)
+            if _h3.great_circle_distance(
+                (float(lat), float(lng)), _h3.cell_to_latlng(c), unit="km") <= reach
+        }
     except Exception:
         return None
     if not cells:
@@ -1033,6 +1070,88 @@ def _cover_within_region(cover: list[str], region: ResolvedRegion) -> bool:
     return True
 
 
+def _geom_cover(g: dict) -> list[str]:
+    cc = g.get("h3_cover")
+    if isinstance(cc, list):
+        return [c for c in cc if isinstance(c, str)]
+    if isinstance(cc, str) and cc:
+        return [cc]
+    return []
+
+
+def _geom_repr_point(g: dict) -> Optional[list]:
+    rp = g.get("repr_point")
+    if isinstance(rp, dict) and rp.get("lon") is not None and rp.get("lat") is not None:
+        return [rp["lon"], rp["lat"]]
+    if isinstance(rp, (list, tuple)) and len(rp) == 2:
+        return list(rp)
+    return None
+
+
+def _is_point_geometry(g: dict, cover: list[str]) -> bool:
+    """Is this geometry entry a point (or MultiPoint), whose ``h3_cover`` marks
+    WHERE it is rather than an extent? ``geom_class`` decides when present; a
+    legacy entry without one counts as a point only if it has no stored geometry
+    AND at most one cover cell — anything wider keeps the extent test."""
+    gc = g.get("geom_class")
+    if gc is not None:
+        return gc == "point"
+    return not g.get("has_geom") and len(cover) <= 1
+
+
+def _point_cells_within_region(cells: list[str], region: ResolvedRegion) -> bool:
+    """MultiPoint members: each member cell must be in the region. A member cell
+    COARSER than the region cannot be tested as an extent (it is a location, not
+    an area), so it is judged by its centre — within the cell's own size, which
+    is what fuzzy containment promises."""
+    for cell in cells:
+        if _cover_within_region([cell], region):
+            continue
+        try:
+            lat, lon = _h3.cell_to_latlng(cell)
+        except Exception:
+            return False
+        if not _point_in_region_h3([lon, lat], region):
+            return False
+    return True
+
+
+def _geometries_within_region(src: dict, region: ResolvedRegion) -> bool:
+    """Fuzzy ``within``, per geometry entry (the place's repr_point has already
+    passed).
+
+    Lines and areas: every cell of the entry's H3 cover must lie inside the
+    region's cover — the extent test, which is what keeps a country or empire
+    that merely overlaps a small region out of ``within``.
+
+    Points: judged by the POINT. A point's cover is its single res-7 cell
+    (~5 km² — compute_h3_fields), and the extent test lifts a candidate cell only
+    to region resolutions at or coarser than its own, so against any region
+    finer than res 7 (every disc under ~11 km; see region_from_circle) a point
+    plainly inside the region was rejected — a nameless 5 km circle at London
+    returned 0 places. The cell is where the point is, not how big it is.
+    """
+    geoms = [g for g in (src.get("geometries") or []) if isinstance(g, dict)]
+    only_one = len(geoms) == 1
+    for g in geoms:
+        cover = _geom_cover(g)
+        if _is_point_geometry(g, cover):
+            if len(cover) <= 1:
+                pt = _geom_repr_point(g)
+                if pt is None and only_one:
+                    continue        # the place's repr_point IS this point: already passed
+                if pt is not None:
+                    if not _point_in_region_h3(pt, region):
+                        return False
+                    continue
+            if cover and not _point_cells_within_region(cover, region):
+                return False
+            continue
+        if cover and not _cover_within_region(cover, region):
+            return False
+    return True
+
+
 def _candidate_geometry(src: dict, reader):
     """Build the candidate's Shapely geometry from the geom-store (exact mode),
     falling back to its repr_point if the polygon is unavailable."""
@@ -1111,11 +1230,11 @@ def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, rea
             return False
 
     # fuzzy (default; also the fallback when exact geometry is unavailable)
-    cover = _collect_h3_cover(src)
     if relation == "within":
         if not _point_in_region_h3(rp, region):
             return False
-        return _cover_within_region(cover, region) if cover else True
+        return _geometries_within_region(src, region)
+    cover = _collect_h3_cover(src)
     if _point_in_region_h3(rp, region):
         return True
     return _cover_overlaps_region(cover, region)

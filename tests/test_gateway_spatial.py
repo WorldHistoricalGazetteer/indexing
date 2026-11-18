@@ -6,6 +6,7 @@ No live Elasticsearch — resolve_region is exercised against a stub client.
 """
 
 import asyncio
+import math
 import unittest
 from unittest import mock
 
@@ -944,3 +945,151 @@ class TestGeomReaderRetry(unittest.TestCase):
         with mock.patch("processing.geom_store.GeomStoreReader",
                         side_effect=AssertionError("must not be called")):
             self.assertIsNone(spatial.get_geom_reader(now=1e9))
+
+
+def _pt_geom(lon, lat, geom_class="point", **extra):
+    """A point geometry entry as ingest writes it: res-7 single-cell cover."""
+    g = {"repr_point": {"lon": lon, "lat": lat},
+         "h3_cover": [h3.latlng_to_cell(lat, lon, 7)], **extra}
+    if geom_class is not None:
+        g["geom_class"] = geom_class
+    return g
+
+
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestFuzzyWithinSmallDisc(unittest.TestCase):
+    """A nameless 5 km circle at London (51.5, -0.12), relation ``within``.
+
+    The disc is res 8; a point's cover is its res-7 cell. The extent test could
+    never lift a res-7 cell to res 8, so every point place was rejected and the
+    query returned 0 places (radius 50 → a res-6 disc, which worked).
+    """
+    LAT, LNG = 51.5, -0.12
+
+    def setUp(self):
+        self.region = spatial.region_from_circle(self.LAT, self.LNG, 5)
+        self.assertGreater(max(self.region.resolutions), 7,
+                           "fixture premise: the 5 km disc is finer than a point's cover")
+
+    def _within(self, src):
+        return spatial.hit_matches(src, self.region, "fuzzy", "within")
+
+    def test_point_place_inside_the_disc_is_within(self):
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT + 0.018},   # ~2 km N
+               "geometries": [_pt_geom(self.LNG, self.LAT + 0.018)]}
+        self.assertTrue(self._within(src))
+
+    def test_point_place_outside_the_disc_is_not_within(self):
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT + 0.09},    # ~10 km N
+               "geometries": [_pt_geom(self.LNG, self.LAT + 0.09)]}
+        self.assertFalse(self._within(src))
+
+    def test_legacy_point_without_geom_class_is_within(self):
+        src = {"repr_point": {"lon": self.LNG + 0.02, "lat": self.LAT},
+               "geometries": [_pt_geom(self.LNG + 0.02, self.LAT, geom_class=None)]}
+        self.assertTrue(self._within(src))
+
+    def test_point_without_its_own_repr_point_uses_the_places(self):
+        g = _pt_geom(self.LNG, self.LAT)
+        del g["repr_point"]
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT}, "geometries": [g]}
+        self.assertTrue(self._within(src))
+
+    def test_every_point_geometry_must_be_inside(self):
+        near = _pt_geom(self.LNG, self.LAT + 0.01)
+        far = _pt_geom(self.LNG, self.LAT + 0.5)                            # ~55 km N
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT + 0.01},
+               "geometries": [near, far]}
+        self.assertFalse(self._within(src))
+        src["geometries"] = [near, _pt_geom(self.LNG + 0.02, self.LAT - 0.01)]
+        self.assertTrue(self._within(src))
+
+    def test_multipoint_members_are_judged_by_location(self):
+        cells_in = sorted({h3.latlng_to_cell(self.LAT + d, self.LNG, 7) for d in (0.0, 0.02)})
+        g = {"geom_class": "point", "repr_point": {"lon": self.LNG, "lat": self.LAT},
+             "h3_cover": cells_in}
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT}, "geometries": [g]}
+        self.assertTrue(self._within(src))
+        g["h3_cover"] = cells_in + [h3.latlng_to_cell(self.LAT + 0.5, self.LNG, 7)]
+        self.assertFalse(self._within(src))
+
+    def test_large_overlapping_polygon_is_still_excluded(self):
+        # A country-sized polygon whose repr_point happens to sit in the disc.
+        big = _square(-6.0, 50.0, 2.0, 55.5)
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT},
+               "geometries": [{"geom_class": "area", "has_geom": True,
+                               "repr_point": {"lon": self.LNG, "lat": self.LAT},
+                               "h3_cover": _cover_for(big, res=5)}]}
+        self.assertFalse(self._within(src))
+        self.assertTrue(spatial.hit_matches(src, self.region, "fuzzy", "intersects"))
+
+    def test_legacy_polygon_cover_without_geom_class_is_still_excluded(self):
+        big = _square(-6.0, 50.0, 2.0, 55.5)
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT},
+               "geometries": [{"h3_cover": _cover_for(big, res=5)}]}
+        self.assertFalse(self._within(src))
+
+    def test_point_plus_overlapping_polygon_is_excluded(self):
+        big = _square(-6.0, 50.0, 2.0, 55.5)
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT},
+               "geometries": [_pt_geom(self.LNG, self.LAT),
+                              {"geom_class": "area", "has_geom": True,
+                               "h3_cover": _cover_for(big, res=5)}]}
+        self.assertFalse(self._within(src))
+
+    def test_small_polygon_inside_is_within(self):
+        small = _square(self.LNG - 0.01, self.LAT - 0.01, self.LNG + 0.01, self.LAT + 0.01)
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT},
+               "geometries": [{"geom_class": "area", "has_geom": True,
+                               "h3_cover": _cover_for(small, res=9)}]}
+        self.assertTrue(self._within(src))
+
+    def test_line_keeps_the_extent_test(self):
+        # A line running far out of the disc: not within, though it starts inside.
+        cells = [h3.latlng_to_cell(self.LAT + d, self.LNG, 9) for d in (0.0, 0.2, 0.4)]
+        src = {"repr_point": {"lon": self.LNG, "lat": self.LAT},
+               "geometries": [{"geom_class": "line", "has_geom": True, "h3_cover": cells}]}
+        self.assertFalse(self._within(src))
+
+
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestCircleDiscReach(unittest.TestCase):
+    """The disc covers the whole circle and not much more. It used to count
+    rings in EDGE lengths, so a 5 km circle at London reached ~11.5 km
+    (1.4-2.6x the radius across sites) and `intersects` returned the Wimbledon
+    Windmill Museum, 10.4 km away."""
+
+    SITES = ((51.5, -0.12), (0.1, 0.1), (65.0, 25.0), (-33.9, 151.2), (78.0, 15.0))
+
+    def _offset(self, lat, lng, km, bearing_deg):
+        b = math.radians(bearing_deg)
+        dlat = km * math.cos(b) / 110.574
+        dlng = km * math.sin(b) / (111.320 * math.cos(math.radians(lat)))
+        return lat + dlat, lng + dlng
+
+    def _in(self, region, lat, lng):
+        return spatial._point_in_region_h3([lng, lat], region)
+
+    def test_wimbledon_windmill_is_not_near_central_london(self):
+        # gn:10103852, 10.4 km from (51.5, -0.12): returned by a live 5 km
+        # `intersects` query before the fix.
+        region = spatial.region_from_circle(51.5, -0.12, 5)
+        src = {"repr_point": {"lon": -0.23173, "lat": 51.43801},
+               "geometries": [_pt_geom(-0.23173, 51.43801)]}
+        self.assertFalse(spatial.hit_matches(src, region, "fuzzy", "intersects"))
+
+    def test_whole_radius_is_covered(self):
+        for lat, lng in self.SITES:
+            for km in (1, 5, 11, 50, 200):
+                region = spatial.region_from_circle(lat, lng, km)
+                for bearing in range(0, 360, 15):
+                    with self.subTest(site=(lat, lng), km=km, bearing=bearing):
+                        self.assertTrue(self._in(region, *self._offset(lat, lng, 0.99 * km, bearing)))
+
+    def test_reach_is_bounded(self):
+        for lat, lng in self.SITES:
+            for km in (5, 11, 50, 200):
+                region = spatial.region_from_circle(lat, lng, km)
+                for bearing in range(0, 360, 15):
+                    with self.subTest(site=(lat, lng), km=km, bearing=bearing):
+                        self.assertFalse(self._in(region, *self._offset(lat, lng, 1.5 * km, bearing)))
