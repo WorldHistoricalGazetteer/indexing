@@ -110,7 +110,7 @@ class TestHappyPath(_Base):
         host = FakeHost(free=self.size + self.margin, live_size_after_rename=self.size)
         ok, out = self.swap(host, [True])
         self.assertTrue(ok)
-        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@134.209.177.234:{DIR}/gn.mbtiles.new",
+        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@168.144.13.214:{DIR}/gn.mbtiles.new",
                                       "rename", "check", "rm .prev"])
         # the rsync wrote the temporary name, in place, never the live file
         rsync = next(a for a in host.argv if a[0] == "rsync")
@@ -136,7 +136,7 @@ class TestRollback(_Base):
         host = FakeHost(free=10 ** 9, live_size_after_rename=self.size)
         ok, out = self.swap(host, [False, True])
         self.assertFalse(ok)
-        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@134.209.177.234:{DIR}/gn.mbtiles.new",
+        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@168.144.13.214:{DIR}/gn.mbtiles.new",
                                       "rename", "check", "rollback-rename", "check", "rm .rejected"])
         self.assertNotIn("rm .prev", host.steps)
         rb = next(a[-1] for a in host.argv if a[0] == "ssh" and ".rejected" in a[-1] and "mv -f" in a[-1])
@@ -164,7 +164,7 @@ class TestRollback(_Base):
         host = FakeHost(free=10 ** 9, live_size_after_rename=self.size, rsync_rc=23)
         ok, _ = self.swap(host, [True])
         self.assertFalse(ok)
-        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@134.209.177.234:{DIR}/gn.mbtiles.new"])
+        self.assertEqual(host.steps, ["df", f"rsync→whgadmin@168.144.13.214:{DIR}/gn.mbtiles.new"])
 
 
 class TestDiskRefusal(_Base):
@@ -268,8 +268,8 @@ class TestPushDestName(unittest.TestCase):
              redirect_stdout(io.StringIO()):
             self.assertTrue(gt.push_mbtiles_to_tileserver(p, dest_name="wd.mbtiles.new"))
             self.assertTrue(gt.push_mbtiles_to_tileserver(p))
-        self.assertEqual(targets, [f"whgadmin@134.209.177.234:{DIR}/wd.mbtiles.new",
-                                   f"whgadmin@134.209.177.234:{DIR}/"])
+        self.assertEqual(targets, [f"whgadmin@168.144.13.214:{DIR}/wd.mbtiles.new",
+                                   f"whgadmin@168.144.13.214:{DIR}/"])
 
 
 if __name__ == "__main__":

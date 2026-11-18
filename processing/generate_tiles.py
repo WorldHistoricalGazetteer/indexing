@@ -929,7 +929,7 @@ def deploy_tilesets(mbtiles_paths, **kwargs) -> dict[str, bool]:
 # filesystem; the only unavailability is the service restart.
 #
 # The cost is disk: new and old coexist until the restart releases the old
-# inode (``tiler.service`` holds it), so the push refuses to start unless the
+# inode (the tileserver process holds it), so the push refuses to start unless the
 # tiles filesystem has the new file's size plus ``ATOMIC_PUSH_FREE_MARGIN_BYTES``
 # free — measured with ``df`` ON the tileserver, not inferred.
 
@@ -1163,153 +1163,66 @@ def restart_tileserver(
     proxy_host: str | None = None,
     remote_user: str | None = None,
     remote_host: str | None = None,
-    services: list[str] | None = None,
-    timeout: int = 120,
+    timeout: int = 180,
 ) -> bool:
-    """Restart the TileServer GL services so newly-deployed mbtiles are picked up.
+    """Restart the TileServer GL container so newly-deployed mbtiles are picked up.
 
     Per the user's contract (2026-05-03), this is **only ever called once
     per rebuild**, after every gazetteer's mbtiles has been pushed AND the
     push was verified. Per-bucket tile-gen tasks must NOT call this.
 
-    Delegates to ``/srv/restart_services.sh`` on the tileserver — the
-    canonical restart script kept in the **whg-tileboss** repo, which
-    knows the right ``service stop`` + ``pkill -f`` + ``service start``
-    sequence for both the ``tileserver-gl-light`` and ``tiler`` units
-    (the forever-service init scripts don't cooperate with bare
-    ``systemctl restart``; see ``feedback_tileserver_restart.md`` memory
-    for the history of that gotcha). Routing the work through the
-    on-host script means restart tweaks happen in tileboss alongside the
-    services they restart, not split across two repos.
+    Delegates to ``cd /srv && bash restart_services.sh`` on the tileserver. On the NYC1
+    host (place#335, 2026-11-10) that script runs as the deploy user (no sudo, no systemd
+    units, no tiler), restarts the Docker container and does not return until
+    ``/styles/whg-context/style.json`` serves a style with layers; it exits non-zero
+    otherwise. The exit status is therefore the health check (the old ``pgrep -cf``
+    process counts were vacuous and are removed). Confirm individual tilesets with
+    ``update_tileserver_config.verify_serving``.
 
     Authentication paths, in order:
-    * ``TILESERVER_SSH_KEY`` set → direct SSH from the local host using
-      that key (the CRC compute / Slurm auto-deploy path; no proxy hop).
-    * ``via_proxy=True`` and the local host is the proxy → direct SSH
-      via the proxy's ambient agent/key.
-    * Otherwise → SSH through the proxy (``ssh pitt 'ssh whgadmin@…'``)
-      so the operator's local box can drive the restart by alias.
+    * ``TILESERVER_SSH_KEY`` set -> direct SSH using that key (CRC compute / Slurm path).
+    * ``via_proxy=True`` and the local host is the proxy -> direct SSH via its own key.
+    * Otherwise -> SSH through the proxy (``ssh pitt 'ssh whgadmin@...'``).
 
-    After the script returns, verifies each declared unit has at least
-    one running process via ``pgrep -cf``. Returns True iff every unit
-    reports ``> 0`` processes.
+    Returns True iff the restart script exited 0.
     """
     from processing.settings import (
-        TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER,
-        TILESERVER_SERVICES, TILESERVER_SSH_KEY,
+        TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER, TILESERVER_SSH_KEY,
     )
 
     proxy_host = proxy_host or TILESERVER_PROXY
     remote_user = remote_user or TILESERVER_USER
     remote_host = remote_host or TILESERVER_HOST
-    services = services or list(TILESERVER_SERVICES)
 
-    # Direct-mode short-circuit (mirrors push_mbtiles_to_tileserver): when
-    # the runtime has its own key for the tileserver, the proxy hop is
-    # both unnecessary and broken (CRC compute can't resolve ``pitt``).
     if TILESERVER_SSH_KEY:
         via_proxy = False
     elif via_proxy and _running_on_proxy(proxy_host):
         via_proxy = False
 
-    print(
-        f"\nRestarting tileserver services: {services} on "
-        f"{remote_user}@{remote_host} via /srv/restart_services.sh"
-    )
-
-    # Process patterns for verification (forever-service wraps these
-    # binaries; ``pgrep -cf`` matches the monitor + the wrapped child).
-    pkill_patterns = {
-        "tileserver-gl-light.service": "tileserver-gl-light",
-        "tiler.service":               "/srv/tiler/tiler.js",
-    }
-
-    # CRITICAL: ``restart_services.sh`` runs ``sudo pkill -f
-    # tileserver-gl-light`` (and similar for tiler). If our SSH session's
-    # argv contains those literal strings — e.g. via an appended
-    # ``echo … pgrep -cf tileserver-gl-light`` — ``pkill -f`` kills our
-    # own remote shell mid-flight and SSH returns rc=255 with empty
-    # output. So the restart and the verification MUST run in separate
-    # SSH sessions: session 1's argv only mentions the script, session 2
-    # only mentions the verify pattern, and neither carries the
-    # cross-pattern that pkill is hunting.
+    print(f"\nRestarting tileserver on {remote_user}@{remote_host} via restart_services.sh")
     restart_cmd = "cd /srv && bash restart_services.sh"
-    verify_cmd = "; ".join(
-        f"echo {svc!r}: $(pgrep -cf {pkill_patterns.get(svc, svc.replace('.service', ''))})"
-        for svc in services
-    )
 
-    def _build_cmd(remote: str) -> list[str]:
-        if TILESERVER_SSH_KEY:
-            return [
-                "ssh", "-i", TILESERVER_SSH_KEY,
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "ServerAliveInterval=30",
-                f"{remote_user}@{remote_host}", remote,
-            ]
-        if via_proxy:
-            return [
-                "ssh", "-o", "BatchMode=yes", proxy_host,
-                f'ssh -o BatchMode=yes {remote_user}@{remote_host} "{remote}"',
-            ]
-        return ["ssh", "-o", "BatchMode=yes",
-                f"{remote_user}@{remote_host}", remote]
+    if TILESERVER_SSH_KEY:
+        cmd = ["ssh", "-i", TILESERVER_SSH_KEY, "-o", "BatchMode=yes",
+               "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval=30",
+               f"{remote_user}@{remote_host}", restart_cmd]
+    elif via_proxy:
+        cmd = ["ssh", "-o", "BatchMode=yes", proxy_host,
+               f'ssh -o BatchMode=yes {remote_user}@{remote_host} "{restart_cmd}"']
+    else:
+        cmd = ["ssh", "-o", "BatchMode=yes", f"{remote_user}@{remote_host}", restart_cmd]
 
     try:
-        result = subprocess.run(
-            _build_cmd(restart_cmd),
-            capture_output=True, text=True, timeout=timeout,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        print(f"  ✗ restart timed out after {timeout}s")
+        print(f"  x restart timed out after {timeout}s")
         return False
-
     if result.returncode != 0:
-        print(
-            f"  ✗ restart_services.sh failed (rc={result.returncode})\n"
-            f"    stderr: {result.stderr.strip()[:500]}"
-        )
+        print(f"  x restart_services.sh failed (rc={result.returncode})\n"
+              f"    stderr: {result.stderr.strip()[:500]}")
         return False
-
-    print("  ✓ /srv/restart_services.sh returned 0")
-
-    # Give forever-service a moment to (re)spawn the wrapped node
-    # children before we count processes.
-    time.sleep(3)
-
-    try:
-        verify = subprocess.run(
-            _build_cmd(verify_cmd),
-            capture_output=True, text=True, timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        print("  ⚠ verification SSH timed out — restart probably succeeded "
-              "but the process counts could not be confirmed")
-        return False
-
-    if verify.returncode != 0:
-        print(f"  ⚠ verification SSH rc={verify.returncode}; "
-              f"stderr: {verify.stderr.strip()[:200]}")
-        return False
-
-    # Per-service process counts came back on stdout in the form
-    # ``'tileserver-gl-light.service': 2``. Anything > 0 means the
-    # service is back up; 0 is a hard failure to flag.
-    print("  Verification:")
-    healthy = True
-    for line in verify.stdout.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        print(f"    {line}")
-        if line.endswith(": 0"):
-            healthy = False
-    if not healthy:
-        print(
-            "    ⚠ at least one service has zero processes — restart probably failed"
-        )
-    return healthy
+    print("  ok restart_services.sh returned 0")
+    return True
 
 
 def _staged_namespace_source(namespace: str) -> Path | None:

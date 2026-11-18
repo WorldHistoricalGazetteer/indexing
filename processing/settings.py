@@ -328,7 +328,12 @@ SYMPHONYM_EMBEDDINGS_DIR = os.getenv(
 # automatic; it's gated on ALL tilesets being deployed and verified.
 # ---------------------------------------------------------------------------
 TILESERVER_PROXY        = os.getenv("TILESERVER_PROXY",        "pitt")
-TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "134.209.177.234")
+# NYC1 droplet (reserved IP; tiles.whgazetteer.org resolves here since 2026-11-10, place#335).
+# The old London droplet 134.209.177.234 is STALE (kept only as a rollback until ~17 Nov
+# 2026) -- never push to it. Host contract: no sudo, no systemd units, no tiler; the
+# tileserver is a Docker container on localhost:8080 restarted by `cd /srv && bash
+# restart_services.sh` (non-zero exit unless /styles/whg-context/style.json serves layers).
+TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "168.144.13.214")
 TILESERVER_USER         = os.getenv("TILESERVER_USER",         "whgadmin")
 TILESERVER_TILES_DIR    = os.getenv("TILESERVER_TILES_DIR",    "/srv/tileserver/tiles")
 # Optional direct-mode SSH key. When set, ``push_mbtiles_to_tileserver``
@@ -346,13 +351,8 @@ TILESERVER_PROXY_RSYNC  = os.getenv(
     "TILESERVER_PROXY_RSYNC",
     "/home/gazetteer/miniconda/envs/whg/bin/rsync",
 )
-# systemctl unit names (space-separated for env-var convenience). Both
-# ``tiler.service`` and ``tileserver-gl-light.service`` need restarting
-# after a fresh batch of mbtiles arrives.
-TILESERVER_SERVICES     = os.getenv(
-    "TILESERVER_SERVICES",
-    "tiler.service tileserver-gl-light.service",
-).split()
+# (TILESERVER_SERVICES removed 2026-11-10: the NYC1 host has no systemd units / tiler;
+# restart is the single on-host script, see above.)
 
 
 # ── Authority download / redistribution gating ─────────────────────────────
@@ -830,13 +830,16 @@ AUTHORITIES = [
         # edition's 2023 release year. The gazetteer describes England as at 1680, so the
         # snapshot is kept as a point (SG decision 2026-10-09, option b); 2023 is dropped.
         'coverage_extent': [1680, 1680],
-        'redistributable': True,  # CC-BY-SA-4.0
-        # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
+        'redistributable': True,  # CC-BY-4.0
+        # CC BY 4.0, corrected 2026-11-01 (SG): the Zenodo record (concept DOI
+        # 10.5281/zenodo.4748653), .zenodo.json and CITATION.cff all say CC BY 4.0. The GitHub
+        # repo's LICENSE file said CC BY-SA 4.0 from 2021 (verified 2026-06-06 via the GitHub
+        # licence API), which is what this entry first recorded; v2.1.0 replaces that file.
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
-        # licensed layer. Share-alike + attribution to the digital editors required.
+        # licensed layer. Attribution to the digital editors required.
         'citation_text': 'Index Villaris (1680, John Adams; public domain); digital GIS edition by Stephen Gadd and Alexis Litvine (DOI 10.5281/zenodo.4748653).',
-        'license_spdx': 'CC-BY-SA-4.0',
-        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
         'rights_holder': 'Stephen Gadd & Alexis Litvine (digital edition); original 1680 work by John Adams (public domain)',
         'source_url': 'https://github.com/docuracy/IndexVillaris1680',
         'contributors': [],

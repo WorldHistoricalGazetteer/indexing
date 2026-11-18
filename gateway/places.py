@@ -293,6 +293,11 @@ def _format_geometries(raw_geoms: list[dict]) -> list[dict]:
         ts = _normalise_timespans(g.get("timespans") or [])
         if ts:
             entry["timespans"] = ts
+        # The namespace a geometry was lent by (alcedo <- hgis), or adopted from by a
+        # contributed dataset's owner (place#350): the attribution travels with it.
+        src = g.get("source")
+        if entry and isinstance(src, str) and src:
+            entry["source"] = src
         if entry:
             result.append(entry)
     return result

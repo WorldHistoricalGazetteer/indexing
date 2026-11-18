@@ -579,7 +579,7 @@ the *old* mbtiles inodes, so `mv` swapped the directory entries while the disk c
 copies — 420 deleted-but-held-open files. The service restart released them (back to 82% / 8.9 GB).
 Two consequences worth carrying forward: **restart the tileserver promptly after any tileset
 push**, and note that 8.9 GB of headroom for 83 tilesets is thin — a retile that grows content
-materially could fill the disk mid-push. Also: `/srv/restart_services.sh` is not executable (invoke as `sudo bash`).
+materially could fill the disk mid-push. Also: `/srv/restart_services.sh` is not executable (invoke as `sudo bash`). *[10 Nov 2026: NYC1 host has no sudo/tiler; use `cd /srv && bash restart_services.sh`.]*
 
 **Deploy from a CRC compute node, not from pitt.** `rsync` IS present on the
 tileserver and on CRC compute nodes, but NOT on pitt — and compute nodes can reach the
